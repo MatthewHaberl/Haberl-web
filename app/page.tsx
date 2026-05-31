@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { Navbar } from '@/components/layout/Navbar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Zap, Sun, Shield, Phone, ChevronRight, Star } from 'lucide-react'
+import { Zap, Sun, Shield, Phone, ChevronRight, Star, CheckCircle } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
 
 const services = [
   { icon: Zap,    title: 'Electrical Installations',  desc: 'Residential and commercial wiring, DB boards, COC compliance.' },
@@ -10,10 +11,20 @@ const services = [
   { icon: Shield, title: 'Compliance & Maintenance',  desc: 'SANS 10142 compliant certificates of compliance, inspections, and ongoing maintenance.' },
 ]
 
-export default function HomePage() {
+const credentials = [
+  'Registered electrical contractor — SANS 10142 compliant',
+  'Certificate of Compliance (COC) on every installation',
+  'Full solar system design and commissioning',
+  'Residential and commercial — Gauteng-wide',
+]
+
+export default async function HomePage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
   return (
     <>
-      <Navbar />
+      <Navbar isLoggedIn={!!user} />
       <main className="flex-1">
         {/* Hero */}
         <section className="relative overflow-hidden bg-primary text-white py-24 px-4">
@@ -68,8 +79,44 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* About */}
+        <section id="about" className="py-20 px-4">
+          <div className="mx-auto max-w-5xl">
+            <div className="grid md:grid-cols-2 gap-12 items-center">
+              <div>
+                <h2 className="text-3xl font-bold text-primary mb-4">Who we are</h2>
+                <p className="text-muted-foreground mb-4">
+                  Haberl Electrical &amp; Solar is a registered electrical contractor serving Gauteng.
+                  We install, maintain, and certify residential and commercial electrical and solar systems.
+                </p>
+                <p className="text-muted-foreground mb-6">
+                  Every installation comes with a Certificate of Compliance (COC) issued by our registered
+                  electrical contractors — giving you the legal protection and peace of mind you need.
+                </p>
+                <ul className="flex flex-col gap-3">
+                  {credentials.map((item) => (
+                    <li key={item} className="flex items-start gap-2.5 text-sm">
+                      <CheckCircle className="h-4 w-4 text-accent shrink-0 mt-0.5" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-2xl bg-primary p-8 text-white">
+                <p className="text-xl font-bold mb-3">Built on compliance, not shortcuts</p>
+                <p className="text-white/80 text-sm leading-relaxed">
+                  Solar-only companies can install panels — but only a registered electrical contractor
+                  can issue the COC and certify your DB board changes. Haberl covers the full
+                  installation scope, from inverter to DB board to compliance certificate, so you
+                  stay legal and your warranty stays valid.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Portal CTA */}
-        <section className="py-20 px-4">
+        <section className="py-20 px-4 bg-muted">
           <div className="mx-auto max-w-4xl">
             <div className="rounded-2xl bg-primary p-8 sm:p-12 text-white text-center">
               <h2 className="text-3xl font-bold mb-3">Already a customer?</h2>
@@ -85,7 +132,7 @@ export default function HomePage() {
         </section>
 
         {/* Contact */}
-        <section id="contact" className="py-20 px-4 bg-muted">
+        <section id="contact" className="py-20 px-4">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-bold text-primary mb-3">Get in touch</h2>
             <p className="text-muted-foreground mb-8">Ready for a quote? Have a question?</p>

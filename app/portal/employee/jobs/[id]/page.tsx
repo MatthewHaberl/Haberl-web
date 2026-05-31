@@ -66,7 +66,7 @@ export default function JobDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+        <Button variant="ghost" size="icon" onClick={() => router.push('/portal/employee/jobs')}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">

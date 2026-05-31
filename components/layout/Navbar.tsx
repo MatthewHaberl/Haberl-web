@@ -13,7 +13,11 @@ const navLinks = [
   { label: 'Contact',  href: '/#contact' },
 ]
 
-export function Navbar() {
+interface Props {
+  isLoggedIn?: boolean
+}
+
+export function Navbar({ isLoggedIn = false }: Props) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -39,12 +43,20 @@ export function Navbar() {
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/auth/login">Log in</Link>
-          </Button>
-          <Button variant="accent" size="sm" asChild>
-            <Link href="/auth/register">Get started</Link>
-          </Button>
+          {isLoggedIn ? (
+            <Button variant="accent" size="sm" asChild>
+              <Link href="/portal">My portal</Link>
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/auth/login">Log in</Link>
+              </Button>
+              <Button variant="accent" size="sm" asChild>
+                <Link href="/auth/register">Get started</Link>
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Mobile toggle */}
@@ -71,12 +83,20 @@ export function Navbar() {
             </Link>
           ))}
           <div className="flex flex-col gap-2 pt-2 border-t border-border">
-            <Button variant="outline" asChild>
-              <Link href="/auth/login">Log in</Link>
-            </Button>
-            <Button variant="accent" asChild>
-              <Link href="/auth/register">Get started</Link>
-            </Button>
+            {isLoggedIn ? (
+              <Button variant="accent" asChild>
+                <Link href="/portal">My portal</Link>
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" asChild>
+                  <Link href="/auth/login">Log in</Link>
+                </Button>
+                <Button variant="accent" asChild>
+                  <Link href="/auth/register">Get started</Link>
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
