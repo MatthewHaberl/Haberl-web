@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { User, Mail, Phone } from 'lucide-react'
@@ -7,8 +7,8 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = { title: 'My Profile' }
 
 export default async function EmployeeProfilePage() {
+  const user = await getUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: profile } = await supabase
     .from('user_profiles')

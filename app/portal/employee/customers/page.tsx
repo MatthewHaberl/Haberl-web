@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -9,8 +9,8 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = { title: 'Customers' }
 
 export default async function CustomersPage() {
+  const user = await getUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: profile } = await supabase
     .from('user_profiles')
@@ -53,7 +53,7 @@ export default async function CustomersPage() {
               <Card key={customer.id}>
                 <CardContent className="pt-5 pb-5">
                   <div className="flex items-start justify-between gap-2 mb-3">
-                    <p className="font-semibold leading-snug">{customer.full_name}</p>
+                    <p className="font-semibold leading-snug min-w-0 truncate">{customer.full_name}</p>
                     <Badge variant={activeSites > 0 ? 'success' : 'default'}>
                       {sites.length} site{sites.length !== 1 ? 's' : ''}
                     </Badge>

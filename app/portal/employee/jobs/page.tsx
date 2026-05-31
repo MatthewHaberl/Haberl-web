@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
@@ -21,8 +21,8 @@ const priorityVariant: Record<JobPriority, 'default' | 'warning' | 'destructive'
 }
 
 export default async function JobsPage() {
+  const user = await getUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: profile } = await supabase
     .from('user_profiles')
@@ -52,7 +52,7 @@ export default async function JobsPage() {
         <Card className="hover:border-accent transition-colors cursor-pointer">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-start justify-between gap-2 mb-2">
-              <p className="font-semibold text-sm leading-snug">{job.title}</p>
+              <p className="font-semibold text-sm leading-snug min-w-0 truncate">{job.title}</p>
               <div className="flex items-center gap-1.5 shrink-0">
                 <Badge variant={priorityVariant[job.priority as JobPriority]}>{job.priority}</Badge>
                 <Badge variant={statusVariant[job.status as JobStatus]}>{job.status.replace('_', ' ')}</Badge>

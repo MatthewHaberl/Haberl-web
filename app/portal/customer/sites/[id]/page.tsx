@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -8,8 +8,8 @@ import { FileText, Calendar, Shield, Download, Wrench } from 'lucide-react'
 
 export default async function SiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const user = await getUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   const [{ data: site }, { data: documents }, { data: serviceRecords }] = await Promise.all([
     supabase.from('sites').select('*').eq('id', id).eq('customer_id', user!.id).single(),

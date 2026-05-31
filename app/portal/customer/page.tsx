@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -7,8 +7,8 @@ import { MapPin, ShoppingBag, FileText, ChevronRight } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 export default async function CustomerDashboard() {
+  const user = await getUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   const [{ data: sites }, { data: orders }] = await Promise.all([
     supabase.from('sites').select('*').eq('customer_id', user!.id).limit(3),
@@ -23,7 +23,7 @@ export default async function CustomerDashboard() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 pt-5 pb-5">
             <div className="h-10 w-10 rounded-full bg-accent/10 flex items-center justify-center shrink-0">

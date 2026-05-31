@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,8 +17,8 @@ const statusVariant: Record<OrderStatus, 'default' | 'warning' | 'success' | 'de
 }
 
 export default async function OrdersPage() {
+  const user = await getUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: orders } = await supabase
     .from('orders')
@@ -62,9 +62,9 @@ export default async function OrdersPage() {
               <CardContent>
                 <div className="flex flex-col divide-y divide-border mb-4">
                   {((order.items as Array<{ product: { name: string } | null; quantity: number; unit_price: number }>) ?? []).map((item, i) => (
-                    <div key={i} className="flex items-center justify-between py-2">
-                      <p className="text-sm">{item.product?.name ?? 'Product'} × {item.quantity}</p>
-                      <p className="text-sm font-medium">{formatCurrency(item.unit_price * item.quantity)}</p>
+                    <div key={i} className="flex items-center justify-between gap-4 py-2">
+                      <p className="text-sm min-w-0 truncate">{item.product?.name ?? 'Product'} × {item.quantity}</p>
+                      <p className="text-sm font-medium shrink-0">{formatCurrency(item.unit_price * item.quantity)}</p>
                     </div>
                   ))}
                 </div>

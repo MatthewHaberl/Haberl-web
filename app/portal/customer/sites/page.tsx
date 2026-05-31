@@ -1,12 +1,12 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { MapPin, ChevronRight, Sun } from 'lucide-react'
 
 export default async function SitesPage() {
+  const user = await getUser()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: sites } = await supabase
     .from('sites')
@@ -45,10 +45,10 @@ export default async function SitesPage() {
                       {site.status}
                     </Badge>
                   </div>
-                  <h3 className="font-semibold mt-3">{site.name}</h3>
-                  <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1">
+                  <h3 className="font-semibold mt-3 truncate">{site.name}</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1 min-w-0">
                     <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    {site.address}
+                    <span className="truncate">{site.address}</span>
                   </p>
                   {site.system_size_kw && (
                     <p className="text-sm mt-2">
