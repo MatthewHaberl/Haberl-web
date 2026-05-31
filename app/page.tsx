@@ -43,9 +43,15 @@ export default async function HomePage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button variant="accent" size="lg" asChild>
-                <Link href="/auth/register">
-                  Create your portal <ChevronRight className="h-4 w-4" />
-                </Link>
+                {user ? (
+                  <Link href="/portal">
+                    Go to my portal <ChevronRight className="h-4 w-4" />
+                  </Link>
+                ) : (
+                  <Link href="/auth/register">
+                    Create your portal <ChevronRight className="h-4 w-4" />
+                  </Link>
+                )}
               </Button>
               <Button variant="outline" size="lg" className="text-white border-white/30 hover:bg-white/10" asChild>
                 <Link href="/shop">Browse the shop</Link>
@@ -125,7 +131,9 @@ export default async function HomePage() {
                 check your warranty, and manage service history.
               </p>
               <Button variant="accent" size="lg" asChild>
-                <Link href="/auth/login">Access your portal</Link>
+                <Link href={user ? '/portal' : '/auth/login'}>
+                  {user ? 'Go to my portal' : 'Access your portal'}
+                </Link>
               </Button>
             </div>
           </div>
