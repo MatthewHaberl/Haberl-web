@@ -81,7 +81,7 @@ function SidebarContent({ links, pathname, name, role, onLinkClick, onSignOut }:
       </nav>
 
       {/* Footer actions */}
-      <div className="px-3 py-4 border-t border-white/10 flex flex-col gap-1">
+      <div className="mt-auto px-3 py-4 border-t border-white/10 flex flex-col gap-1">
         <Link
           href="/"
           onClick={onLinkClick}
@@ -136,7 +136,7 @@ export function PortalSidebar({ role, name }: Props) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-64 shrink-0 flex-col bg-sidebar-bg min-h-screen">
+      <aside className="hidden md:flex w-64 shrink-0 flex-col bg-sidebar-bg h-screen sticky top-0 overflow-y-auto">
         <SidebarContent {...sharedProps} />
       </aside>
 
