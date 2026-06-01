@@ -1,5 +1,15 @@
 export type Role = 'customer' | 'field_worker' | 'manager' | 'admin'
 export type QuoteRequestStatus = 'pending' | 'generated' | 'sent'
+export type BrandCategory = 'inverter' | 'battery' | 'panel'
+
+export interface EquipmentBrand {
+  id: string
+  category: BrandCategory
+  name: string
+  active: boolean
+  sort_order: number
+  created_at: string
+}
 export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 export type OrderStatus = 'pending' | 'paid' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 export type DocumentType = 'coc' | 'sld' | 'warranty' | 'invoice' | 'photo' | 'other'
@@ -149,21 +159,49 @@ export interface QuoteRequest {
   id: string
   submitted_by: string
   status: QuoteRequestStatus
+  // Customer
   customer_name: string
   customer_phone: string | null
   customer_email: string | null
   address: string | null
   municipality: string | null
+  // Site
   grid_supply: string
   roof_type: string | null
   storeys: string
+  // Usage
+  usage_mode: string
   monthly_kwh: string | null
+  monthly_kwh_jan: string | null; monthly_kwh_feb: string | null
+  monthly_kwh_mar: string | null; monthly_kwh_apr: string | null
+  monthly_kwh_may: string | null; monthly_kwh_jun: string | null
+  monthly_kwh_jul: string | null; monthly_kwh_aug: string | null
+  monthly_kwh_sep: string | null; monthly_kwh_oct: string | null
+  monthly_kwh_nov: string | null; monthly_kwh_dec: string | null
+  // System
   system_type: string
   battery_hours: string
   essential_load: string
   ev_charger: string
-  equipment_preference: string | null
+  target_offgrid_pct: number | null
+  // Equipment
+  inverter_brand: string | null
+  battery_brand: string | null
+  panel_brand: string | null
+  equipment_preference: string | null  // legacy
+  // Amendment
+  is_amendment: boolean
+  existing_inverter: string | null
+  existing_batteries: string | null
+  existing_panels: string | null
+  existing_monthly_usage: string | null
+  existing_monthly_gen: string | null
+  existing_monthly_saving: string | null
+  amendment_scope: string | null
+  // Photos
+  photo_urls: string[]
   notes: string | null
+  // Generated
   generated_quote: string | null
   generated_at: string | null
   generated_by: string | null

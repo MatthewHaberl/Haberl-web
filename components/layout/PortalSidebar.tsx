@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
-  BarChart2, Users, Zap, User, Menu, X, Globe, FileText,
+  BarChart2, Users, Zap, User, Menu, X, Globe, FileText, Settings,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,7 @@ const employeeLinks = [
   { label: 'Customers', href: '/portal/employee/customers',        icon: Users,     roles: ['manager', 'admin'] },
   { label: 'Metrics',   href: '/portal/employee/metrics',          icon: BarChart2, roles: ['manager', 'admin'] },
   { label: 'Profile',   href: '/portal/employee/profile',          icon: User,      roles: ['field_worker', 'manager', 'admin'] },
+  { label: 'Settings',  href: '/portal/employee/settings/brands',  icon: Settings,  roles: ['admin'] },
 ]
 
 interface SidebarContentProps {
