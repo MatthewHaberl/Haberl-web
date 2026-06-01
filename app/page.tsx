@@ -3,7 +3,7 @@ import { Navbar } from '@/components/layout/Navbar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Zap, Sun, Shield, Phone, ChevronRight, Star, CheckCircle } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { getUser } from '@/lib/supabase/server'
 
 const services = [
   { icon: Zap,    title: 'Electrical Installations',  desc: 'Residential and commercial wiring, DB boards, COC compliance.' },
@@ -19,8 +19,7 @@ const credentials = [
 ]
 
 export default async function HomePage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getUser()
 
   return (
     <>

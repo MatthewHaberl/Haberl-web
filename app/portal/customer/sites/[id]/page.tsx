@@ -80,7 +80,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                     </div>
                   </div>
                   <Button variant="ghost" size="sm" asChild>
-                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                    <a href={doc.file_url.startsWith('https://') ? doc.file_url : '#'} target="_blank" rel="noopener noreferrer">
                       <Download className="h-4 w-4" />
                     </a>
                   </Button>

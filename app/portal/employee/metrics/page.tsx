@@ -6,6 +6,8 @@ import { TrendingUp, Users, Briefcase, MapPin, FileText, ArrowUpRight } from 'lu
 
 export default async function MetricsPage() {
   const user = await getUser()
+  if (!user) redirect('/auth/login')
+
   const supabase = await createClient()
 
   const { data: profile } = await supabase

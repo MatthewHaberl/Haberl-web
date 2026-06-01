@@ -37,7 +37,7 @@ begin
     coalesce(new.email, ''),
     coalesce(new.raw_user_meta_data->>'full_name', ''),
     new.raw_user_meta_data->>'phone',
-    coalesce((new.raw_user_meta_data->>'role')::user_role, 'customer')
+    'customer'  -- never trust client-supplied role; admin promotes via dashboard
   );
   return new;
 end;

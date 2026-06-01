@@ -1,4 +1,5 @@
 import { createClient, getUser } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,8 @@ import { formatDate } from '@/lib/utils'
 
 export default async function CustomerDashboard() {
   const user = await getUser()
+  if (!user) redirect('/auth/login')
+
   const supabase = await createClient()
 
   const [{ data: sites }, { data: orders }] = await Promise.all([
