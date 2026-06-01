@@ -1,4 +1,5 @@
 export type Role = 'customer' | 'field_worker' | 'manager' | 'admin'
+export type QuoteRequestStatus = 'pending' | 'generated' | 'sent'
 export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 export type OrderStatus = 'pending' | 'paid' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 export type DocumentType = 'coc' | 'sld' | 'warranty' | 'invoice' | 'photo' | 'other'
@@ -142,6 +143,33 @@ export interface Quote {
   valid_until: string | null
   notes: string | null
   created_at: string
+}
+
+export interface QuoteRequest {
+  id: string
+  submitted_by: string
+  status: QuoteRequestStatus
+  customer_name: string
+  customer_phone: string | null
+  customer_email: string | null
+  address: string | null
+  municipality: string | null
+  grid_supply: string
+  roof_type: string | null
+  storeys: string
+  monthly_kwh: string | null
+  system_type: string
+  battery_hours: string
+  essential_load: string
+  ev_charger: string
+  equipment_preference: string | null
+  notes: string | null
+  generated_quote: string | null
+  generated_at: string | null
+  generated_by: string | null
+  created_at: string
+  // joined
+  submitter?: UserProfile
 }
 
 // Metrics computed from DB (manager dashboard)
