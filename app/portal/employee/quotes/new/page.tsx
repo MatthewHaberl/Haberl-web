@@ -13,7 +13,8 @@ export default async function NewQuotePage() {
     .from('equipment_brands')
     .select('*')
     .eq('active', true)
-    .order('sort_order')
+    .order('category')
+    .order('brand')
 
   return <QuoteForm brands={(brands ?? []) as EquipmentBrand[]} />
 }

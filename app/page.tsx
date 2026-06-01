@@ -12,7 +12,7 @@ const services = [
 ]
 
 const credentials = [
-  'Registered electrical contractor — SANS 10142 compliant',
+  'SANS 10142 compliant electrical installations',
   'Certificate of Compliance (COC) on every installation',
   'Full solar system design and commissioning',
   'Residential and commercial — Gauteng-wide',
@@ -91,12 +91,12 @@ export default async function HomePage() {
               <div>
                 <h2 className="text-3xl font-bold text-primary mb-4">Who we are</h2>
                 <p className="text-muted-foreground mb-4">
-                  Haberl Electrical &amp; Solar is a registered electrical contractor serving Gauteng.
+                  Haberl Electrical &amp; Solar serves Gauteng with professional electrical and solar installations.
                   We install, maintain, and certify residential and commercial electrical and solar systems.
                 </p>
                 <p className="text-muted-foreground mb-6">
-                  Every installation comes with a Certificate of Compliance (COC) issued by our registered
-                  electrical contractors — giving you the legal protection and peace of mind you need.
+                  Every installation comes with a Certificate of Compliance (COC) — giving you the
+                  legal protection and peace of mind you need.
                 </p>
                 <ul className="flex flex-col gap-3">
                   {credentials.map((item) => (
@@ -110,10 +110,9 @@ export default async function HomePage() {
               <div className="rounded-2xl bg-primary p-8 text-white">
                 <p className="text-xl font-bold mb-3">Built on compliance, not shortcuts</p>
                 <p className="text-white/80 text-sm leading-relaxed">
-                  Solar-only companies can install panels — but only a registered electrical contractor
-                  can issue the COC and certify your DB board changes. Haberl covers the full
-                  installation scope, from inverter to DB board to compliance certificate, so you
-                  stay legal and your warranty stays valid.
+                  Solar-only companies install panels — but cannot certify your DB board changes or
+                  issue the COC. Haberl handles the full scope, from inverter to DB board to
+                  compliance certificate, so you stay legal and your warranty stays valid.
                 </p>
               </div>
             </div>

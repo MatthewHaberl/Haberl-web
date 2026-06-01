@@ -10,6 +10,8 @@ const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success
   pending:   'warning',
   generated: 'success',
   sent:      'default',
+  accepted:  'success',
+  declined:  'default',
 }
 
 function timeAgo(iso: string) {

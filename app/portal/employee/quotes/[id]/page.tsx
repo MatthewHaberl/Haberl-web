@@ -15,6 +15,8 @@ const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success
   pending:   'warning',
   generated: 'success',
   sent:      'default',
+  accepted:  'success',
+  declined:  'default',
 }
 
 function Row({ label, value }: { label: string; value: string | null | undefined }) {
@@ -27,6 +29,17 @@ function Row({ label, value }: { label: string; value: string | null | undefined
   )
 }
 
+// Build next quote number from existing count
+async function getNextQuoteNumber(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
+  const year = new Date().getFullYear()
+  const { count } = await supabase
+    .from('quote_requests')
+    .select('*', { count: 'exact', head: true })
+    .not('quote_number', 'is', null)
+  const next = (count ?? 0) + 1
+  return `QUO-${year}-${String(next).padStart(3, '0')}`
+}
+
 export default async function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const user = await getUser()
@@ -35,8 +48,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   const { data: profile } = await supabase
     .from('user_profiles').select('role').eq('id', user!.id).single()
 
-  const role     = profile?.role ?? 'field_worker'
-  const isAdmin  = role === 'admin'
+  const role      = profile?.role ?? 'field_worker'
+  const isAdmin   = role === 'admin'
   const isManager = role === 'manager' || isAdmin
 
   const { data: req } = await supabase
@@ -50,8 +63,8 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
 
   const submitterName = (req.submitter as { full_name: string } | null)?.full_name ?? 'Unknown'
   const photoUrls     = (req.photo_urls ?? []) as string[]
+  const nextQuoteNum  = isAdmin ? await getNextQuoteNumber(supabase) : ''
 
-  // Build the full request object for the prompt builder
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const requestObj = req as Record<string, any>
 
@@ -69,6 +82,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-primary">{req.customer_name}</h1>
             {req.is_amendment && <Badge variant="warning">Amendment</Badge>}
+            {req.quote_number && <span className="text-sm font-mono text-muted-foreground">{req.quote_number}</span>}
           </div>
           <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
@@ -91,12 +105,12 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
         <Card className="border-warning">
           <CardContent className="pt-5 pb-5 flex flex-col gap-0">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Existing System</h2>
-            <Row label="Current Inverter"           value={req.existing_inverter} />
-            <Row label="Current Batteries"          value={req.existing_batteries} />
-            <Row label="Current Panels"             value={req.existing_panels} />
-            <Row label="Monthly Usage"              value={req.existing_monthly_usage ? `${req.existing_monthly_usage} kWh` : null} />
-            <Row label="Monthly Generation"         value={req.existing_monthly_gen   ? `${req.existing_monthly_gen} kWh`   : null} />
-            <Row label="Monthly Saving"             value={req.existing_monthly_saving ? `R${req.existing_monthly_saving}`  : null} />
+            <Row label="Current Inverter"    value={req.existing_inverter} />
+            <Row label="Current Batteries"   value={req.existing_batteries} />
+            <Row label="Current Panels"      value={req.existing_panels} />
+            <Row label="Monthly Usage"       value={req.existing_monthly_usage ? `${req.existing_monthly_usage} kWh` : null} />
+            <Row label="Monthly Generation"  value={req.existing_monthly_gen   ? `${req.existing_monthly_gen} kWh`   : null} />
+            <Row label="Monthly Saving"      value={req.existing_monthly_saving ? `R${req.existing_monthly_saving}`  : null} />
             {req.amendment_scope && (
               <div className="mt-3 pt-3 border-t border-border">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Scope</p>
@@ -147,14 +161,14 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
       <Card>
         <CardContent className="pt-5 pb-5 flex flex-col gap-0">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">System Requirements</h2>
-          <Row label="System Type"             value={req.system_type} />
-          <Row label="Battery Backup"          value={req.battery_hours} />
-          <Row label="Essential Load"          value={req.essential_load ? `${req.essential_load} kW` : null} />
-          <Row label="Target Off-grid"         value={req.target_offgrid_pct != null ? `${req.target_offgrid_pct}%` : null} />
-          <Row label="EV Charger"              value={req.ev_charger} />
-          <Row label="Inverter Preference"     value={req.inverter_brand} />
-          <Row label="Battery Preference"      value={req.battery_brand} />
-          <Row label="Panel Preference"        value={req.panel_brand} />
+          <Row label="System Type"         value={req.system_type} />
+          <Row label="Battery Backup"      value={req.battery_hours} />
+          <Row label="Essential Load"      value={req.essential_load ? `${req.essential_load} kW` : null} />
+          <Row label="Target Off-grid"     value={req.target_offgrid_pct != null ? `${req.target_offgrid_pct}%` : null} />
+          <Row label="EV Charger"          value={req.ev_charger} />
+          <Row label="Inverter Preference" value={req.inverter_brand} />
+          <Row label="Battery Preference"  value={req.battery_brand} />
+          <Row label="Panel Preference"    value={req.panel_brand} />
           {req.notes && (
             <div className="mt-3 pt-3 border-t border-border">
               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Notes</p>
@@ -184,26 +198,45 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
         </Card>
       )}
 
-      {/* Generate section */}
+      {/* Generate / view section */}
       {isAdmin ? (
         <div className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-primary">
-            {req.generated_quote ? 'Generated Quote' : 'Generate Quote'}
+            {req.quote_html || req.generated_quote ? 'Generated Quote' : 'Generate Quote'}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {req.generated_quote
-              ? 'Quote already generated. You can regenerate to refresh with latest pricing.'
-              : 'Review the details above, then copy the prompt and generate via Claude.'}
+            {req.quote_html || req.generated_quote
+              ? 'Quote generated. You can regenerate to refresh or adjust deposit items.'
+              : 'Copy the prompt, paste into Claude, then paste the JSON output back below.'}
           </p>
           <GenerateButton
             requestId={req.id}
             request={requestObj}
-            existingQuote={req.generated_quote}
+            existingQuote={req.generated_quote ?? null}
+            existingHtml={req.quote_html ?? null}
+            existingDepositItems={(req.deposit_items ?? []) as string[]}
+            existingQuoteNumber={req.quote_number ?? null}
+            nextQuoteNumber={nextQuoteNum}
           />
         </div>
       ) : (
         <>
-          {req.generated_quote && (
+          {/* Non-admin view: show rendered HTML quote if available, else raw text */}
+          {req.quote_html ? (
+            <div className="flex flex-col gap-3">
+              <h2 className="text-lg font-semibold text-primary">Your Quote</h2>
+              {req.quote_number && (
+                <p className="text-sm text-muted-foreground">{req.quote_number}</p>
+              )}
+              <iframe
+                srcDoc={req.quote_html}
+                title="Solar quote"
+                className="w-full rounded-lg border border-border"
+                style={{ height: '700px' }}
+                sandbox="allow-same-origin"
+              />
+            </div>
+          ) : req.generated_quote ? (
             <div className="flex flex-col gap-3">
               <h2 className="text-lg font-semibold text-primary">Generated Quote</h2>
               <Card>
@@ -214,14 +247,13 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
                 </CardContent>
               </Card>
             </div>
-          )}
-          {req.status === 'pending' && (
+          ) : req.status === 'pending' ? (
             <Card>
               <CardContent className="py-6 text-center text-muted-foreground text-sm">
                 Quote is being reviewed. Matthew will generate it shortly.
               </CardContent>
             </Card>
-          )}
+          ) : null}
         </>
       )}
     </div>

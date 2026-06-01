@@ -32,7 +32,8 @@ export default function BrandsPage() {
     const { data } = await supabase
       .from('equipment_brands')
       .select('*')
-      .order('sort_order')
+      .order('category')
+      .order('brand')
     setBrands((data ?? []) as EquipmentBrand[])
     setLoading(false)
   }
@@ -45,9 +46,8 @@ export default function BrandsPage() {
     setSaving((s) => ({ ...s, [category]: true }))
     setError('')
     try {
-      const maxOrder = brands.filter((b) => b.category === category).reduce((m, b) => Math.max(m, b.sort_order), 0)
       const { error: dbErr } = await supabase.from('equipment_brands').insert({
-        category, name, sort_order: maxOrder + 1,
+        category, brand: name,
       })
       if (dbErr) { setError(dbErr.message); return }
       setNewName((n) => ({ ...n, [category]: '' }))
@@ -102,7 +102,7 @@ export default function BrandsPage() {
                   <div key={brand.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-border last:border-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className={`text-sm truncate ${brand.active ? 'text-foreground' : 'text-muted-foreground line-through'}`}>
-                        {brand.name}
+                        {brand.brand}
                       </span>
                       {!brand.active && <Badge variant="outline" className="text-xs shrink-0">hidden</Badge>}
                     </div>

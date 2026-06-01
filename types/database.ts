@@ -1,13 +1,12 @@
 export type Role = 'customer' | 'field_worker' | 'manager' | 'admin'
-export type QuoteRequestStatus = 'pending' | 'generated' | 'sent'
+export type QuoteRequestStatus = 'pending' | 'generated' | 'sent' | 'accepted' | 'declined'
 export type BrandCategory = 'inverter' | 'battery' | 'panel'
 
 export interface EquipmentBrand {
   id: string
   category: BrandCategory
-  name: string
+  brand: string
   active: boolean
-  sort_order: number
   created_at: string
 }
 export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
@@ -159,37 +158,49 @@ export interface QuoteRequest {
   id: string
   submitted_by: string
   status: QuoteRequestStatus
-  // Customer
+  created_at: string
+
+  // Customer info
   customer_name: string
   customer_phone: string | null
   customer_email: string | null
   address: string | null
-  municipality: string | null
-  // Site
+  municipality: string
+
+  // Site info
   grid_supply: string
   roof_type: string | null
-  storeys: string
+  storeys: string | null
+
   // Usage
-  usage_mode: string
+  usage_mode: 'monthly' | 'advanced'
   monthly_kwh: string | null
-  monthly_kwh_jan: string | null; monthly_kwh_feb: string | null
-  monthly_kwh_mar: string | null; monthly_kwh_apr: string | null
-  monthly_kwh_may: string | null; monthly_kwh_jun: string | null
-  monthly_kwh_jul: string | null; monthly_kwh_aug: string | null
-  monthly_kwh_sep: string | null; monthly_kwh_oct: string | null
-  monthly_kwh_nov: string | null; monthly_kwh_dec: string | null
-  // System
+  monthly_kwh_jan: string | null
+  monthly_kwh_feb: string | null
+  monthly_kwh_mar: string | null
+  monthly_kwh_apr: string | null
+  monthly_kwh_may: string | null
+  monthly_kwh_jun: string | null
+  monthly_kwh_jul: string | null
+  monthly_kwh_aug: string | null
+  monthly_kwh_sep: string | null
+  monthly_kwh_oct: string | null
+  monthly_kwh_nov: string | null
+  monthly_kwh_dec: string | null
+
+  // System design
   system_type: string
   battery_hours: string
-  essential_load: string
+  essential_load: string | null
   ev_charger: string
   target_offgrid_pct: number | null
-  // Equipment
+
+  // Equipment preferences
   inverter_brand: string | null
   battery_brand: string | null
   panel_brand: string | null
-  equipment_preference: string | null  // legacy
-  // Amendment
+
+  // Amendment fields
   is_amendment: boolean
   existing_inverter: string | null
   existing_batteries: string | null
@@ -198,16 +209,25 @@ export interface QuoteRequest {
   existing_monthly_gen: string | null
   existing_monthly_saving: string | null
   amendment_scope: string | null
-  // Photos
+
+  // Site photos & notes
   photo_urls: string[]
   notes: string | null
-  // Generated
+
+  // v1 quote generation
   generated_quote: string | null
   generated_at: string | null
-  generated_by: string | null
-  created_at: string
-  // joined
-  submitter?: UserProfile
+
+  // v2 quote generation (added migration 003)
+  quote_html: string | null
+  quote_number: string | null
+  quote_version: 'simplified' | 'detailed'
+  deposit_items: string[]
+  deposit_amount: number | null  // cents
+  total_amount: number | null    // cents
+
+  // Joined
+  submitter?: { full_name: string }
 }
 
 // Metrics computed from DB (manager dashboard)

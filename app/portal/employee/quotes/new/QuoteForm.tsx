@@ -129,9 +129,9 @@ export function QuoteForm({ brands }: Props) {
   const [submitted, setSubmitted] = useState(false)
 
   // Derived brand lists
-  const inverterBrands = brands.filter((b) => b.category === 'inverter').map((b) => b.name)
-  const batteryBrands  = brands.filter((b) => b.category === 'battery').map((b) => b.name)
-  const panelBrands    = brands.filter((b) => b.category === 'panel').map((b) => b.name)
+  const inverterBrands = brands.filter((b) => b.category === 'inverter').map((b) => b.brand)
+  const batteryBrands  = brands.filter((b) => b.category === 'battery').map((b) => b.brand)
+  const panelBrands    = brands.filter((b) => b.category === 'panel').map((b) => b.brand)
 
   // ── Municipality auto-detect ─────────────────────────────
   function handleAddressBlur() {
