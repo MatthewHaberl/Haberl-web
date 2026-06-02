@@ -265,6 +265,32 @@ export function SimpleBlockNode({ data, selected, type }: NodeProps) {
   )
 }
 
+// ── Text Note ─────────────────────────────────────────────────────────────────
+export function TextNoteNode({ data, selected }: NodeProps) {
+  const d = data as { text: string; bold?: boolean }
+  return (
+    <div
+      style={{
+        minWidth: 160,
+        maxWidth: 280,
+        background: '#fefce8',
+        border: `1.5px dashed ${selected ? '#ca8a04' : '#d97706'}`,
+        borderRadius: 6,
+        padding: '6px 10px',
+        boxShadow: selected ? '0 0 0 3px rgba(234,179,8,0.25)' : undefined,
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: 10,
+        color: '#78350f',
+        whiteSpace: 'pre-wrap',
+        lineHeight: 1.5,
+        fontWeight: d.bold ? 700 : 400,
+      }}
+    >
+      {d.text || 'Double-click to edit'}
+    </div>
+  )
+}
+
 // ── Node type registry ────────────────────────────────────────────────────────
 export const nodeTypes = {
   solarArray:  SolarArrayNode,
@@ -283,4 +309,6 @@ export const nodeTypes = {
   meter:       SimpleBlockNode,
   evCharger:   SimpleBlockNode,
   custom:      SimpleBlockNode,
+  // Annotation
+  textNote:    TextNoteNode,
 }

@@ -362,6 +362,7 @@ export function getDefaultNodeData(type: string): Record<string, unknown> {
     meter:       { label: 'Energy Meter',          model: '',             color },
     evCharger:   { label: 'EV Charger',            kw: 7.4,              color },
     custom:      { label: 'Custom Block',          model: '',             color },
+    textNote:    { text: 'All DC cables: UV resistant H1Z2Z2\nInstalled per SANS 10400-XA', bold: false },
   }
   return base[type] ?? { label: type, color }
 }

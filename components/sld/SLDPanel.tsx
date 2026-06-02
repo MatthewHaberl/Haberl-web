@@ -31,6 +31,7 @@ export const ADDABLE_NODES: Array<{ type: string; label: string; color: string }
   { type: 'meter',      label: 'Energy Meter',           color: CLR.ac   },
   { type: 'evCharger',  label: 'EV Charger',             color: CLR.bat  },
   { type: 'custom',     label: 'Custom Block',           color: '#6b7280' },
+  { type: 'textNote',   label: 'Text Note / Annotation', color: '#d97706' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -407,27 +408,55 @@ function NodeEditor({
         </>
       )}
 
-      {/* Conductors */}
-      <SectionHead title="Conductors" />
-      <ConductorConfig
-        circuitType={circuitType}
-        phases={phases}
-        conductors={conductors}
-        onChange={(c) => set('conductors', c)}
-      />
+      {/* Text note content (only for textNote type) */}
+      {t === 'textNote' && (
+        <>
+          <SectionHead title="Note Text" />
+          <FieldRow label="Content">
+            <textarea
+              value={String(d.text ?? '')}
+              onChange={(e) => set('text', e.target.value)}
+              rows={4}
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent resize-y"
+              placeholder="Enter annotation text…"
+            />
+          </FieldRow>
+          <label className="flex items-center gap-2 text-xs cursor-pointer mb-2">
+            <input
+              type="checkbox"
+              checked={!!d.bold}
+              onChange={(e) => set('bold', e.target.checked)}
+              className="rounded"
+            />
+            Bold text
+          </label>
+        </>
+      )}
 
-      {/* Product link */}
-      <SectionHead title="Product / SKU" />
-      <FieldRow label="Product name or model">
-        <TInput
-          value={String(d.productName ?? '')}
-          onChange={(v) => set('productName', v)}
-          placeholder="Search or enter model…"
-        />
-      </FieldRow>
-      <p className="text-xs text-muted-foreground mb-2">
-        Full store catalog link — coming with Phase 2 shop.
-      </p>
+      {/* Conductors + SKU (hidden for textNote) */}
+      {t !== 'textNote' && (
+        <>
+          <SectionHead title="Conductors" />
+          <ConductorConfig
+            circuitType={circuitType}
+            phases={phases}
+            conductors={conductors}
+            onChange={(c) => set('conductors', c)}
+          />
+
+          <SectionHead title="Product / SKU" />
+          <FieldRow label="Product name or model">
+            <TInput
+              value={String(d.productName ?? '')}
+              onChange={(v) => set('productName', v)}
+              placeholder="Search or enter model…"
+            />
+          </FieldRow>
+          <p className="text-xs text-muted-foreground mb-2">
+            Full store catalog link — coming with Phase 2 shop.
+          </p>
+        </>
+      )}
 
       {/* Duplicate + Delete */}
       <div className="pt-3 mt-2 border-t border-border flex items-center justify-between">

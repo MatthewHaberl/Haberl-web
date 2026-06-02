@@ -10,6 +10,7 @@ import {
   ReactFlowProvider,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   addEdge,
   reconnectEdge,
   type Node,
@@ -85,6 +86,7 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
   const [connectMode, setConnectMode] = useState(false)
   const [snapGrid, setSnapGrid] = useState(false)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const { fitView } = useReactFlow()
 
   // Multi-option support
   const isMulti = 'options' in quoteData
@@ -249,17 +251,29 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
 
   // ── Export PNG ────────────────────────────────────────────────────────────────
   const exportPng = useCallback(() => {
-    const viewport = canvasRef.current?.querySelector('.react-flow__viewport') as HTMLElement | null
-    if (!viewport) return
-    toPng(viewport, { backgroundColor: '#f8fafc', pixelRatio: 2 })
-      .then((dataUrl) => {
-        const a = document.createElement('a')
-        a.download = `SLD-${(quote.inverterModel || 'diagram').replace(/\s+/g, '-')}.png`
-        a.href = dataUrl
-        a.click()
-      })
-      .catch((err) => console.error('SLD export failed:', err))
-  }, [quote.inverterModel])
+    const el = canvasRef.current
+    if (!el) return
+    // Fit view before capture so all nodes are visible
+    fitView({ padding: 0.15, duration: 0 })
+    // Brief delay for the view to settle
+    setTimeout(() => {
+      const toolbar = el.querySelector('[data-export-hide]') as HTMLElement | null
+      if (toolbar) toolbar.style.visibility = 'hidden'
+      toPng(el, { backgroundColor: '#f8fafc', pixelRatio: 2 })
+        .then((dataUrl) => {
+          if (toolbar) toolbar.style.visibility = ''
+          const a = document.createElement('a')
+          const name = quote.quoteNumber || quote.inverterModel || 'diagram'
+          a.download = `SLD-${name.replace(/[\s/\\:*?"<>|]/g, '-')}.png`
+          a.href = dataUrl
+          a.click()
+        })
+        .catch((err) => {
+          if (toolbar) toolbar.style.visibility = ''
+          console.error('SLD export failed:', err)
+        })
+    }, 50)
+  }, [quote.quoteNumber, quote.inverterModel, fitView])
 
   // ── SLD → Quote sync ─────────────────────────────────────────────────────────
   const syncToQuote = useCallback(() => {
@@ -269,8 +283,28 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
   }, [nodes, quote, onSldChange])
 
   // ── Canvas toolbar ────────────────────────────────────────────────────────────
-  const toolbar = (
+  const sysFooter = (
     <div style={{
+      position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10,
+      background: 'rgba(30,58,95,0.82)', color: '#fff',
+      padding: '3px 12px', fontSize: 9.5, fontWeight: 600,
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      pointerEvents: 'none', backdropFilter: 'blur(2px)',
+      fontFamily: 'ui-monospace, monospace', letterSpacing: 0.2,
+    }}>
+      <span>
+        {quote.customerName ? `${quote.customerName}` : 'Wiring Diagram (SLD)'}
+        {quote.siteAddress ? ` · ${quote.siteAddress}` : ''}
+      </span>
+      <span>
+        {quote.quoteNumber ? `${quote.quoteNumber} · ` : ''}
+        {new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'short', day: 'numeric' })}
+      </span>
+    </div>
+  )
+
+  const toolbar = (
+    <div data-export-hide style={{
       position: 'absolute', top: 10, left: 10, zIndex: 10,
       display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center',
     }}>
@@ -438,6 +472,7 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
           <div ref={canvasRef} style={{ flex: 1, position: 'relative', touchAction: 'none' }}>
             {toolbar}
             {flow}
+            {sysFooter}
           </div>
           <div style={{
             width: PANEL_W, borderLeft: '1px solid #e5e7eb',
@@ -457,6 +492,7 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
         <div ref={canvasRef} style={{ flex: 1, position: 'relative', touchAction: 'none', minWidth: 0 }}>
           {toolbar}
           {flow}
+          {sysFooter}
         </div>
         <div style={{
           width: PANEL_W, borderLeft: '1px solid #e5e7eb',
