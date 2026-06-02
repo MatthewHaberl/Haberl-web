@@ -40,6 +40,11 @@ export interface CableEdgeData extends Record<string, unknown> {
   spec: string
   lengthM: number
   circuitType: 'dc' | 'ac' | 'battery' | 'earth'
+  cableType?: string
+  crossSection?: string
+  conductors?: Record<string, boolean>
+  segments?: Array<{ id: string; routeType: string; lengthM: number }>
+  routingType?: 'smoothstep' | 'bezier' | 'straight'
 }
 
 // ── Builder ───────────────────────────────────────────────────────────────────
@@ -305,6 +310,45 @@ const BLOCK_COLORS: Record<string, string> = {
   meter:      '#2563eb',
   evCharger:  '#16a34a',
   custom:     '#6b7280',
+}
+
+// ── SLD → QuoteData (sync back from diagram edits) ────────────────────────────
+
+export function sldNodesToQuoteData(nodes: Node[]): Partial<import('./render-quote').QuoteData> {
+  const inv  = nodes.find((n) => n.type === 'inverter')
+  const bat  = nodes.find((n) => n.type === 'battery')
+  const arrs = nodes.filter((n) => n.type === 'solarArray')
+  const grid = nodes.find((n) => n.type === 'grid')
+
+  const totalKwp   = arrs.reduce((s, a) => s + (((a.data as Record<string,unknown>).totalKwp as number) || 0), 0)
+  const totalPanels = arrs.reduce((s, a) => s + (((a.data as Record<string,unknown>).panelCount as number) || 0), 0)
+
+  type QD = import('./render-quote').QuoteData
+  const patch: Partial<QD> = {}
+  if (inv)  {
+    const d = inv.data  as Record<string, unknown>
+    if (d.model !== undefined) patch.inverterModel = String(d.model || d.inverterModel || '')
+    if (d.kw    !== undefined) patch.inverterKw    = String(d.kw ?? '')
+  }
+  if (bat) {
+    const d = bat.data as Record<string, unknown>
+    if (d.model !== undefined) patch.batteryModel = String(d.model || '')
+    if (d.qty   !== undefined) patch.batteryQty   = String(d.qty   ?? '')
+    if (d.totalKwh !== undefined) patch.batteryKwh = String(d.totalKwh ?? '')
+  }
+  if (totalPanels > 0) {
+    patch.panelCount = String(totalPanels)
+    patch.totalKwp   = String(totalKwp > 0 ? +totalKwp.toFixed(2) : '')
+  }
+  if (arrs[0]) {
+    const d = arrs[0].data as Record<string, unknown>
+    if (d.panelModel !== undefined) patch.panelModel = String(d.panelModel || '')
+  }
+  if (grid) {
+    const d = grid.data as Record<string, unknown>
+    if (d.utility !== undefined) patch.municipality = String(d.utility || '')
+  }
+  return patch
 }
 
 export function getDefaultNodeData(type: string): Record<string, unknown> {

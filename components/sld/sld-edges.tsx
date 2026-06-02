@@ -4,6 +4,8 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   getSmoothStepPath,
+  getBezierPath,
+  getStraightPath,
   type EdgeProps,
 } from '@xyflow/react'
 import type { CableEdgeData } from '@/lib/solar/sld-builder'
@@ -16,6 +18,13 @@ const CIRCUIT_COLOR: Record<string, string> = {
   earth:   CLR.earth,
 }
 
+// Stroke styles by circuit type
+const STROKE_DASH: Record<string, string | undefined> = {
+  earth: '6 3',
+}
+
+export type EdgeRoutingType = 'smoothstep' | 'bezier' | 'straight'
+
 export function CableEdge({
   id,
   sourceX, sourceY,
@@ -24,22 +33,40 @@ export function CableEdge({
   data,
   label,
 }: EdgeProps) {
-  const d = data as CableEdgeData | undefined
+  const d = data as (CableEdgeData & { routingType?: EdgeRoutingType }) | undefined
   const color = CIRCUIT_COLOR[d?.circuitType ?? 'ac']
+  const strokeDash = STROKE_DASH[d?.circuitType ?? '']
+  const routing: EdgeRoutingType = d?.routingType ?? 'smoothstep'
 
-  const [path, labelX, labelY] = getSmoothStepPath({
-    sourceX, sourceY, sourcePosition,
-    targetX, targetY, targetPosition,
-    borderRadius: 12,
-  })
+  let path: string
+  let labelX: number
+  let labelY: number
+
+  if (routing === 'bezier') {
+    ;[path, labelX, labelY] = getBezierPath({
+      sourceX, sourceY, sourcePosition,
+      targetX, targetY, targetPosition,
+    })
+  } else if (routing === 'straight') {
+    ;[path, labelX, labelY] = getStraightPath({ sourceX, sourceY, targetX, targetY })
+  } else {
+    ;[path, labelX, labelY] = getSmoothStepPath({
+      sourceX, sourceY, sourcePosition,
+      targetX, targetY, targetPosition,
+      borderRadius: 12,
+    })
+  }
 
   return (
     <>
       <BaseEdge
         id={id}
         path={path}
-        style={{ stroke: color, strokeWidth: 2.5 }}
-        markerEnd={`url(#rf__arrowclosed-${color.replace('#', '')})`}
+        style={{
+          stroke: color,
+          strokeWidth: 2.5,
+          strokeDasharray: strokeDash,
+        }}
       />
       {label && (
         <EdgeLabelRenderer>

@@ -495,6 +495,13 @@ function EdgeEditor({
           options={['dc', 'ac', 'battery', 'earth']}
         />
       </FieldRow>
+      <FieldRow label="Routing">
+        <SInput
+          value={String(d.routingType ?? 'smoothstep')}
+          onChange={(v) => set('routingType', v)}
+          options={['smoothstep', 'bezier', 'straight']}
+        />
+      </FieldRow>
 
       {/* Conductors */}
       <SectionHead title="Conductors" />
@@ -547,6 +554,8 @@ export interface SLDPanelProps {
   onDeleteEdge: (id: string) => void
   onAddNode: (type: string) => void
   onDeselect: () => void
+  connectMode?: boolean
+  onToggleConnect?: () => void
 }
 
 export function SLDPanel({
@@ -558,9 +567,11 @@ export function SLDPanel({
   onDeleteEdge,
   onAddNode,
   onDeselect,
+  connectMode = false,
+  onToggleConnect,
 }: SLDPanelProps) {
   const hasSelection = !!(selectedNode ?? selectedEdge)
-  const title = selectedNode ? 'Component' : selectedEdge ? 'Cable' : 'Diagram'
+  const title = selectedNode ? 'Component' : selectedEdge ? 'Cable' : connectMode ? 'Connect Mode' : 'Diagram'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -605,12 +616,38 @@ export function SLDPanel({
         {!hasSelection && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {/* Empty-state hint */}
-            <div style={{ textAlign: 'center', padding: '20px 0', color: '#9ca3af' }}>
-              <MousePointerClick size={22} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
-              <p style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>Click to configure</p>
-              <p style={{ fontSize: 11 }}>Select any block or cable to edit its parameters.</p>
-            </div>
+            {/* Connect mode banner */}
+            {connectMode ? (
+              <div style={{
+                background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8,
+                padding: '12px', display: 'flex', flexDirection: 'column', gap: 8,
+              }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: '#1d4ed8', margin: 0 }}>
+                  Connect Mode Active
+                </p>
+                <p style={{ fontSize: 11, color: '#3b82f6', margin: 0, lineHeight: 1.5 }}>
+                  Drag from any coloured handle dot on a component to a handle on another component to draw a cable.
+                </p>
+                <button
+                  type="button"
+                  onClick={onToggleConnect}
+                  style={{
+                    fontSize: 11, fontWeight: 600, color: '#1d4ed8',
+                    background: '#dbeafe', border: '1px solid #bfdbfe', borderRadius: 6,
+                    padding: '4px 8px', cursor: 'pointer', alignSelf: 'flex-start',
+                  }}
+                >
+                  Exit Connect Mode
+                </button>
+              </div>
+            ) : (
+              /* Empty-state hint */
+              <div style={{ textAlign: 'center', padding: '20px 0', color: '#9ca3af' }}>
+                <MousePointerClick size={22} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+                <p style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>Click to configure</p>
+                <p style={{ fontSize: 11 }}>Select any block or cable to edit its parameters.</p>
+              </div>
+            )}
 
             {/* Add component */}
             <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 14 }}>

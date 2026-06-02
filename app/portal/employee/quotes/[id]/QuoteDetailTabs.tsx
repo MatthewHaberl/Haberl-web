@@ -297,6 +297,7 @@ export function QuoteDetailTabs({ req, isAdmin, photoUrls, nextQuoteNum }: Props
                 quoteData={diagramData}
                 gridSupply={req.grid_supply as string | undefined}
                 height={700}
+                onSldChange={isAdmin ? setLiveQuoteData : undefined}
               />
             </>
           ) : (
