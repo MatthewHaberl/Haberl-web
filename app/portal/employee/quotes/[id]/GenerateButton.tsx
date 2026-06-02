@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/client'
@@ -166,6 +166,14 @@ export function GenerateButton({
     setSaved(false)
     tryParse(text)
   }
+
+  // ── Auto-render existing raw JSON on mount ───────────────────────────────────
+  // Re-runs the renderer on page load so saved quotes with stale HTML are always
+  // shown with the current template (user just needs to Save to persist the update).
+  useEffect(() => {
+    if (pasted) tryParse(pasted)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Copy prompt ──────────────────────────────────────────────────────────────
   async function handleCopyPrompt() {
