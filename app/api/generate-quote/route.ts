@@ -108,6 +108,28 @@ function buildSurveyMessage(s: Record<string, unknown>): string {
 Quote ONLY the new/replacement components. State what is retained vs replaced.
 ` : ''
 
+  const hasSpecificEquipment = !!(v('inverter_brand', 'inverterBrand') || v('battery_brand', 'batteryBrand') || v('panel_brand', 'panelBrand'))
+  const includeCompetitive = !!(s.include_competitive)
+
+  const MULTI_OPTION_FORMAT = `Output a single JSON object in a \`\`\`json code block using the multi-option format:
+{ "type": "multi-option", "quoteNumber": "...", "dateIssued": "...", "dateExpires": "...", "customerName": "...", "municipality": "...", "customerPhone": "...", "customerEmail": "...", "siteAddress": "...", "monthlyUsageKwh": "...", "comparisonTable": [...], "options": [{ "tier": "premium", "tierLabel": "★★★ Premium", ... }, { "tier": "recommended", "tierLabel": "★★☆ Recommended", "recommended": true, ... }, { "tier": "budget", "tierLabel": "★☆☆ Budget", ... }] }
+Each option carries all QuoteData fields. No other text.`
+
+  let outputInstruction: string
+  if (!hasSpecificEquipment) {
+    outputInstruction = `Generate the DEFAULT THREE-OPTION proposal (Premium ★★★ / Recommended ★★☆ / Budget ★☆☆).
+${MULTI_OPTION_FORMAT}`
+  } else if (includeCompetitive) {
+    outputInstruction = `The customer has specified equipment preferences. Generate a THREE-OPTION proposal where:
+- Recommended (★★☆): Use the customer's preferred brands exactly.
+- Premium (★★★): Best premium alternative from your catalogue (ignore their brand preference for this tier).
+- Budget (★☆☆): Most cost-effective alternative from your catalogue (ignore their brand preference for this tier).
+${MULTI_OPTION_FORMAT}`
+  } else {
+    outputInstruction = `The customer has specified equipment preferences — generate a SINGLE-OPTION quote matching those preferences exactly.
+Output a single JSON object in a \`\`\`json code block using the single-option format (camelCase fields: quoteNumber, customerName, inverterModel, panelCost, depositItems, monthlyGenTable, twentyYearTable, etc.). No other text.`
+  }
+
   return `Today's date: ${today}${quoteNum ? `\nUse quote number: ${quoteNum}` : ''}
 
 Please generate a complete solar ${isAmendment ? 'amendment/upgrade' : 'installation'} quote based on the following site survey:
@@ -144,5 +166,5 @@ ${v('notes') || 'None'}
 
 ---
 
-Output a single JSON object in a \`\`\`json code block using the web app JSON format (camelCase fields: quoteNumber, customerName, inverterModel, panelCost, depositItems, monthlyGenTable, twentyYearTable, etc.). No other text.`
+${outputInstruction}`
 }

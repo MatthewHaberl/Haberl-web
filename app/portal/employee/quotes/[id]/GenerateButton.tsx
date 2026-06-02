@@ -12,7 +12,7 @@ const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 // ── Prompt builder ─────────────────────────────────────────────────────────────
-function buildPrompt(r: Record<string, unknown>, nextQuoteNumber: string): string {
+function buildPrompt(r: Record<string, unknown>, nextQuoteNumber: string, includeCompetitive: boolean): string {
   const today = new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' })
   const isAmendment = r.is_amendment as boolean
 
@@ -45,6 +45,30 @@ function buildPrompt(r: Record<string, unknown>, nextQuoteNumber: string): strin
 
 Quote ONLY the new/replacement components. Clearly list what is being retained vs replaced.
 ` : ''
+
+  const hasSpecificEquipment = !!(r.inverter_brand || r.battery_brand || r.panel_brand)
+
+  let outputInstruction: string
+  if (!hasSpecificEquipment) {
+    // No brand preference — default 3-tier
+    outputInstruction = `Generate the DEFAULT THREE-OPTION proposal (Premium ★★★ / Recommended ★★☆ / Budget ★☆☆).
+Output a single JSON object in a \`\`\`json code block using the multi-option format:
+{ "type": "multi-option", "quoteNumber": "...", "dateIssued": "...", "dateExpires": "...", "customerName": "...", "municipality": "...", "customerPhone": "...", "customerEmail": "...", "siteAddress": "...", "monthlyUsageKwh": "...", "comparisonTable": [...], "options": [{ "tier": "premium", "tierLabel": "★★★ Premium", ... }, { "tier": "recommended", "tierLabel": "★★☆ Recommended", "recommended": true, ... }, { "tier": "budget", "tierLabel": "★☆☆ Budget", ... }] }
+Each option carries all QuoteData fields. No other text.`
+  } else if (includeCompetitive) {
+    // Brand specified + competitive quotes requested — anchor Recommended to their brand
+    outputInstruction = `The customer has specified equipment preferences. Generate a THREE-OPTION proposal where:
+- Recommended (★★☆): Use the customer's preferred brands exactly.
+- Premium (★★★): Best premium alternative from your catalogue (ignore their brand preference for this tier).
+- Budget (★☆☆): Most cost-effective alternative from your catalogue (ignore their brand preference for this tier).
+Output a single JSON object in a \`\`\`json code block using the multi-option format:
+{ "type": "multi-option", "quoteNumber": "...", "dateIssued": "...", "dateExpires": "...", "customerName": "...", "municipality": "...", "customerPhone": "...", "customerEmail": "...", "siteAddress": "...", "monthlyUsageKwh": "...", "comparisonTable": [...], "options": [{ "tier": "premium", "tierLabel": "★★★ Premium", ... }, { "tier": "recommended", "tierLabel": "★★☆ Recommended", "recommended": true, ... }, { "tier": "budget", "tierLabel": "★☆☆ Budget", ... }] }
+Each option carries all QuoteData fields. No other text.`
+  } else {
+    // Brand specified, single option
+    outputInstruction = `The customer has specified equipment preferences — generate a SINGLE-OPTION quote matching those preferences exactly.
+Output a single JSON object in a \`\`\`json code block using the single-option format (camelCase fields: quoteNumber, customerName, inverterModel, panelCost, depositItems, monthlyGenTable, twentyYearTable, etc.). No other text.`
+  }
 
   return `Today's date: ${today}
 Use quote number: ${nextQuoteNumber}
@@ -84,7 +108,7 @@ ${photosBlock}
 
 ---
 
-Output a single JSON object in a \`\`\`json code block using the web app JSON format from your instructions (camelCase fields: quoteNumber, customerName, inverterModel, panelCost, depositItems, monthlyGenTable, twentyYearTable, etc.). No other text.`
+${outputInstruction}`
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -125,6 +149,10 @@ export function GenerateButton({
 
   // Quote number (editable)
   const [quoteNumber, setQuoteNumber] = useState(existingQuoteNumber ?? nextQuoteNumber)
+
+  // Competitive quotes toggle (only relevant when a brand preference is set)
+  const hasSpecificEquipment = !!(request.inverter_brand || request.battery_brand || request.panel_brand)
+  const [includeCompetitive, setIncludeCompetitive] = useState(false)
 
   // UI state
   const [copied,     setCopied]     = useState(false)
@@ -193,7 +221,7 @@ export function GenerateButton({
       const res = await fetch('/api/generate-quote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...request, next_quote_number: quoteNumber }),
+        body: JSON.stringify({ ...request, next_quote_number: quoteNumber, include_competitive: includeCompetitive }),
       })
 
       if (!res.ok) {
@@ -222,7 +250,7 @@ export function GenerateButton({
 
   // ── Copy prompt ──────────────────────────────────────────────────────────────
   async function handleCopyPrompt() {
-    await navigator.clipboard.writeText(buildPrompt(request, quoteNumber))
+    await navigator.clipboard.writeText(buildPrompt(request, quoteNumber, includeCompetitive))
     setCopied(true)
     setTimeout(() => setCopied(false), 2500)
   }
@@ -312,6 +340,24 @@ export function GenerateButton({
             : <><Zap className="h-4 w-4" />Copy Prompt</>}
         </Button>
       </div>
+
+      {/* Competitive quotes toggle — only shown when a brand preference is set */}
+      {hasSpecificEquipment && (
+        <label className="flex items-center gap-2.5 cursor-pointer w-fit">
+          <input
+            type="checkbox"
+            checked={includeCompetitive}
+            onChange={(e) => setIncludeCompetitive(e.target.checked)}
+            className="h-4 w-4 rounded border-border accent-accent"
+          />
+          <span className="text-sm text-foreground">
+            Include competitive quotes
+          </span>
+          <span className="text-xs text-muted-foreground">
+            (customer&apos;s brand as Recommended, AI picks Premium &amp; Budget)
+          </span>
+        </label>
+      )}
 
       {genError && (
         <p className="text-xs text-destructive bg-destructive/10 rounded px-3 py-2">
