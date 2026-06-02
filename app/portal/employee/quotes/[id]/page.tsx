@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { ArrowLeft, Clock, User } from 'lucide-react'
 import { QuoteDetailTabs } from './QuoteDetailTabs'
+import { QuoteStatusBar } from './QuoteStatusBar'
 import type { QuoteRequestStatus } from '@/types/database'
 
 const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success'> = {
@@ -84,9 +85,17 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             </span>
           </div>
         </div>
-        <Badge variant={statusVariant[req.status as QuoteRequestStatus]} className="mt-1 shrink-0">
-          {req.status}
-        </Badge>
+        {/* Status bar — admin only; shows badge + action buttons */}
+        {isAdmin ? (
+          <QuoteStatusBar
+            requestId={req.id}
+            initialStatus={req.status as QuoteRequestStatus}
+          />
+        ) : (
+          <Badge variant={statusVariant[req.status as QuoteRequestStatus]} className="mt-1 shrink-0">
+            {req.status}
+          </Badge>
+        )}
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────────── */}

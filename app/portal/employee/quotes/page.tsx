@@ -95,7 +95,12 @@ export default async function QuotesPage() {
                       <CardContent className="pt-4 pb-4">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="font-semibold text-sm truncate">{r.customer_name}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-sm truncate">{r.customer_name}</p>
+                              {r.quote_number && (
+                                <span className="text-xs font-mono text-muted-foreground">{r.quote_number}</span>
+                              )}
+                            </div>
                             <p className="text-xs text-muted-foreground truncate">
                               {r.address || 'No address'} · {r.system_type} · {r.monthly_kwh} kWh/mo
                             </p>
@@ -136,7 +141,17 @@ export default async function QuotesPage() {
                       <CardContent className="pt-4 pb-4">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="font-semibold text-sm truncate">{r.customer_name}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-sm truncate">{r.customer_name}</p>
+                              {r.quote_number && (
+                                <span className="text-xs font-mono text-muted-foreground">{r.quote_number}</span>
+                              )}
+                              {r.total_amount != null && (
+                                <span className="text-xs font-semibold text-foreground">
+                                  R{(r.total_amount / 100).toLocaleString('en-ZA')}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-muted-foreground truncate">
                               {r.address || 'No address'} · {r.system_type}
                             </p>
