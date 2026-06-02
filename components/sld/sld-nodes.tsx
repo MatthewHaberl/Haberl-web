@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react'
 import { Sun, Battery, Zap, Grid2x2, CircuitBoard, PlugZap, Combine, Box } from 'lucide-react'
 
 // ── Brand / circuit colours ───────────────────────────────────────────────────
@@ -269,25 +269,37 @@ export function SimpleBlockNode({ data, selected, type }: NodeProps) {
 export function TextNoteNode({ data, selected }: NodeProps) {
   const d = data as { text: string; bold?: boolean }
   return (
-    <div
-      style={{
-        minWidth: 160,
-        maxWidth: 280,
-        background: '#fefce8',
-        border: `1.5px dashed ${selected ? '#ca8a04' : '#d97706'}`,
-        borderRadius: 6,
-        padding: '6px 10px',
-        boxShadow: selected ? '0 0 0 3px rgba(234,179,8,0.25)' : undefined,
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: 10,
-        color: '#78350f',
-        whiteSpace: 'pre-wrap',
-        lineHeight: 1.5,
-        fontWeight: d.bold ? 700 : 400,
-      }}
-    >
-      {d.text || 'Double-click to edit'}
-    </div>
+    <>
+      <NodeResizer
+        isVisible={selected}
+        minWidth={140}
+        minHeight={40}
+        handleStyle={{ width: 8, height: 8, borderRadius: 2, background: '#d97706', border: '1px solid #fff' }}
+        lineStyle={{ borderColor: '#d97706', borderWidth: 1 }}
+      />
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          minWidth: 160,
+          background: '#fefce8',
+          border: `1.5px dashed ${selected ? '#ca8a04' : '#d97706'}`,
+          borderRadius: 6,
+          padding: '6px 10px',
+          boxShadow: selected ? '0 0 0 3px rgba(234,179,8,0.25)' : undefined,
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: 10,
+          color: '#78350f',
+          whiteSpace: 'pre-wrap',
+          lineHeight: 1.5,
+          fontWeight: d.bold ? 700 : 400,
+          overflow: 'hidden',
+          boxSizing: 'border-box',
+        }}
+      >
+        {d.text || 'Click to select, then edit in panel →'}
+      </div>
+    </>
   )
 }
 
