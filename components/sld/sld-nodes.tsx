@@ -2,22 +2,33 @@
 
 import React from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { Sun, Battery, Zap, Grid2x2, CircuitBoard, PlugZap, Combine } from 'lucide-react'
+import { Sun, Battery, Zap, Grid2x2, CircuitBoard, PlugZap, Combine, Box } from 'lucide-react'
 
 // ── Brand / circuit colours ───────────────────────────────────────────────────
 export const CLR = {
-  dc:      '#f97316',  // orange  — PV / DC circuits
+  dc:      '#f97316',  // orange  — PV / DC
   bat:     '#16a34a',  // green   — battery
-  ac:      '#2563eb',  // blue    — AC circuits
+  ac:      '#2563eb',  // blue    — AC
   earth:   '#65a30d',  // lime    — earthing
-  grid:    '#7c3aed',  // purple  — grid supply
-  inv:     '#1e3a5f',  // navy    — inverter (brand primary)
+  grid:    '#7c3aed',  // purple  — grid
+  inv:     '#1e3a5f',  // navy    — inverter
+}
+
+// Color for simple-block node types
+export const SIMPLE_BLOCK_COLOR: Record<string, string> = {
+  dcIsolator:  CLR.dc,
+  acIsolator:  CLR.ac,
+  spd:         CLR.dc,
+  generator:   '#6b7280',
+  changeover:  '#6b7280',
+  meter:       CLR.ac,
+  evCharger:   CLR.bat,
+  custom:      '#6b7280',
 }
 
 // ── Shared handle style ───────────────────────────────────────────────────────
 const H = (color: string, extra?: React.CSSProperties): React.CSSProperties => ({
-  width: 10,
-  height: 10,
+  width: 10, height: 10,
   background: color,
   border: '2px solid #fff',
   borderRadius: '50%',
@@ -30,21 +41,25 @@ interface CardProps {
   Icon: React.ElementType
   title: string
   children: React.ReactNode
+  selected?: boolean
 }
 
-function NodeCard({ color, Icon, title, children }: CardProps) {
+function NodeCard({ color, Icon, title, children, selected }: CardProps) {
   return (
     <div
       style={{
         minWidth: 190,
         maxWidth: 220,
         background: '#fff',
-        border: `2px solid ${color}`,
+        border: `2px solid ${selected ? color : color + 'cc'}`,
         borderRadius: 8,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+        boxShadow: selected
+          ? `0 0 0 3px ${color}40, 0 2px 8px rgba(0,0,0,0.12)`
+          : '0 2px 8px rgba(0,0,0,0.10)',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         fontSize: 11,
         overflow: 'hidden',
+        transition: 'box-shadow 0.15s',
       }}
     >
       <div
@@ -81,7 +96,7 @@ function Row({ label, value }: { label: string; value?: string | number | null }
 }
 
 // ── Solar Array ───────────────────────────────────────────────────────────────
-export function SolarArrayNode({ data }: NodeProps) {
+export function SolarArrayNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string; panelCount: number; panelModel: string
     wpPerPanel: number; totalKwp: number; config: string
@@ -89,7 +104,7 @@ export function SolarArrayNode({ data }: NodeProps) {
   const shortModel = d.panelModel ? d.panelModel.split(' ').slice(0, 3).join(' ') : ''
 
   return (
-    <NodeCard color={CLR.dc} Icon={Sun} title={d.label || 'Solar Array'}>
+    <NodeCard color={CLR.dc} Icon={Sun} title={d.label || 'Solar Array'} selected={selected}>
       {d.panelCount > 0 && <Row label="Panels" value={`${d.panelCount} × ${d.wpPerPanel}W`} />}
       {shortModel && <Row label="Model" value={shortModel} />}
       {d.totalKwp > 0 && <Row label="Array" value={`${d.totalKwp} kWp`} />}
@@ -100,7 +115,7 @@ export function SolarArrayNode({ data }: NodeProps) {
 }
 
 // ── DC Combiner ───────────────────────────────────────────────────────────────
-export function CombinerNode({ data }: NodeProps) {
+export function CombinerNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string; stringCount: number; fuseRating: string
     hasSpd: boolean; config: string
@@ -108,7 +123,7 @@ export function CombinerNode({ data }: NodeProps) {
   const n = Math.max(1, d.stringCount)
 
   return (
-    <NodeCard color={CLR.dc} Icon={Combine} title={d.label}>
+    <NodeCard color={CLR.dc} Icon={Combine} title={d.label} selected={selected}>
       {Array.from({ length: n }, (_, i) => {
         const pct = n === 1 ? 50 : 10 + (i / (n - 1)) * 80
         return (
@@ -130,7 +145,7 @@ export function CombinerNode({ data }: NodeProps) {
 }
 
 // ── Inverter ──────────────────────────────────────────────────────────────────
-export function InverterNode({ data }: NodeProps) {
+export function InverterNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string; model: string; kw: number
     phases: number; hasBattery: boolean; hasGenerator: boolean
@@ -138,31 +153,26 @@ export function InverterNode({ data }: NodeProps) {
   const shortModel = d.model ? d.model.split(' ').slice(0, 4).join(' ') : ''
 
   return (
-    <NodeCard color={CLR.inv} Icon={Zap} title="Inverter / Charger">
-      {/* DC PV in — top center */}
-      <Handle type="target" id="pv-in" position={Position.Top} style={H(CLR.dc)} />
-      {/* Battery — left */}
-      <Handle type="target" id="bat-in" position={Position.Left} style={H(CLR.bat, { top: '45%' })} />
-      {/* Grid AC in — right top */}
-      <Handle type="target" id="grid-in" position={Position.Right} style={H(CLR.ac, { top: '35%' })} />
-      {/* Generator in — right lower (optional) */}
+    <NodeCard color={CLR.inv} Icon={Zap} title="Inverter / Charger" selected={selected}>
+      <Handle type="target" id="pv-in"   position={Position.Top}   style={H(CLR.dc)} />
+      <Handle type="target" id="bat-in"  position={Position.Left}  style={H(CLR.bat, { top: '45%' })} />
+      <Handle type="target" id="grid-in" position={Position.Right} style={H(CLR.ac,  { top: '35%' })} />
       {d.hasGenerator && (
         <Handle type="target" id="gen-in" position={Position.Right} style={H(CLR.ac, { top: '65%' })} />
       )}
-      {/* AC out — bottom center */}
-      <Handle type="source" id="ac-out" position={Position.Bottom} style={H(CLR.ac)} />
+      <Handle type="source" id="ac-out"  position={Position.Bottom} style={H(CLR.ac)} />
 
       {shortModel && <Row label="Model" value={shortModel} />}
       {d.kw > 0 && <Row label="Power" value={`${d.kw} kW`} />}
       <Row label="Phase" value={`${d.phases}Ø`} />
-      {d.hasBattery && <Row label="Battery" value="Port active" />}
+      {d.hasBattery && <Row label="Battery port" value="Active" />}
       <Row label="EPS" value="Backup output" />
     </NodeCard>
   )
 }
 
 // ── Battery Bank ──────────────────────────────────────────────────────────────
-export function BatteryNode({ data }: NodeProps) {
+export function BatteryNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string; model: string; qty: number
     totalKwh: number; chemistry: string
@@ -170,8 +180,7 @@ export function BatteryNode({ data }: NodeProps) {
   const shortModel = d.model ? d.model.split(' ').slice(0, 3).join(' ') : ''
 
   return (
-    <NodeCard color={CLR.bat} Icon={Battery} title={d.label || 'Battery Bank'}>
-      {/* Output — right (to inverter) */}
+    <NodeCard color={CLR.bat} Icon={Battery} title={d.label || 'Battery Bank'} selected={selected}>
       <Handle type="source" id="bat-out" position={Position.Right} style={H(CLR.bat)} />
       {shortModel && <Row label="Model" value={shortModel} />}
       {d.qty > 0 && <Row label="Units" value={d.qty} />}
@@ -182,15 +191,14 @@ export function BatteryNode({ data }: NodeProps) {
 }
 
 // ── Grid Supply ───────────────────────────────────────────────────────────────
-export function GridNode({ data }: NodeProps) {
+export function GridNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string; utility: string; voltage: number
     phases: number; breakerA: number
   }
 
   return (
-    <NodeCard color={CLR.grid} Icon={PlugZap} title={d.label || 'Grid Supply'}>
-      {/* Output — left (to inverter) */}
+    <NodeCard color={CLR.grid} Icon={PlugZap} title={d.label || 'Grid Supply'} selected={selected}>
       <Handle type="source" id="ac-out" position={Position.Left} style={H(CLR.ac)} />
       {d.utility && <Row label="Utility" value={d.utility} />}
       <Row label="Voltage" value={`${d.voltage}V`} />
@@ -201,16 +209,14 @@ export function GridNode({ data }: NodeProps) {
 }
 
 // ── Distribution Board ────────────────────────────────────────────────────────
-export function DBBoardNode({ data }: NodeProps) {
+export function DBBoardNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string; mainBreakerA: number; rccbA: number; phases: number
   }
 
   return (
-    <NodeCard color={CLR.ac} Icon={CircuitBoard} title={d.label || 'Distribution Board'}>
-      {/* AC in — top */}
-      <Handle type="target" id="ac-in" position={Position.Top} style={H(CLR.ac)} />
-      {/* Earth bond — right */}
+    <NodeCard color={CLR.ac} Icon={CircuitBoard} title={d.label || 'Distribution Board'} selected={selected}>
+      <Handle type="target" id="ac-in"    position={Position.Top}   style={H(CLR.ac)} />
       <Handle type="source" id="earth-out" position={Position.Right} style={H(CLR.earth, { top: '50%' })} />
       {d.mainBreakerA > 0 && <Row label="Main CB" value={`${d.mainBreakerA}A DP`} />}
       {d.rccbA > 0 && <Row label="RCCB" value={`${d.rccbA} mA`} />}
@@ -220,12 +226,11 @@ export function DBBoardNode({ data }: NodeProps) {
 }
 
 // ── Earthing System ───────────────────────────────────────────────────────────
-export function EarthingNode({ data }: NodeProps) {
+export function EarthingNode({ data, selected }: NodeProps) {
   const d = data as { label: string; spikeCount: number; spec: string }
 
   return (
-    <NodeCard color={CLR.earth} Icon={Grid2x2} title={d.label || 'Earthing'}>
-      {/* Bond in — left */}
+    <NodeCard color={CLR.earth} Icon={Grid2x2} title={d.label || 'Earthing'} selected={selected}>
       <Handle type="target" id="earth-in" position={Position.Left} style={H(CLR.earth)} />
       {d.spikeCount > 0 && <Row label="Spikes" value={`${d.spikeCount} × 1200mm`} />}
       {d.spec && <Row label="Conductor" value={d.spec} />}
@@ -234,13 +239,47 @@ export function EarthingNode({ data }: NodeProps) {
   )
 }
 
+// ── Simple Block (isolators, SPD, generator, meter, EV, custom) ───────────────
+export function SimpleBlockNode({ data, selected, type }: NodeProps) {
+  const d = data as {
+    label: string; model?: string; rating?: string
+    kva?: number; kw?: number; fuelType?: string
+    color?: string
+  }
+  const color = d.color ?? SIMPLE_BLOCK_COLOR[type ?? 'custom'] ?? '#6b7280'
+
+  return (
+    <NodeCard color={color} Icon={Box} title={d.label || 'Component'} selected={selected}>
+      <Handle type="target" id="in"  position={Position.Top}    style={H(color)} />
+      <Handle type="source" id="out" position={Position.Bottom} style={H(color)} />
+      {/* Left + right for parallel connections */}
+      <Handle type="target" id="in-l"  position={Position.Left}  style={H(color, { top: '50%', opacity: 0.4 })} />
+      <Handle type="source" id="out-r" position={Position.Right} style={H(color, { top: '50%', opacity: 0.4 })} />
+      {d.model   && <Row label="Model"   value={d.model} />}
+      {d.rating  && <Row label="Rating"  value={d.rating} />}
+      {d.kva     && <Row label="Rating"  value={`${d.kva} kVA`} />}
+      {d.kw      && <Row label="Power"   value={`${d.kw} kW`} />}
+      {d.fuelType && <Row label="Fuel"   value={d.fuelType} />}
+    </NodeCard>
+  )
+}
+
 // ── Node type registry ────────────────────────────────────────────────────────
 export const nodeTypes = {
-  solarArray: SolarArrayNode,
-  combiner:   CombinerNode,
-  inverter:   InverterNode,
-  battery:    BatteryNode,
-  grid:       GridNode,
-  dbBoard:    DBBoardNode,
-  earthing:   EarthingNode,
+  solarArray:  SolarArrayNode,
+  combiner:    CombinerNode,
+  inverter:    InverterNode,
+  battery:     BatteryNode,
+  grid:        GridNode,
+  dbBoard:     DBBoardNode,
+  earthing:    EarthingNode,
+  // Simple blocks
+  dcIsolator:  SimpleBlockNode,
+  acIsolator:  SimpleBlockNode,
+  spd:         SimpleBlockNode,
+  generator:   SimpleBlockNode,
+  changeover:  SimpleBlockNode,
+  meter:       SimpleBlockNode,
+  evCharger:   SimpleBlockNode,
+  custom:      SimpleBlockNode,
 }

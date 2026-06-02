@@ -268,3 +268,56 @@ export function buildSLDFromQuote(
 
   return { nodes, edges }
 }
+
+// ── Edge label builder (used when panel edits data) ───────────────────────────
+
+export function buildEdgeLabel(data: CableEdgeData): string {
+  const cableType    = (data.cableType    as string | undefined) ?? data.spec?.split(' ')[0] ?? 'Cable'
+  const crossSection = (data.crossSection as string | undefined) ?? data.spec?.match(/\d+mm²/)?.[0] ?? ''
+
+  const conds = data.conductors as Record<string, boolean> | undefined
+  let condStr: string
+  if (data.circuitType === 'dc' || data.circuitType === 'battery') {
+    condStr = '+/−' + (conds?.earth !== false ? '/E' : '')
+  } else if (data.circuitType === 'earth') {
+    condStr = 'E'
+  } else {
+    condStr = conds?.l1 !== false ? 'L1/L2/L3/N/E' : 'L/N/E'
+  }
+
+  const segments = data.segments as Array<{ lengthM: number }> | undefined
+  const totalLength = segments?.length
+    ? segments.reduce((sum, s) => sum + (s.lengthM || 0), 0)
+    : (data.lengthM ?? 0)
+
+  const spec = crossSection ? `${cableType} ${crossSection}` : cableType
+  return `${spec} · ${condStr} · ${totalLength}m`
+}
+
+// ── Default data for user-added node types ────────────────────────────────────
+
+const BLOCK_COLORS: Record<string, string> = {
+  dcIsolator: '#f97316',
+  acIsolator: '#2563eb',
+  spd:        '#f97316',
+  generator:  '#6b7280',
+  changeover: '#6b7280',
+  meter:      '#2563eb',
+  evCharger:  '#16a34a',
+  custom:     '#6b7280',
+}
+
+export function getDefaultNodeData(type: string): Record<string, unknown> {
+  const color = BLOCK_COLORS[type] ?? '#6b7280'
+  const base: Record<string, Record<string, unknown>> = {
+    dcIsolator:  { label: 'DC Isolator',          rating: '1000V DC 32A', color },
+    acIsolator:  { label: 'AC Isolator',           rating: '63A 230V',    color },
+    spd:         { label: 'Surge Protection (SPD)',rating: 'Type 2 20kA', color },
+    generator:   { label: 'Generator',             kva: 5,  fuelType: 'Diesel', color },
+    changeover:  { label: 'Changeover Switch',     rating: '63A DP',      color },
+    meter:       { label: 'Energy Meter',          model: '',             color },
+    evCharger:   { label: 'EV Charger',            kw: 7.4,              color },
+    custom:      { label: 'Custom Block',          model: '',             color },
+  }
+  return base[type] ?? { label: type, color }
+}

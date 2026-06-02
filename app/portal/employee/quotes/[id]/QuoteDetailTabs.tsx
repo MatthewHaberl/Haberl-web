@@ -80,7 +80,7 @@ export function QuoteDetailTabs({ req, isAdmin, photoUrls, nextQuoteNum }: Props
     <div className="flex flex-col gap-0">
 
       {/* Tab bar */}
-      <div className="flex border-b border-border overflow-x-auto shrink-0">
+      <div className="flex border-b border-border shrink-0">
         {tabs.map((tab) => {
           const Icon = tab.icon
           const active = activeTab === tab.id
