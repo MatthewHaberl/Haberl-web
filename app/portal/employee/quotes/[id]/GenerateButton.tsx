@@ -125,9 +125,10 @@ export function GenerateButton({
   const [quoteNumber, setQuoteNumber] = useState(existingQuoteNumber ?? nextQuoteNumber)
 
   // UI state
-  const [copied,   setCopied]   = useState(false)
-  const [saving,   setSaving]   = useState(false)
-  const [saved,    setSaved]    = useState(!!existingHtml || !!existingQuote)
+  const [copied,    setCopied]    = useState(false)
+  const [saving,    setSaving]    = useState(false)
+  const [saved,     setSaved]     = useState(!!existingHtml || !!existingQuote)
+  const [saveError, setSaveError] = useState('')
 
   // ── Parse JSON from pasted text ──────────────────────────────────────────────
   const tryParse = useCallback((text: string) => {
@@ -136,7 +137,13 @@ export function GenerateButton({
     if (parsed) {
       setQuoteData(parsed)
       setParseError('')
-      setRenderedHtml(renderQuote(parsed))
+      try {
+        setRenderedHtml(renderQuote(parsed))
+      } catch (err) {
+        setParseError(`Render error: ${err instanceof Error ? err.message : String(err)}`)
+        setRenderedHtml('')
+        return
+      }
       // For multi-option: use recommended option's deposit items as default
       const depositSrc = isMultiOption(parsed)
         ? (parsed as MultiOptionQuoteData).options.find(o => o.tier === 'recommended') ?? (parsed as MultiOptionQuoteData).options[0]
@@ -171,6 +178,7 @@ export function GenerateButton({
   async function handleSave() {
     if (!pasted.trim() && !renderedHtml) return
     setSaving(true)
+    setSaveError('')
     try {
       const supabase = createClient()
 
@@ -191,7 +199,7 @@ export function GenerateButton({
 
       const totalAmountCents = depositSource ? Math.round(depositSource.quoteTotalRands * 100) : null
 
-      await supabase.from('quote_requests').update({
+      const { error } = await supabase.from('quote_requests').update({
         // v2 fields (structured)
         quote_html:     renderedHtml || null,
         quote_number:   quoteNumber  || null,
@@ -205,7 +213,10 @@ export function GenerateButton({
         status:          'generated',
       }).eq('id', requestId)
 
+      if (error) throw error
       setSaved(true)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed — please try again')
     } finally {
       setSaving(false)
     }
@@ -328,29 +339,34 @@ export function GenerateButton({
         <>
           <div className="border-t border-border" />
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button variant="default" onClick={handleSave} disabled={saving}>
-              {saving
-                ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</>
-                : <><Save className="h-4 w-4" />Save Quote</>}
-            </Button>
-            {saved && (
-              <span className="text-sm text-success flex items-center gap-1.5">
-                <Check className="h-4 w-4" /> Saved
-              </span>
-            )}
-            {renderedHtml && saved && (
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                onClick={() => {
-                  const w = window.open('', '_blank')
-                  if (w) { w.document.write(renderedHtml); w.document.close() }
-                }}
-              >
-                Open in new tab (print)
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button variant="default" onClick={handleSave} disabled={saving}>
+                {saving
+                  ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</>
+                  : <><Save className="h-4 w-4" />Save Quote</>}
               </Button>
+              {saved && !saveError && (
+                <span className="text-sm text-success flex items-center gap-1.5">
+                  <Check className="h-4 w-4" /> Saved
+                </span>
+              )}
+              {renderedHtml && saved && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    const w = window.open('', '_blank')
+                    if (w) { w.document.write(renderedHtml); w.document.close() }
+                  }}
+                >
+                  Open in new tab (print)
+                </Button>
+              )}
+            </div>
+            {saveError && (
+              <p className="text-xs text-destructive bg-destructive/10 rounded px-3 py-2">{saveError}</p>
             )}
           </div>
         </>
