@@ -26,12 +26,13 @@ export const SIMPLE_BLOCK_COLOR: Record<string, string> = {
   custom:      '#6b7280',
 }
 
-// ── Shared handle style ───────────────────────────────────────────────────────
+// ── Shared handle style + tooltip ────────────────────────────────────────────
 const H = (color: string, extra?: React.CSSProperties): React.CSSProperties => ({
-  width: 10, height: 10,
+  width: 12, height: 12,
   background: color,
   border: '2px solid #fff',
   borderRadius: '50%',
+  cursor: 'crosshair',
   ...extra,
 })
 
@@ -109,7 +110,7 @@ export function SolarArrayNode({ data, selected }: NodeProps) {
       {shortModel && <Row label="Model" value={shortModel} />}
       {d.totalKwp > 0 && <Row label="Array" value={`${d.totalKwp} kWp`} />}
       {d.config && <Row label="Config" value={d.config} />}
-      <Handle type="source" id="dc-out" position={Position.Bottom} style={H(CLR.dc)} />
+      <Handle type="source" id="dc-out" position={Position.Bottom} style={H(CLR.dc)} title="DC out → Combiner or Inverter" />
     </NodeCard>
   )
 }
@@ -139,7 +140,7 @@ export function CombinerNode({ data, selected }: NodeProps) {
       <Row label="Strings" value={n} />
       <Row label="Fuses" value={`${n} × ${d.fuseRating}`} />
       {d.hasSpd && <Row label="SPD" value="Type 2 included" />}
-      <Handle type="source" id="dc-out" position={Position.Bottom} style={H(CLR.dc)} />
+      <Handle type="source" id="dc-out" position={Position.Bottom} style={H(CLR.dc)} title="DC out → Inverter PV input" />
     </NodeCard>
   )
 }
@@ -154,13 +155,13 @@ export function InverterNode({ data, selected }: NodeProps) {
 
   return (
     <NodeCard color={CLR.inv} Icon={Zap} title="Inverter / Charger" selected={selected}>
-      <Handle type="target" id="pv-in"   position={Position.Top}   style={H(CLR.dc)} />
-      <Handle type="target" id="bat-in"  position={Position.Left}  style={H(CLR.bat, { top: '45%' })} />
-      <Handle type="target" id="grid-in" position={Position.Right} style={H(CLR.ac,  { top: '35%' })} />
+      <Handle type="target" id="pv-in"   position={Position.Top}   style={H(CLR.dc)}               title="PV DC input" />
+      <Handle type="target" id="bat-in"  position={Position.Left}  style={H(CLR.bat, { top: '45%' })} title="Battery input" />
+      <Handle type="target" id="grid-in" position={Position.Right} style={H(CLR.ac,  { top: '35%' })} title="Grid AC input" />
       {d.hasGenerator && (
-        <Handle type="target" id="gen-in" position={Position.Right} style={H(CLR.ac, { top: '65%' })} />
+        <Handle type="target" id="gen-in" position={Position.Right} style={H(CLR.ac, { top: '65%' })} title="Generator input" />
       )}
-      <Handle type="source" id="ac-out"  position={Position.Bottom} style={H(CLR.ac)} />
+      <Handle type="source" id="ac-out"  position={Position.Bottom} style={H(CLR.ac)} title="AC output → DB Board" />
 
       {shortModel && <Row label="Model" value={shortModel} />}
       {d.kw > 0 && <Row label="Power" value={`${d.kw} kW`} />}
@@ -181,7 +182,7 @@ export function BatteryNode({ data, selected }: NodeProps) {
 
   return (
     <NodeCard color={CLR.bat} Icon={Battery} title={d.label || 'Battery Bank'} selected={selected}>
-      <Handle type="source" id="bat-out" position={Position.Right} style={H(CLR.bat)} />
+      <Handle type="source" id="bat-out" position={Position.Right} style={H(CLR.bat)} title="Battery output → Inverter" />
       {shortModel && <Row label="Model" value={shortModel} />}
       {d.qty > 0 && <Row label="Units" value={d.qty} />}
       {d.totalKwh > 0 && <Row label="Capacity" value={`${d.totalKwh} kWh`} />}
@@ -199,7 +200,7 @@ export function GridNode({ data, selected }: NodeProps) {
 
   return (
     <NodeCard color={CLR.grid} Icon={PlugZap} title={d.label || 'Grid Supply'} selected={selected}>
-      <Handle type="source" id="ac-out" position={Position.Left} style={H(CLR.ac)} />
+      <Handle type="source" id="ac-out" position={Position.Left} style={H(CLR.ac)} title="Grid AC → Inverter" />
       {d.utility && <Row label="Utility" value={d.utility} />}
       <Row label="Voltage" value={`${d.voltage}V`} />
       <Row label="Phase" value={`${d.phases}Ø`} />
@@ -216,8 +217,8 @@ export function DBBoardNode({ data, selected }: NodeProps) {
 
   return (
     <NodeCard color={CLR.ac} Icon={CircuitBoard} title={d.label || 'Distribution Board'} selected={selected}>
-      <Handle type="target" id="ac-in"    position={Position.Top}   style={H(CLR.ac)} />
-      <Handle type="source" id="earth-out" position={Position.Right} style={H(CLR.earth, { top: '50%' })} />
+      <Handle type="target" id="ac-in"     position={Position.Top}   style={H(CLR.ac)}                     title="AC input from Inverter" />
+      <Handle type="source" id="earth-out" position={Position.Right} style={H(CLR.earth, { top: '50%' })} title="Earth → Earthing system" />
       {d.mainBreakerA > 0 && <Row label="Main CB" value={`${d.mainBreakerA}A DP`} />}
       {d.rccbA > 0 && <Row label="RCCB" value={`${d.rccbA} mA`} />}
       <Row label="Phase" value={`${d.phases}Ø`} />
@@ -231,7 +232,7 @@ export function EarthingNode({ data, selected }: NodeProps) {
 
   return (
     <NodeCard color={CLR.earth} Icon={Grid2x2} title={d.label || 'Earthing'} selected={selected}>
-      <Handle type="target" id="earth-in" position={Position.Left} style={H(CLR.earth)} />
+      <Handle type="target" id="earth-in" position={Position.Left} style={H(CLR.earth)} title="Earth input from DB Board" />
       {d.spikeCount > 0 && <Row label="Spikes" value={`${d.spikeCount} × 1200mm`} />}
       {d.spec && <Row label="Conductor" value={d.spec} />}
       <Row label="System" value="TN-C-S" />

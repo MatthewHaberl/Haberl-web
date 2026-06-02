@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Trash2, Plus, MousePointerClick } from 'lucide-react'
+import { Trash2, Plus, MousePointerClick, Copy, BarChart2 } from 'lucide-react'
 import type { Node, Edge } from '@xyflow/react'
 import { CLR } from './sld-nodes'
 import type { CableEdgeData } from '@/lib/solar/sld-builder'
@@ -245,10 +245,12 @@ function NodeEditor({
   node,
   onUpdate,
   onDelete,
+  onDuplicate,
 }: {
   node: Node
   onUpdate: (id: string, patch: Record<string, unknown>) => void
   onDelete: (id: string) => void
+  onDuplicate: (id: string) => void
 }) {
   const d = node.data as Record<string, unknown>
   const t = node.type ?? 'custom'
@@ -427,14 +429,21 @@ function NodeEditor({
         Full store catalog link — coming with Phase 2 shop.
       </p>
 
-      {/* Delete */}
-      <div className="pt-3 mt-2 border-t border-border">
+      {/* Duplicate + Delete */}
+      <div className="pt-3 mt-2 border-t border-border flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => onDuplicate(node.id)}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <Copy size={12} /> Duplicate
+        </button>
         <button
           type="button"
           onClick={() => onDelete(node.id)}
           className="flex items-center gap-1.5 text-xs text-destructive hover:text-destructive/80"
         >
-          <Trash2 size={12} /> Remove this component
+          <Trash2 size={12} /> Remove
         </button>
       </div>
     </div>
@@ -545,14 +554,80 @@ function EdgeEditor({
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
+// ── Diagram stats footer ──────────────────────────────────────────────────────
+
+function DiagramStats({ nodes, edges }: { nodes: Node[]; edges: Edge[] }) {
+  const [open, setOpen] = useState(false)
+  const totalCableM = edges.reduce((sum, e) => {
+    const d = e.data as CableEdgeData | undefined
+    const segs = d?.segments as Array<{ lengthM: number }> | undefined
+    const len = segs?.length
+      ? segs.reduce((s, sg) => s + (sg.lengthM || 0), 0)
+      : (d?.lengthM ?? 0)
+    return sum + len
+  }, 0)
+
+  const componentTypes: Record<string, number> = {}
+  for (const n of nodes) {
+    const t = n.type ?? 'unknown'
+    componentTypes[t] = (componentTypes[t] ?? 0) + 1
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid #e5e7eb', padding: '10px 12px', flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+          fontSize: 11, fontWeight: 700, color: '#6b7280',
+          textTransform: 'uppercase', letterSpacing: 0.5,
+        }}
+      >
+        <BarChart2 size={12} />
+        Diagram Stats
+        <span style={{ marginLeft: 'auto', fontSize: 10 }}>{open ? '▴' : '▾'}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+            <span style={{ color: '#9ca3af' }}>Components</span>
+            <span style={{ fontWeight: 600, color: '#111827' }}>{nodes.length}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+            <span style={{ color: '#9ca3af' }}>Cables</span>
+            <span style={{ fontWeight: 600, color: '#111827' }}>{edges.length}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+            <span style={{ color: '#9ca3af' }}>Total cable</span>
+            <span style={{ fontWeight: 600, color: '#111827' }}>~{totalCableM}m</span>
+          </div>
+          {Object.entries(componentTypes).map(([type, count]) => (
+            <div key={type} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#9ca3af' }}>
+              <span style={{ textTransform: 'capitalize' }}>{type.replace(/([A-Z])/g, ' $1').trim()}</span>
+              <span>{count}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main panel ────────────────────────────────────────────────────────────────
+
 export interface SLDPanelProps {
   selectedNode: Node | null
   selectedEdge: Edge | null
+  nodes?: Node[]
+  edges?: Edge[]
   onUpdateNode: (id: string, patch: Record<string, unknown>) => void
   onUpdateEdge: (id: string, patch: Record<string, unknown>) => void
   onDeleteNode: (id: string) => void
   onDeleteEdge: (id: string) => void
   onAddNode: (type: string) => void
+  onDuplicateNode: (id: string) => void
   onDeselect: () => void
   connectMode?: boolean
   onToggleConnect?: () => void
@@ -561,11 +636,14 @@ export interface SLDPanelProps {
 export function SLDPanel({
   selectedNode,
   selectedEdge,
+  nodes = [],
+  edges = [],
   onUpdateNode,
   onUpdateEdge,
   onDeleteNode,
   onDeleteEdge,
   onAddNode,
+  onDuplicateNode,
   onDeselect,
   connectMode = false,
   onToggleConnect,
@@ -606,7 +684,7 @@ export function SLDPanel({
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
 
         {selectedNode && (
-          <NodeEditor node={selectedNode} onUpdate={onUpdateNode} onDelete={onDeleteNode} />
+          <NodeEditor node={selectedNode} onUpdate={onUpdateNode} onDelete={onDeleteNode} onDuplicate={onDuplicateNode} />
         )}
 
         {selectedEdge && !selectedNode && (
@@ -706,6 +784,9 @@ export function SLDPanel({
           </div>
         )}
       </div>
+
+      {/* Diagram stats — always visible at panel bottom */}
+      <DiagramStats nodes={nodes} edges={edges} />
     </div>
   )
 }

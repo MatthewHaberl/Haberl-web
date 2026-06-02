@@ -176,6 +176,20 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     setSelectedEdgeId(null)
   }, [setNodes])
 
+  const duplicateNode = useCallback((id: string) => {
+    const src = nodes.find((n) => n.id === id)
+    if (!src) return
+    const newId = `${src.type}-${Date.now()}`
+    const newNode: Node = {
+      ...src,
+      id: newId,
+      position: { x: src.position.x + 40, y: src.position.y + 40 },
+      selected: false,
+    }
+    setNodes((nds) => [...nds, newNode])
+    setSelectedNodeId(newId)
+  }, [nodes, setNodes])
+
   // ── Connect (draw new cable between two nodes) ────────────────────────────────
   const onConnect = useCallback((connection: Connection) => {
     const srcType = nodes.find((n) => n.id === connection.source)?.type ?? ''
@@ -382,11 +396,14 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
   const panelProps = {
     selectedNode,
     selectedEdge,
+    nodes,
+    edges,
     onUpdateNode: updateNodeData,
     onUpdateEdge: updateEdgeData,
     onDeleteNode: deleteNode,
     onDeleteEdge: deleteEdge,
     onAddNode: addNode,
+    onDuplicateNode: duplicateNode,
     onDeselect: handlePaneClick,
     connectMode,
     onToggleConnect: () => setConnectMode((v) => !v),
