@@ -243,12 +243,29 @@ function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
       <td class="comp-cell">${row.budget}</td>
     </tr>`).join('')
 
+  // Merge top-level header fields into each option — the agent puts shared fields
+  // (quoteNumber, customerName, etc.) at the top level, not inside each option.
   const optionSections = data.options.map(opt => {
     const isRec = opt.tier === 'recommended'
+    // Option objects only carry equipment fields — header/customer fields live at the
+    // top level of the multi-option structure. Merge them in with ?? so option-specific
+    // values still win when present.
+    const merged: OptionQuoteData = {
+      ...opt,
+      quoteNumber:     opt.quoteNumber     ?? data.quoteNumber,
+      dateIssued:      opt.dateIssued      ?? data.dateIssued,
+      dateExpires:     opt.dateExpires     ?? data.dateExpires,
+      customerName:    opt.customerName    ?? data.customerName,
+      municipality:    opt.municipality    ?? data.municipality,
+      customerPhone:   opt.customerPhone   ?? data.customerPhone,
+      customerEmail:   opt.customerEmail   ?? data.customerEmail,
+      siteAddress:     opt.siteAddress     ?? data.siteAddress,
+      monthlyUsageKwh: opt.monthlyUsageKwh ?? data.monthlyUsageKwh,
+    }
     return `
     <div class="option-wrapper${isRec ? ' option-recommended' : ''}">
       ${isRec ? '<div class="rec-ribbon">Our Recommendation</div>' : ''}
-      ${renderSingleOptionHtml(opt, opt.tierLabel)}
+      ${renderSingleOptionHtml(merged, opt.tierLabel)}
     </div>`
   }).join('')
 

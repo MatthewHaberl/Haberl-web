@@ -189,7 +189,7 @@ export function GenerateButton({
         : null
       const depositSource = singleQuote ?? multiRec
 
-      const depositAmountCents = depositSource
+      const depositAmountCents = depositSource?.depositItems?.length
         ? Math.round(
             depositSource.depositItems
               .filter((i) => depositSelected.includes(i.name))
@@ -197,7 +197,9 @@ export function GenerateButton({
           )
         : null
 
-      const totalAmountCents = depositSource ? Math.round(depositSource.quoteTotalRands * 100) : null
+      const totalAmountCents = depositSource?.quoteTotalRands
+        ? Math.round(depositSource.quoteTotalRands * 100)
+        : null
 
       const { error } = await supabase.from('quote_requests').update({
         // v2 fields (structured)
