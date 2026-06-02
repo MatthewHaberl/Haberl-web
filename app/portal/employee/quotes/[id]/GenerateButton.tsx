@@ -1,25 +1,12 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import dynamic from 'next/dynamic'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/client'
 import { extractQuoteJson, renderQuote, renderCustomerQuote, isMultiOption, type QuoteData, type MultiOptionQuoteData, type AnyQuoteData } from '@/lib/solar/render-quote'
 import { DepositSelector } from './DepositSelector'
-import { Loader2, Zap, Copy, Check, Save, Eye, EyeOff, Workflow } from 'lucide-react'
-
-const SLDDiagram = dynamic(
-  () => import('@/components/sld/SLDDiagram').then((m) => m.SLDDiagram),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center h-40 rounded-lg border border-border bg-muted text-sm text-muted-foreground">
-        Loading diagram…
-      </div>
-    ),
-  },
-)
+import { Loader2, Zap, Copy, Check, Save, Eye, EyeOff } from 'lucide-react'
 
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'] as const
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -109,6 +96,7 @@ interface Props {
   existingDepositItems: string[]
   existingQuoteNumber: string | null
   nextQuoteNumber: string
+  onQuoteDataChange?: (data: AnyQuoteData | null) => void
 }
 
 export function GenerateButton({
@@ -119,6 +107,7 @@ export function GenerateButton({
   existingDepositItems,
   existingQuoteNumber,
   nextQuoteNumber,
+  onQuoteDataChange,
 }: Props) {
   // Raw paste state
   const [pasted,    setPasted]    = useState(existingQuote ?? '')
@@ -142,14 +131,13 @@ export function GenerateButton({
   const [saving,    setSaving]    = useState(false)
   const [saved,     setSaved]     = useState(!!existingHtml || !!existingQuote)
   const [saveError, setSaveError] = useState('')
-  const [showSLD,   setShowSLD]   = useState(false)
-
   // ── Parse JSON from pasted text ──────────────────────────────────────────────
   const tryParse = useCallback((text: string) => {
-    if (!text.trim()) { setQuoteData(null); setParseError(''); setRenderedHtml(''); return }
+    if (!text.trim()) { setQuoteData(null); setParseError(''); setRenderedHtml(''); onQuoteDataChange?.(null); return }
     const parsed = extractQuoteJson(text)
     if (parsed) {
       setQuoteData(parsed)
+      onQuoteDataChange?.(parsed)
       setParseError('')
       try {
         setRenderedHtml(renderQuote(parsed))
@@ -354,43 +342,6 @@ export function GenerateButton({
                 </div>
               )
             })()}
-          </div>
-        </>
-      )}
-
-      {/* Wiring Diagram — auto-generated from quote JSON */}
-      {quoteData && (
-        <>
-          <div className="border-t border-border" />
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-foreground flex items-center gap-2">
-                  <Workflow className="h-4 w-4 text-accent" />
-                  Wiring Diagram (SLD)
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Auto-generated from quoted equipment. Cable specs are smart defaults — drag nodes to rearrange.
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                onClick={() => setShowSLD((s) => !s)}
-              >
-                {showSLD
-                  ? <><EyeOff className="h-3.5 w-3.5" />Hide</>
-                  : <><Eye className="h-3.5 w-3.5" />Show diagram</>}
-              </Button>
-            </div>
-            {showSLD && (
-              <SLDDiagram
-                quoteData={quoteData}
-                gridSupply={request.grid_supply as string | undefined}
-                height={680}
-              />
-            )}
           </div>
         </>
       )}
