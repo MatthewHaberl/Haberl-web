@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/client'
-import { extractQuoteJson, renderQuote, isMultiOption, type QuoteData, type MultiOptionQuoteData, type AnyQuoteData } from '@/lib/solar/render-quote'
+import { extractQuoteJson, renderQuote, renderCustomerQuote, isMultiOption, type QuoteData, type MultiOptionQuoteData, type AnyQuoteData } from '@/lib/solar/render-quote'
 import { DepositSelector } from './DepositSelector'
 import { Loader2, Zap, Copy, Check, Save, Eye, EyeOff } from 'lucide-react'
 
@@ -362,17 +362,33 @@ export function GenerateButton({
                 </span>
               )}
               {renderedHtml && saved && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  onClick={() => {
-                    const w = window.open('', '_blank')
-                    if (w) { w.document.write(renderedHtml); w.document.close() }
-                  }}
-                >
-                  Open in new tab (print)
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      const w = window.open('', '_blank')
+                      if (w) { w.document.write(renderedHtml); w.document.close() }
+                    }}
+                  >
+                    Open detailed BOM (print)
+                  </Button>
+                  {quoteData && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        const customerHtml = renderCustomerQuote(quoteData)
+                        const w = window.open('', '_blank')
+                        if (w) { w.document.write(customerHtml); w.document.close() }
+                      }}
+                    >
+                      Open simplified (customer)
+                    </Button>
+                  )}
+                </>
               )}
             </div>
             {saveError && (

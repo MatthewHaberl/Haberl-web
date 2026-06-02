@@ -94,10 +94,12 @@ When the customer has specified equipment preferences, generate a SINGLE OPTION 
 - **INV-04** DC fuse/isolator between battery positive terminal and inverter — SANS compliance.
 - **INV-05** Sigenergy uses Sigen SP Home Gateway (SIG-GW-S-H-12K) — NOT a Wi-Fi dongle.
 - **INV-06** LV batteries (48V/52V) → LV inverter only. HV batteries → HV inverter only. Never mix.
+- **INV-07** Sigenergy compatibility: Sigenergy Hybrid inverters (SIG-INV-H-*-S/T) and SigenStor inverters pair ONLY with SigenStor batteries (SIG-BAT-06K, SIG-BAT-10K). SigenStack is a SEPARATE Sigenergy product line (stacked battery + dedicated energy management device) — it requires its own SigenStack converter, NOT a Hybrid inverter from this catalogue. NEVER pair any inverter from the pricing reference with "SigenStack" batteries. If a customer requests SigenStack, flag it and request Matthew confirm pricing and compatibility before quoting.
 
 ### DC Protection
 - **DC-01** DC SPD on combiner output (between combiner and inverter), not per individual string.
 - **DC-02** Number of combiners = number of distinct combiner points in the string layout.
+- **DC-03** SANS 10142 always requires at minimum a DC circuit breaker + DC SPD between strings and inverter — even when strings connect to individual MPPT inputs. NEVER write "direct MPPT — no external combiner box required" or any phrase implying protection can be omitted. Fuse required ONLY when >1 string combines into a single MPPT input. For inverters with multiple MPPTs: split strings 1 per MPPT (use a 2-in, 2-out combiner or separate string combiner boxes) to avoid the fuse requirement. Set dcCombinerConfig to a concise accurate description, e.g. "2-in, 2-out — breaker + SPD per string, 1 string per MPPT" or "2-in, 1-out — breaker + fuse + SPD, SANS compliant".
 
 ### AC & DB Work
 - **AC-01** Changeover switch (Chint JN2125G63A or equiv) mandatory on every hybrid install.
@@ -106,7 +108,7 @@ When the customer has specified equipment preferences, generate a SINGLE OPTION 
 - **AC-04** AC SPD Type 2 (Chint NU6-IIG-2P-40KA-275V or equiv) mandatory on every install.
 
 ### Earthing
-- **ETH-01** Default spike count by inverter size: ≤3kW → 2; 4–5kW → 2–3 (default 2); 6–10kW → 3–4 (default 3); 11kW+ → 4+.
+- **ETH-01** Spike count by inverter size (fixed standards, not ranges): ≤3kW → 2 spikes; 4–5kW → 4 spikes; 6–10kW → 6 spikes; 11kW+ → 6 spikes. These match the disclaimer shown on the quote and SANS practice. Use exactly these numbers — do not interpolate or reduce.
 - **ETH-02** Always include 1× EM25KG Earthmuti per spike installation.
 - **ETH-03** Earth wire run = distance from spike to MAIN DB (not just inverter).
 
@@ -388,7 +390,7 @@ Use this JSON structure. Each option has the FULL quote data:
       "cablesCost": "R2,100.00",
       "cablesSubtotal": "R2,100.00",
 
-      "dcCombinerConfig": "2-in, 1-out",
+      "dcCombinerConfig": "2-in, 2-out — breaker + SPD per string, 1 string per MPPT",
       "dcCombinerCost": "R2,446.88",
       "dcProtectionSubtotal": "R2,446.88",
 
@@ -402,9 +404,9 @@ Use this JSON structure. Each option has the FULL quote data:
       "acDbCost": "R3,099.34",
       "acDbSubtotal": "R3,099.34",
 
-      "earthingSpikeCount": "2",
-      "earthingCost": "R1,957.29",
-      "earthingSubtotal": "R1,957.29",
+      "earthingSpikeCount": "6",
+      "earthingCost": "R4,965.00",
+      "earthingSubtotal": "R4,965.00",
 
       "consumablesCost": "R2,851.58",
       "consumablesSubtotal": "R2,851.58",
@@ -477,7 +479,7 @@ Use this JSON structure. Each option has the FULL quote data:
       "cablesCost": "R1,964.05",
       "cablesSubtotal": "R1,964.05",
 
-      "dcCombinerConfig": "2-in, 1-out",
+      "dcCombinerConfig": "2-in, 2-out — breaker + SPD per string, 1 string per MPPT",
       "dcCombinerCost": "R2,446.88",
       "dcProtectionSubtotal": "R2,446.88",
 
@@ -491,9 +493,9 @@ Use this JSON structure. Each option has the FULL quote data:
       "acDbCost": "R3,099.34",
       "acDbSubtotal": "R3,099.34",
 
-      "earthingSpikeCount": "2",
-      "earthingCost": "R1,957.29",
-      "earthingSubtotal": "R1,957.29",
+      "earthingSpikeCount": "6",
+      "earthingCost": "R4,965.00",
+      "earthingSubtotal": "R4,965.00",
 
       "consumablesCost": "R2,351.58",
       "consumablesSubtotal": "R2,351.58",
@@ -565,7 +567,7 @@ Use this JSON structure. Each option has the FULL quote data:
       "cablesCost": "R1,964.05",
       "cablesSubtotal": "R1,964.05",
 
-      "dcCombinerConfig": "2-in, 1-out",
+      "dcCombinerConfig": "2-in, 2-out — breaker + SPD per string, 1 string per MPPT",
       "dcCombinerCost": "R2,446.88",
       "dcProtectionSubtotal": "R2,446.88",
 
@@ -579,9 +581,9 @@ Use this JSON structure. Each option has the FULL quote data:
       "acDbCost": "R3,099.34",
       "acDbSubtotal": "R3,099.34",
 
-      "earthingSpikeCount": "2",
-      "earthingCost": "R1,957.29",
-      "earthingSubtotal": "R1,957.29",
+      "earthingSpikeCount": "6",
+      "earthingCost": "R4,965.00",
+      "earthingSubtotal": "R4,965.00",
 
       "consumablesCost": "R2,151.58",
       "consumablesSubtotal": "R2,151.58",

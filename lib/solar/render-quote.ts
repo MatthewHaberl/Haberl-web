@@ -193,6 +193,12 @@ export function renderSimplifiedQuote(data: QuoteData): string {
   return renderSingleOptionHtml(data)
 }
 
+// Customer-facing summary (no BOM line items — just system overview, price, ROI)
+export function renderCustomerQuote(data: AnyQuoteData): string {
+  if (isMultiOption(data)) return renderMultiOptionCustomerQuote(data)
+  return renderCustomerSingleHtml(data as QuoteData)
+}
+
 // ── Single-option renderer ────────────────────────────────────────────────────
 
 function val(data: Record<string, unknown>, key: string): string {
@@ -387,6 +393,159 @@ function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
     <div class="badge">SANS 10142 COMPLIANT</div>
   </footer>
 
+</div>
+</body>
+</html>`
+}
+
+// ── Customer-facing summary renderer (no BOM) ────────────────────────────────
+
+function renderCustomerSingleHtml(data: QuoteData, tierLabel?: string): string {
+  const d = data as unknown as Record<string, unknown>
+  let html = CUSTOMER_TEMPLATE.replace(/\{\{(\w+)\}\}/g, (_, key: string) => val(d, key))
+
+  if (tierLabel) {
+    html = html.replace('{{TIER_BADGE}}', `<div class="tier-badge">${tierLabel}</div>`)
+  } else {
+    html = html.replace('{{TIER_BADGE}}', '')
+  }
+
+  if (data.monthlyGenTable?.length) {
+    html = html.replace('{{MONTHLY_GEN_SECTION}}', renderMonthlyGenSection(data))
+  } else {
+    html = html.replace('{{MONTHLY_GEN_SECTION}}', '')
+  }
+
+  if (data.twentyYearTable?.length) {
+    html = html.replace('{{TWENTY_YEAR_SECTION}}', renderTwentyYearSection(data))
+  } else {
+    html = html.replace('{{TWENTY_YEAR_SECTION}}', '')
+  }
+
+  return html
+}
+
+function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
+  const comparisonRows = (data.comparisonTable ?? []).map(row => `
+    <tr>
+      <td class="comp-label">${row.label}</td>
+      <td class="comp-cell">${row.premium}</td>
+      <td class="comp-cell comp-recommended">${row.recommended}</td>
+      <td class="comp-cell">${row.budget}</td>
+    </tr>`).join('')
+
+  const optionSections = data.options.map(opt => {
+    const isRec = opt.tier === 'recommended'
+    const merged: OptionQuoteData = {
+      ...opt,
+      quoteNumber:     opt.quoteNumber     ?? data.quoteNumber,
+      dateIssued:      opt.dateIssued      ?? data.dateIssued,
+      dateExpires:     opt.dateExpires     ?? data.dateExpires,
+      customerName:    opt.customerName    ?? data.customerName,
+      municipality:    opt.municipality    ?? data.municipality,
+      customerPhone:   opt.customerPhone   ?? data.customerPhone,
+      customerEmail:   opt.customerEmail   ?? data.customerEmail,
+      siteAddress:     opt.siteAddress     ?? data.siteAddress,
+      monthlyUsageKwh: opt.monthlyUsageKwh ?? data.monthlyUsageKwh,
+    }
+    return `
+    <div class="option-wrapper${isRec ? ' option-recommended' : ''}">
+      ${isRec ? '<div class="rec-ribbon">Our Recommendation</div>' : ''}
+      ${renderCustomerSingleHtml(merged, opt.tierLabel)}
+    </div>`
+  }).join('')
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${data.quoteNumber} — Haberl Solar Proposal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    ${BASE_CSS}
+    .option-wrapper { margin-bottom: 48px; }
+    .option-recommended { border: 3px solid var(--accent); border-radius: 12px; padding: 0; overflow: hidden; position: relative; }
+    .rec-ribbon { background: var(--accent); color: white; text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 6px 0; }
+    .tier-badge { display: inline-block; background: rgba(255,255,255,0.15); border-radius: 20px; padding: 4px 14px; font-size: 13px; font-weight: 600; color: white; margin-top: 8px; }
+    .comparison-wrapper { margin-bottom: 36px; }
+    .comparison-wrapper h2 { font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 16px; }
+    .comp-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .comp-table thead tr { background: var(--primary); color: white; }
+    .comp-table thead th { padding: 12px 16px; text-align: left; font-weight: 600; }
+    .comp-table thead th.comp-recommended-head { background: var(--accent); }
+    .comp-table tbody tr:nth-child(odd) { background: var(--muted); }
+    .comp-table tbody tr:nth-child(even) { background: white; }
+    .comp-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+    .comp-label { font-weight: 500; color: var(--muted-fg); }
+    .comp-cell { font-weight: 500; }
+    .comp-recommended { background: var(--accent-light) !important; font-weight: 700; color: var(--primary); }
+    .page-divider { border: none; border-top: 3px dashed var(--border); margin: 48px 0; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header class="header">
+    <div class="logo-block">
+      <div class="logo-name">HABERL<span>.</span></div>
+      <div class="logo-sub">Electrical &amp; Solar</div>
+      <div class="logo-contact">
+        <span>+27 61 519 3016</span>
+        <span>matthew@haberl.co.za</span>
+        <span>haberl.co.za &nbsp;&middot;&nbsp; Gauteng, South Africa</span>
+      </div>
+    </div>
+    <div class="quote-meta">
+      <div class="quo-number">${data.quoteNumber}</div>
+      <table>
+        <tr><td>Date</td><td>${data.dateIssued}</td></tr>
+        <tr><td>Valid until</td><td>${data.dateExpires}</td></tr>
+        <tr><td>Customer</td><td>${data.customerName}</td></tr>
+        <tr><td>Municipality</td><td>${data.municipality}</td></tr>
+      </table>
+    </div>
+  </header>
+  <div class="validity-bar">
+    <div class="dot"></div>
+    <span>This proposal presents <strong>3 options</strong>. It is valid for <strong>7 days</strong> from date of issue. A deposit (marked &#9733;) is required to confirm the order and procure equipment.</span>
+  </div>
+  <div class="comparison-wrapper">
+    <h2>Option Comparison</h2>
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>&#9733;&#9733;&#9733; Premium</th>
+          <th class="comp-recommended-head">&#9733;&#9733;&#9734; Recommended</th>
+          <th>&#9733;&#9734;&#9734; Budget</th>
+        </tr>
+      </thead>
+      <tbody>${comparisonRows}</tbody>
+    </table>
+  </div>
+  <hr class="page-divider" />
+  ${optionSections}
+  <div class="card no-break">
+    <div class="card-header"><h2>Disclaimers &amp; Exclusions</h2></div>
+    <div class="card-body">
+      <div class="exclusions-list">
+        <ul>
+          <li>Body corporate or HOA approval for roof modifications is the client&apos;s responsibility. Associated fees and structural reports are not included in this quote.</li>
+          <li>Internal wall chasing or plastering (if cable must route via conduit)</li>
+          <li>Main DB panel upgrade or expansion (quoted separately if required after inspection)</li>
+          <li>Trenching or underground cable routing</li>
+          <li>Travel surcharge beyond Gauteng standard service zone (charged at R8.00/km)</li>
+          <li>Any electrical work outside the solar installation scope</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <footer class="footer">
+    <div><strong>Haberl Electrical &amp; Solar</strong> &nbsp;&middot;&nbsp; +27 61 519 3016 &nbsp;&middot;&nbsp; matthew@haberl.co.za &nbsp;&middot;&nbsp; haberl.co.za</div>
+    <div class="badge">SANS 10142 COMPLIANT</div>
+  </footer>
 </div>
 </body>
 </html>`
@@ -989,6 +1148,199 @@ const SINGLE_TEMPLATE = `<!DOCTYPE html>
       <tr><td>Consumables &amp; Compliance</td><td>{{consumablesSubtotal}}</td></tr>
       <tr><td>Installation Labour</td><td>{{labourSubtotal}}</td></tr>
       <tr class="total-row divider"><td>QUOTE TOTAL</td><td>{{quoteTotal}}</td></tr>
+    </table>
+    <div class="vat-badge">Haberl Electrical &amp; Solar does not add VAT &mdash; all prices inclusive</div>
+  </div>
+
+  <div class="card no-break">
+    <div class="card-header"><h2>Deposit &amp; Payment</h2></div>
+    <div class="card-body">
+      <table class="info-table">
+        <tr><td>Deposit required (&#9733; items)</td><td><strong>{{depositTotal}}</strong></td></tr>
+        <tr><td>Balance on completion</td><td>{{balanceTotal}}</td></tr>
+        <tr><td>Quote total</td><td>{{quoteTotal}}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="section-heading">Estimated Returns</div>
+
+  <div class="card no-break">
+    <div class="card-header"><h2>Solar Generation &amp; Savings</h2></div>
+    <div class="card-body">
+      <div class="roi-grid">
+        <div class="roi-item">
+          <div class="roi-label">Monthly Generation</div>
+          <div class="roi-value">~{{monthlyGenKwh}} kWh</div>
+          <div class="roi-sub">{{totalKwp}}kWp &middot; 5.3 avg PSH &middot; 80% efficiency</div>
+        </div>
+        <div class="roi-item">
+          <div class="roi-label">Annual Grid Offset</div>
+          <div class="roi-value">~{{annualOffsetPercent}}%</div>
+          <div class="roi-sub">Battery bridges overnight load</div>
+        </div>
+        <div class="roi-item">
+          <div class="roi-label">Monthly Saving</div>
+          <div class="roi-value accent">{{monthlySavingR}}</div>
+          <div class="roi-sub">At {{tariffRate}}/kWh blended rate</div>
+        </div>
+        <div class="roi-item">
+          <div class="roi-label">Annual Saving</div>
+          <div class="roi-value">~{{annualSavingR}}</div>
+          <div class="roi-sub">Flat tariff (conservative)</div>
+        </div>
+        <div class="roi-item">
+          <div class="roi-label">Simple Payback</div>
+          <div class="roi-value">~{{paybackMonths}} months</div>
+          <div class="roi-sub">{{paybackYears}} years at current tariffs</div>
+        </div>
+        <div class="roi-item">
+          <div class="roi-label">Payback (12% escalation)</div>
+          <div class="roi-value accent">~{{paybackMonthsEscalated}} months</div>
+          <div class="roi-sub">At 12% p.a. tariff escalation</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {{MONTHLY_GEN_SECTION}}
+
+  {{TWENTY_YEAR_SECTION}}
+
+  <div class="card no-break">
+    <div class="card-header"><h2>Disclaimers &amp; Exclusions</h2></div>
+    <div class="card-body">
+      <div class="exclusions-list">
+        <ul>
+          <li>Body corporate or HOA approval for roof modifications is the client&apos;s responsibility. Associated fees and structural reports are not included in this quote.</li>
+          <li>Internal wall chasing or plastering (if cable must route via conduit)</li>
+          <li>Main DB panel upgrade or expansion (quoted separately if required after inspection)</li>
+          <li>Trenching or underground cable routing</li>
+          <li>Travel surcharge beyond Gauteng standard service zone (charged at R8.00/km)</li>
+          <li>Any electrical work outside the solar installation scope</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card no-break">
+    <div class="card-header"><h2>Terms &amp; Warranty</h2></div>
+    <div class="card-body">
+      <div class="terms-grid">
+        <div class="terms-item"><div class="t-label">Quote Validity</div>7 days from date of issue</div>
+        <div class="terms-item"><div class="t-label">Deposit</div>Required to confirm order and procure equipment (&#9733; items)</div>
+        <div class="terms-item"><div class="t-label">Balance Payment</div>Payable on day of installation completion</div>
+        <div class="terms-item"><div class="t-label">Certificate of Compliance</div>Issued within 5 business days of installation</div>
+        <div class="terms-item"><div class="t-label">Inverter Warranty</div>Manufacturer warranty (typically 5&ndash;10 years)</div>
+        <div class="terms-item"><div class="t-label">Battery Warranty</div>Manufacturer warranty (typically 5&ndash;10 years)</div>
+        <div class="terms-item"><div class="t-label">Panel Warranty</div>Manufacturer product &amp; performance warranty</div>
+        <div class="terms-item"><div class="t-label">Workmanship</div>SANS 10142 compliant installation</div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div>
+      <strong>Haberl Electrical &amp; Solar</strong> &nbsp;&middot;&nbsp;
+      +27 61 519 3016 &nbsp;&middot;&nbsp;
+      matthew@haberl.co.za &nbsp;&middot;&nbsp;
+      haberl.co.za
+    </div>
+    <div class="badge">SANS 10142 COMPLIANT</div>
+  </footer>
+
+</div>
+</body>
+</html>`
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Customer summary template (no BOM — system overview + price + ROI only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CUSTOMER_TEMPLATE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{quoteNumber}} — Haberl Solar Quote</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>${BASE_CSS}</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="header">
+    <div class="logo-block">
+      <div class="logo-name">HABERL<span>.</span></div>
+      <div class="logo-sub">Electrical &amp; Solar</div>
+      <div class="logo-contact">
+        <span>+27 61 519 3016</span>
+        <span>matthew@haberl.co.za</span>
+        <span>haberl.co.za &nbsp;&middot;&nbsp; Gauteng, South Africa</span>
+      </div>
+      {{TIER_BADGE}}
+    </div>
+    <div class="quote-meta">
+      <div class="quo-number">{{quoteNumber}}</div>
+      <table>
+        <tr><td>Date</td><td>{{dateIssued}}</td></tr>
+        <tr><td>Valid until</td><td>{{dateExpires}}</td></tr>
+        <tr><td>Customer</td><td>{{customerName}}</td></tr>
+        <tr><td>Municipality</td><td>{{municipality}}</td></tr>
+      </table>
+    </div>
+  </header>
+
+  <div class="validity-bar">
+    <div class="dot"></div>
+    <span>This quote is valid for <strong>7 days</strong> from date of issue. A deposit (marked &#9733;) is required to confirm the order and procure equipment.</span>
+  </div>
+
+  <div class="two-col no-break">
+    <div class="card">
+      <div class="card-header"><h2>Customer</h2></div>
+      <div class="card-body">
+        <table class="info-table">
+          <tr><td>Customer</td><td>{{customerName}}</td></tr>
+          <tr><td>Phone</td><td>{{customerPhone}}</td></tr>
+          <tr><td>Email</td><td>{{customerEmail}}</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Site Details</h2></div>
+      <div class="card-body">
+        <table class="info-table">
+          <tr><td>Address</td><td>{{siteAddress}}</td></tr>
+          <tr><td>Municipality</td><td>{{municipality}}</td></tr>
+          <tr><td>Avg monthly usage</td><td>{{monthlyUsageKwh}} kWh</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card no-break">
+    <div class="card-header"><h2>Your System</h2></div>
+    <div class="card-body">
+      <table class="info-table">
+        <tr><td>System type</td><td>{{systemType}}</td></tr>
+        <tr><td>Inverter</td><td>{{inverterModel}} {{inverterKw}}kW</td></tr>
+        <tr><td>Battery</td><td>{{batteryModel}} {{batteryKwh}}kWh</td></tr>
+        <tr><td>Solar panels</td><td>{{panelCount}} &times; {{panelModel}}</td></tr>
+        <tr><td>Total capacity</td><td>{{totalKwp}}kWp</td></tr>
+        <tr><td>Est. monthly generation</td><td>~{{monthlyGenKwh}} kWh</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="section-heading">Total Investment</div>
+
+  <div class="summary-block no-break">
+    <h2>Quote Total</h2>
+    <table class="summary-lines">
+      <tr class="total-row"><td>QUOTE TOTAL</td><td>{{quoteTotal}}</td></tr>
     </table>
     <div class="vat-badge">Haberl Electrical &amp; Solar does not add VAT &mdash; all prices inclusive</div>
   </div>
