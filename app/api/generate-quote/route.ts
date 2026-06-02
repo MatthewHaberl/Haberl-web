@@ -76,39 +76,73 @@ export async function POST(req: Request) {
   })
 }
 
-function buildSurveyMessage(s: Record<string, string>): string {
+// Accepts DB snake_case record (customer_name, grid_supply, etc.)
+// Also accepts camelCase (customerName, gridSupply) as fallback for future API callers
+function buildSurveyMessage(s: Record<string, unknown>): string {
+  const v = (snake: string, camel?: string) =>
+    String(s[snake] ?? (camel ? s[camel] : undefined) ?? '')
   const today = new Date().toLocaleDateString('en-ZA', {
     year: 'numeric', month: 'long', day: 'numeric',
   })
+  const quoteNum = v('next_quote_number', 'nextQuoteNumber') || v('quote_number', 'quoteNumber')
+  const isAmendment = !!(s.is_amendment)
 
-  return `Today's date: ${today}
+  // Usage block — handle advanced (12-month) or simple average
+  const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+  const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const usageBlock = s.usage_mode === 'advanced'
+    ? 'Monthly breakdown:\n' + MONTHS.map((m, i) =>
+        s[`monthly_kwh_${m}`] ? `  - ${MONTH_LABELS[i]}: ${s[`monthly_kwh_${m}`]} kWh` : null
+      ).filter(Boolean).join('\n') + (s.monthly_kwh ? `\n  - Average: ${s.monthly_kwh} kWh/month` : '')
+    : `Average monthly usage: ${v('monthly_kwh', 'monthlyKwh') || 'TBC'} kWh`
 
-Please generate a complete solar installation quote based on the following site survey:
+  const amendmentBlock = isAmendment ? `
+## EXISTING SYSTEM (Amendment job)
+- Current inverter: ${v('existing_inverter') || 'TBC'}
+- Current batteries: ${v('existing_batteries') || 'TBC'}
+- Current panels: ${v('existing_panels') || 'TBC'}
+- Current monthly usage: ${v('existing_monthly_usage') || 'TBC'} kWh
+- Current monthly generation: ${v('existing_monthly_gen') || 'TBC'} kWh
+- Scope of amendment: ${v('amendment_scope') || 'TBC'}
 
-**CUSTOMER DETAILS**
-- Name: ${s.customerName || 'Unknown'}
-- Phone: ${s.customerPhone || 'TBC'}
-- Email: ${s.customerEmail || 'TBC'}
-- Address: ${s.address || 'TBC'}
-- Municipality: ${s.municipality || 'TBC'}
+Quote ONLY the new/replacement components. State what is retained vs replaced.
+` : ''
 
-**SITE INFORMATION**
-- Grid supply: ${s.gridSupply || 'Single Phase'}
-- Roof type: ${s.roofType || 'TBC'}
-- Number of storeys: ${s.storeys || '1'}
-- Average monthly kWh usage: ${s.monthlyKwh || 'TBC'} kWh
+  return `Today's date: ${today}${quoteNum ? `\nUse quote number: ${quoteNum}` : ''}
 
-**SYSTEM REQUIREMENTS**
-- System type: ${s.systemType || 'Hybrid'}
-- Battery backup required: ${s.batteryHours || '4'} hours
-- Essential load during backup: ${s.essentialLoad || '3'} kW
-- EV charger required: ${s.evCharger || 'No'}
-- Equipment preference: ${s.equipmentPreference || 'Any — recommend best value'}
+Please generate a complete solar ${isAmendment ? 'amendment/upgrade' : 'installation'} quote based on the following site survey:
+${amendmentBlock}
+## CUSTOMER DETAILS
+- Name: ${v('customer_name', 'customerName') || 'Unknown'}
+- Phone: ${v('customer_phone', 'customerPhone') || 'TBC'}
+- Email: ${v('customer_email', 'customerEmail') || 'TBC'}
+- Address: ${v('address') || 'TBC'}
+- Municipality: ${v('municipality') || 'TBC'}
 
-**ADDITIONAL NOTES**
-${s.notes || 'None'}
+## SITE INFORMATION
+- Grid supply: ${v('grid_supply', 'gridSupply') || 'Single Phase'}
+- Roof type: ${v('roof_type', 'roofType') || 'TBC'}
+- Number of storeys: ${v('storeys') || '1'}
+
+## ENERGY USAGE
+${usageBlock}
+
+## SYSTEM REQUIREMENTS
+- System type: ${v('system_type', 'systemType') || 'Hybrid'}
+- Battery backup: ${v('battery_hours', 'batteryHours') || 'AI will determine'}
+- Essential load during backup: ${v('essential_load', 'essentialLoad') || 'TBC'} kW
+- Target off-grid percentage: ${s.target_offgrid_pct != null ? `${s.target_offgrid_pct}%` : '100%'}
+- EV charger required: ${v('ev_charger', 'evCharger') || 'No'}
+
+## EQUIPMENT PREFERENCES
+- Inverter brand: ${v('inverter_brand', 'inverterBrand') || 'No preference — AI will recommend'}
+- Battery brand: ${v('battery_brand', 'batteryBrand') || 'No preference — AI will recommend'}
+- Panel brand: ${v('panel_brand', 'panelBrand') || 'No preference — AI will recommend'}
+
+## ADDITIONAL NOTES
+${v('notes') || 'None'}
 
 ---
 
-Please generate a complete, itemised quote following the standard Haberl quote format. Include all required components, run all validation checks, and calculate the 5-year ROI estimate. State all assumptions clearly.`
+Output a single JSON object in a \`\`\`json code block using the web app JSON format (camelCase fields: quoteNumber, customerName, inverterModel, panelCost, depositItems, monthlyGenTable, twentyYearTable, etc.). No other text.`
 }

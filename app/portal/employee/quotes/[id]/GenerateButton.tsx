@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/client'
 import { extractQuoteJson, renderQuote, renderCustomerQuote, isMultiOption, type QuoteData, type MultiOptionQuoteData, type AnyQuoteData } from '@/lib/solar/render-quote'
 import { DepositSelector } from './DepositSelector'
-import { Loader2, Zap, Copy, Check, Save, Eye, EyeOff } from 'lucide-react'
+import { Loader2, Zap, Copy, Check, Save, Eye, EyeOff, Bot } from 'lucide-react'
 
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'] as const
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -127,10 +127,12 @@ export function GenerateButton({
   const [quoteNumber, setQuoteNumber] = useState(existingQuoteNumber ?? nextQuoteNumber)
 
   // UI state
-  const [copied,    setCopied]    = useState(false)
-  const [saving,    setSaving]    = useState(false)
-  const [saved,     setSaved]     = useState(!!existingHtml || !!existingQuote)
-  const [saveError, setSaveError] = useState('')
+  const [copied,     setCopied]     = useState(false)
+  const [saving,     setSaving]     = useState(false)
+  const [saved,      setSaved]      = useState(!!existingHtml || !!existingQuote)
+  const [saveError,  setSaveError]  = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [genError,   setGenError]   = useState('')
   // ── Parse JSON from pasted text ──────────────────────────────────────────────
   const tryParse = useCallback((text: string) => {
     if (!text.trim()) { setQuoteData(null); setParseError(''); setRenderedHtml(''); onQuoteDataChange?.(null); return }
@@ -176,6 +178,47 @@ export function GenerateButton({
     if (pasted) tryParse(pasted)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ── Auto-generate (calls API directly when ANTHROPIC_API_KEY is set) ─────────
+  async function handleAutoGenerate() {
+    setGenerating(true)
+    setGenError('')
+    setPasted('')
+    setSaved(false)
+    setQuoteData(null)
+    setRenderedHtml('')
+    onQuoteDataChange?.(null)
+
+    try {
+      const res = await fetch('/api/generate-quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...request, next_quote_number: quoteNumber }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `HTTP ${res.status}`)
+      }
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let accumulated = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        accumulated += decoder.decode(value, { stream: true })
+        setPasted(accumulated)
+      }
+
+      tryParse(accumulated)
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : 'Auto-generate failed. Check ANTHROPIC_API_KEY in .env.local.')
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   // ── Copy prompt ──────────────────────────────────────────────────────────────
   async function handleCopyPrompt() {
@@ -239,38 +282,55 @@ export function GenerateButton({
   return (
     <div className="flex flex-col gap-6">
 
-      {/* Step 1 — Copy prompt */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <p className="text-sm font-medium text-foreground">Step 1 — Copy the prompt</p>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-muted-foreground">Quote #</label>
-            <input
-              type="text"
-              value={quoteNumber}
-              onChange={(e) => setQuoteNumber(e.target.value)}
-              className="h-7 w-36 rounded border border-border bg-background px-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-            />
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Paste into Claude Code or claude.ai. Claude will output a JSON quote — paste it back below.
-        </p>
-        <Button variant="accent" onClick={handleCopyPrompt} className="self-start">
+      {/* Quote number row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="text-sm font-medium text-foreground">Quote #</label>
+        <input
+          type="text"
+          value={quoteNumber}
+          onChange={(e) => setQuoteNumber(e.target.value)}
+          className="h-7 w-36 rounded border border-border bg-background px-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        />
+
+        {/* Auto-generate button — primary action when API key is set */}
+        <Button
+          variant="accent"
+          onClick={handleAutoGenerate}
+          disabled={generating}
+          className="ml-auto"
+          title="Calls the Anthropic API directly — requires ANTHROPIC_API_KEY in .env.local"
+        >
+          {generating
+            ? <><Loader2 className="h-4 w-4 animate-spin" />Generating…</>
+            : <><Bot className="h-4 w-4" />Auto-generate</>}
+        </Button>
+
+        {/* Manual copy — fallback when no API key */}
+        <Button variant="outline" onClick={handleCopyPrompt} title="Copy prompt to paste into Claude manually">
           {copied
             ? <><Check className="h-4 w-4" />Copied!</>
             : <><Zap className="h-4 w-4" />Copy Prompt</>}
         </Button>
       </div>
 
+      {genError && (
+        <p className="text-xs text-destructive bg-destructive/10 rounded px-3 py-2">
+          {genError}
+        </p>
+      )}
+
       <div className="border-t border-border" />
 
-      {/* Step 2 — Paste JSON */}
+      {/* Paste area (used by Auto-generate streaming output + manual paste) */}
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-foreground">Step 2 — Paste Claude&apos;s output</p>
-        <p className="text-sm text-muted-foreground">
-          Claude will output a <code className="text-xs bg-muted px-1 py-0.5 rounded">```json</code> block — paste the entire response here.
+        <p className="text-sm font-medium text-foreground">
+          {generating ? 'Streaming response…' : 'JSON output'}
         </p>
+        {!generating && (
+          <p className="text-sm text-muted-foreground">
+            Auto-generate fills this automatically. Or paste the <code className="text-xs bg-muted px-1 py-0.5 rounded">```json</code> block from Claude manually.
+          </p>
+        )}
         <textarea
           value={pasted}
           onChange={(e) => handlePasteChange(e.target.value)}
