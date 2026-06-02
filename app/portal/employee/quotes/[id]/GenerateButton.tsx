@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/client'
-import { extractQuoteJson, renderSimplifiedQuote, type QuoteData } from '@/lib/solar/render-quote'
+import { extractQuoteJson, renderQuote, isMultiOption, type QuoteData, type MultiOptionQuoteData, type AnyQuoteData } from '@/lib/solar/render-quote'
 import { DepositSelector } from './DepositSelector'
 import { Loader2, Zap, Copy, Check, Save, Eye, EyeOff } from 'lucide-react'
 
@@ -111,7 +111,7 @@ export function GenerateButton({
   const [pasted,    setPasted]    = useState(existingQuote ?? '')
 
   // Parsed JSON state
-  const [quoteData, setQuoteData] = useState<QuoteData | null>(null)
+  const [quoteData, setQuoteData] = useState<AnyQuoteData | null>(null)
   const [parseError,setParseError]= useState('')
 
   // Rendered HTML
@@ -136,10 +136,13 @@ export function GenerateButton({
     if (parsed) {
       setQuoteData(parsed)
       setParseError('')
-      setRenderedHtml(renderSimplifiedQuote(parsed))
-      // Pre-populate deposit items from JSON if not already set
-      if (parsed.depositItems?.length && !depositSelected.length) {
-        setDepositSelected(parsed.depositItems.map((i) => i.name))
+      setRenderedHtml(renderQuote(parsed))
+      // For multi-option: use recommended option's deposit items as default
+      const depositSrc = isMultiOption(parsed)
+        ? (parsed as MultiOptionQuoteData).options.find(o => o.tier === 'recommended') ?? (parsed as MultiOptionQuoteData).options[0]
+        : parsed as QuoteData
+      if (depositSrc?.depositItems?.length && !depositSelected.length) {
+        setDepositSelected(depositSrc.depositItems.map((i) => i.name))
       }
       if (parsed.quoteNumber && !existingQuoteNumber) {
         setQuoteNumber(parsed.quoteNumber)
@@ -171,15 +174,22 @@ export function GenerateButton({
     try {
       const supabase = createClient()
 
-      const depositAmountCents = quoteData
+      // For deposit calc: use recommended option for multi-option, or the single quote
+      const singleQuote = quoteData && !isMultiOption(quoteData) ? quoteData as QuoteData : null
+      const multiRec = quoteData && isMultiOption(quoteData)
+        ? (quoteData as MultiOptionQuoteData).options.find(o => o.tier === 'recommended') ?? (quoteData as MultiOptionQuoteData).options[0]
+        : null
+      const depositSource = singleQuote ?? multiRec
+
+      const depositAmountCents = depositSource
         ? Math.round(
-            quoteData.depositItems
+            depositSource.depositItems
               .filter((i) => depositSelected.includes(i.name))
               .reduce((sum, i) => sum + i.amountRands, 0) * 100
           )
         : null
 
-      const totalAmountCents = quoteData ? Math.round(quoteData.quoteTotalRands * 100) : null
+      const totalAmountCents = depositSource ? Math.round(depositSource.quoteTotalRands * 100) : null
 
       await supabase.from('quote_requests').update({
         // v2 fields (structured)
@@ -251,7 +261,7 @@ export function GenerateButton({
         {quoteData && !parseError && (
           <p className="text-xs text-success flex items-center gap-1.5">
             <Check className="h-3.5 w-3.5" />
-            JSON parsed — {quoteData.quoteNumber} · {quoteData.quoteTotal}
+            JSON parsed — {quoteData.quoteNumber}{isMultiOption(quoteData) ? ' · 3-option proposal' : ` · ${(quoteData as QuoteData).quoteTotal}`}
           </p>
         )}
       </div>
@@ -286,19 +296,29 @@ export function GenerateButton({
               />
             )}
 
-            {/* Deposit items */}
-            {quoteData?.depositItems?.length ? (
-              <div className="flex flex-col gap-1.5">
-                <p className="text-sm font-medium text-foreground">Deposit items</p>
-                <p className="text-xs text-muted-foreground">Choose which items require an upfront deposit. Default: inverter, battery, panels, mounting.</p>
-                <DepositSelector
-                  items={quoteData.depositItems}
-                  selected={depositSelected}
-                  quoteTotalRands={quoteData.quoteTotalRands}
-                  onChange={setDepositSelected}
-                />
-              </div>
-            ) : null}
+            {/* Deposit items — for single-option or from recommended option */}
+            {(() => {
+              const depositSrc = quoteData && !isMultiOption(quoteData)
+                ? quoteData as QuoteData
+                : quoteData && isMultiOption(quoteData)
+                  ? ((quoteData as MultiOptionQuoteData).options.find(o => o.tier === 'recommended') ?? (quoteData as MultiOptionQuoteData).options[0])
+                  : null
+              if (!depositSrc?.depositItems?.length) return null
+              return (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-sm font-medium text-foreground">
+                    Deposit items{isMultiOption(quoteData!) ? ' (from Recommended option)' : ''}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Choose which items require an upfront deposit.</p>
+                  <DepositSelector
+                    items={depositSrc.depositItems}
+                    selected={depositSelected}
+                    quoteTotalRands={depositSrc.quoteTotalRands}
+                    onChange={setDepositSelected}
+                  />
+                </div>
+              )
+            })()}
           </div>
         </>
       )}
