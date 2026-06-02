@@ -84,7 +84,7 @@ ${photosBlock}
 
 ---
 
-Output a single JSON object in a \`\`\`json code block following the exact format in your instructions. No other text.`
+Output a single JSON object in a \`\`\`json code block using the web app JSON format from your instructions (camelCase fields: quoteNumber, customerName, inverterModel, panelCost, depositItems, monthlyGenTable, twentyYearTable, etc.). No other text.`
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
