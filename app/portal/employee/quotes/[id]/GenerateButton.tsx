@@ -375,7 +375,7 @@ export function GenerateButton({
     if (!quoteData) return
 
     const workbook = buildQuoteWorkbook(quoteData)
-    const blob = new Blob([workbook.bytes], {
+    const blob = new Blob([workbook.bytes.buffer as ArrayBuffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     })
     const url = URL.createObjectURL(blob)
