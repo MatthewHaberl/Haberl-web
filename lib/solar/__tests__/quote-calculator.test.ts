@@ -39,16 +39,16 @@ const michelleFixture: CalculatorInput = {
       notes: null,
     },
     battery: {
-      id: 'bat-sig-12',
+      id: 'bat-sig-10',
       category: 'battery',
       brand: 'Sigenergy',
-      sku: 'SIG-BAT-12K',
-      description: 'SigenStack 12kWh',
+      sku: 'SIG-BAT-10K',
+      description: 'SigenStor Battery 9.04kWh',
       watts_ac: null,
       watts_dc: null,
-      kwh: 12,
+      kwh: 9.04,
       phase: 'any',
-      cost_rands: 45804.5,
+      cost_rands: 38180,
       isc_amps: null,
       voc_volts: null,
       active: true,
@@ -86,9 +86,10 @@ test('calculator produces a deterministic Michelle quote close to the reference 
   )
 
   assert.equal(Number(quote.panelCount), 14)
-  assert.ok(Math.abs(quote.quoteTotalRands - 151884.86) <= 200, `Quote total was ${quote.quoteTotalRands}`)
+  assert.equal(Number(quote.batteryQty), 2)
+  assert.ok(Math.abs(quote.quoteTotalRands - 187024.24) <= 200, `Quote total was ${quote.quoteTotalRands}`)
   assert.equal(Number(quote.depositTotalRands.toFixed(2)), Number(depositTotal.toFixed(2)))
   assert.equal(labourValue, 8142.5)
   assert.equal(Number(quote.earthingSpikeCount), 6)
-  assert.ok(Number(quote.paybackMonths) >= 55 && Number(quote.paybackMonths) <= 65, `Payback months was ${quote.paybackMonths}`)
+  assert.ok(Number(quote.paybackMonths) >= 68 && Number(quote.paybackMonths) <= 74, `Payback months was ${quote.paybackMonths}`)
 })

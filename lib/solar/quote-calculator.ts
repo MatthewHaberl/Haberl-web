@@ -12,6 +12,8 @@ export const PSH_GAUTENG = 5.3
 export const SYSTEM_EFFICIENCY = 0.8
 export const MARKUP = 1.15
 export const COC_RANDS = 1500
+export const MAX_RECOMMENDED_DC_AC_RATIO = 1.3
+export const MIN_BATTERY_KWH_PER_INVERTER_KW = 2
 
 export const TARIFF_BY_MUNICIPALITY: Record<string, number> = {
   'City of Johannesburg': 2.92,
@@ -74,6 +76,33 @@ const BARE_EARTH_WIRE_SELL_PER_M = 54.26
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MONTHLY_SOLAR_FACTORS = [0.93, 0.94, 0.98, 1.01, 1.04, 1.05, 1.06, 1.05, 1.02, 0.98, 0.96, 0.98]
+
+export interface InverterSizingSpec {
+  maxPvKwp?: number
+  maxPanels?: number
+  maxStrings?: number
+  parallelStringsPerMppt?: number
+  seriesPanelsPerString?: number
+  seriesMin?: number
+  seriesMax?: number
+  stringExample?: string
+  batteryBrands?: string[]
+  rawNotes?: string
+}
+
+export interface SizingSnapshot {
+  dailyUsageKwh: number
+  targetSolarKwp: number
+  targetInverterKw: number
+  minimumBatteryKwh: number
+  targetPanelCount: number
+  selectedBatteryCount: number | null
+  selectedBatteryBankKwh: number | null
+  maxPanelCountOnSelectedInverter: number | null
+  maxPvKwpOnSelectedInverter: number | null
+  stringSummary: string | null
+  batteryCompatibilitySummary: string | null
+}
 
 export type EquipmentCatalogCategory = 'inverter' | 'battery' | 'panel' | 'other'
 export type EquipmentCatalogPhase = 'single' | 'three' | 'any'
@@ -208,6 +237,297 @@ function normalizeBrand(brand: string) {
   return brand.trim().toLowerCase()
 }
 
+function coercePositiveNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
+  if (typeof value !== 'string') return null
+
+  const cleaned = value.replace(/[^0-9.:-]/g, '').trim()
+  if (!cleaned) return null
+
+  if (cleaned.includes(':')) {
+    const [left, right] = cleaned.split(':').map((part) => Number(part))
+    if (Number.isFinite(left) && Number.isFinite(right) && right > 0) {
+      return left / right
+    }
+  }
+
+  const parsed = Number(cleaned)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function normalizeSpecKey(key: string) {
+  return key.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function ensureStringArray(value: unknown) {
+  if (!Array.isArray(value)) return null
+  const strings = value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter(Boolean)
+  return strings.length ? strings : null
+}
+
+function summarizeStringSetup(spec: InverterSizingSpec) {
+  if (spec.stringExample) return spec.stringExample
+
+  const parts: string[] = []
+  if (spec.maxStrings) parts.push(`${spec.maxStrings} strings total`)
+  if (spec.parallelStringsPerMppt) parts.push(`${spec.parallelStringsPerMppt} parallel per MPPT`)
+
+  if (spec.seriesPanelsPerString) {
+    parts.push(`${spec.seriesPanelsPerString} panels in series`)
+  } else if (spec.seriesMin && spec.seriesMax) {
+    parts.push(`${spec.seriesMin}-${spec.seriesMax} panels in series`)
+  } else if (spec.seriesMax) {
+    parts.push(`up to ${spec.seriesMax} panels in series`)
+  }
+
+  return parts.length ? parts.join(' · ') : null
+}
+
+export function parseInverterSizingSpec(notes: string | null | undefined): InverterSizingSpec | null {
+  if (!notes?.trim()) return null
+
+  const rawNotes = notes.trim()
+
+  try {
+    const parsed = JSON.parse(rawNotes) as Record<string, unknown>
+    const batteryBrands = ensureStringArray(parsed.batteryBrands ?? parsed.compatibleBatteryBrands ?? parsed.compatible_battery_brands)
+    return {
+      maxPvKwp: coercePositiveNumber(parsed.maxPvKwp ?? parsed.max_pv_kwp) ?? undefined,
+      maxPanels: coercePositiveNumber(parsed.maxPanels ?? parsed.max_panels) ?? undefined,
+      maxStrings: coercePositiveNumber(parsed.maxStrings ?? parsed.max_strings) ?? undefined,
+      parallelStringsPerMppt: coercePositiveNumber(parsed.parallelStringsPerMppt ?? parsed.parallel_strings_per_mppt) ?? undefined,
+      seriesPanelsPerString: coercePositiveNumber(parsed.seriesPanelsPerString ?? parsed.series_panels_per_string) ?? undefined,
+      seriesMin: coercePositiveNumber(parsed.seriesMin ?? parsed.series_min) ?? undefined,
+      seriesMax: coercePositiveNumber(parsed.seriesMax ?? parsed.series_max) ?? undefined,
+      stringExample: typeof parsed.stringExample === 'string' ? parsed.stringExample.trim() : (typeof parsed.string_example === 'string' ? parsed.string_example.trim() : undefined),
+      batteryBrands: batteryBrands ?? undefined,
+      rawNotes,
+    }
+  } catch {
+    const lines = rawNotes
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+
+    const spec: InverterSizingSpec = { rawNotes }
+    for (const line of lines) {
+      const separatorIndex = line.indexOf(':')
+      if (separatorIndex === -1) continue
+
+      const key = normalizeSpecKey(line.slice(0, separatorIndex))
+      const value = line.slice(separatorIndex + 1).trim()
+      if (!value) continue
+
+      switch (key) {
+        case 'max_pv_kwp':
+        case 'pv_max_kwp':
+        case 'max_dc_kwp':
+          spec.maxPvKwp = coercePositiveNumber(value) ?? undefined
+          break
+        case 'max_panels':
+          spec.maxPanels = coercePositiveNumber(value) ?? undefined
+          break
+        case 'max_strings':
+        case 'strings':
+          spec.maxStrings = coercePositiveNumber(value) ?? undefined
+          break
+        case 'parallel_strings_per_mppt':
+        case 'parallel_per_mppt':
+          spec.parallelStringsPerMppt = coercePositiveNumber(value) ?? undefined
+          break
+        case 'series_panels_per_string':
+        case 'series_panels':
+          spec.seriesPanelsPerString = coercePositiveNumber(value) ?? undefined
+          break
+        case 'series_min':
+          spec.seriesMin = coercePositiveNumber(value) ?? undefined
+          break
+        case 'series_max':
+          spec.seriesMax = coercePositiveNumber(value) ?? undefined
+          break
+        case 'string_example':
+        case 'string_layout':
+        case 'layout':
+          spec.stringExample = value
+          break
+        case 'battery_brands':
+        case 'compatible_battery_brands':
+        case 'battery_compatibility':
+          spec.batteryBrands = value.split(',').map((entry) => entry.trim()).filter(Boolean)
+          break
+        default:
+          break
+      }
+    }
+
+    return Object.keys(spec).length > 1 ? spec : { rawNotes }
+  }
+}
+
+export function estimateDailyUsageKwh(monthlyKwh: number) {
+  return roundCurrency(monthlyKwh / 30)
+}
+
+export function estimateTargetSolarKwp(monthlyKwh: number) {
+  return roundCurrency(monthlyKwh / (PSH_GAUTENG * 30 * SYSTEM_EFFICIENCY))
+}
+
+export function estimateMinimumBatteryKwh(inverterKw: number) {
+  return roundCurrency(Math.max(0, inverterKw) * MIN_BATTERY_KWH_PER_INVERTER_KW)
+}
+
+export function estimateTargetInverterKw(monthlyKwh: number, essentialLoadKw: number, lockedSolarKwp?: number | null) {
+  const solarKw = lockedSolarKwp && lockedSolarKwp > 0
+    ? lockedSolarKwp / MAX_RECOMMENDED_DC_AC_RATIO
+    : estimateTargetSolarKwp(monthlyKwh)
+  return Math.max(Math.ceil(solarKw), Math.ceil(essentialLoadKw))
+}
+
+function getRestrictedCompatibleBatteryBrands(inverter: EquipmentCatalogItem) {
+  const spec = parseInverterSizingSpec(inverter.notes)
+  if (spec?.batteryBrands?.length) return spec.batteryBrands.map(normalizeBrand)
+
+  const inverterBrand = normalizeBrand(inverter.brand)
+  const inverterSku = normalizeBrand(inverter.sku)
+  const inverterDescription = normalizeBrand(inverter.description)
+
+  if (
+    inverterBrand.includes('sigenergy') ||
+    inverterSku.includes('sig-inv') ||
+    inverterDescription.includes('sigenstor') ||
+    inverterDescription.includes('sigenergy')
+  ) {
+    return ['sigenergy']
+  }
+
+  return null
+}
+
+export function isBatteryCompatibleWithInverter(inverter: EquipmentCatalogItem, battery: EquipmentCatalogItem) {
+  const restrictedBrands = getRestrictedCompatibleBatteryBrands(inverter)
+  if (!restrictedBrands) return true
+
+  const batteryBrand = normalizeBrand(battery.brand)
+  const batteryDescription = normalizeBrand(battery.description)
+  const batterySku = normalizeBrand(battery.sku)
+
+  if (batteryDescription.includes('sigenstack') || batterySku.includes('sig-bat-12k')) {
+    return false
+  }
+
+  return restrictedBrands.some((brand) => batteryBrand.includes(brand))
+}
+
+export function describeCompatibleBatteryBrands(inverter: EquipmentCatalogItem) {
+  const restrictedBrands = getRestrictedCompatibleBatteryBrands(inverter)
+  if (!restrictedBrands?.length) return 'Most 48V-compatible batteries in the catalog'
+  return restrictedBrands.map((brand) => brand.charAt(0).toUpperCase() + brand.slice(1)).join(', ')
+}
+
+export function getInverterMaxPvKwp(inverter: EquipmentCatalogItem) {
+  const spec = parseInverterSizingSpec(inverter.notes)
+  if (spec?.maxPvKwp) return spec.maxPvKwp
+  const inverterKw = (inverter.watts_ac ?? 0) / 1000
+  return inverterKw > 0 ? roundCurrency(inverterKw * MAX_RECOMMENDED_DC_AC_RATIO) : null
+}
+
+export function getMaxPanelCountForInverter(inverter: EquipmentCatalogItem, panel: EquipmentCatalogItem) {
+  const panelWatts = panel.watts_dc ?? 0
+  if (panelWatts <= 0) return null
+
+  const spec = parseInverterSizingSpec(inverter.notes)
+  if (spec?.maxPanels) return Math.floor(spec.maxPanels)
+
+  const maxPvKwp = getInverterMaxPvKwp(inverter)
+  if (!maxPvKwp) return null
+
+  return Math.max(1, Math.floor((maxPvKwp * 1000) / panelWatts))
+}
+
+export function buildSizingSnapshot(input: {
+  monthlyKwh: number
+  essentialLoadKw: number
+  batteryHours?: number
+  lockedPanelCount?: number | null
+  inverter?: EquipmentCatalogItem | null
+  battery?: EquipmentCatalogItem | null
+  panel?: EquipmentCatalogItem | null
+}) {
+  const dailyUsageKwh = estimateDailyUsageKwh(input.monthlyKwh)
+  const targetSolarKwp = estimateTargetSolarKwp(input.monthlyKwh)
+  const targetInverterKw = estimateTargetInverterKw(input.monthlyKwh, input.essentialLoadKw)
+  const minimumBatteryKwh = estimateMinimumBatteryKwh(targetInverterKw)
+  const targetPanelCount = input.lockedPanelCount && input.lockedPanelCount > 0
+    ? input.lockedPanelCount
+    : input.panel?.watts_dc
+      ? Math.max(1, Math.ceil((targetSolarKwp * 1000) / input.panel.watts_dc))
+      : 0
+
+  const selectedBatteryCount = input.inverter && input.battery
+    ? getBatteryCount({
+        quoteNumber: '',
+        customerName: '',
+        customerPhone: '',
+        customerEmail: '',
+        siteAddress: '',
+        municipality: 'Eskom',
+        gridSupply: '',
+        storeys: '',
+        monthlyKwh: input.monthlyKwh,
+        batteryHours: input.batteryHours ?? 4,
+        essentialLoadKw: input.essentialLoadKw,
+        cableRouteMetres: 15,
+        lockedPanelCount: input.lockedPanelCount,
+        equipment: {
+          inverter: input.inverter,
+          battery: input.battery,
+          panel: input.panel ?? {
+            id: '',
+            category: 'panel',
+            brand: '',
+            sku: '',
+            description: '',
+            watts_ac: null,
+            watts_dc: null,
+            kwh: null,
+            phase: 'any',
+            cost_rands: 0,
+            isc_amps: null,
+            voc_volts: null,
+            active: true,
+            sort_order: 0,
+            notes: null,
+          },
+        },
+      })
+    : null
+
+  const selectedBatteryBankKwh = selectedBatteryCount && input.battery?.kwh
+    ? roundCurrency(selectedBatteryCount * input.battery.kwh)
+    : null
+  const maxPanelCountOnSelectedInverter = input.inverter && input.panel
+    ? getMaxPanelCountForInverter(input.inverter, input.panel)
+    : null
+  const maxPvKwpOnSelectedInverter = input.inverter ? getInverterMaxPvKwp(input.inverter) : null
+  const spec = input.inverter ? parseInverterSizingSpec(input.inverter.notes) : null
+
+  return {
+    dailyUsageKwh,
+    targetSolarKwp,
+    targetInverterKw,
+    minimumBatteryKwh,
+    targetPanelCount,
+    selectedBatteryCount,
+    selectedBatteryBankKwh,
+    maxPanelCountOnSelectedInverter,
+    maxPvKwpOnSelectedInverter,
+    stringSummary: spec ? summarizeStringSetup(spec) : null,
+    batteryCompatibilitySummary: input.inverter ? describeCompatibleBatteryBrands(input.inverter) : null,
+  } satisfies SizingSnapshot
+}
+
 function addBomItem(
   items: SupplierBomItem[],
   section: string,
@@ -233,24 +553,23 @@ export function getTariffRateForMunicipality(municipality: string) {
   return TARIFF_BY_MUNICIPALITY[municipality] ?? TARIFF_BY_MUNICIPALITY.Eskom
 }
 
-export function estimateTargetInverterKw(monthlyKwh: number, essentialLoadKw: number) {
-  const solarKw = monthlyKwh / (PSH_GAUTENG * 30 * SYSTEM_EFFICIENCY)
-  return Math.max(Math.ceil(solarKw), Math.ceil(essentialLoadKw))
-}
-
 function getPanelCount(input: CalculatorInput) {
   if (input.lockedPanelCount && input.lockedPanelCount > 0) {
     return input.lockedPanelCount
   }
 
   const panelWatts = input.equipment.panel.watts_dc ?? 0
-  const rawPanels = (input.monthlyKwh / (PSH_GAUTENG * 30 * SYSTEM_EFFICIENCY)) * (1000 / panelWatts)
+  const rawPanels = estimateTargetSolarKwp(input.monthlyKwh) * (1000 / Math.max(panelWatts, 1))
   return Math.max(1, Math.ceil(rawPanels))
 }
 
 function getBatteryCount(input: CalculatorInput) {
   const batteryKwh = input.equipment.battery.kwh ?? 0
-  return Math.max(1, Math.ceil((input.essentialLoadKw * input.batteryHours) / batteryKwh))
+  const inverterKw = (input.equipment.inverter.watts_ac ?? 0) / 1000
+  const minimumBackupBankKwh = input.essentialLoadKw * input.batteryHours
+  const minimumInverterBankKwh = estimateMinimumBatteryKwh(inverterKw)
+  const requiredBatteryKwh = Math.max(minimumBackupBankKwh, minimumInverterBankKwh)
+  return Math.max(1, Math.ceil(requiredBatteryKwh / Math.max(batteryKwh, 0.1)))
 }
 
 function getStoreysPremium(storeys: string) {
@@ -407,8 +726,23 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   const offsetPercent = clamp((usableOffsetKwhMonthly / Math.max(input.monthlyKwh, 1)) * 100, 0, 100)
 
   const dcAcRatio = totalKwp / Math.max(inverterKw, 0.1)
-  if (dcAcRatio < 1 || dcAcRatio > 1.3) {
+  if (dcAcRatio < 1 || dcAcRatio > MAX_RECOMMENDED_DC_AC_RATIO) {
     warnings.push(`DC:AC ratio is ${dcAcRatio.toFixed(2)}. Review panel/inverter sizing.`)
+  }
+
+  const inverterMaxPanelCount = getMaxPanelCountForInverter(inverter, panel)
+  if (inverterMaxPanelCount && panelCount > inverterMaxPanelCount) {
+    warnings.push(
+      `${inverter.description} is carrying ${panelCount} panels, but the configured PV ceiling is about ${inverterMaxPanelCount} panels for ${panel.description}.`,
+    )
+  }
+
+  const minimumBatteryBankKwh = estimateMinimumBatteryKwh(inverterKw)
+  const selectedBatteryBankKwh = roundCurrency((battery.kwh ?? 0) * batteryCount)
+  if (selectedBatteryBankKwh < minimumBatteryBankKwh) {
+    warnings.push(
+      `Battery bank is ${selectedBatteryBankKwh.toFixed(2)}kWh. Target at least ${minimumBatteryBankKwh.toFixed(2)}kWh for a ${inverterKw.toFixed(1)}kW inverter.`,
+    )
   }
 
   const panelSell = roundCurrency(panel.cost_rands * MARKUP)

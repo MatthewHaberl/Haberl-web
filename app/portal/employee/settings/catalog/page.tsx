@@ -378,8 +378,16 @@ export default function CatalogPage() {
                   value={editing.notes}
                   onChange={(event) => setEditing({ ...editing, notes: event.target.value })}
                   rows={3}
+                  placeholder={editing.category === 'inverter'
+                    ? 'Max PV kWp: 10.4\nMax panels: 20\nString example: 4 strings total, 2 parallel per MPPT, 8 in series\nBattery brands: Sunsynk, Deye'
+                    : ''}
                   className="rounded-md border border-border bg-background px-3 py-2 text-sm"
                 />
+                {editing.category === 'inverter' && (
+                  <span className="text-xs text-muted-foreground">
+                    Use notes to store PV limits, max panel counts, string layouts, and battery brand compatibility.
+                  </span>
+                )}
               </label>
               <label className="flex items-center gap-2 text-sm md:col-span-2">
                 <input

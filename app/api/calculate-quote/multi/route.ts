@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import {
   buildMultiOptionQuoteData,
   calculateQuote,
+  isBatteryCompatibleWithInverter,
   type EquipmentCatalogItem,
   type QuoteTierConfig,
 } from '@/lib/solar/quote-calculator'
@@ -87,6 +88,10 @@ export async function POST(req: Request) {
 
     if (!inverter || !battery || !panel) {
       throw new Error(`Missing equipment for tier config ${config!.tier}`)
+    }
+
+    if (!isBatteryCompatibleWithInverter(inverter, battery)) {
+      throw new Error(`${battery.description} is not compatible with ${inverter.description}`)
     }
 
     const quote = calculateQuote(

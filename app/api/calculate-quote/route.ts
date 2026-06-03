@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { calculateQuote, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
+import { calculateQuote, isBatteryCompatibleWithInverter, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import {
   buildCalculatorInput,
   fetchSurvey,
@@ -43,6 +43,10 @@ export async function POST(req: Request) {
 
   if (!inverter || !battery || !panel) {
     return new Response('Could not find the selected equipment', { status: 400 })
+  }
+
+  if (!isBatteryCompatibleWithInverter(inverter, battery)) {
+    return new Response(`${battery.description} is not compatible with ${inverter.description}`, { status: 400 })
   }
 
   const quoteData = calculateQuote(

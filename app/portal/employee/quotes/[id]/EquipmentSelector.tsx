@@ -14,8 +14,10 @@ import {
   type QuoteData,
 } from '@/lib/solar/render-quote'
 import {
+  buildSizingSnapshot,
   estimateTargetInverterKw,
   getTariffRateForMunicipality,
+  isBatteryCompatibleWithInverter,
   MARKUP,
   type EquipmentCatalogItem,
   type EquipmentCatalogPhase,
@@ -42,6 +44,10 @@ function formatRands(value: number) {
   return `R${value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function formatNumber(value: number, digits = 1) {
+  return value.toLocaleString('en-ZA', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
+
 function isSpecificBrand(value: unknown) {
   if (typeof value !== 'string') return false
   const normalized = value.toLowerCase()
@@ -56,6 +62,15 @@ function toOptionalString(value: unknown) {
 
 function normalizeBrand(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function coerceNumber(value: unknown, fallback = 0) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^0-9.-]/g, ''))
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
 }
 
 function brandMatchesPreference(itemBrand: string, preferredBrand: string | null) {
@@ -121,6 +136,25 @@ function formatCatalogError(message: string) {
   return message
 }
 
+function pickClosestInverter(items: EquipmentCatalogItem[], targetKw: number) {
+  if (!items.length) return null
+
+  return [...items].sort((left, right) => {
+    const leftKw = (left.watts_ac ?? 0) / 1000
+    const rightKw = (right.watts_ac ?? 0) / 1000
+    const leftShortfall = leftKw < targetKw ? targetKw - leftKw : 0
+    const rightShortfall = rightKw < targetKw ? targetKw - rightKw : 0
+
+    if (leftShortfall !== rightShortfall) return leftShortfall - rightShortfall
+
+    const leftOversize = leftKw >= targetKw ? leftKw - targetKw : 99
+    const rightOversize = rightKw >= targetKw ? rightKw - targetKw : 99
+    if (leftOversize !== rightOversize) return leftOversize - rightOversize
+
+    return left.sort_order - right.sort_order
+  })[0] ?? null
+}
+
 export function EquipmentSelector({
   requestId,
   request,
@@ -162,9 +196,15 @@ export function EquipmentSelector({
   const [quoteNumber, setQuoteNumber] = useState(existingQuoteNumber ?? nextQuoteNumber)
 
   const phase = getPhase(request.grid_supply)
+  const lockedDesignKwp = coerceNumber(request.design_kwp, 0) || null
+  const monthlyKwh = coerceNumber(request.monthly_kwh, 0)
+  const essentialLoadKw = coerceNumber(request.essential_load, 0)
+  const batteryHours = coerceNumber(request.battery_hours, 4)
+  const lockedPanelCount = coerceNumber(request.design_panel_count, 0) || null
   const targetKw = estimateTargetInverterKw(
-    Number(request.monthly_kwh ?? 0),
-    Number(request.essential_load ?? 0),
+    monthlyKwh,
+    essentialLoadKw,
+    lockedDesignKwp,
   )
   const hasSpecificPreferences = isSpecificBrand(request.inverter_brand) || isSpecificBrand(request.battery_brand) || isSpecificBrand(request.panel_brand)
   const hasPersistedSelection = Boolean(
@@ -235,6 +275,27 @@ export function EquipmentSelector({
         return
       }
 
+      if (!hasSpecificPreferences) {
+        const fallbackPanel = loadedCatalog.find((item) => item.category === 'panel' && item.active) ?? null
+        const fallbackInverter = pickClosestInverter(
+          loadedCatalog.filter((item) =>
+            item.category === 'inverter' &&
+            item.active &&
+            (item.phase === phase || item.phase === 'any'),
+          ),
+          targetKw,
+        )
+        const fallbackBattery = loadedCatalog.find((item) =>
+          item.category === 'battery' &&
+          item.active &&
+          (!fallbackInverter || isBatteryCompatibleWithInverter(fallbackInverter, item)),
+        ) ?? null
+
+        if (fallbackInverter) setInverterId(fallbackInverter.id)
+        if (fallbackBattery) setBatteryId(fallbackBattery.id)
+        if (fallbackPanel) setPanelId(fallbackPanel.id)
+      }
+
     }
 
     void loadCatalog()
@@ -255,15 +316,6 @@ export function EquipmentSelector({
     [catalog, phase, preferredInverterBrand],
   )
 
-  const batteryOptions = useMemo(
-    () => catalog.filter((item) =>
-      item.category === 'battery' &&
-      item.active &&
-      brandMatchesPreference(item.brand, preferredBatteryBrand),
-    ),
-    [catalog, preferredBatteryBrand],
-  )
-
   const panelOptions = useMemo(
     () => catalog.filter((item) =>
       item.category === 'panel' &&
@@ -273,13 +325,39 @@ export function EquipmentSelector({
     [catalog, preferredPanelBrand],
   )
 
-  const effectiveInverterId = inverterOptions.some((item) => item.id === inverterId) ? inverterId : (inverterOptions[0]?.id ?? '')
+  const fallbackInverter = useMemo(
+    () => pickClosestInverter(inverterOptions, targetKw),
+    [inverterOptions, targetKw],
+  )
+  const effectiveInverterId = inverterOptions.some((item) => item.id === inverterId)
+    ? inverterId
+    : (fallbackInverter?.id ?? inverterOptions[0]?.id ?? '')
+  const selectedInverter = inverterOptions.find((item) => item.id === effectiveInverterId) ?? catalog.find((item) => item.id === effectiveInverterId) ?? null
+  const batteryOptions = useMemo(
+    () => catalog.filter((item) =>
+      item.category === 'battery' &&
+      item.active &&
+      brandMatchesPreference(item.brand, preferredBatteryBrand) &&
+      (!selectedInverter || isBatteryCompatibleWithInverter(selectedInverter, item)),
+    ),
+    [catalog, preferredBatteryBrand, selectedInverter],
+  )
   const effectiveBatteryId = batteryOptions.some((item) => item.id === batteryId) ? batteryId : (batteryOptions[0]?.id ?? '')
   const effectivePanelId = panelOptions.some((item) => item.id === panelId) ? panelId : (panelOptions[0]?.id ?? '')
-
-  const selectedInverter = inverterOptions.find((item) => item.id === effectiveInverterId) ?? catalog.find((item) => item.id === effectiveInverterId) ?? null
   const selectedBattery = batteryOptions.find((item) => item.id === effectiveBatteryId) ?? catalog.find((item) => item.id === effectiveBatteryId) ?? null
   const selectedPanel = panelOptions.find((item) => item.id === effectivePanelId) ?? catalog.find((item) => item.id === effectivePanelId) ?? null
+  const sizingSnapshot = useMemo(
+    () => buildSizingSnapshot({
+      monthlyKwh,
+      essentialLoadKw,
+      batteryHours,
+      lockedPanelCount,
+      inverter: selectedInverter,
+      battery: selectedBattery,
+      panel: selectedPanel,
+    }),
+    [batteryHours, essentialLoadKw, lockedPanelCount, monthlyKwh, selectedBattery, selectedInverter, selectedPanel],
+  )
   const previewHtml = quoteVersion === 'detailed' ? detailedHtml : customerHtml
   const depositSource = getDepositSource(quoteData)
   const defaultWarning = Number(cableRouteM || 0) === 15
@@ -503,6 +581,11 @@ export function EquipmentSelector({
             ))}
           </select>
           {preferredBatteryBrand && <span className="text-xs text-muted-foreground">Filtered to {preferredBatteryBrand}</span>}
+          {!preferredBatteryBrand && selectedInverter && (
+            <span className="text-xs text-muted-foreground">
+              Showing batteries that work with {selectedInverter.brand}.
+            </span>
+          )}
         </label>
 
         <label className="flex flex-col gap-1.5">
@@ -521,6 +604,93 @@ export function EquipmentSelector({
           </select>
           {preferredPanelBrand && <span className="text-xs text-muted-foreground">Filtered to {preferredPanelBrand}</span>}
         </label>
+      </div>
+
+      <div className="rounded-lg border border-border bg-muted/30 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">Sizing logic</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Built from usage, inverter capacity, panel size, and the minimum 2:1 battery-to-inverter rule.
+            </p>
+          </div>
+          <div className="text-right text-xs text-muted-foreground">
+            <div>{formatNumber(sizingSnapshot.dailyUsageKwh, 1)} kWh/day average</div>
+            <div>{formatNumber(sizingSnapshot.targetSolarKwp, 2)} kWp solar target</div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-md border border-border bg-background p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Inverter target</p>
+            <p className="mt-1 text-base font-semibold text-foreground">{targetKw}kW {phase}-phase</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {selectedInverter ? `Selected: ${selectedInverter.description}` : 'Select an inverter to continue'}
+            </p>
+          </div>
+
+          <div className="rounded-md border border-border bg-background p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Battery floor</p>
+            <p className="mt-1 text-base font-semibold text-foreground">
+              {formatNumber(sizingSnapshot.minimumBatteryKwh, 1)} kWh minimum
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {sizingSnapshot.selectedBatteryBankKwh != null && sizingSnapshot.selectedBatteryCount != null
+                ? `${sizingSnapshot.selectedBatteryCount} x ${selectedBattery?.description ?? 'battery'} = ${formatNumber(sizingSnapshot.selectedBatteryBankKwh, 2)} kWh`
+                : 'Pick a battery to see the bank size'}
+            </p>
+          </div>
+
+          <div className="rounded-md border border-border bg-background p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Panel target</p>
+            <p className="mt-1 text-base font-semibold text-foreground">
+              {sizingSnapshot.targetPanelCount > 0
+                ? `${sizingSnapshot.targetPanelCount} panels`
+                : 'Select a panel'}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {selectedPanel?.watts_dc
+                ? `${formatNumber((sizingSnapshot.targetPanelCount * selectedPanel.watts_dc) / 1000, 2)} kWp with ${selectedPanel.watts_dc}W panels`
+                : 'Panel wattage drives the final panel count'}
+            </p>
+          </div>
+
+          <div className="rounded-md border border-border bg-background p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Inverter PV limit</p>
+            <p className="mt-1 text-base font-semibold text-foreground">
+              {sizingSnapshot.maxPvKwpOnSelectedInverter != null
+                ? `${formatNumber(sizingSnapshot.maxPvKwpOnSelectedInverter, 2)} kWp`
+                : 'Add spec in catalog'}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {sizingSnapshot.maxPanelCountOnSelectedInverter != null && selectedPanel
+                ? `About ${sizingSnapshot.maxPanelCountOnSelectedInverter} x ${selectedPanel.watts_dc}W panels max`
+                : 'Use inverter notes to pin exact panel limits'}
+            </p>
+          </div>
+        </div>
+
+        {(sizingSnapshot.stringSummary || sizingSnapshot.batteryCompatibilitySummary || selectedInverter?.notes) && (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-md border border-border bg-background p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">String layout</p>
+              <p className="mt-1 text-sm text-foreground">
+                {sizingSnapshot.stringSummary ?? 'Add lines like "Max PV kWp: 10.4" and "String example: 4 strings total, 2 parallel per MPPT, 8 in series" in the inverter notes.'}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Battery compatibility</p>
+              <p className="mt-1 text-sm text-foreground">
+                {sizingSnapshot.batteryCompatibilitySummary ?? 'Compatibility depends on the selected inverter.'}
+              </p>
+              {selectedInverter?.notes && (
+                <p className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap">
+                  {selectedInverter.notes}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -576,7 +746,7 @@ export function EquipmentSelector({
           </Button>
         )}
         <span className="text-xs text-muted-foreground">
-          Target bracket: about {targetKw}kW {phase}-phase
+          Logic target: about {targetKw}kW {phase}-phase
         </span>
       </div>
 

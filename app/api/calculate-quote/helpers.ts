@@ -105,6 +105,7 @@ export function calculateTargetInverterKw(request: Record<string, unknown>) {
   return estimateTargetInverterKw(
     coerceNumber(request.monthly_kwh, 0),
     coerceNumber(request.essential_load, 0),
+    coerceNumber(request.design_kwp, 0) || null,
   )
 }
 
