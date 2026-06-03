@@ -109,6 +109,18 @@ function getStoreysPremium(storeys: unknown) {
   return 0
 }
 
+function formatCatalogError(message: string) {
+  if (message.includes('public.equipment_catalog')) {
+    return 'Quote calculator setup is incomplete: Supabase table public.equipment_catalog is missing. Run migrations 006-008 and seed the catalog, then refresh. You can still use AI Override below.'
+  }
+
+  if (message.includes('public.quote_tier_configs')) {
+    return 'Quote calculator setup is incomplete: Supabase table public.quote_tier_configs is missing. Run migrations 007-008, then refresh.'
+  }
+
+  return message
+}
+
 export function EquipmentSelector({
   requestId,
   request,
@@ -180,13 +192,20 @@ export function EquipmentSelector({
       if (!active) return
 
       if (equipmentError || configError) {
-        setCatalogError(equipmentError?.message ?? configError?.message ?? 'Could not load catalog')
+        setCatalogError(formatCatalogError(equipmentError?.message ?? configError?.message ?? 'Could not load catalog'))
         setLoadingCatalog(false)
         return
       }
 
       const loadedCatalog = (equipmentRows ?? []) as EquipmentCatalogItem[]
       const loadedConfigs = (configRows ?? []) as QuoteTierConfig[]
+
+      if (loadedCatalog.length === 0) {
+        setCatalogError('Quote calculator setup is incomplete: equipment_catalog exists but has no rows yet. Seed the catalog, then refresh.')
+        setLoadingCatalog(false)
+        return
+      }
+
       setCatalog(loadedCatalog)
       setTierConfigs(loadedConfigs)
       setLoadingCatalog(false)
