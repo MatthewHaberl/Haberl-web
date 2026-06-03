@@ -43,7 +43,7 @@ const SLDDiagram = dynamic(
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'] as const
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-type TabId = 'survey' | 'roof-design' | 'quote' | 'diagram' | 'photos'
+type TabId = 'survey' | 'quote' | 'roof-design' | 'diagram' | 'photos'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -199,8 +199,8 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
 
   const tabs: { id: TabId; label: string; icon: React.ElementType; count?: number }[] = [
     { id: 'survey',      label: 'Survey',      icon: ClipboardList },
-    { id: 'roof-design', label: 'Roof Design', icon: Sun },
     { id: 'quote',       label: 'Quote',       icon: FileText },
+    { id: 'roof-design', label: 'Roof Design', icon: Sun },
     { id: 'diagram',     label: 'Diagram',     icon: Workflow },
     ...(photoUrls.length > 0
       ? [{ id: 'photos' as TabId, label: `Photos (${photoUrls.length})`, icon: Image }]

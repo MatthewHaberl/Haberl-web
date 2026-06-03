@@ -96,12 +96,13 @@ export interface SizingSnapshot {
   targetInverterKw: number
   minimumBatteryKwh: number
   targetPanelCount: number
+  inverterQuantity: number
   selectedBatteryCount: number | null
   selectedBatteryBankKwh: number | null
   maxPanelCountOnSelectedInverter: number | null
   maxPvKwpOnSelectedInverter: number | null
+  targetDailySolarOutputKwh: number | null
   stringSummary: string | null
-  batteryCompatibilitySummary: string | null
 }
 
 export type EquipmentCatalogCategory = 'inverter' | 'battery' | 'panel' | 'other'
@@ -157,6 +158,11 @@ export interface CalculatorInput {
   tariffRate?: number
   cableRouteMetres: number
   lockedPanelCount?: number | null
+  inverterQuantity?: number | null
+  batteryQuantityOverride?: number | null
+  panelCountOverride?: number | null
+  targetInverterKwOverride?: number | null
+  minimumBatteryKwhOverride?: number | null
   equipment: {
     inverter: EquipmentCatalogItem
     battery: EquipmentCatalogItem
@@ -378,6 +384,10 @@ export function estimateMinimumBatteryKwh(inverterKw: number) {
   return roundCurrency(Math.max(0, inverterKw) * MIN_BATTERY_KWH_PER_INVERTER_KW)
 }
 
+export function getInverterQuantity(input: Pick<CalculatorInput, 'inverterQuantity'>) {
+  return Math.max(1, Math.round(input.inverterQuantity ?? 1))
+}
+
 export function estimateTargetInverterKw(monthlyKwh: number, essentialLoadKw: number, lockedSolarKwp?: number | null) {
   const solarKw = lockedSolarKwp && lockedSolarKwp > 0
     ? lockedSolarKwp / MAX_RECOMMENDED_DC_AC_RATIO
@@ -451,16 +461,28 @@ export function buildSizingSnapshot(input: {
   essentialLoadKw: number
   batteryHours?: number
   lockedPanelCount?: number | null
+  inverterQuantity?: number | null
+  batteryQuantityOverride?: number | null
+  panelCountOverride?: number | null
+  targetInverterKwOverride?: number | null
+  minimumBatteryKwhOverride?: number | null
   inverter?: EquipmentCatalogItem | null
   battery?: EquipmentCatalogItem | null
   panel?: EquipmentCatalogItem | null
 }) {
   const dailyUsageKwh = estimateDailyUsageKwh(input.monthlyKwh)
   const targetSolarKwp = estimateTargetSolarKwp(input.monthlyKwh)
-  const targetInverterKw = estimateTargetInverterKw(input.monthlyKwh, input.essentialLoadKw)
-  const minimumBatteryKwh = estimateMinimumBatteryKwh(targetInverterKw)
-  const targetPanelCount = input.lockedPanelCount && input.lockedPanelCount > 0
-    ? input.lockedPanelCount
+  const inverterQuantity = Math.max(1, Math.round(input.inverterQuantity ?? 1))
+  const targetInverterKw = input.targetInverterKwOverride && input.targetInverterKwOverride > 0
+    ? input.targetInverterKwOverride
+    : estimateTargetInverterKw(input.monthlyKwh, input.essentialLoadKw)
+  const minimumBatteryKwh = input.minimumBatteryKwhOverride && input.minimumBatteryKwhOverride > 0
+    ? input.minimumBatteryKwhOverride
+    : estimateMinimumBatteryKwh(targetInverterKw * inverterQuantity)
+  const targetPanelCount = input.panelCountOverride && input.panelCountOverride > 0
+    ? Math.round(input.panelCountOverride)
+    : input.lockedPanelCount && input.lockedPanelCount > 0
+      ? input.lockedPanelCount
     : input.panel?.watts_dc
       ? Math.max(1, Math.ceil((targetSolarKwp * 1000) / input.panel.watts_dc))
       : 0
@@ -480,6 +502,11 @@ export function buildSizingSnapshot(input: {
         essentialLoadKw: input.essentialLoadKw,
         cableRouteMetres: 15,
         lockedPanelCount: input.lockedPanelCount,
+        inverterQuantity,
+        batteryQuantityOverride: input.batteryQuantityOverride ?? null,
+        panelCountOverride: input.panelCountOverride ?? null,
+        targetInverterKwOverride: input.targetInverterKwOverride ?? null,
+        minimumBatteryKwhOverride: input.minimumBatteryKwhOverride ?? null,
         equipment: {
           inverter: input.inverter,
           battery: input.battery,
@@ -508,10 +535,15 @@ export function buildSizingSnapshot(input: {
     ? roundCurrency(selectedBatteryCount * input.battery.kwh)
     : null
   const maxPanelCountOnSelectedInverter = input.inverter && input.panel
-    ? getMaxPanelCountForInverter(input.inverter, input.panel)
+    ? (getMaxPanelCountForInverter(input.inverter, input.panel) ?? 0) * inverterQuantity
     : null
-  const maxPvKwpOnSelectedInverter = input.inverter ? getInverterMaxPvKwp(input.inverter) : null
+  const maxPvKwpOnSelectedInverter = input.inverter
+    ? roundCurrency((getInverterMaxPvKwp(input.inverter) ?? 0) * inverterQuantity)
+    : null
   const spec = input.inverter ? parseInverterSizingSpec(input.inverter.notes) : null
+  const targetDailySolarOutputKwh = input.panel?.watts_dc
+    ? roundCurrency((targetPanelCount * input.panel.watts_dc * PSH_GAUTENG * SYSTEM_EFFICIENCY) / 1000)
+    : null
 
   return {
     dailyUsageKwh,
@@ -519,12 +551,13 @@ export function buildSizingSnapshot(input: {
     targetInverterKw,
     minimumBatteryKwh,
     targetPanelCount,
+    inverterQuantity,
     selectedBatteryCount,
     selectedBatteryBankKwh,
     maxPanelCountOnSelectedInverter,
     maxPvKwpOnSelectedInverter,
+    targetDailySolarOutputKwh,
     stringSummary: spec ? summarizeStringSetup(spec) : null,
-    batteryCompatibilitySummary: input.inverter ? describeCompatibleBatteryBrands(input.inverter) : null,
   } satisfies SizingSnapshot
 }
 
@@ -554,6 +587,10 @@ export function getTariffRateForMunicipality(municipality: string) {
 }
 
 function getPanelCount(input: CalculatorInput) {
+  if (input.panelCountOverride && input.panelCountOverride > 0) {
+    return Math.max(1, Math.round(input.panelCountOverride))
+  }
+
   if (input.lockedPanelCount && input.lockedPanelCount > 0) {
     return input.lockedPanelCount
   }
@@ -564,10 +601,16 @@ function getPanelCount(input: CalculatorInput) {
 }
 
 function getBatteryCount(input: CalculatorInput) {
+  if (input.batteryQuantityOverride && input.batteryQuantityOverride > 0) {
+    return Math.max(1, Math.round(input.batteryQuantityOverride))
+  }
+
   const batteryKwh = input.equipment.battery.kwh ?? 0
-  const inverterKw = (input.equipment.inverter.watts_ac ?? 0) / 1000
+  const inverterKw = ((input.equipment.inverter.watts_ac ?? 0) / 1000) * getInverterQuantity(input)
   const minimumBackupBankKwh = input.essentialLoadKw * input.batteryHours
-  const minimumInverterBankKwh = estimateMinimumBatteryKwh(inverterKw)
+  const minimumInverterBankKwh = input.minimumBatteryKwhOverride && input.minimumBatteryKwhOverride > 0
+    ? input.minimumBatteryKwhOverride
+    : estimateMinimumBatteryKwh(inverterKw)
   const requiredBatteryKwh = Math.max(minimumBackupBankKwh, minimumInverterBankKwh)
   return Math.max(1, Math.ceil(requiredBatteryKwh / Math.max(batteryKwh, 0.1)))
 }
@@ -713,8 +756,9 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   const battery = input.equipment.battery
   const panelCount = getPanelCount(input)
   const batteryCount = getBatteryCount(input)
+  const inverterCount = getInverterQuantity(input)
   const inverterWatts = inverter.watts_ac ?? 0
-  const inverterKw = inverterWatts / 1000
+  const inverterKw = (inverterWatts / 1000) * inverterCount
   const panelWatts = panel.watts_dc ?? 0
   const totalKwp = (panelCount * panelWatts) / 1000
   const monthlyGenerationKwh = roundCurrency(totalKwp * PSH_GAUTENG * 30 * SYSTEM_EFFICIENCY)
@@ -784,24 +828,26 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   const accessories = getBatteryAccessories(inverter.brand) ?? getBatteryAccessories(battery.brand)
   const batteryAccessoriesSellTotal = accessories
     ? roundCurrency(
-        accessories.gatewaySellRands +
+        (
+          accessories.gatewaySellRands +
           accessories.commsSellRands +
           accessories.fuseHolderSellRands +
           accessories.cableSellRands +
-          accessories.lugSellRands,
+          accessories.lugSellRands
+        ) * inverterCount,
       )
     : 0
-  const inverterSellTotal = inverterSell
+  const inverterSellTotal = roundCurrency(inverterCount * inverterSell)
   const batterySellTotal = roundCurrency(batteryCount * batterySell)
   const inverterBatterySubtotalRands = roundCurrency(inverterSellTotal + batterySellTotal + batteryAccessoriesSellTotal)
 
-  addBomItem(supplierBom, 'Inverter & Battery System', inverter.sku, `${inverter.description} star deposit item`, 1, inverterSell, inverter.cost_rands)
+  addBomItem(supplierBom, 'Inverter & Battery System', inverter.sku, `${inverter.description} star deposit item`, inverterCount, inverterSell, inverter.cost_rands)
   addBomItem(supplierBom, 'Inverter & Battery System', battery.sku, `${battery.description} star deposit item`, batteryCount, batterySell, battery.cost_rands)
   if (accessories) {
-    addBomItem(supplierBom, 'Inverter & Battery System', 'GATEWAY', 'Gateway and monitoring', 1, accessories.gatewaySellRands)
-    addBomItem(supplierBom, 'Inverter & Battery System', 'COMMS', 'Communication module', 1, accessories.commsSellRands)
-    addBomItem(supplierBom, 'Inverter & Battery System', 'FUSE', 'Battery fuse holder', 1, accessories.fuseHolderSellRands)
-    addBomItem(supplierBom, 'Inverter & Battery System', 'BAT-CABLE', 'Battery cable set and lugs', 1, roundCurrency(accessories.cableSellRands + accessories.lugSellRands))
+    addBomItem(supplierBom, 'Inverter & Battery System', 'GATEWAY', 'Gateway and monitoring', inverterCount, accessories.gatewaySellRands)
+    addBomItem(supplierBom, 'Inverter & Battery System', 'COMMS', 'Communication module', inverterCount, accessories.commsSellRands)
+    addBomItem(supplierBom, 'Inverter & Battery System', 'FUSE', 'Battery fuse holder', inverterCount, accessories.fuseHolderSellRands)
+    addBomItem(supplierBom, 'Inverter & Battery System', 'BAT-CABLE', 'Battery cable set and lugs', inverterCount, roundCurrency(accessories.cableSellRands + accessories.lugSellRands))
   }
 
   const acDbSubtotalRands = AC_DB_BUNDLE_SELL_RANDS
@@ -834,7 +880,7 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
 
   const storeysPremium = getStoreysPremium(input.storeys)
   const labourSubtotalRands = roundCurrency(
-    inverterWatts * 0.25 +
+    (inverterWatts * inverterCount) * 0.25 +
       panelCount * panelWatts * 0.75 +
       storeysPremium,
   )
@@ -952,7 +998,7 @@ export function calculateQuote(input: CalculatorInput): QuoteData {
     dcCombinerConfig: breakdown.dcCombinerConfig,
     dcCombinerCost: formatRands(breakdown.dcProtectionSubtotalRands),
     dcProtectionSubtotal: formatRands(breakdown.dcProtectionSubtotalRands),
-    inverterQty: '1',
+    inverterQty: String(getInverterQuantity(input)),
     inverterCost: formatRands(breakdown.inverterSellTotal),
     batteryQty: String(breakdown.batteryCount),
     batteryCost: formatRands(breakdown.batterySellTotal),
@@ -993,6 +1039,17 @@ export function calculateQuote(input: CalculatorInput): QuoteData {
     roi: formatPercent(breakdown.roiPct, 0),
     annualReturnRate: formatPercent(breakdown.roiPct / 20, 1),
     twentyYearTable: breakdown.twentyYearTable,
+    sizingInputs: {
+      inverterQty: getInverterQuantity(input),
+      batteryQty: breakdown.batteryCount,
+      targetInverterKw: input.targetInverterKwOverride && input.targetInverterKwOverride > 0
+        ? input.targetInverterKwOverride
+        : estimateTargetInverterKw(input.monthlyKwh, input.essentialLoadKw, totalKwp),
+      minimumBatteryKwh: input.minimumBatteryKwhOverride && input.minimumBatteryKwhOverride > 0
+        ? input.minimumBatteryKwhOverride
+        : estimateMinimumBatteryKwh(((input.equipment.inverter.watts_ac ?? 0) / 1000) * getInverterQuantity(input)),
+      targetPanelCount: breakdown.panelCount,
+    },
     calculationWarnings: breakdown.warnings,
   }
 

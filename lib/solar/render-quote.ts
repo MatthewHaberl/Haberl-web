@@ -39,6 +39,14 @@ export interface TwentyYearRow {
   cumulativeImpact: string
 }
 
+export interface QuoteSizingInputs {
+  inverterQty: number
+  batteryQty: number
+  targetInverterKw: number
+  minimumBatteryKwh: number
+  targetPanelCount: number
+}
+
 export interface QuoteData {
   // Header
   quoteNumber: string
@@ -142,6 +150,7 @@ export interface QuoteData {
   roi?: string
   annualReturnRate?: string
   twentyYearTable?: TwentyYearRow[]
+  sizingInputs?: QuoteSizingInputs
 }
 
 // ── Multi-option types ────────────────────────────────────────────────────────

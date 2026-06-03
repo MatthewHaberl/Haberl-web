@@ -59,6 +59,11 @@ export async function POST(req: Request) {
         tariffRate: body.tariffRate != null ? Number(body.tariffRate) : undefined,
         tier: body.tier ? String(body.tier) as 'premium' | 'recommended' | 'budget' : undefined,
         tierLabel: body.tierLabel ? String(body.tierLabel) : undefined,
+        inverterQuantity: Number(body.inverterQuantity ?? 1),
+        batteryQuantityOverride: body.batteryQuantityOverride != null ? Number(body.batteryQuantityOverride) : null,
+        panelCountOverride: body.panelCountOverride != null ? Number(body.panelCountOverride) : null,
+        targetInverterKwOverride: body.targetInverterKwOverride != null ? Number(body.targetInverterKwOverride) : null,
+        minimumBatteryKwhOverride: body.minimumBatteryKwhOverride != null ? Number(body.minimumBatteryKwhOverride) : null,
       },
     ),
   )

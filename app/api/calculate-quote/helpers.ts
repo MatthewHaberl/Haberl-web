@@ -71,6 +71,11 @@ export function buildCalculatorInput(
     tariffRate?: number
     tier?: QuoteTier
     tierLabel?: string
+    inverterQuantity?: number
+    batteryQuantityOverride?: number | null
+    panelCountOverride?: number | null
+    targetInverterKwOverride?: number | null
+    minimumBatteryKwhOverride?: number | null
   },
 ) {
   const advancedMonthlyKwh = request.usage_mode === 'advanced'
@@ -95,6 +100,11 @@ export function buildCalculatorInput(
     tariffRate: options.tariffRate ?? getTariffRateForMunicipality(String(request.municipality ?? 'Eskom')),
     cableRouteMetres: options.cableRouteM,
     lockedPanelCount: coerceNumber(request.design_panel_count, 0) || null,
+    inverterQuantity: options.inverterQuantity ?? 1,
+    batteryQuantityOverride: options.batteryQuantityOverride ?? null,
+    panelCountOverride: options.panelCountOverride ?? null,
+    targetInverterKwOverride: options.targetInverterKwOverride ?? null,
+    minimumBatteryKwhOverride: options.minimumBatteryKwhOverride ?? null,
     equipment,
   }
 
@@ -162,6 +172,11 @@ export function calculateOptionQuote(
     tariffRate?: number
     tier: QuoteTier
     tierLabel: string
+    inverterQuantity?: number
+    batteryQuantityOverride?: number | null
+    panelCountOverride?: number | null
+    targetInverterKwOverride?: number | null
+    minimumBatteryKwhOverride?: number | null
   },
 ) {
   return calculateQuote(buildCalculatorInput(request, equipment, options))

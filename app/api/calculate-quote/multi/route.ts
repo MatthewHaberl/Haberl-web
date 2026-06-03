@@ -38,7 +38,9 @@ export async function POST(req: Request) {
     return new Response(surveyError?.message ?? 'Quote request not found', { status: 404 })
   }
 
-  const targetKw = calculateTargetInverterKw(survey)
+  const targetKw = body.targetInverterKwOverride != null
+    ? Number(body.targetInverterKwOverride)
+    : calculateTargetInverterKw(survey)
   const phase = getPhaseFromGridSupply(String(survey.grid_supply ?? 'Single Phase'))
 
   const { data: configRows, error: configError } = await auth.supabase
@@ -104,6 +106,11 @@ export async function POST(req: Request) {
           tariffRate: body.tariffRate != null ? Number(body.tariffRate) : undefined,
           tier: config!.tier,
           tierLabel: TIER_LABELS[config!.tier],
+          inverterQuantity: Number(body.inverterQuantity ?? 1),
+          batteryQuantityOverride: body.batteryQuantityOverride != null ? Number(body.batteryQuantityOverride) : null,
+          panelCountOverride: body.panelCountOverride != null ? Number(body.panelCountOverride) : null,
+          targetInverterKwOverride: body.targetInverterKwOverride != null ? Number(body.targetInverterKwOverride) : null,
+          minimumBatteryKwhOverride: body.minimumBatteryKwhOverride != null ? Number(body.minimumBatteryKwhOverride) : null,
         },
       ),
     )

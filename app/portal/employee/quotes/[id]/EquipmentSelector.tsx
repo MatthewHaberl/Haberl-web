@@ -91,6 +91,15 @@ function getDepositSource(quoteData: AnyQuoteData | null) {
   return multi.options.find((option) => option.tier === 'recommended') ?? multi.options[0]
 }
 
+function getSingleQuoteData(quoteData: AnyQuoteData | null) {
+  if (!quoteData || isMultiOption(quoteData)) return null
+  return quoteData as QuoteData
+}
+
+function readSavedSizingValue(value: unknown, fallback: number) {
+  return Math.max(0, coerceNumber(value, fallback))
+}
+
 function parseExistingQuote(existingQuote: string | null, existingHtml: string | null, existingQuoteVersion: QuoteVersion) {
   const parsed = existingQuote ? extractQuoteJson(existingQuote) : null
 
@@ -167,6 +176,8 @@ export function EquipmentSelector({
   onQuoteDataChange,
 }: Props) {
   const initialParsed = parseExistingQuote(existingQuote, existingHtml, existingQuoteVersion)
+  const initialSingleQuote = getSingleQuoteData(initialParsed.quoteData)
+  const initialSizingInputs = initialSingleQuote?.sizingInputs
   const supabase = createClient()
 
   const [catalog, setCatalog] = useState<EquipmentCatalogItem[]>([])
@@ -201,11 +212,26 @@ export function EquipmentSelector({
   const essentialLoadKw = coerceNumber(request.essential_load, 0)
   const batteryHours = coerceNumber(request.battery_hours, 4)
   const lockedPanelCount = coerceNumber(request.design_panel_count, 0) || null
-  const targetKw = estimateTargetInverterKw(
+  const autoTargetKw = estimateTargetInverterKw(
     monthlyKwh,
     essentialLoadKw,
     lockedDesignKwp,
   )
+  const [inverterQuantity, setInverterQuantity] = useState<string>(String(Math.min(2, Math.max(1, coerceNumber(initialSizingInputs?.inverterQty, 1) || 1))))
+  const [batteryQuantity, setBatteryQuantity] = useState<string>(String(Math.min(2, Math.max(1, coerceNumber(initialSizingInputs?.batteryQty ?? request.selected_battery_qty, 1) || 1))))
+  const [targetInverterKwInput, setTargetInverterKwInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.targetInverterKw, autoTargetKw)))
+  const [minimumBatteryKwhInput, setMinimumBatteryKwhInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.minimumBatteryKwh, autoTargetKw * 2)))
+  const [targetPanelCountInput, setTargetPanelCountInput] = useState<string>(
+    String(Math.max(
+      0,
+      Math.round(readSavedSizingValue(initialSizingInputs?.targetPanelCount ?? initialSingleQuote?.panelCount, lockedPanelCount ?? 0)),
+    )),
+  )
+  const targetKw = Math.max(1, Math.round(coerceNumber(targetInverterKwInput, autoTargetKw) || autoTargetKw))
+  const inverterQuantityValue = Math.min(2, Math.max(1, Math.round(coerceNumber(inverterQuantity, 1) || 1)))
+  const batteryQuantityValue = Math.min(2, Math.max(1, Math.round(coerceNumber(batteryQuantity, 1) || 1)))
+  const minimumBatteryKwhValue = Math.max(0, coerceNumber(minimumBatteryKwhInput, targetKw * 2) || targetKw * 2)
+  const targetPanelCountOverride = Math.max(0, Math.round(coerceNumber(targetPanelCountInput, lockedPanelCount ?? 0) || 0))
   const hasSpecificPreferences = isSpecificBrand(request.inverter_brand) || isSpecificBrand(request.battery_brand) || isSpecificBrand(request.panel_brand)
   const hasPersistedSelection = Boolean(
     toOptionalString(request.selected_inverter_id) ||
@@ -352,16 +378,27 @@ export function EquipmentSelector({
       essentialLoadKw,
       batteryHours,
       lockedPanelCount,
+      inverterQuantity: inverterQuantityValue,
+      batteryQuantityOverride: batteryQuantityValue,
+      panelCountOverride: targetPanelCountOverride || null,
+      targetInverterKwOverride: targetKw,
+      minimumBatteryKwhOverride: minimumBatteryKwhValue,
       inverter: selectedInverter,
       battery: selectedBattery,
       panel: selectedPanel,
     }),
-    [batteryHours, essentialLoadKw, lockedPanelCount, monthlyKwh, selectedBattery, selectedInverter, selectedPanel],
+    [batteryHours, batteryQuantityValue, essentialLoadKw, inverterQuantityValue, lockedPanelCount, minimumBatteryKwhValue, monthlyKwh, selectedBattery, selectedInverter, selectedPanel, targetKw, targetPanelCountOverride],
   )
   const previewHtml = quoteVersion === 'detailed' ? detailedHtml : customerHtml
   const depositSource = getDepositSource(quoteData)
   const defaultWarning = Number(cableRouteM || 0) === 15
   const hasRecommendedMulti = tierConfigs.some((config) => config.tier === 'recommended' && (config.phase === phase || config.phase === 'any'))
+
+  useEffect(() => {
+    if (selectedPanel && targetPanelCountOverride === 0 && sizingSnapshot.targetPanelCount > 0) {
+      setTargetPanelCountInput(String(sizingSnapshot.targetPanelCount))
+    }
+  }, [selectedPanel, sizingSnapshot.targetPanelCount, targetPanelCountOverride])
 
   async function calculateSingle() {
     if (!selectedInverter || !selectedBattery || !selectedPanel) {
@@ -382,6 +419,11 @@ export function EquipmentSelector({
           inverterId: selectedInverter.id,
           batteryId: selectedBattery.id,
           panelId: selectedPanel.id,
+          inverterQuantity: inverterQuantityValue,
+          batteryQuantityOverride: batteryQuantityValue,
+          panelCountOverride: targetPanelCountOverride || null,
+          targetInverterKwOverride: targetKw,
+          minimumBatteryKwhOverride: minimumBatteryKwhValue,
           cableRouteM: Number(cableRouteM || 0),
           tariffRate: Number(tariffRate || 0),
           quoteNumber,
@@ -420,6 +462,11 @@ export function EquipmentSelector({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           surveyId: requestId,
+          inverterQuantity: inverterQuantityValue,
+          batteryQuantityOverride: batteryQuantityValue,
+          panelCountOverride: targetPanelCountOverride || null,
+          targetInverterKwOverride: targetKw,
+          minimumBatteryKwhOverride: minimumBatteryKwhValue,
           cableRouteM: Number(cableRouteM || 0),
           tariffRate: Number(tariffRate || 0),
           quoteNumber,
@@ -606,6 +653,38 @@ export function EquipmentSelector({
         </label>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-foreground">Inverter quantity</span>
+          <select
+            value={String(inverterQuantityValue)}
+            onChange={(event) => {
+              setInverterQuantity(event.target.value)
+              setSaved(false)
+            }}
+            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
+          >
+            <option value="1">1</option>
+            <option value="2">2</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-foreground">Battery quantity</span>
+          <select
+            value={String(batteryQuantityValue)}
+            onChange={(event) => {
+              setBatteryQuantity(event.target.value)
+              setSaved(false)
+            }}
+            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
+          >
+            <option value="1">1</option>
+            <option value="2">2</option>
+          </select>
+        </label>
+      </div>
+
       <div className="rounded-lg border border-border bg-muted/30 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -620,68 +699,85 @@ export function EquipmentSelector({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-md border border-border bg-background p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Inverter target</p>
-            <p className="mt-1 text-base font-semibold text-foreground">{targetKw}kW {phase}-phase</p>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={targetInverterKwInput}
+              onChange={(event) => {
+                setTargetInverterKwInput(event.target.value)
+                setSaved(false)
+              }}
+              className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground"
+            />
             <p className="mt-1 text-xs text-muted-foreground">
-              {selectedInverter ? `Selected: ${selectedInverter.description}` : 'Select an inverter to continue'}
+              {selectedInverter ? `Selected: ${selectedInverter.description} x ${inverterQuantityValue}` : 'Select an inverter to continue'}
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">Auto target from usage: {autoTargetKw}kW</p>
           </div>
 
           <div className="rounded-md border border-border bg-background p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Battery floor</p>
-            <p className="mt-1 text-base font-semibold text-foreground">
-              {formatNumber(sizingSnapshot.minimumBatteryKwh, 1)} kWh minimum
-            </p>
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={minimumBatteryKwhInput}
+              onChange={(event) => {
+                setMinimumBatteryKwhInput(event.target.value)
+                setSaved(false)
+              }}
+              className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground"
+            />
             <p className="mt-1 text-xs text-muted-foreground">
               {sizingSnapshot.selectedBatteryBankKwh != null && sizingSnapshot.selectedBatteryCount != null
                 ? `${sizingSnapshot.selectedBatteryCount} x ${selectedBattery?.description ?? 'battery'} = ${formatNumber(sizingSnapshot.selectedBatteryBankKwh, 2)} kWh`
                 : 'Pick a battery to see the bank size'}
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">Auto floor at 2:1: {formatNumber(targetKw * inverterQuantityValue * 2, 1)} kWh</p>
           </div>
 
           <div className="rounded-md border border-border bg-background p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Panel target</p>
-            <p className="mt-1 text-base font-semibold text-foreground">
-              {sizingSnapshot.targetPanelCount > 0
-                ? `${sizingSnapshot.targetPanelCount} panels`
-                : 'Select a panel'}
-            </p>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={targetPanelCountInput}
+              onChange={(event) => {
+                setTargetPanelCountInput(event.target.value)
+                setSaved(false)
+              }}
+              className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground"
+            />
             <p className="mt-1 text-xs text-muted-foreground">
               {selectedPanel?.watts_dc
-                ? `${formatNumber((sizingSnapshot.targetPanelCount * selectedPanel.watts_dc) / 1000, 2)} kWp with ${selectedPanel.watts_dc}W panels`
+                ? `${sizingSnapshot.targetPanelCount} panels (${sizingSnapshot.maxPanelCountOnSelectedInverter ?? 'n/a'} max) · ${formatNumber((sizingSnapshot.targetPanelCount * selectedPanel.watts_dc) / 1000, 2)} kWp`
                 : 'Panel wattage drives the final panel count'}
             </p>
-          </div>
-
-          <div className="rounded-md border border-border bg-background p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Inverter PV limit</p>
-            <p className="mt-1 text-base font-semibold text-foreground">
-              {sizingSnapshot.maxPvKwpOnSelectedInverter != null
-                ? `${formatNumber(sizingSnapshot.maxPvKwpOnSelectedInverter, 2)} kWp`
-                : 'Add spec in catalog'}
+            <p className="mt-1 text-xs text-muted-foreground">
+              {sizingSnapshot.targetDailySolarOutputKwh != null
+                ? `About ${formatNumber(sizingSnapshot.targetDailySolarOutputKwh, 1)} kWh/day at 5.3 sun hours`
+                : 'Select a panel to estimate daily production'}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {sizingSnapshot.maxPanelCountOnSelectedInverter != null && selectedPanel
-                ? `About ${sizingSnapshot.maxPanelCountOnSelectedInverter} x ${selectedPanel.watts_dc}W panels max`
-                : 'Use inverter notes to pin exact panel limits'}
+              {sizingSnapshot.maxPvKwpOnSelectedInverter != null
+                ? `Inverter PV limit: ${formatNumber(sizingSnapshot.maxPvKwpOnSelectedInverter, 2)} kWp total`
+                : 'Add inverter PV notes for an exact limit'}
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">Auto target from usage: {sizingSnapshot.targetPanelCount}</p>
           </div>
         </div>
 
-        {(sizingSnapshot.stringSummary || sizingSnapshot.batteryCompatibilitySummary || selectedInverter?.notes) && (
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {(sizingSnapshot.stringSummary || selectedInverter?.notes) && (
+          <div className="mt-4">
             <div className="rounded-md border border-border bg-background p-3">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">String layout</p>
               <p className="mt-1 text-sm text-foreground">
                 {sizingSnapshot.stringSummary ?? 'Add lines like "Max PV kWp: 10.4" and "String example: 4 strings total, 2 parallel per MPPT, 8 in series" in the inverter notes.'}
-              </p>
-            </div>
-            <div className="rounded-md border border-border bg-background p-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Battery compatibility</p>
-              <p className="mt-1 text-sm text-foreground">
-                {sizingSnapshot.batteryCompatibilitySummary ?? 'Compatibility depends on the selected inverter.'}
               </p>
               {selectedInverter?.notes && (
                 <p className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap">
