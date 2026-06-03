@@ -112,20 +112,36 @@ export function SolarArrayNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string; panelCount: number; panelModel: string
     wpPerPanel: number; totalKwp: number; config: string
-    // new fields
     connectorType?: string; connectorQty?: number
     mountingRows?: number; mountingCols?: number; mountingOrientation?: string
+    mountingLayout?: Array<{ id: string; count: number; orientation: string; mountType: string }>
     earthingRequired?: boolean; earthingMethod?: string
   }
   const shortModel = d.panelModel ? d.panelModel.split(' ').slice(0, 3).join(' ') : ''
+
+  // Auto-calc kWp from panel count × watt if totalKwp not explicitly set
+  const computedKwp = d.totalKwp > 0
+    ? d.totalKwp
+    : (d.panelCount > 0 && d.wpPerPanel > 0
+        ? +((d.panelCount * d.wpPerPanel) / 1000).toFixed(2)
+        : 0)
 
   const connectorLabel = d.connectorType && d.connectorQty
     ? `${d.connectorType} ×${d.connectorQty}`
     : d.connectorType || ''
 
-  const mountingLabel = (d.mountingRows && d.mountingCols)
-    ? `${d.mountingRows} row${d.mountingRows > 1 ? 's' : ''} · ${d.mountingCols} ${d.mountingOrientation ?? 'portrait'}`
-    : ''
+  // Support custom per-row layout or fall back to simple rows × cols
+  const mountingLabel = (() => {
+    if (d.mountingLayout && d.mountingLayout.length > 0) {
+      return d.mountingLayout
+        .map((r) => `${r.count}×${r.orientation?.charAt(0).toUpperCase() ?? 'P'}`)
+        .join(' + ')
+    }
+    if (d.mountingRows && d.mountingCols) {
+      return `${d.mountingRows}r · ${d.mountingCols} ${d.mountingOrientation ?? 'portrait'}`
+    }
+    return ''
+  })()
 
   const footer = (connectorLabel || mountingLabel || d.earthingRequired) ? (
     <>
@@ -139,7 +155,7 @@ export function SolarArrayNode({ data, selected }: NodeProps) {
     <NodeCard color={CLR.dc} Icon={Sun} title={d.label || 'Solar Array'} selected={selected} footer={footer}>
       {d.panelCount > 0 && <Row label="Panels" value={`${d.panelCount} × ${d.wpPerPanel}W`} />}
       {shortModel && <Row label="Model" value={shortModel} />}
-      {d.totalKwp > 0 && <Row label="Array" value={`${d.totalKwp} kWp`} />}
+      {computedKwp > 0 && <Row label="Array" value={`${computedKwp} kWp`} />}
       {d.config && <Row label="Config" value={d.config} />}
       <Handle type="source" id="dc-out" position={Position.Bottom} style={H(CLR.dc)} title="DC out → Combiner or Inverter" />
     </NodeCard>
@@ -381,6 +397,39 @@ export function TextNoteNode({ data, selected }: NodeProps) {
   )
 }
 
+// ── Connector / Termination Block ─────────────────────────────────────────────
+// Small inline block representing a physical connection point (MC4, lug, Anderson, etc.)
+export function ConnectorNode({ data, selected }: NodeProps) {
+  const d = data as { label?: string; connectorType?: string; qty?: number; color?: string }
+  const color = d.color ?? '#64748b'
+  const displayName = d.label || d.connectorType || 'Connector'
+
+  return (
+    <div style={{
+      minWidth: 72, maxWidth: 120,
+      background: '#fff',
+      border: `2px solid ${selected ? color : color + 'aa'}`,
+      borderRadius: 5,
+      boxShadow: selected
+        ? `0 0 0 3px ${color}30, 0 1px 4px rgba(0,0,0,0.12)`
+        : '0 1px 3px rgba(0,0,0,0.10)',
+      fontFamily: 'system-ui, sans-serif',
+      overflow: 'hidden',
+    }}>
+      <Handle type="target" id="in"    position={Position.Top}    style={H(color)} />
+      <Handle type="target" id="in-l"  position={Position.Left}   style={H(color, { top: '50%', opacity: 0.55 })} />
+      <Handle type="source" id="out-r" position={Position.Right}  style={H(color, { top: '50%', opacity: 0.55 })} />
+      <Handle type="source" id="out"   position={Position.Bottom} style={H(color)} />
+      <div style={{ padding: '5px 8px', textAlign: 'center', borderTop: `3px solid ${color}` }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#111827', lineHeight: 1.2 }}>{displayName}</div>
+        {d.qty && d.qty > 1 && (
+          <div style={{ fontSize: 9, color, marginTop: 1 }}>×{d.qty}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Node type registry ────────────────────────────────────────────────────────
 export const nodeTypes = {
   solarArray:  SolarArrayNode,
@@ -398,5 +447,6 @@ export const nodeTypes = {
   meter:       SimpleBlockNode,
   evCharger:   SimpleBlockNode,
   custom:      SimpleBlockNode,
+  connector:   ConnectorNode,
   textNote:    TextNoteNode,
 }

@@ -31,6 +31,7 @@ const CIRCUIT_LAYERS = ['live', 'neutral', 'earth', 'communication']
 const PROTOCOLS = ['Modbus RTU', 'Modbus TCP', 'CAN', 'RS485', 'Digital I/O', 'WiFi', 'Ethernet', 'DLMS/COSEM', 'Other']
 
 export const ADDABLE_NODES: Array<{ type: string; label: string; color: string }> = [
+  { type: 'connector',  label: 'Connector / Lug',        color: '#64748b' },
   { type: 'dcIsolator', label: 'DC Isolator',           color: CLR.dc    },
   { type: 'acIsolator', label: 'AC Isolator',            color: CLR.ac    },
   { type: 'spd',        label: 'Surge Protection (SPD)', color: CLR.dc    },
@@ -222,6 +223,65 @@ function SegmentEditor({ segments, onChange }: { segments: Segment[]; onChange: 
   )
 }
 
+// ── Per-row mounting layout editor ───────────────────────────────────────────
+
+interface MountingRow {
+  id: string
+  count: number
+  orientation: 'portrait' | 'landscape'
+  mountType: string
+}
+
+function RowLayoutEditor({ rows, onChange }: { rows: MountingRow[]; onChange: (rows: MountingRow[]) => void }) {
+  const total = rows.reduce((s, r) => s + (r.count || 0), 0)
+  return (
+    <div className="flex flex-col gap-1.5">
+      {rows.map((row, idx) => (
+        <div key={row.id} className="flex gap-1 items-center">
+          <span className="text-xs text-muted-foreground w-5 shrink-0 text-right">{idx + 1}</span>
+          <input
+            type="number"
+            value={row.count || ''}
+            onChange={(e) => onChange(rows.map((r) => r.id === row.id ? { ...r, count: parseInt(e.target.value) || 0 } : r))}
+            min={1}
+            placeholder="n"
+            title="Panels in this row"
+            className="w-10 h-7 rounded border border-border bg-background px-1 text-xs text-center focus-visible:outline-none"
+          />
+          <select
+            value={row.orientation}
+            onChange={(e) => onChange(rows.map((r) => r.id === row.id ? { ...r, orientation: e.target.value as 'portrait' | 'landscape' } : r))}
+            className="w-20 h-7 rounded border border-border bg-background px-1 text-xs focus-visible:outline-none shrink-0"
+          >
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
+          <select
+            value={row.mountType}
+            onChange={(e) => onChange(rows.map((r) => r.id === row.id ? { ...r, mountType: e.target.value } : r))}
+            className="flex-1 h-7 rounded border border-border bg-background px-1 text-xs focus-visible:outline-none min-w-0"
+          >
+            {MOUNTING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <button type="button" onClick={() => onChange(rows.filter((r) => r.id !== row.id))} className="text-muted-foreground hover:text-destructive shrink-0">
+            <Trash2 size={12} />
+          </button>
+        </div>
+      ))}
+      <div className="flex items-center justify-between mt-0.5">
+        <button
+          type="button"
+          onClick={() => onChange([...rows, { id: `row-${Date.now()}`, count: 1, orientation: 'portrait', mountType: 'Rail system' }])}
+          className="text-xs text-accent hover:text-accent/80 flex items-center gap-1"
+        >
+          <Plus size={11} /> Add row
+        </button>
+        {total > 0 && <span className="text-xs font-semibold">{total} panels total</span>}
+      </div>
+    </div>
+  )
+}
+
 // ── Mounting structure auto-calc display ──────────────────────────────────────
 
 function MountingStructurePreview({ panelCount, rows, cols, orientation, mountType }: {
@@ -317,31 +377,77 @@ function NodeEditor({
           </div>
 
           <SectionHead title="Mounting Layout" />
-          <div className="grid grid-cols-3 gap-2">
-            <FieldRow label="Rows">
-              <NInput value={d.mountingRows as number ?? 1} onChange={(v) => set('mountingRows', v)} min={1} />
-            </FieldRow>
-            <FieldRow label="Cols">
-              <NInput value={d.mountingCols as number ?? (d.panelCount as number ?? 7)} onChange={(v) => set('mountingCols', v)} min={1} />
-            </FieldRow>
-            <FieldRow label="Orient.">
-              <SInput
-                value={String(d.mountingOrientation ?? 'portrait')}
-                onChange={(v) => set('mountingOrientation', v)}
-                options={['portrait', 'landscape']}
-              />
-            </FieldRow>
-          </div>
-          <FieldRow label="Mount type">
-            <SInput value={String(d.mountingType ?? 'Rail system')} onChange={(v) => set('mountingType', v)} options={MOUNTING_TYPES} />
-          </FieldRow>
-          <MountingStructurePreview
-            panelCount={d.panelCount as number ?? 0}
-            rows={d.mountingRows as number ?? 1}
-            cols={d.mountingCols as number ?? (d.panelCount as number ?? 7)}
-            orientation={String(d.mountingOrientation ?? 'portrait')}
-            mountType={String(d.mountingType ?? 'Rail system')}
-          />
+          {(() => {
+            const layout = (d.mountingLayout as MountingRow[] | undefined) ?? []
+            if (layout.length > 0) {
+              return (
+                <>
+                  <RowLayoutEditor
+                    rows={layout}
+                    onChange={(rows) => set('mountingLayout', rows)}
+                  />
+                  <MountingStructurePreview
+                    panelCount={layout.reduce((s, r) => s + (r.count || 0), 0) || (d.panelCount as number ?? 0)}
+                    rows={layout.length}
+                    cols={Math.max(...layout.map((r) => (r as MountingRow).count || 1))}
+                    orientation={layout[0]?.orientation ?? 'portrait'}
+                    mountType={layout[0]?.mountType ?? 'Rail system'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => set('mountingLayout', [])}
+                    className="text-xs text-muted-foreground hover:text-foreground mt-1"
+                  >
+                    ← Simple grid
+                  </button>
+                </>
+              )
+            }
+            // Simple grid mode
+            return (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  <FieldRow label="Rows">
+                    <NInput value={d.mountingRows as number ?? 1} onChange={(v) => set('mountingRows', v)} min={1} />
+                  </FieldRow>
+                  <FieldRow label="Cols">
+                    <NInput value={d.mountingCols as number ?? (d.panelCount as number ?? 7)} onChange={(v) => set('mountingCols', v)} min={1} />
+                  </FieldRow>
+                  <FieldRow label="Orient.">
+                    <SInput
+                      value={String(d.mountingOrientation ?? 'portrait')}
+                      onChange={(v) => set('mountingOrientation', v)}
+                      options={['portrait', 'landscape']}
+                    />
+                  </FieldRow>
+                </div>
+                <FieldRow label="Mount type">
+                  <SInput value={String(d.mountingType ?? 'Rail system')} onChange={(v) => set('mountingType', v)} options={MOUNTING_TYPES} />
+                </FieldRow>
+                <MountingStructurePreview
+                  panelCount={d.panelCount as number ?? 0}
+                  rows={d.mountingRows as number ?? 1}
+                  cols={d.mountingCols as number ?? (d.panelCount as number ?? 7)}
+                  orientation={String(d.mountingOrientation ?? 'portrait')}
+                  mountType={String(d.mountingType ?? 'Rail system')}
+                />
+                <button
+                  type="button"
+                  onClick={() => set('mountingLayout', [
+                    {
+                      id: `row-${Date.now()}`,
+                      count: d.panelCount as number ?? 0,
+                      orientation: (String(d.mountingOrientation ?? 'portrait')) as 'portrait' | 'landscape',
+                      mountType: String(d.mountingType ?? 'Rail system'),
+                    },
+                  ])}
+                  className="text-xs text-accent hover:text-accent/80 mt-1 flex items-center gap-1"
+                >
+                  <Plus size={11} /> Custom rows
+                </button>
+              </>
+            )
+          })()}
 
           <SectionHead title="Earthing" />
           <CheckRow label="Requires earth" checked={!!d.earthingRequired} onChange={(v) => set('earthingRequired', v)} />
@@ -569,8 +675,24 @@ function NodeEditor({
         </>
       )}
 
+      {/* ── Connector / Lug ──────────────────────────────────────────────────── */}
+      {t === 'connector' && (
+        <>
+          <SectionHead title="Connector" />
+          <FieldRow label="Type">
+            <SInput value={String(d.connectorType ?? 'MC4')} onChange={(v) => { set('connectorType', v); set('label', v) }} options={CONNECTOR_TYPES} />
+          </FieldRow>
+          <FieldRow label="Qty">
+            <NInput value={d.qty as number ?? 1} onChange={(v) => set('qty', v)} min={1} />
+          </FieldRow>
+          <FieldRow label="Notes / pin ref">
+            <TInput value={String(d.notes ?? '')} onChange={(v) => set('notes', v)} placeholder="e.g. +/− pair, male side" />
+          </FieldRow>
+        </>
+      )}
+
       {/* ── Conductors + SKU ─────────────────────────────────────────────────── */}
-      {!['textNote'].includes(t) && (
+      {!['textNote', 'connector'].includes(t) && (
         <>
           <SectionHead title="Conductors" />
           <ConductorConfig circuitType={circuitType} phases={phases} conductors={conductors} onChange={(c) => set('conductors', c)} />
@@ -609,6 +731,7 @@ function EdgeEditor({
   const circuitType = (d.circuitType as string) ?? 'ac'
   const circuitLayer = (d.circuitLayer as string) ?? ''
   const isCommunication = circuitType === 'communication' || circuitLayer === 'communication'
+  const isDirect = !!(d.isDirect as boolean | undefined)
 
   const rawSpec = String(d.spec ?? '')
   const specParts = rawSpec.split(' ')
@@ -650,7 +773,20 @@ function EdgeEditor({
         />
       </FieldRow>
 
-      {!isCommunication && (
+      {/* Direct connection — for battery banks, stackable inverter stacks */}
+      <CheckRow
+        label="Direct connection (no cable — bus bar / stackable)"
+        checked={isDirect}
+        onChange={(v) => set('isDirect', v)}
+      />
+      {isDirect && (
+        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, padding: '6px 8px', marginBottom: 8 }}>
+          <div className="text-xs font-semibold text-green-700">Direct Bus</div>
+          <div className="text-xs text-green-600 mt-0.5">Renders as a thick solid line. Use for Sigenergy stacks or direct battery connections.</div>
+        </div>
+      )}
+
+      {!isCommunication && !isDirect && (
         <>
           <SectionHead title="Cable" />
           <div className="grid grid-cols-2 gap-2">

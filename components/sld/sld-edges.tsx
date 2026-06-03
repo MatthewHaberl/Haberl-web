@@ -66,6 +66,7 @@ export function CableEdge({
   const routing = (d as any)?.routingType as EdgeRoutingType ?? 'smoothstep'
   const waypoints = (d as any)?.waypoints as Array<{ x: number; y: number }> ?? []
   const isCommunication = circuitLayer === 'communication' || d?.circuitType === ('communication' as any)
+  const isDirect = !!(d as any)?.isDirect
 
   let path: string
   let labelX: number
@@ -126,6 +127,38 @@ export function CableEdge({
   const lugSpec = (d as any)?.lugs as { count: number; size: string } | undefined
   const lugSuffix = lugSpec ? ` (${lugSpec.count}×${lugSpec.size})` : ''
   const dispLabel = (label as string | undefined) ?? ''
+
+  // Direct bus connection — thick solid line, no cable label
+  if (isDirect) {
+    return (
+      <>
+        <BaseEdge
+          id={id}
+          path={path}
+          style={{ stroke: color, strokeWidth: 5, opacity: 0.85 }}
+          interactionWidth={14}
+        />
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan"
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)`,
+              background: '#fff',
+              border: `2px solid ${color}`,
+              borderRadius: 4, padding: '2px 8px',
+              fontSize: 9, color, fontWeight: 700,
+              fontFamily: 'ui-monospace, monospace',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.10)',
+            }}
+          >
+            ⬡ Direct Bus
+          </div>
+        </EdgeLabelRenderer>
+      </>
+    )
+  }
 
   return (
     <>

@@ -50,6 +50,7 @@ export interface CableEdgeData extends Record<string, unknown> {
   circuitLayer?: 'live' | 'neutral' | 'earth' | 'communication'
   lugs?: { count: number; size: string; material?: string }
   connectorType?: string
+  isDirect?: boolean          // direct bus / stackable connection — no cable
   // Communication-specific
   sourceProtocol?: string[]
   targetProtocol?: string[]
@@ -129,6 +130,8 @@ export function buildSLDFromQuote(
           mountingRows: savedStr.mountingRows,
           mountingCols: savedStr.mountingCols,
           mountingOrientation: savedStr.mountingOrientation,
+          mountingLayout: savedStr.mountingLayout,
+          mountingType: savedStr.mountingType,
           earthingRequired: savedStr.earthingRequired,
           earthingMethod: savedStr.earthingMethod,
         } : {}),
@@ -319,6 +322,7 @@ export function buildSLDFromQuote(
 // ── Edge label builder ────────────────────────────────────────────────────────
 
 export function buildEdgeLabel(data: CableEdgeData): string {
+  if (data.isDirect) return 'Direct Bus'
   const cableType    = (data.cableType    as string | undefined) ?? data.spec?.split(' ')[0] ?? 'Cable'
   const crossSection = (data.crossSection as string | undefined) ?? data.spec?.match(/\d+mm²/)?.[0] ?? ''
 
@@ -406,6 +410,8 @@ export function sldNodesToQuoteData(
       mountingRows:        d.mountingRows,
       mountingCols:        d.mountingCols,
       mountingOrientation: d.mountingOrientation,
+      mountingLayout:      d.mountingLayout,
+      mountingType:        d.mountingType,
       earthingRequired:    d.earthingRequired,
       earthingMethod:      d.earthingMethod,
       earthPointCount:     d.earthPointCount,
@@ -460,6 +466,7 @@ export function getDefaultNodeData(type: string): Record<string, unknown> {
     meter:       { label: 'Energy Meter',           model: '',             color },
     evCharger:   { label: 'EV Charger',             kw: 7.4,              color },
     custom:      { label: 'Custom Block',           model: '',             color },
+    connector:   { label: 'MC4', connectorType: 'MC4', qty: 2, color: '#64748b' },
     textNote:    { text: 'All DC cables: UV resistant H1Z2Z2\nInstalled per SANS 10400-XA', bold: false },
   }
   return base[type] ?? { label: type, color }
