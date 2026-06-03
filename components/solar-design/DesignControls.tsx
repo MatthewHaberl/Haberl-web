@@ -1,14 +1,24 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Sun, Check, Loader2 } from 'lucide-react'
+import { Sun, Check, Loader2, AlertCircle, TrendingUp } from 'lucide-react'
+import type { RoofSegmentSummary } from '@/lib/solar/google-solar'
+import { calculateStringGeneration } from '@/lib/solar/generation-calculator'
+import type { Season } from '@/lib/solar/generation-calculator'
+import { GenerationChart } from './GenerationChart'
 
 const WATT_OPTIONS = [360, 415, 460, 530, 560] as const
 
 interface Props {
+  roofSegmentStats: RoofSegmentSummary[] | undefined
+  selectedSegmentIdx: number
+  onSegmentChange: (idx: number) => void
+  currentSegmentPanels: number[]
   totalPanels: number
   enabledCount: number
   panelWatts: number
+  capacity: number
   annualKwh: number
   saving: boolean
   saved: boolean
@@ -18,11 +28,37 @@ interface Props {
   onConfirm: () => void
 }
 
+function getOrientationLabel(azimuth: number): string {
+  if (azimuth >= 340 || azimuth < 20) return 'North-facing'
+  if (azimuth >= 70 && azimuth < 110) return 'East-facing'
+  if (azimuth >= 160 && azimuth < 200) return 'South-facing'
+  if (azimuth >= 250 && azimuth < 290) return 'West-facing'
+  return 'Other orientation'
+}
+
+function isOptimalOrientation(azimuth: number): boolean {
+  return azimuth >= 340 || azimuth < 20
+}
+
 export function DesignControls({
-  totalPanels, enabledCount, panelWatts, annualKwh,
+  roofSegmentStats, selectedSegmentIdx, onSegmentChange, currentSegmentPanels,
+  totalPanels, enabledCount, panelWatts, capacity, annualKwh,
   saving, saved, onWattsChange, onSelectAll, onClearAll, onConfirm,
 }: Props) {
-  const kWp = ((enabledCount * panelWatts) / 1000).toFixed(2)
+  const [season, setSeason] = useState<Season>('average')
+  const [showChart, setShowChart] = useState(false)
+
+  const kWp = capacity.toFixed(2)
+  const currentSegment = roofSegmentStats?.[selectedSegmentIdx]
+  const azimuth = currentSegment?.azimuthDegrees ? Math.round(currentSegment.azimuthDegrees) : 180
+  const pitch = currentSegment?.pitchDegrees ? Math.round(currentSegment.pitchDegrees) : 20
+  const isOptimal = isOptimalOrientation(azimuth)
+
+  // Calculate generation stats for current segment
+  const generationStats = useMemo(() => {
+    if (enabledCount === 0) return null
+    return calculateStringGeneration(enabledCount, panelWatts, azimuth, pitch, season)
+  }, [enabledCount, panelWatts, azimuth, pitch, season])
 
   return (
     <div className="flex flex-col gap-4 p-4 border border-border rounded-lg bg-background w-56 shrink-0">
@@ -32,6 +68,48 @@ export function DesignControls({
         <Sun className="h-4 w-4 text-accent" />
         <span className="text-sm font-semibold">Design Stats</span>
       </div>
+
+      {/* Roof Segment Selector */}
+      {roofSegmentStats && roofSegmentStats.length > 1 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Roof Segment</span>
+          <select
+            value={selectedSegmentIdx}
+            onChange={(e) => onSegmentChange(Number(e.target.value))}
+            className="px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
+          >
+            {roofSegmentStats.map((seg, idx) => (
+              <option key={idx} value={idx}>
+                {getOrientationLabel(Math.round(seg.azimuthDegrees))} ({Math.round(seg.pitchDegrees)}°)
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Roof Orientation Display */}
+      {currentSegment && (
+        <div className="flex flex-col gap-2 p-2 bg-muted/50 rounded text-xs">
+          <div className="flex items-start gap-2">
+            <div className="flex-1">
+              <div className="text-muted-foreground">Azimuth: <span className="font-medium text-foreground">{azimuth}°</span></div>
+              <div className="text-muted-foreground">Pitch: <span className="font-medium text-foreground">{pitch}°</span></div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {isOptimal ? (
+                <span className="text-success">✓ Optimal</span>
+              ) : (
+                <span className="text-yellow-600 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" /> Suboptimal
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="text-muted-foreground">{getOrientationLabel(azimuth)}</div>
+        </div>
+      )}
+
+      <div className="border-t border-border" />
 
       {/* Live stats */}
       <div className="flex flex-col gap-2">
@@ -51,7 +129,71 @@ export function DesignControls({
         )}
       </div>
 
+      {/* Generation analysis */}
+      {generationStats && (
+        <>
+          <div className="border-t border-border" />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-accent" />
+              <span className="text-xs font-medium text-muted-foreground uppercase">Generation ({season})</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Peak generation</span>
+              <span className="font-semibold">{generationStats.peak_kw} kW @ {generationStats.peak_time}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Daily estimate</span>
+              <span className="font-semibold">{generationStats.daily_kwh} kWh</span>
+            </div>
+          </div>
+
+          {/* Season selector */}
+          <div className="flex gap-1">
+            {(['summer', 'average', 'winter'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setSeason(s)}
+                className={`flex-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  season === s
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-muted-foreground hover:bg-accent/10'
+                }`}
+              >
+                {s === 'summer' ? '☀️' : s === 'winter' ? '❄️' : '◐'} {s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {/* Toggle chart view */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowChart(!showChart)}
+            className="text-xs w-full"
+          >
+            {showChart ? 'Hide' : 'Show'} generation timeline
+          </Button>
+        </>
+      )}
+
       <div className="border-t border-border" />
+
+      {/* Generation Chart - shown when toggled */}
+      {showChart && enabledCount > 0 && (
+        <div className="-mx-4 -mb-4 p-4 bg-muted/30 rounded-b-lg">
+          <GenerationChart
+            strings={
+              roofSegmentStats ? [{
+                panelCount: enabledCount,
+                azimuth: azimuth,
+                pitch: pitch,
+              }] : []
+            }
+            panelWatts={panelWatts}
+          />
+        </div>
+      )}
 
       {/* Wattage selector */}
       <div className="flex flex-col gap-1.5">

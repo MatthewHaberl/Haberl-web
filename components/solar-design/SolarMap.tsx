@@ -44,14 +44,16 @@ function panelCorners(
 
 interface Props {
   buildingInsights: BuildingInsights
+  selectedSegmentIdx: number
   enabledPanels: Set<number>
   onTogglePanel: (index: number) => void
 }
 
-export function SolarMap({ buildingInsights, enabledPanels, onTogglePanel }: Props) {
+export function SolarMap({ buildingInsights, selectedSegmentIdx, enabledPanels, onTogglePanel }: Props) {
   const mapDivRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)       // eslint-disable-line @typescript-eslint/no-explicit-any
   const polygonsRef = useRef<any[]>([])  // eslint-disable-line @typescript-eslint/no-explicit-any
+  const compassRef = useRef<HTMLDivElement>(null)
   const [mapsLoaded, setMapsLoaded] = useState(false)
 
   // Keep callback ref fresh so polygon click listeners don't get stale closures
@@ -90,7 +92,7 @@ export function SolarMap({ buildingInsights, enabledPanels, onTogglePanel }: Pro
     })
   }, [mapsLoaded, buildingInsights])
 
-  // Draw panel polygons once map and data are ready (recreate when data changes)
+  // Draw panel polygons once map and data are ready (recreate when segment or data changes)
   useEffect(() => {
     if (!mapRef.current || !buildingInsights.solarPotential?.solarPanels?.length) return
 
@@ -102,8 +104,11 @@ export function SolarMap({ buildingInsights, enabledPanels, onTogglePanel }: Pro
     polygonsRef.current = []
 
     solarPanels.forEach((panel, idx) => {
+      // Only draw panels for the selected segment
+      if (panel.segmentIndex !== selectedSegmentIdx) return
+
       const segment = roofSegmentStats?.[panel.segmentIndex]
-      const azimuth = segment?.azimuthDegrees ?? 180 // default south-facing
+      const azimuth = segment?.azimuthDegrees ?? 180
 
       const corners = panelCorners(
         panel.center.latitude,
@@ -134,7 +139,7 @@ export function SolarMap({ buildingInsights, enabledPanels, onTogglePanel }: Pro
       polygonsRef.current.forEach(p => p.setMap(null))
       polygonsRef.current = []
     }
-  }, [mapsLoaded, buildingInsights]) // intentionally omits enabledPanels — colours updated separately
+  }, [mapsLoaded, buildingInsights, selectedSegmentIdx]) // intentionally omits enabledPanels — colours updated separately
 
   // Update polygon colours when toggle state changes (no polygon recreation)
   useEffect(() => {
@@ -148,6 +153,24 @@ export function SolarMap({ buildingInsights, enabledPanels, onTogglePanel }: Pro
     })
   }, [enabledPanels])
 
+  // Add north indicator compass
+  useEffect(() => {
+    if (!mapRef.current || !compassRef.current) return
+
+    // Position compass in the center top of map
+    const updateCompass = () => {
+      if (compassRef.current && mapRef.current) {
+        const bounds = mapRef.current.getDiv().getBoundingClientRect()
+        compassRef.current.style.left = (bounds.width / 2 - 15) + 'px'
+        compassRef.current.style.top = '10px'
+      }
+    }
+
+    updateCompass()
+    window.addEventListener('resize', updateCompass)
+    return () => window.removeEventListener('resize', updateCompass)
+  }, [mapsLoaded])
+
   if (!mapsLoaded) {
     return (
       <div
@@ -160,10 +183,32 @@ export function SolarMap({ buildingInsights, enabledPanels, onTogglePanel }: Pro
   }
 
   return (
-    <div
-      ref={mapDivRef}
-      className="flex-1 rounded-lg border border-border overflow-hidden"
-      style={{ minHeight: 500 }}
-    />
+    <div className="flex-1 relative">
+      <div
+        ref={mapDivRef}
+        className="w-full rounded-lg border border-border overflow-hidden"
+        style={{ minHeight: 500 }}
+      />
+      {/* North Indicator Compass */}
+      <div
+        ref={compassRef}
+        className="absolute z-10 pointer-events-none select-none"
+        style={{
+          width: '30px',
+          height: '30px',
+          background: 'rgba(255, 255, 255, 0.9)',
+          border: '1px solid rgba(0, 0, 0, 0.2)',
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          color: '#000',
+        }}
+      >
+        N
+      </div>
+    </div>
   )
 }

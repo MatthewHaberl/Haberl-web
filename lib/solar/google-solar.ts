@@ -82,3 +82,57 @@ export interface RoofDesign {
   segments: RoofSegmentDesign[]
   panelWatts: number
 }
+
+// ── Panel strings and groups ──────────────────────────────────────────────────
+
+export type RoofSegmentSummary = RoofSegmentStat
+
+export interface StringPanel {
+  panelIndex: number
+  panel: SolarPanel
+  stringId: number
+}
+
+export interface PanelString {
+  id: number
+  segmentIndex: number
+  panelIndices: number[]
+  enabled: boolean
+}
+
+export function generatePanelStrings(
+  panels: SolarPanel[],
+  segmentIndex: number,
+  stringsPerSegment: number = 8,
+): PanelString[] {
+  // Filter panels for this segment
+  const segmentPanels = panels
+    .map((p, idx) => ({ index: idx, panel: p }))
+    .filter(({ panel }) => panel.segmentIndex === segmentIndex)
+
+  if (segmentPanels.length === 0) return []
+
+  // Sort panels by position (roughly left-to-right, top-to-bottom)
+  segmentPanels.sort((a, b) => {
+    const latDiff = b.panel.center.latitude - a.panel.center.latitude
+    if (Math.abs(latDiff) > 0.0001) return latDiff
+    return a.panel.center.longitude - b.panel.center.longitude
+  })
+
+  // Distribute panels into strings
+  const panelsPerString = Math.max(1, Math.ceil(segmentPanels.length / stringsPerSegment))
+  const strings: PanelString[] = []
+
+  for (let i = 0; i < segmentPanels.length; i += panelsPerString) {
+    const stringId = strings.length
+    const panelIndices = segmentPanels.slice(i, i + panelsPerString).map(p => p.index)
+    strings.push({
+      id: stringId,
+      segmentIndex,
+      panelIndices,
+      enabled: true,
+    })
+  }
+
+  return strings
+}

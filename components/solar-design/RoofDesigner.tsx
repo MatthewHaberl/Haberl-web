@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Loader2, RotateCcw, MapPin } from 'lucide-react'
@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { BuildingInsights } from '@/lib/solar/google-solar'
 import { SolarMap } from './SolarMap'
 import { DesignControls } from './DesignControls'
+import { PSH_GAUTENG, SYSTEM_EFFICIENCY } from '@/lib/solar/quote-calculator'
 
 interface Props {
   address: string | null
@@ -31,18 +32,24 @@ export function RoofDesigner({
   const [buildingInsights, setBuildingInsights] = useState<BuildingInsights | null>(null)
   const [enabledPanels, setEnabledPanels] = useState<Set<number>>(new Set())
   const [panelWatts, setPanelWatts] = useState(415)
+  const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
   const solarPanels = buildingInsights?.solarPotential?.solarPanels ?? []
+  const roofSegmentStats = buildingInsights?.solarPotential?.roofSegmentStats ?? []
   const enabledCount = enabledPanels.size
 
-  const annualKwh = solarPanels.reduce(
-    (sum, p, i) => (enabledPanels.has(i) ? sum + p.yearlyEnergyDcKwh : sum),
-    0,
-  )
+  // Calculate capacity and generation based on selected wattage
+  const capacity = useMemo(() => {
+    return (enabledCount * panelWatts) / 1000
+  }, [enabledCount, panelWatts])
+
+  const annualKwh = useMemo(() => {
+    return capacity * PSH_GAUTENG * 12 * SYSTEM_EFFICIENCY
+  }, [capacity])
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -52,6 +59,7 @@ export function RoofDesigner({
     setError('')
     setBuildingInsights(null)
     setEnabledPanels(new Set())
+    setSelectedSegmentIdx(0)
     setSaved(false)
 
     try {
@@ -68,14 +76,24 @@ export function RoofDesigner({
 
       const data: BuildingInsights = await res.json()
       setBuildingInsights(data)
-      // Enable all panels by default
-      setEnabledPanels(new Set(data.solarPotential.solarPanels.map((_, i) => i)))
+      // Enable all panels on the first segment by default
+      const panelsOnFirstSegment = data.solarPotential.solarPanels
+        .map((p, idx) => (p.segmentIndex === 0 ? idx : null))
+        .filter((idx): idx is number => idx !== null)
+      setEnabledPanels(new Set(panelsOnFirstSegment))
       setLoadState('ready')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load roof data')
       setLoadState('error')
     }
   }
+
+  // Get panels for current segment
+  const currentSegmentPanels = useMemo(() => {
+    return solarPanels
+      .map((p, idx) => (p.segmentIndex === selectedSegmentIdx ? idx : null))
+      .filter((idx): idx is number => idx !== null)
+  }, [solarPanels, selectedSegmentIdx])
 
   const handleTogglePanel = useCallback((idx: number) => {
     setEnabledPanels(prev => {
@@ -104,7 +122,7 @@ export function RoofDesigner({
       const { solarPotential } = buildingInsights
       const { solarPanels: panels, roofSegmentStats } = solarPotential
 
-      const kWp = parseFloat(((enabledCount * panelWatts) / 1000).toFixed(3))
+      const kWp = parseFloat(capacity.toFixed(3))
 
       // Summarise which roof segments have enabled panels
       const segCounts = new Map<number, number>()
@@ -214,13 +232,19 @@ export function RoofDesigner({
           <div className="flex gap-4 items-start">
             <SolarMap
               buildingInsights={buildingInsights}
+              selectedSegmentIdx={selectedSegmentIdx}
               enabledPanels={enabledPanels}
               onTogglePanel={handleTogglePanel}
             />
             <DesignControls
-              totalPanels={solarPanels.length}
-              enabledCount={enabledCount}
+              roofSegmentStats={roofSegmentStats}
+              selectedSegmentIdx={selectedSegmentIdx}
+              onSegmentChange={setSelectedSegmentIdx}
+              currentSegmentPanels={currentSegmentPanels}
+              totalPanels={solarPanels.filter(p => p.segmentIndex === selectedSegmentIdx).length}
+              enabledCount={solarPanels.filter((p, i) => p.segmentIndex === selectedSegmentIdx && enabledPanels.has(i)).length}
               panelWatts={panelWatts}
+              capacity={capacity}
               annualKwh={annualKwh}
               saving={saving}
               saved={saved}
