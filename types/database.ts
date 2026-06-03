@@ -1,6 +1,10 @@
 export type Role = 'customer' | 'field_worker' | 'manager' | 'admin'
 export type QuoteRequestStatus = 'pending' | 'generated' | 'sent' | 'accepted' | 'declined'
 export type BrandCategory = 'inverter' | 'battery' | 'panel'
+export type EquipmentCatalogCategory = 'inverter' | 'battery' | 'panel' | 'other'
+export type EquipmentCatalogPhase = 'single' | 'three' | 'any'
+export type QuoteTier = 'premium' | 'recommended' | 'budget'
+export type QuoteGenerationMethod = 'ai' | 'calculator' | 'manual'
 
 export interface EquipmentBrand {
   id: string
@@ -8,6 +12,41 @@ export interface EquipmentBrand {
   brand: string
   active: boolean
   created_at: string
+}
+
+export interface EquipmentCatalogItem {
+  id: string
+  category: EquipmentCatalogCategory
+  brand: string
+  sku: string
+  description: string
+  watts_ac: number | null
+  watts_dc: number | null
+  kwh: number | null
+  phase: EquipmentCatalogPhase
+  cost_rands: number
+  isc_amps: number | null
+  voc_volts: number | null
+  active: boolean
+  sort_order: number
+  notes: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface QuoteTierConfig {
+  id: string
+  min_inverter_kw: number
+  max_inverter_kw: number
+  tier: QuoteTier
+  phase: EquipmentCatalogPhase
+  inverter_id: string
+  battery_id: string
+  panel_id: string
+  active: boolean
+  sort_order: number
+  created_at?: string
+  updated_at?: string
 }
 export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 export type OrderStatus = 'pending' | 'paid' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
@@ -223,9 +262,17 @@ export interface QuoteRequest {
   quote_html: string | null
   quote_number: string | null
   quote_version: 'simplified' | 'detailed'
+  generation_method: QuoteGenerationMethod
   deposit_items: string[]
   deposit_amount: number | null  // cents
   total_amount: number | null    // cents
+  selected_inverter_id: string | null
+  selected_battery_id: string | null
+  selected_panel_id: string | null
+  selected_battery_qty: number | null
+  selected_panel_qty: number | null
+  cable_route_m: number | null
+  storeys_premium_rands: number | null
 
   // Roof design (added migration 004)
   design_panel_count: number | null

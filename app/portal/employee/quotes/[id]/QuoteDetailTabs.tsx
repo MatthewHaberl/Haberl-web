@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { extractQuoteJson, type AnyQuoteData } from '@/lib/solar/render-quote'
+import { EquipmentSelector } from './EquipmentSelector'
 import { GenerateButton } from './GenerateButton'
 import { FileText, Workflow, Image, ClipboardList, Sun, Pencil, Save, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -89,7 +90,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<TabId>('survey')
 
-  // Live quoteData — set by GenerateButton when JSON is pasted/parsed
+  // Live quoteData — set by the calculator or AI override when quote JSON changes
   const [liveQuoteData, setLiveQuoteData] = useState<AnyQuoteData | null>(() => {
     if (req.generated_quote) {
       return extractQuoteJson(req.generated_quote)
@@ -207,6 +208,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   ]
 
   const diagramData = liveQuoteData
+  const forceAiOverride = req.is_amendment || (req.ev_charger && req.ev_charger !== 'No')
 
   return (
     <div className="flex flex-col gap-0">
@@ -493,22 +495,65 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
                   {req.quote_html || req.generated_quote ? 'Generated Quote' : 'Generate Quote'}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {req.quote_html || req.generated_quote
-                    ? 'Quote generated. Regenerate to refresh, or adjust deposit items.'
-                    : 'Copy the prompt, paste into Claude, then paste the JSON output back below.'}
+                  {forceAiOverride
+                    ? 'This job stays on the AI path because amendments and EV work still need manual judgement.'
+                    : req.quote_html || req.generated_quote
+                      ? 'Quote generated. Recalculate to refresh, or adjust deposit items before saving again.'
+                      : 'Select equipment, then calculate the quote instantly. AI stays available for edge cases.'}
                 </p>
               </div>
-              <GenerateButton
-                requestId={req.id}
-                request={req}
-                existingQuote={req.generated_quote ?? null}
-                existingHtml={req.quote_html ?? null}
-                existingDepositItems={(req.deposit_items ?? []) as string[]}
-                existingQuoteNumber={req.quote_number ?? null}
-                existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
-                nextQuoteNumber={nextQuoteNum}
-                onQuoteDataChange={setLiveQuoteData}
-              />
+              {!forceAiOverride ? (
+                <>
+                  <EquipmentSelector
+                    requestId={req.id}
+                    request={req}
+                    existingQuote={req.generated_quote ?? null}
+                    existingHtml={req.quote_html ?? null}
+                    existingDepositItems={(req.deposit_items ?? []) as string[]}
+                    existingQuoteNumber={req.quote_number ?? null}
+                    existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
+                    nextQuoteNumber={nextQuoteNum}
+                    onQuoteDataChange={setLiveQuoteData}
+                  />
+                  <details className="rounded-lg border border-border p-4">
+                    <summary className="cursor-pointer text-sm font-medium text-foreground">
+                      AI Override (amendments, EV, complex systems)
+                    </summary>
+                    <div className="mt-4">
+                      <GenerateButton
+                        requestId={req.id}
+                        request={req}
+                        existingQuote={req.generated_quote ?? null}
+                        existingHtml={req.quote_html ?? null}
+                        existingDepositItems={(req.deposit_items ?? []) as string[]}
+                        existingQuoteNumber={req.quote_number ?? null}
+                        existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
+                        nextQuoteNumber={nextQuoteNum}
+                        onQuoteDataChange={setLiveQuoteData}
+                      />
+                    </div>
+                  </details>
+                </>
+              ) : (
+                <details className="rounded-lg border border-amber-200 bg-amber-50/60 p-4" open>
+                  <summary className="cursor-pointer text-sm font-medium text-foreground">
+                    AI Override (amendments, EV, complex systems)
+                  </summary>
+                  <div className="mt-4">
+                    <GenerateButton
+                      requestId={req.id}
+                      request={req}
+                      existingQuote={req.generated_quote ?? null}
+                      existingHtml={req.quote_html ?? null}
+                      existingDepositItems={(req.deposit_items ?? []) as string[]}
+                      existingQuoteNumber={req.quote_number ?? null}
+                      existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
+                      nextQuoteNumber={nextQuoteNum}
+                      onQuoteDataChange={setLiveQuoteData}
+                    />
+                  </div>
+                </details>
+              )}
             </>
           ) : (
             <>
