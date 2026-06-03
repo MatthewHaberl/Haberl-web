@@ -234,8 +234,8 @@ export function QuoteForm({ brands }: Props) {
 
       let { error: dbErr } = await supabase.from('quote_requests').insert(payload)
       if (dbErr?.message?.includes('site_number')) {
-        const fallbackPayload = { ...payload }
-        delete (fallbackPayload as typeof payload & { site_number?: number }).site_number
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { site_number: _removed, ...fallbackPayload } = payload as typeof payload & { site_number?: number }
         const retry = await supabase.from('quote_requests').insert(fallbackPayload)
         dbErr = retry.error
       }
