@@ -30,8 +30,41 @@ export interface EquipmentCatalogItem {
   active: boolean
   sort_order: number
   notes: string | null
+  shop_description: string | null
+  primary_image_url: string | null
+  datasheet_url: string | null
+  research_ran_at: string | null
   created_at?: string
   updated_at?: string
+}
+
+export type ResearchResourceType =
+  | 'description'
+  | 'spec_table'
+  | 'datasheet'
+  | 'photo'
+  | 'sld'
+  | 'manual'
+  | 'compatibility'
+  | 'model_3d'
+
+export type ResearchStatus = 'pending' | 'accepted' | 'rejected'
+
+export interface ProductResearch {
+  id: string
+  catalog_id: string
+  resource_type: ResearchResourceType
+  title: string
+  url: string | null
+  content: string | null
+  thumbnail_url: string | null
+  file_type: string | null
+  source_domain: string | null
+  confidence: number
+  status: ResearchStatus
+  accepted_at: string | null
+  rejected_at: string | null
+  created_at: string
 }
 
 export interface QuoteTierConfig {
@@ -145,6 +178,73 @@ export interface Product {
   stock_qty: number
   active: boolean
   created_at: string
+  // Extended shop fields (migration 012)
+  external_id: string | null
+  weight_kg: number | null
+  brand: string | null
+  watts_ac: number | null
+  watts_dc: number | null
+  kwh: number | null
+  meta: Record<string, unknown> | null
+}
+
+export interface CartItem {
+  product_id: string
+  slug: string
+  name: string
+  sku: string | null
+  category: string | null
+  brand: string | null
+  quantity: number
+  unit_price: number   // cents
+  image_url: string | null
+}
+
+export interface ShippingZone {
+  id: string
+  name: string
+  description: string | null
+  base_fee_cents: number
+  per_kg_rate_cents: number
+  max_weight_kg: number | null
+  active: boolean
+}
+
+export interface PriceList {
+  id: string
+  name: string
+  description: string | null
+  markup_percent: number
+  discount_percent: number
+  active: boolean
+  created_at: string
+}
+
+export interface DiscountCode {
+  id: string
+  code: string
+  discount_type: 'percentage' | 'fixed_amount'
+  discount_value: number
+  description: string | null
+  max_uses: number | null
+  uses_count: number
+  min_order_amount_cents: number | null
+  active: boolean
+  valid_from: string | null
+  valid_until: string | null
+  created_at: string
+}
+
+export interface ProductRelationship {
+  id: string
+  product_id: string
+  related_product_id: string
+  relationship_type: 'lugs_for_inverter' | 'cable_for_inverter' | 'breaker_for_inverter' | 'earthing_for_system' | 'mounting_for_panel' | 'other'
+  reason: string | null
+  active: boolean
+  priority: number
+  // joined
+  related_product?: Product
 }
 
 export interface Order {

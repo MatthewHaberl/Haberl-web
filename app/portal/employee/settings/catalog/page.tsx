@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { MARKUP, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
-import { Loader2, Pencil, Plus, X } from 'lucide-react'
+import { Loader2, Pencil, Plus, Search, X } from 'lucide-react'
 
 type CategoryTab = 'inverter' | 'battery' | 'panel'
 
@@ -278,6 +278,11 @@ export default function CatalogPage() {
                             <Button variant="outline" size="sm" onClick={() => toggleActive(item)}>
                               {item.active ? 'Hide' : 'Show'}
                             </Button>
+                            <Link href={`/portal/employee/settings/catalog/${item.id}/research`}>
+                              <Button variant="outline" size="sm" title="Research datasheets, photos, SLDs…">
+                                <Search className="h-3.5 w-3.5" />
+                              </Button>
+                            </Link>
                           </div>
                         </td>
                       </tr>
