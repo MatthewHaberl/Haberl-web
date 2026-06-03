@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Loader2, RotateCcw, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { BuildingInsights } from '@/lib/solar/google-solar'
+import type { BuildingInsights, CustomPanel } from '@/lib/solar/google-solar'
 import { SolarMap } from './SolarMap'
 import { DesignControls } from './DesignControls'
+import type { SegmentStat } from './DesignControls'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY } from '@/lib/solar/quote-calculator'
 
 interface Props {
@@ -20,47 +21,59 @@ interface Props {
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 
-export function RoofDesigner({
-  address,
-  quoteRequestId,
-  existingPanelCount,
-  existingKwp,
-  existingConfirmedAt,
-}: Props) {
+export function RoofDesigner({ address, quoteRequestId, existingPanelCount, existingKwp, existingConfirmedAt }: Props) {
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [error, setError] = useState('')
   const [buildingInsights, setBuildingInsights] = useState<BuildingInsights | null>(null)
   const [enabledPanels, setEnabledPanels] = useState<Set<number>>(new Set())
+  const [customPanels, setCustomPanels] = useState<CustomPanel[]>([])
+  const [enabledCustomPanels, setEnabledCustomPanels] = useState<Set<number>>(new Set())
+  const [panelOrientations, setPanelOrientations] = useState<Record<number, 'PORTRAIT' | 'LANDSCAPE'>>({})
   const [panelWatts, setPanelWatts] = useState(415)
-  const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const nextCustomId = useRef(-1)
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
   const solarPanels = buildingInsights?.solarPotential?.solarPanels ?? []
   const roofSegmentStats = buildingInsights?.solarPotential?.roofSegmentStats ?? []
-  const enabledCount = enabledPanels.size
 
-  // Calculate capacity and generation based on selected wattage
-  const capacity = useMemo(() => {
-    return (enabledCount * panelWatts) / 1000
-  }, [enabledCount, panelWatts])
+  const totalEnabledCount = enabledPanels.size + enabledCustomPanels.size
+  const totalPanelCount = solarPanels.length + customPanels.length
 
-  const annualKwh = useMemo(() => {
-    return capacity * PSH_GAUTENG * 12 * SYSTEM_EFFICIENCY
-  }, [capacity])
+  const capacity = useMemo(() => (totalEnabledCount * panelWatts) / 1000, [totalEnabledCount, panelWatts])
+  const annualKwh = useMemo(() => capacity * PSH_GAUTENG * 12 * SYSTEM_EFFICIENCY, [capacity])
+
+  // Group enabled panels by segment for DesignControls
+  const segmentStats = useMemo((): SegmentStat[] => {
+    const counts = new Map<number, number>()
+    solarPanels.forEach((p, i) => {
+      if (!enabledPanels.has(i)) return
+      counts.set(p.segmentIndex, (counts.get(p.segmentIndex) ?? 0) + 1)
+    })
+    customPanels.forEach(cp => {
+      if (!enabledCustomPanels.has(cp.id)) return
+      counts.set(cp.segmentIndex, (counts.get(cp.segmentIndex) ?? 0) + 1)
+    })
+    return [...counts.entries()].map(([segIdx, count]) => {
+      const seg = roofSegmentStats[segIdx]
+      return {
+        segmentIndex: segIdx,
+        panelCount: count,
+        azimuth: Math.round(seg?.azimuthDegrees ?? 180),
+        pitch: Math.round(seg?.pitchDegrees ?? 20),
+      }
+    }).sort((a, b) => a.azimuth - b.azimuth)
+  }, [solarPanels, roofSegmentStats, enabledPanels, customPanels, enabledCustomPanels])
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
   async function handleLoad() {
     if (!address) return
-    setLoadState('loading')
-    setError('')
-    setBuildingInsights(null)
-    setEnabledPanels(new Set())
-    setSelectedSegmentIdx(0)
-    setSaved(false)
+    setLoadState('loading'); setError(''); setBuildingInsights(null)
+    setEnabledPanels(new Set()); setCustomPanels([]); setEnabledCustomPanels(new Set())
+    setPanelOrientations({}); setSaved(false)
 
     try {
       const res = await fetch('/api/solar-insights', {
@@ -68,19 +81,14 @@ export function RoofDesigner({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address }),
       })
-
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error ?? `HTTP ${res.status}`)
       }
-
       const data: BuildingInsights = await res.json()
       setBuildingInsights(data)
-      // Enable all panels on the first segment by default
-      const panelsOnFirstSegment = data.solarPotential.solarPanels
-        .map((p, idx) => (p.segmentIndex === 0 ? idx : null))
-        .filter((idx): idx is number => idx !== null)
-      setEnabledPanels(new Set(panelsOnFirstSegment))
+      // Enable ALL panels across all segments by default
+      setEnabledPanels(new Set(data.solarPotential.solarPanels.map((_, i) => i)))
       setLoadState('ready')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load roof data')
@@ -88,60 +96,70 @@ export function RoofDesigner({
     }
   }
 
-  // Get panels for current segment
-  const currentSegmentPanels = useMemo(() => {
-    return solarPanels
-      .map((p, idx) => (p.segmentIndex === selectedSegmentIdx ? idx : null))
-      .filter((idx): idx is number => idx !== null)
-  }, [solarPanels, selectedSegmentIdx])
-
   const handleTogglePanel = useCallback((idx: number) => {
-    setEnabledPanels(prev => {
-      const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx); else next.add(idx)
-      return next
+    setEnabledPanels(prev => { const n = new Set(prev); n.has(idx) ? n.delete(idx) : n.add(idx); return n })
+    setSaved(false)
+  }, [])
+
+  const handleToggleCustomPanel = useCallback((id: number) => {
+    setEnabledCustomPanels(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+    setSaved(false)
+  }, [])
+
+  // Shift-click / right-click → flip orientation
+  const handleShiftClickPanel = useCallback((idx: number) => {
+    setPanelOrientations(prev => {
+      const current = prev[idx] ?? (solarPanels[idx]?.orientation ?? 'PORTRAIT')
+      return { ...prev, [idx]: current === 'PORTRAIT' ? 'LANDSCAPE' : 'PORTRAIT' }
     })
+  }, [solarPanels])
+
+  const handleAddCustomPanel = useCallback((lat: number, lng: number, segmentIndex: number, azimuth: number, pitch: number) => {
+    const id = nextCustomId.current--
+    const panel: CustomPanel = { id, lat, lng, orientation: 'PORTRAIT', segmentIndex, azimuth, pitch }
+    setCustomPanels(prev => [...prev, panel])
+    setEnabledCustomPanels(prev => new Set([...prev, id]))
+    setSaved(false)
+  }, [])
+
+  const handleRemoveCustomPanel = useCallback((id: number) => {
+    setCustomPanels(prev => prev.filter(cp => cp.id !== id))
+    setEnabledCustomPanels(prev => { const n = new Set(prev); n.delete(id); return n })
     setSaved(false)
   }, [])
 
   function handleSelectAll() {
     setEnabledPanels(new Set(solarPanels.map((_, i) => i)))
+    setEnabledCustomPanels(new Set(customPanels.map(cp => cp.id)))
     setSaved(false)
   }
 
   function handleClearAll() {
-    setEnabledPanels(new Set())
-    setSaved(false)
+    setEnabledPanels(new Set()); setEnabledCustomPanels(new Set()); setSaved(false)
   }
 
   async function handleConfirm() {
-    if (!buildingInsights || enabledCount === 0) return
+    if (!buildingInsights || totalEnabledCount === 0) return
     setSaving(true)
-
     try {
-      const { solarPotential } = buildingInsights
-      const { solarPanels: panels, roofSegmentStats } = solarPotential
-
       const kWp = parseFloat(capacity.toFixed(3))
-
-      // Summarise which roof segments have enabled panels
       const segCounts = new Map<number, number>()
-      panels.forEach((p, i) => {
+      solarPanels.forEach((p, i) => {
         if (!enabledPanels.has(i)) return
         segCounts.set(p.segmentIndex, (segCounts.get(p.segmentIndex) ?? 0) + 1)
       })
+      customPanels.forEach(cp => {
+        if (!enabledCustomPanels.has(cp.id)) return
+        segCounts.set(cp.segmentIndex, (segCounts.get(cp.segmentIndex) ?? 0) + 1)
+      })
       const segments = [...segCounts.entries()].map(([segIdx, count]) => {
-        const seg = roofSegmentStats?.[segIdx]
-        return {
-          azimuth: Math.round(seg?.azimuthDegrees ?? 180),
-          pitch: Math.round(seg?.pitchDegrees ?? 20),
-          panelCount: count,
-        }
+        const seg = roofSegmentStats[segIdx]
+        return { azimuth: Math.round(seg?.azimuthDegrees ?? 180), pitch: Math.round(seg?.pitchDegrees ?? 20), panelCount: count }
       })
 
       const supabase = createClient()
       const { error: dbError } = await supabase.from('quote_requests').update({
-        design_panel_count: enabledCount,
+        design_panel_count: totalEnabledCount,
         design_kwp: kWp,
         design_segments: segments,
         design_confirmed_at: new Date().toISOString(),
@@ -157,7 +175,7 @@ export function RoofDesigner({
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   if (!address) {
     return (
@@ -177,86 +195,72 @@ export function RoofDesigner({
       {/* Existing confirmed design badge */}
       {existingConfirmedAt && !saved && loadState !== 'ready' && (
         <div className="flex items-center gap-3 p-3 bg-success/10 border border-success/30 rounded-lg text-sm text-success">
-          <span className="font-semibold">
-            Design confirmed: {existingPanelCount} panels · {existingKwp} kWp
-          </span>
-          <span className="text-xs opacity-70">
-            {new Date(existingConfirmedAt).toLocaleDateString('en-ZA')}
-          </span>
+          <span className="font-semibold">Design confirmed: {existingPanelCount} panels · {existingKwp} kWp</span>
+          <span className="text-xs opacity-70">{new Date(existingConfirmedAt).toLocaleDateString('en-ZA')}</span>
           <span className="ml-auto text-xs opacity-70">Reload below to redesign</span>
         </div>
       )}
 
-      {/* Load / reload bar */}
+      {/* Load bar */}
       {loadState !== 'ready' && (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
             <MapPin className="h-4 w-4 shrink-0" />
             <span className="truncate">{address}</span>
           </div>
-          <Button
-            variant="accent"
-            onClick={handleLoad}
-            disabled={loadState === 'loading'}
-            className="ml-auto shrink-0"
-          >
-            {loadState === 'loading'
-              ? <><Loader2 className="h-4 w-4 animate-spin" />Loading…</>
-              : loadState === 'error'
-                ? <><RotateCcw className="h-4 w-4" />Retry</>
-                : 'Load Roof'}
+          <Button variant="accent" onClick={handleLoad} disabled={loadState === 'loading'} className="ml-auto shrink-0">
+            {loadState === 'loading' ? <><Loader2 className="h-4 w-4 animate-spin" />Loading…</>
+              : loadState === 'error' ? <><RotateCcw className="h-4 w-4" />Retry</>
+              : 'Load Roof'}
           </Button>
         </div>
       )}
 
-      {error && (
-        <p className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{error}</p>
-      )}
+      {error && <p className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{error}</p>}
 
-      {/* Map + controls */}
+      {/* Map full-width, then controls below */}
       {loadState === 'ready' && buildingInsights && (
         <>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <MapPin className="h-4 w-4 shrink-0" />
             <span className="truncate">{address}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLoad}
-              className="ml-auto shrink-0 text-xs"
-            >
+            <Button variant="ghost" size="sm" onClick={handleLoad} className="ml-auto shrink-0 text-xs">
               <RotateCcw className="h-3.5 w-3.5 mr-1" />Reload
             </Button>
           </div>
 
-          <div className="flex gap-4 items-start">
-            <SolarMap
-              buildingInsights={buildingInsights}
-              selectedSegmentIdx={selectedSegmentIdx}
-              enabledPanels={enabledPanels}
-              onTogglePanel={handleTogglePanel}
-            />
-            <DesignControls
-              roofSegmentStats={roofSegmentStats}
-              selectedSegmentIdx={selectedSegmentIdx}
-              onSegmentChange={setSelectedSegmentIdx}
-              currentSegmentPanels={currentSegmentPanels}
-              totalPanels={solarPanels.filter(p => p.segmentIndex === selectedSegmentIdx).length}
-              enabledCount={solarPanels.filter((p, i) => p.segmentIndex === selectedSegmentIdx && enabledPanels.has(i)).length}
-              panelWatts={panelWatts}
-              capacity={capacity}
-              annualKwh={annualKwh}
-              saving={saving}
-              saved={saved}
-              onWattsChange={setPanelWatts}
-              onSelectAll={handleSelectAll}
-              onClearAll={handleClearAll}
-              onConfirm={handleConfirm}
-            />
-          </div>
+          {/* Map */}
+          <SolarMap
+            buildingInsights={buildingInsights}
+            enabledPanels={enabledPanels}
+            customPanels={customPanels}
+            enabledCustomPanels={enabledCustomPanels}
+            panelOrientations={panelOrientations}
+            onTogglePanel={handleTogglePanel}
+            onToggleCustomPanel={handleToggleCustomPanel}
+            onShiftClickPanel={handleShiftClickPanel}
+            onAddCustomPanel={handleAddCustomPanel}
+            onRemoveCustomPanel={handleRemoveCustomPanel}
+          />
+
+          {/* Stats + generation below map */}
+          <DesignControls
+            segmentStats={segmentStats}
+            totalPanels={totalPanelCount}
+            enabledCount={totalEnabledCount}
+            panelWatts={panelWatts}
+            capacity={capacity}
+            annualKwh={annualKwh}
+            saving={saving}
+            saved={saved}
+            onWattsChange={setPanelWatts}
+            onSelectAll={handleSelectAll}
+            onClearAll={handleClearAll}
+            onConfirm={handleConfirm}
+          />
 
           <p className="text-xs text-muted-foreground">
-            Google Solar data · {buildingInsights.imageryDate.year}/{String(buildingInsights.imageryDate.month).padStart(2,'0')}/{String(buildingInsights.imageryDate.day).padStart(2,'0')} imagery
+            Google Solar data · {buildingInsights.imageryDate.year}/{String(buildingInsights.imageryDate.month).padStart(2, '0')}/{String(buildingInsights.imageryDate.day).padStart(2, '0')} imagery
             · {buildingInsights.solarPotential.maxArrayPanelsCount} panels max capacity
           </p>
         </>

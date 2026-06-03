@@ -181,17 +181,75 @@ export function calculateAllStringsGeneration(
   season: Season = 'average',
 ): Map<number, StringGenerationSummary> {
   const results = new Map<number, StringGenerationSummary>()
-
   strings.forEach((string, idx) => {
-    const result = calculateStringGeneration(
-      string.panelCount,
-      panelWatts,
-      string.azimuth,
-      string.pitch,
-      season,
-    )
-    results.set(idx, result)
+    results.set(idx, calculateStringGeneration(string.panelCount, panelWatts, string.azimuth, string.pitch, season))
+  })
+  return results
+}
+
+// ── Monthly breakdown ─────────────────────────────────────────────────────────
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const DAYS_PER_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+// Daylight hours per month for Gauteng (~26°S)
+const MONTHLY_DAYLIGHT_HOURS = [14.0, 13.2, 12.4, 11.4, 10.7, 10.3, 10.5, 11.3, 12.2, 13.1, 13.9, 14.2]
+
+// Monthly solar factors for Gauteng — winter is clearer but shorter days
+const MONTHLY_SOLAR_FACTORS = [0.93, 0.94, 0.98, 1.01, 1.04, 1.05, 1.06, 1.05, 1.02, 0.98, 0.96, 0.98]
+const MONTHLY_FACTOR_AVG = MONTHLY_SOLAR_FACTORS.reduce((s, f) => s + f, 0) / 12
+
+export interface MonthlyGenerationRow {
+  month: string
+  daylightHours: number
+  generationKwh: number
+  cumulativeKwh: number
+}
+
+export interface SegmentMonthlyData {
+  label: string
+  azimuth: number
+  panelCount: number
+  monthly: MonthlyGenerationRow[]
+  annualKwh: number
+}
+
+export interface MonthlyBreakdown {
+  segments: SegmentMonthlyData[]
+  totals: MonthlyGenerationRow[]
+  annualTotal: number
+}
+
+function orientationLabel(azimuth: number): string {
+  if (azimuth >= 340 || azimuth < 20) return 'North'
+  if (azimuth >= 70 && azimuth < 110) return 'East'
+  if (azimuth >= 160 && azimuth < 200) return 'South'
+  if (azimuth >= 250 && azimuth < 290) return 'West'
+  return `${Math.round(azimuth)}°`
+}
+
+export function calculateMonthlyBreakdown(
+  segments: Array<{ panelCount: number; azimuth: number; pitch: number }>,
+  panelWatts: number,
+): MonthlyBreakdown {
+  const segmentResults: SegmentMonthlyData[] = segments.map(seg => {
+    const avgGen = calculateStringGeneration(seg.panelCount, panelWatts, seg.azimuth, seg.pitch, 'average')
+    let cumulative = 0
+    const monthly = MONTH_NAMES.map((month, i) => {
+      const factor = MONTHLY_SOLAR_FACTORS[i] / MONTHLY_FACTOR_AVG
+      const monthlyKwh = Math.round(avgGen.daily_kwh * DAYS_PER_MONTH[i] * factor)
+      cumulative += monthlyKwh
+      return { month, daylightHours: MONTHLY_DAYLIGHT_HOURS[i], generationKwh: monthlyKwh, cumulativeKwh: Math.round(cumulative) }
+    })
+    return { label: orientationLabel(seg.azimuth), azimuth: seg.azimuth, panelCount: seg.panelCount, monthly, annualKwh: Math.round(cumulative) }
   })
 
-  return results
+  let cumulativeTotal = 0
+  const totals = MONTH_NAMES.map((month, i) => {
+    const monthTotal = segmentResults.reduce((s, seg) => s + seg.monthly[i].generationKwh, 0)
+    cumulativeTotal += monthTotal
+    return { month, daylightHours: MONTHLY_DAYLIGHT_HOURS[i], generationKwh: monthTotal, cumulativeKwh: Math.round(cumulativeTotal) }
+  })
+
+  return { segments: segmentResults, totals, annualTotal: Math.round(cumulativeTotal) }
 }

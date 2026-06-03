@@ -100,6 +100,16 @@ export interface PanelString {
   enabled: boolean
 }
 
+export interface CustomPanel {
+  id: number
+  lat: number
+  lng: number
+  orientation: 'PORTRAIT' | 'LANDSCAPE'
+  segmentIndex: number
+  azimuth: number
+  pitch: number
+}
+
 export function generatePanelStrings(
   panels: SolarPanel[],
   segmentIndex: number,

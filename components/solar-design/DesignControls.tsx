@@ -1,20 +1,20 @@
 'use client'
 
-import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Sun, Check, Loader2, AlertCircle, TrendingUp } from 'lucide-react'
-import type { RoofSegmentSummary } from '@/lib/solar/google-solar'
-import { calculateStringGeneration } from '@/lib/solar/generation-calculator'
-import type { Season } from '@/lib/solar/generation-calculator'
+import { Sun, Check, Loader2, AlertCircle, RotateCcw } from 'lucide-react'
 import { GenerationChart } from './GenerationChart'
 
 const WATT_OPTIONS = [360, 415, 460, 530, 560] as const
 
+export interface SegmentStat {
+  segmentIndex: number
+  panelCount: number
+  azimuth: number
+  pitch: number
+}
+
 interface Props {
-  roofSegmentStats: RoofSegmentSummary[] | undefined
-  selectedSegmentIdx: number
-  onSegmentChange: (idx: number) => void
-  currentSegmentPanels: number[]
+  segmentStats: SegmentStat[]
   totalPanels: number
   enabledCount: number
   panelWatts: number
@@ -28,231 +28,114 @@ interface Props {
   onConfirm: () => void
 }
 
-function getOrientationLabel(azimuth: number): string {
-  if (azimuth >= 340 || azimuth < 20) return 'North-facing'
-  if (azimuth >= 70 && azimuth < 110) return 'East-facing'
-  if (azimuth >= 160 && azimuth < 200) return 'South-facing'
-  if (azimuth >= 250 && azimuth < 290) return 'West-facing'
-  return 'Other orientation'
+function azimuthLabel(az: number): string {
+  if (az >= 340 || az < 20) return 'North'
+  if (az >= 70 && az < 110) return 'East'
+  if (az >= 160 && az < 200) return 'South'
+  if (az >= 250 && az < 290) return 'West'
+  return `${az}°`
 }
 
-function isOptimalOrientation(azimuth: number): boolean {
-  return azimuth >= 340 || azimuth < 20
+function isOptimal(az: number): boolean {
+  return az >= 340 || az < 20
 }
 
 export function DesignControls({
-  roofSegmentStats, selectedSegmentIdx, onSegmentChange, currentSegmentPanels,
-  totalPanels, enabledCount, panelWatts, capacity, annualKwh,
+  segmentStats, totalPanels, enabledCount, panelWatts, capacity, annualKwh,
   saving, saved, onWattsChange, onSelectAll, onClearAll, onConfirm,
 }: Props) {
-  const [season, setSeason] = useState<Season>('average')
-  const [showChart, setShowChart] = useState(false)
-
   const kWp = capacity.toFixed(2)
-  const currentSegment = roofSegmentStats?.[selectedSegmentIdx]
-  const azimuth = currentSegment?.azimuthDegrees ? Math.round(currentSegment.azimuthDegrees) : 180
-  const pitch = currentSegment?.pitchDegrees ? Math.round(currentSegment.pitchDegrees) : 20
-  const isOptimal = isOptimalOrientation(azimuth)
 
-  // Calculate generation stats for current segment
-  const generationStats = useMemo(() => {
-    if (enabledCount === 0) return null
-    return calculateStringGeneration(enabledCount, panelWatts, azimuth, pitch, season)
-  }, [enabledCount, panelWatts, azimuth, pitch, season])
+  const generationSegments = segmentStats.map(s => ({
+    panelCount: s.panelCount,
+    azimuth: s.azimuth,
+    pitch: s.pitch,
+    label: azimuthLabel(s.azimuth),
+  }))
 
   return (
-    <div className="flex flex-col gap-4 p-4 border border-border rounded-lg bg-background w-56 shrink-0">
+    <div className="flex flex-col gap-5 p-4 border border-border rounded-lg bg-background">
 
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <Sun className="h-4 w-4 text-accent" />
-        <span className="text-sm font-semibold">Design Stats</span>
-      </div>
+      {/* ── Top row: headline stats + wattage + actions ── */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
 
-      {/* Roof Segment Selector */}
-      {roofSegmentStats && roofSegmentStats.length > 1 && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Roof Segment</span>
-          <select
-            value={selectedSegmentIdx}
-            onChange={(e) => onSegmentChange(Number(e.target.value))}
-            className="px-2 py-1.5 rounded text-sm bg-muted border border-border text-foreground"
-          >
-            {roofSegmentStats.map((seg, idx) => (
-              <option key={idx} value={idx}>
-                {getOrientationLabel(Math.round(seg.azimuthDegrees))} ({Math.round(seg.pitchDegrees)}°)
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* Roof Orientation Display */}
-      {currentSegment && (
-        <div className="flex flex-col gap-2 p-2 bg-muted/50 rounded text-xs">
-          <div className="flex items-start gap-2">
-            <div className="flex-1">
-              <div className="text-muted-foreground">Azimuth: <span className="font-medium text-foreground">{azimuth}°</span></div>
-              <div className="text-muted-foreground">Pitch: <span className="font-medium text-foreground">{pitch}°</span></div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isOptimal ? (
-                <span className="text-success">✓ Optimal</span>
-              ) : (
-                <span className="text-yellow-600 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" /> Suboptimal
-                </span>
-              )}
-            </div>
+        {/* Headline stats */}
+        <div className="flex gap-5">
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Panels</span>
+            <span className="text-lg font-bold">{enabledCount} <span className="text-sm font-normal text-muted-foreground">/ {totalPanels}</span></span>
           </div>
-          <div className="text-muted-foreground">{getOrientationLabel(azimuth)}</div>
-        </div>
-      )}
-
-      <div className="border-t border-border" />
-
-      {/* Live stats */}
-      <div className="flex flex-col gap-2">
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Enabled panels</span>
-          <span className="font-medium">{enabledCount} / {totalPanels}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Total kWp</span>
-          <span className="font-semibold text-accent">{kWp} kWp</span>
-        </div>
-        {annualKwh > 0 && (
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Est. annual</span>
-            <span className="font-medium">{Math.round(annualKwh).toLocaleString()} kWh</span>
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Capacity</span>
+            <span className="text-lg font-bold text-accent">{kWp} <span className="text-sm font-normal text-muted-foreground">kWp</span></span>
           </div>
-        )}
-      </div>
-
-      {/* Generation analysis */}
-      {generationStats && (
-        <>
-          <div className="border-t border-border" />
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-accent" />
-              <span className="text-xs font-medium text-muted-foreground uppercase">Generation ({season})</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Peak generation</span>
-              <span className="font-semibold">{generationStats.peak_kw} kW @ {generationStats.peak_time}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Daily estimate</span>
-              <span className="font-semibold">{generationStats.daily_kwh} kWh</span>
-            </div>
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Est. annual</span>
+            <span className="text-lg font-bold">{annualKwh > 0 ? Math.round(annualKwh).toLocaleString() : '—'} <span className="text-sm font-normal text-muted-foreground">kWh</span></span>
           </div>
+        </div>
 
-          {/* Season selector */}
-          <div className="flex gap-1">
-            {(['summer', 'average', 'winter'] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setSeason(s)}
-                className={`flex-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  season === s
-                    ? 'bg-accent text-accent-foreground'
-                    : 'bg-muted text-muted-foreground hover:bg-accent/10'
-                }`}
-              >
-                {s === 'summer' ? '☀️' : s === 'winter' ? '❄️' : '◐'} {s.charAt(0).toUpperCase() + s.slice(1)}
+        <div className="h-8 w-px bg-border hidden sm:block" />
+
+        {/* Panel wattage chips */}
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Panel wattage</span>
+          <div className="flex gap-1 flex-wrap">
+            {WATT_OPTIONS.map(w => (
+              <button key={w} type="button" onClick={() => onWattsChange(w)}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  panelWatts === w ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground hover:bg-accent/10 hover:text-foreground'}`}>
+                {w}W
               </button>
             ))}
           </div>
+        </div>
 
-          {/* Toggle chart view */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowChart(!showChart)}
-            className="text-xs w-full"
-          >
-            {showChart ? 'Hide' : 'Show'} generation timeline
+        <div className="h-8 w-px bg-border hidden sm:block" />
+
+        {/* Selection + confirm */}
+        <div className="flex gap-2 items-center flex-wrap">
+          <Button variant="outline" size="sm" className="text-xs" onClick={onSelectAll}>Select all</Button>
+          <Button variant="outline" size="sm" className="text-xs" onClick={onClearAll}>Clear</Button>
+          <Button variant="accent" size="sm" onClick={onConfirm} disabled={enabledCount === 0 || saving} className="ml-1">
+            {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</>
+              : saved ? <><Check className="h-4 w-4" />Saved</>
+              : 'Use This Design'}
           </Button>
-        </>
-      )}
-
-      <div className="border-t border-border" />
-
-      {/* Generation Chart - shown when toggled */}
-      {showChart && enabledCount > 0 && (
-        <div className="-mx-4 -mb-4 p-4 bg-muted/30 rounded-b-lg">
-          <GenerationChart
-            strings={
-              roofSegmentStats ? [{
-                panelCount: enabledCount,
-                azimuth: azimuth,
-                pitch: pitch,
-              }] : []
-            }
-            panelWatts={panelWatts}
-          />
+          {saved && <span className="text-xs text-success">Confirmed ✓ go to Quote tab</span>}
         </div>
-      )}
+      </div>
 
-      {/* Wattage selector */}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Panel wattage
-        </span>
-        <div className="flex flex-wrap gap-1.5">
-          {WATT_OPTIONS.map((w) => (
-            <button
-              key={w}
-              type="button"
-              onClick={() => onWattsChange(w)}
-              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors
-                ${panelWatts === w
-                  ? 'bg-accent text-accent-foreground'
-                  : 'bg-muted text-muted-foreground hover:bg-accent/10 hover:text-foreground'}`}
-            >
-              {w}W
-            </button>
+      {/* ── Per-segment orientation breakdown ── */}
+      {segmentStats.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {segmentStats.map((seg, i) => (
+            <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg text-xs border border-border">
+              {isOptimal(seg.azimuth)
+                ? <span className="text-success font-bold">✓</span>
+                : <AlertCircle className="h-3.5 w-3.5 text-yellow-600 flex-shrink-0" />}
+              <div>
+                <div className="font-semibold">{azimuthLabel(seg.azimuth)}-facing · {seg.panelCount} panels</div>
+                <div className="text-muted-foreground">{seg.azimuth}° azimuth · {seg.pitch}° pitch {isOptimal(seg.azimuth) ? '· Optimal' : '· Suboptimal'}</div>
+              </div>
+            </div>
           ))}
+          <p className="text-xs text-muted-foreground self-center">
+            Shift-click or right-click a panel to flip portrait/landscape. Click empty roof area to add a panel.
+          </p>
         </div>
-      </div>
-
-      <div className="border-t border-border" />
-
-      {/* Selection helpers */}
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={onSelectAll}>
-          All
-        </Button>
-        <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={onClearAll}>
-          Clear
-        </Button>
-      </div>
-
-      {/* Confirm */}
-      <Button
-        variant="accent"
-        onClick={onConfirm}
-        disabled={enabledCount === 0 || saving}
-        className="w-full"
-      >
-        {saving
-          ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</>
-          : saved
-            ? <><Check className="h-4 w-4" />Saved</>
-            : 'Use This Design'}
-      </Button>
-
-      {saved && (
-        <p className="text-xs text-success text-center leading-tight">
-          Design confirmed — go to Quote tab and auto-generate.
-        </p>
       )}
 
-      {/* Usage hint */}
-      <p className="text-xs text-muted-foreground leading-tight">
-        Click panels on the map to toggle them on/off.
-      </p>
+      {/* ── Generation analysis ── */}
+      {enabledCount > 0 && generationSegments.length > 0 && (
+        <div className="border-t border-border pt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Sun className="h-4 w-4 text-accent" />
+            <span className="text-sm font-semibold">Generation Analysis</span>
+          </div>
+          <GenerationChart segments={generationSegments} panelWatts={panelWatts} />
+        </div>
+      )}
     </div>
   )
 }
