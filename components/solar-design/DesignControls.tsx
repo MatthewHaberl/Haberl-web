@@ -121,7 +121,7 @@ export function DesignControls({
             </div>
           ))}
           <p className="text-xs text-muted-foreground self-center">
-            Shift-click or right-click a panel to flip portrait/landscape. Click empty roof area to add a panel.
+            Switch to &quot;Place Panels&quot; mode to add panels. Click to place one · drag to place a row. Click a placed panel to select it, then click the ghost outlines to extend the row.
           </p>
         </div>
       )}

@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Loader2, RotateCcw, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { BuildingInsights, CustomPanel } from '@/lib/solar/google-solar'
+import type { BuildingInsights, CustomPanel, PanelPlacement } from '@/lib/solar/google-solar'
+import { offsetLatLng } from '@/lib/solar/google-solar'
 import { SolarMap } from './SolarMap'
 import { DesignControls } from './DesignControls'
 import type { SegmentStat } from './DesignControls'
@@ -29,6 +30,7 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
   const [customPanels, setCustomPanels] = useState<CustomPanel[]>([])
   const [enabledCustomPanels, setEnabledCustomPanels] = useState<Set<number>>(new Set())
   const [panelOrientations, setPanelOrientations] = useState<Record<number, 'PORTRAIT' | 'LANDSCAPE'>>({})
+  const [selectedCustomPanelId, setSelectedCustomPanelId] = useState<number | null>(null)
   const [panelWatts, setPanelWatts] = useState(415)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -45,7 +47,6 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
   const capacity = useMemo(() => (totalEnabledCount * panelWatts) / 1000, [totalEnabledCount, panelWatts])
   const annualKwh = useMemo(() => capacity * PSH_GAUTENG * 12 * SYSTEM_EFFICIENCY, [capacity])
 
-  // Group enabled panels by segment for DesignControls
   const segmentStats = useMemo((): SegmentStat[] => {
     const counts = new Map<number, number>()
     solarPanels.forEach((p, i) => {
@@ -58,12 +59,7 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
     })
     return [...counts.entries()].map(([segIdx, count]) => {
       const seg = roofSegmentStats[segIdx]
-      return {
-        segmentIndex: segIdx,
-        panelCount: count,
-        azimuth: Math.round(seg?.azimuthDegrees ?? 180),
-        pitch: Math.round(seg?.pitchDegrees ?? 20),
-      }
+      return { segmentIndex: segIdx, panelCount: count, azimuth: Math.round(seg?.azimuthDegrees ?? 180), pitch: Math.round(seg?.pitchDegrees ?? 20) }
     }).sort((a, b) => a.azimuth - b.azimuth)
   }, [solarPanels, roofSegmentStats, enabledPanels, customPanels, enabledCustomPanels])
 
@@ -73,7 +69,7 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
     if (!address) return
     setLoadState('loading'); setError(''); setBuildingInsights(null)
     setEnabledPanels(new Set()); setCustomPanels([]); setEnabledCustomPanels(new Set())
-    setPanelOrientations({}); setSaved(false)
+    setPanelOrientations({}); setSelectedCustomPanelId(null); setSaved(false)
 
     try {
       const res = await fetch('/api/solar-insights', {
@@ -87,7 +83,6 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
       }
       const data: BuildingInsights = await res.json()
       setBuildingInsights(data)
-      // Enable ALL panels across all segments by default
       setEnabledPanels(new Set(data.solarPotential.solarPanels.map((_, i) => i)))
       setLoadState('ready')
     } catch (e) {
@@ -106,7 +101,6 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
     setSaved(false)
   }, [])
 
-  // Shift-click / right-click → flip orientation
   const handleShiftClickPanel = useCallback((idx: number) => {
     setPanelOrientations(prev => {
       const current = prev[idx] ?? (solarPanels[idx]?.orientation ?? 'PORTRAIT')
@@ -114,19 +108,59 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
     })
   }, [solarPanels])
 
-  const handleAddCustomPanel = useCallback((lat: number, lng: number, segmentIndex: number, azimuth: number, pitch: number) => {
-    const id = nextCustomId.current--
-    const panel: CustomPanel = { id, lat, lng, orientation: 'PORTRAIT', segmentIndex, azimuth, pitch }
-    setCustomPanels(prev => [...prev, panel])
-    setEnabledCustomPanels(prev => new Set([...prev, id]))
+  // Add a row of one or more panels (from drag-to-place or single click)
+  const handleAddPanelRow = useCallback((placements: PanelPlacement[]) => {
+    const newPanels: CustomPanel[] = placements.map(p => ({
+      id: nextCustomId.current--,
+      lat: p.lat,
+      lng: p.lng,
+      orientation: 'PORTRAIT',
+      segmentIndex: p.segmentIndex,
+      azimuth: p.azimuth,
+      pitch: p.pitch,
+    }))
+    setCustomPanels(prev => [...prev, ...newPanels])
+    setEnabledCustomPanels(prev => new Set([...prev, ...newPanels.map(p => p.id)]))
+    // Select the last placed panel so the user can immediately extend the row
+    if (newPanels.length > 0) setSelectedCustomPanelId(newPanels[newPanels.length - 1].id)
     setSaved(false)
   }, [])
 
   const handleRemoveCustomPanel = useCallback((id: number) => {
     setCustomPanels(prev => prev.filter(cp => cp.id !== id))
     setEnabledCustomPanels(prev => { const n = new Set(prev); n.delete(id); return n })
+    setSelectedCustomPanelId(prev => prev === id ? null : prev)
     setSaved(false)
   }, [])
+
+  const handleSelectCustomPanel = useCallback((id: number | null) => {
+    setSelectedCustomPanelId(id)
+  }, [])
+
+  // Extend a row: add one panel adjacent to fromId in the given direction
+  const handleExtendRow = useCallback((fromId: number, direction: 'left' | 'right') => {
+    setCustomPanels(prev => {
+      const from = prev.find(p => p.id === fromId)
+      if (!from || !buildingInsights) return prev
+      const { panelWidthMeters: PW, panelHeightMeters: PH } = buildingInsights.solarPotential
+      const spacing = (from.orientation === 'PORTRAIT' ? PW : PH) + 0.05
+      const rowBearing = (from.azimuth + (direction === 'right' ? 90 : -90) + 360) % 360
+      const pos = offsetLatLng(from.lat, from.lng, spacing, rowBearing)
+      const newPanel: CustomPanel = {
+        id: nextCustomId.current--,
+        lat: pos.lat,
+        lng: pos.lng,
+        orientation: from.orientation,
+        segmentIndex: from.segmentIndex,
+        azimuth: from.azimuth,
+        pitch: from.pitch,
+      }
+      setEnabledCustomPanels(ep => new Set([...ep, newPanel.id]))
+      setSelectedCustomPanelId(newPanel.id) // keep focus at the end of the row
+      setSaved(false)
+      return [...prev, newPanel]
+    })
+  }, [buildingInsights])
 
   function handleSelectAll() {
     setEnabledPanels(new Set(solarPanels.map((_, i) => i)))
@@ -192,7 +226,6 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
   return (
     <div className="flex flex-col gap-4">
 
-      {/* Existing confirmed design badge */}
       {existingConfirmedAt && !saved && loadState !== 'ready' && (
         <div className="flex items-center gap-3 p-3 bg-success/10 border border-success/30 rounded-lg text-sm text-success">
           <span className="font-semibold">Design confirmed: {existingPanelCount} panels · {existingKwp} kWp</span>
@@ -201,7 +234,6 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
         </div>
       )}
 
-      {/* Load bar */}
       {loadState !== 'ready' && (
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
@@ -218,7 +250,6 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
 
       {error && <p className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{error}</p>}
 
-      {/* Map full-width, then controls below */}
       {loadState === 'ready' && buildingInsights && (
         <>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -229,21 +260,22 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
             </Button>
           </div>
 
-          {/* Map */}
           <SolarMap
             buildingInsights={buildingInsights}
             enabledPanels={enabledPanels}
             customPanels={customPanels}
             enabledCustomPanels={enabledCustomPanels}
             panelOrientations={panelOrientations}
+            selectedCustomPanelId={selectedCustomPanelId}
             onTogglePanel={handleTogglePanel}
             onToggleCustomPanel={handleToggleCustomPanel}
             onShiftClickPanel={handleShiftClickPanel}
-            onAddCustomPanel={handleAddCustomPanel}
+            onAddPanelRow={handleAddPanelRow}
             onRemoveCustomPanel={handleRemoveCustomPanel}
+            onSelectCustomPanel={handleSelectCustomPanel}
+            onExtendRow={handleExtendRow}
           />
 
-          {/* Stats + generation below map */}
           <DesignControls
             segmentStats={segmentStats}
             totalPanels={totalPanelCount}

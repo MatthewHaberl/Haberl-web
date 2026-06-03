@@ -83,6 +83,41 @@ export interface RoofDesign {
   panelWatts: number
 }
 
+// ── Geometry utilities ────────────────────────────────────────────────────────
+
+/** Offset a lat/lng by distanceM in the direction of bearingDeg (0° = North, clockwise) */
+export function offsetLatLng(
+  lat: number, lng: number, distanceM: number, bearingDeg: number,
+): { lat: number; lng: number } {
+  const rad = bearingDeg * Math.PI / 180
+  const toLat = 1 / 111320
+  const toLng = 1 / (111320 * Math.cos(lat * Math.PI / 180))
+  return { lat: lat + distanceM * Math.cos(rad) * toLat, lng: lng + distanceM * Math.sin(rad) * toLng }
+}
+
+/** Flat-earth distance in metres between two lat/lng points (accurate at roof scale) */
+export function geoDistanceM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const dLat = (lat2 - lat1) * 111320
+  const dLng = (lng2 - lng1) * 111320 * Math.cos(lat1 * Math.PI / 180)
+  return Math.hypot(dLat, dLng)
+}
+
+/** Bearing in degrees clockwise from North, point 1 → point 2 */
+export function geoBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const dLat = (lat2 - lat1) * 111320
+  const dLng = (lng2 - lng1) * 111320 * Math.cos(lat1 * Math.PI / 180)
+  return ((Math.atan2(dLng, dLat) * 180 / Math.PI) + 360) % 360
+}
+
+/** Placement descriptor used when adding a row of custom panels */
+export interface PanelPlacement {
+  lat: number
+  lng: number
+  segmentIndex: number
+  azimuth: number
+  pitch: number
+}
+
 // ── Panel strings and groups ──────────────────────────────────────────────────
 
 export type RoofSegmentSummary = RoofSegmentStat
