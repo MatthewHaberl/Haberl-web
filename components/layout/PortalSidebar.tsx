@@ -37,6 +37,14 @@ interface SidebarContentProps {
   onSignOut: () => void
 }
 
+function isLinkActive(pathname: string, href: string) {
+  if (href === '/portal/customer' || href === '/portal/employee') {
+    return pathname === href
+  }
+
+  return pathname === href || pathname.startsWith(href + '/')
+}
+
 function SidebarContent({ links, pathname, name, role, onLinkClick, onSignOut }: SidebarContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -60,7 +68,7 @@ function SidebarContent({ links, pathname, name, role, onLinkClick, onSignOut }:
       {/* Nav links */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-1">
         {links.map(({ label, href, icon: Icon }) => {
-          const active = pathname === href || pathname.startsWith(href + '/')
+          const active = isLinkActive(pathname, href)
           return (
             <Link
               key={href}
