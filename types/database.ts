@@ -226,6 +226,12 @@ export interface QuoteRequest {
   deposit_amount: number | null  // cents
   total_amount: number | null    // cents
 
+  // Roof design (added migration 004)
+  design_panel_count: number | null
+  design_kwp: number | null
+  design_segments: Array<{ azimuth: number; pitch: number; panelCount: number }> | null
+  design_confirmed_at: string | null
+
   // Joined
   submitter?: { full_name: string }
 }

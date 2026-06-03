@@ -46,6 +46,26 @@ function buildPrompt(r: Record<string, unknown>, nextQuoteNumber: string, includ
 Quote ONLY the new/replacement components. Clearly list what is being retained vs replaced.
 ` : ''
 
+  // Confirmed roof design — overrides Claude's own system sizing
+  const roofDesignBlock = (() => {
+    const panelCount = r.design_panel_count as number | undefined
+    const kwp = r.design_kwp as number | undefined
+    const confirmedAt = r.design_confirmed_at as string | undefined
+    if (!panelCount || !kwp || !confirmedAt) return ''
+
+    const segs = r.design_segments as Array<{ azimuth: number; pitch: number; panelCount: number }> | undefined
+    const segLines = segs?.length
+      ? segs.map(s => `  - ${s.panelCount} panels on roof face: azimuth ${s.azimuth}°, pitch ${s.pitch}°`).join('\n')
+      : ''
+
+    return `
+## CONFIRMED ROOF DESIGN (use these values exactly — do not resize)
+- ${panelCount} × panels = ${kwp} kWp total
+${segLines}
+→ Select inverter and battery to match ${kwp} kWp. Do NOT resize the system based on energy usage — the technician has confirmed this layout fits the physical roof.
+`
+  })()
+
   const hasSpecificEquipment = !!(r.inverter_brand || r.battery_brand || r.panel_brand)
 
   let outputInstruction: string
@@ -72,7 +92,7 @@ Output a single JSON object in a \`\`\`json code block using the single-option f
 
   return `Today's date: ${today}
 Use quote number: ${nextQuoteNumber}
-
+${roofDesignBlock}
 Please generate a complete solar ${isAmendment ? 'amendment/upgrade' : 'installation'} quote based on the following site survey:
 ${amendmentBlock}
 ## CUSTOMER DETAILS

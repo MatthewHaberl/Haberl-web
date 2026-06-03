@@ -102,6 +102,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
       <QuoteDetailTabs
         req={reqObj}
         isAdmin={isAdmin}
+        canEditSurvey={isAdmin || req.submitted_by === user!.id}
         photoUrls={photoUrls}
         nextQuoteNum={nextQuoteNum}
       />
