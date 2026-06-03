@@ -7,11 +7,33 @@ import { FileText, Plus, ChevronRight, Clock } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
 
 const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success'> = {
-  pending:   'warning',
+  pending: 'warning',
   generated: 'success',
-  sent:      'default',
-  accepted:  'success',
-  declined:  'default',
+  sent: 'default',
+  accepted: 'success',
+  declined: 'default',
+}
+
+type QuoteRow = {
+  id: string
+  customer_name: string
+  customer_phone: string | null
+  customer_email: string | null
+  site_number: number | null
+  quote_number: string | null
+  address: string | null
+  system_type: string
+  monthly_kwh: string | null
+  created_at: string
+  status: QuoteRequestStatus
+  total_amount: number | null
+  submitter?: { full_name: string } | null
+}
+
+type CustomerGroup = {
+  key: string
+  customerName: string
+  requests: QuoteRow[]
 }
 
 function timeAgo(iso: string) {
@@ -21,6 +43,145 @@ function timeAgo(iso: string) {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ago`
   return `${Math.floor(hrs / 24)}d ago`
+}
+
+function customerKey(request: QuoteRow) {
+  return [
+    request.customer_name.trim().toLowerCase(),
+    request.customer_phone?.trim().toLowerCase() ?? '',
+    request.customer_email?.trim().toLowerCase() ?? '',
+  ].join('|')
+}
+
+function groupRequests(requests: QuoteRow[]): CustomerGroup[] {
+  const grouped = new Map<string, CustomerGroup>()
+
+  for (const request of requests) {
+    const key = customerKey(request)
+    const existing = grouped.get(key)
+
+    if (existing) {
+      existing.requests.push(request)
+      continue
+    }
+
+    grouped.set(key, {
+      key,
+      customerName: request.customer_name,
+      requests: [request],
+    })
+  }
+
+  return [...grouped.values()]
+    .map((group) => ({
+      ...group,
+      requests: [...group.requests].sort((a, b) => {
+        const siteDiff = (a.site_number ?? 1) - (b.site_number ?? 1)
+        if (siteDiff !== 0) return siteDiff
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      }),
+    }))
+    .sort((a, b) => {
+      const latestA = Math.max(...a.requests.map((request) => new Date(request.created_at).getTime()))
+      const latestB = Math.max(...b.requests.map((request) => new Date(request.created_at).getTime()))
+      return latestB - latestA
+    })
+}
+
+function RequestGroupCard({ group, isManager }: { group: CustomerGroup; isManager: boolean }) {
+  if (group.requests.length === 1) {
+    const request = group.requests[0]
+
+    return (
+      <Link href={`/portal/employee/quotes/${request.id}`}>
+        <Card className="hover:border-accent transition-colors cursor-pointer">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-sm truncate">{request.customer_name}</p>
+                  <Badge variant="default">Site {request.site_number ?? 1}</Badge>
+                  {request.quote_number && (
+                    <span className="text-xs font-mono text-muted-foreground">{request.quote_number}</span>
+                  )}
+                  {request.total_amount != null && (
+                    <span className="text-xs font-semibold text-foreground">
+                      R{(request.total_amount / 100).toLocaleString('en-ZA')}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  {request.address || 'No address'} · {request.system_type}
+                  {request.monthly_kwh ? ` · ${request.monthly_kwh} kWh/mo` : ''}
+                </p>
+                <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {timeAgo(request.created_at)}
+                  </span>
+                  {isManager && request.submitter?.full_name && (
+                    <span>by {request.submitter.full_name}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant={statusVariant[request.status]}>{request.status}</Badge>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+    )
+  }
+
+  return (
+    <Card className="border-accent/40">
+      <CardContent className="pt-4 pb-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="font-semibold text-sm">{group.customerName}</p>
+            <p className="text-xs text-muted-foreground">
+              {group.requests.length} sites for this customer
+            </p>
+          </div>
+          <Badge variant="default">{group.requests.length} sites</Badge>
+        </div>
+
+        <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
+          {group.requests.map((request) => (
+            <Link
+              key={request.id}
+              href={`/portal/employee/quotes/${request.id}`}
+              className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-medium">Site {request.site_number ?? 1}</p>
+                  {request.quote_number && (
+                    <span className="text-xs font-mono text-muted-foreground">{request.quote_number}</span>
+                  )}
+                  {request.total_amount != null && (
+                    <span className="text-xs font-semibold text-foreground">
+                      R{(request.total_amount / 100).toLocaleString('en-ZA')}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  {request.address || 'No address'} · {request.system_type}
+                  {request.monthly_kwh ? ` · ${request.monthly_kwh} kWh/mo` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant={statusVariant[request.status]}>{request.status}</Badge>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 export default async function QuotesPage() {
@@ -41,13 +202,14 @@ export default async function QuotesPage() {
     .select('*, submitter:user_profiles!submitted_by(full_name)')
     .order('created_at', { ascending: false })
 
-  // Non-managers only see their own submissions
   if (!isManager) query.eq('submitted_by', user!.id)
 
   const { data: requests } = await query
 
-  const pending   = requests?.filter((r) => r.status === 'pending') ?? []
-  const generated = requests?.filter((r) => r.status !== 'pending') ?? []
+  const pending = (requests?.filter((request) => request.status === 'pending') ?? []) as QuoteRow[]
+  const generated = (requests?.filter((request) => request.status !== 'pending') ?? []) as QuoteRow[]
+  const pendingGroups = groupRequests(pending)
+  const generatedGroups = groupRequests(generated)
 
   return (
     <div className="flex flex-col gap-6">
@@ -83,92 +245,27 @@ export default async function QuotesPage() {
         </Card>
       ) : (
         <>
-          {pending.length > 0 && (
+          {pendingGroups.length > 0 && (
             <div>
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                 Awaiting Review ({pending.length})
               </h2>
               <div className="flex flex-col gap-2">
-                {pending.map((r) => (
-                  <Link key={r.id} href={`/portal/employee/quotes/${r.id}`}>
-                    <Card className="hover:border-accent transition-colors cursor-pointer">
-                      <CardContent className="pt-4 pb-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-semibold text-sm truncate">{r.customer_name}</p>
-                              {r.quote_number && (
-                                <span className="text-xs font-mono text-muted-foreground">{r.quote_number}</span>
-                              )}
-                            </div>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {r.address || 'No address'} · {r.system_type} · {r.monthly_kwh} kWh/mo
-                            </p>
-                            <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {timeAgo(r.created_at)}
-                              </span>
-                              {isManager && (r.submitter as { full_name: string } | null)?.full_name && (
-                                <span>by {(r.submitter as { full_name: string }).full_name}</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Badge variant={statusVariant[r.status as QuoteRequestStatus]}>
-                              {r.status}
-                            </Badge>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
+                {pendingGroups.map((group) => (
+                  <RequestGroupCard key={group.key} group={group} isManager={isManager} />
                 ))}
               </div>
             </div>
           )}
 
-          {generated.length > 0 && (
+          {generatedGroups.length > 0 && (
             <div>
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                 Generated ({generated.length})
               </h2>
               <div className="flex flex-col gap-2">
-                {generated.map((r) => (
-                  <Link key={r.id} href={`/portal/employee/quotes/${r.id}`}>
-                    <Card className="hover:border-accent transition-colors cursor-pointer">
-                      <CardContent className="pt-4 pb-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-semibold text-sm truncate">{r.customer_name}</p>
-                              {r.quote_number && (
-                                <span className="text-xs font-mono text-muted-foreground">{r.quote_number}</span>
-                              )}
-                              {r.total_amount != null && (
-                                <span className="text-xs font-semibold text-foreground">
-                                  R{(r.total_amount / 100).toLocaleString('en-ZA')}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {r.address || 'No address'} · {r.system_type}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {timeAgo(r.created_at)}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Badge variant={statusVariant[r.status as QuoteRequestStatus]}>
-                              {r.status}
-                            </Badge>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
+                {generatedGroups.map((group) => (
+                  <RequestGroupCard key={group.key} group={group} isManager={isManager} />
                 ))}
               </div>
             </div>

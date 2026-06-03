@@ -340,6 +340,19 @@ Output ONE JSON object in a single \`\`\`json block.
 - depositTotalRands MUST exactly equal sum of depositItems[].amountRands
 - materialsLabourSubtotal MUST equal sum of all section subtotals
 
+**Supplier BOM is mandatory on every option:**
+- Include a \`supplierBom\` array on every single-option quote and on every option inside a multi-option quote
+- Each \`supplierBom\` row MUST be itemized, not section-level
+- Use this row structure exactly:
+  \`{ "section": "...", "sku": "...", "description": "...", "quantity": 0, "unitCostRands": 0, "unitSellRands": 0, "lineCostRands": 0, "lineSellRands": 0 }\`
+- \`quantity\` must be numeric
+- \`lineCostRands\` = \`quantity × unitCostRands\`
+- \`lineSellRands\` = \`quantity × unitSellRands\`
+- Use real SKU codes from the pricing reference whenever available
+- If an item is derived from labour or a bundle with no SKU, use a clear synthetic SKU like \`LAB-INSTALL\`, \`CONS-COMPLIANCE\`, \`MOUNT-STD\`, or \`TRAVEL\`
+- The sum of all \`supplierBom[].lineSellRands\` should reconcile to the quoted sell total, allowing only small rounding differences
+- DO NOT hide the BOM inside text blobs. Output one row per supplier-procurable line item
+
 ---
 
 ### CASE A — Three-option quote (default when no equipment specified)
@@ -429,6 +442,17 @@ Use this JSON structure. Each option has the FULL quote data:
       "paybackMonths": "87",
       "paybackYears": "7.2",
       "paybackMonthsEscalated": "68",
+
+      "supplierBom": [
+        { "section": "Panels", "sku": "AIKO-S-A620-MAH72DW", "description": "Aiko Comet 620W Dual-Glass Panel", "quantity": 14, "unitCostRands": 1604.25, "unitSellRands": 1844.89, "lineCostRands": 22459.50, "lineSellRands": 25828.46 },
+        { "section": "Mounting", "sku": "MOUNT-STD", "description": "Solar panel mounting structure", "quantity": 14, "unitCostRands": 350.00, "unitSellRands": 402.50, "lineCostRands": 4900.00, "lineSellRands": 5635.00 },
+        { "section": "Inverter", "sku": "SIG-INV-12K-T", "description": "SigenStor 12kW 3P inverter", "quantity": 1, "unitCostRands": 42354.50, "unitSellRands": 48707.68, "lineCostRands": 42354.50, "lineSellRands": 48707.68 },
+        { "section": "Battery", "sku": "SIG-BAT-10K", "description": "SigenStor 9.04kWh battery", "quantity": 2, "unitCostRands": 38180.00, "unitSellRands": 43907.00, "lineCostRands": 76360.00, "lineSellRands": 87814.00 },
+        { "section": "Gateway", "sku": "SIG-GW-T-H-30K", "description": "Sigen TP Home Gateway", "quantity": 1, "unitCostRands": 8383.50, "unitSellRands": 9640.03, "lineCostRands": 8383.50, "lineSellRands": 9640.03 },
+        { "section": "Comms", "sku": "SIG-COM", "description": "Sigen Comms Module", "quantity": 1, "unitCostRands": 2104.50, "unitSellRands": 2420.18, "lineCostRands": 2104.50, "lineSellRands": 2420.18 },
+        { "section": "DC Protection", "sku": "Ex9UEP-20-2P-1200", "description": "Noark DC SPD 20kA 2P 1200V", "quantity": 1, "unitCostRands": 1001.54, "unitSellRands": 1151.77, "lineCostRands": 1001.54, "lineSellRands": 1151.77 },
+        { "section": "Labour", "sku": "LAB-INSTALL", "description": "Installation labour and commissioning", "quantity": 1, "unitCostRands": 7405.22, "unitSellRands": 8516.00, "lineCostRands": 7405.22, "lineSellRands": 8516.00 }
+      ],
 
       "depositItems": [
         { "name": "Solar Panels (14 × Aiko 620W) ★", "amountRands": 25828.46 },
@@ -715,6 +739,17 @@ Use this JSON structure:
   "paybackMonths": "69",
   "paybackYears": "5.7",
   "paybackMonthsEscalated": "54",
+
+  "supplierBom": [
+    { "section": "Panels", "sku": "JAM72D40-600/LB", "description": "JA Solar 600W N-Type Bifacial", "quantity": 14, "unitCostRands": 1483.50, "unitSellRands": 1706.03, "lineCostRands": 20769.00, "lineSellRands": 23884.42 },
+    { "section": "Mounting", "sku": "MOUNT-STD", "description": "Solar panel mounting structure", "quantity": 14, "unitCostRands": 350.00, "unitSellRands": 402.50, "lineCostRands": 4900.00, "lineSellRands": 5635.00 },
+    { "section": "Inverter", "sku": "SIG-INV-H-12K-T", "description": "Sigenergy Hybrid 12kW 3P inverter", "quantity": 1, "unitCostRands": 19987.00, "unitSellRands": 22985.05, "lineCostRands": 19987.00, "lineSellRands": 22985.05 },
+    { "section": "Battery", "sku": "SIG-BAT-06K", "description": "SigenStor 6.02kWh battery", "quantity": 2, "unitCostRands": 28554.50, "unitSellRands": 32837.68, "lineCostRands": 57109.00, "lineSellRands": 65675.36 },
+    { "section": "Gateway", "sku": "SIG-GW-S-H-12K", "description": "Sigen SP Home Gateway", "quantity": 1, "unitCostRands": 6980.50, "unitSellRands": 8027.58, "lineCostRands": 6980.50, "lineSellRands": 8027.58 },
+    { "section": "Comms", "sku": "SIG-COM", "description": "Sigen Comms Module", "quantity": 1, "unitCostRands": 2104.50, "unitSellRands": 2420.18, "lineCostRands": 2104.50, "lineSellRands": 2420.18 },
+    { "section": "DC Protection", "sku": "Ex9UEP-20-2P-1200", "description": "Noark DC SPD 20kA 2P 1200V", "quantity": 1, "unitCostRands": 1001.54, "unitSellRands": 1151.77, "lineCostRands": 1001.54, "lineSellRands": 1151.77 },
+    { "section": "Labour", "sku": "LAB-INSTALL", "description": "Installation labour and commissioning", "quantity": 1, "unitCostRands": 7217.39, "unitSellRands": 8300.00, "lineCostRands": 7217.39, "lineSellRands": 8300.00 }
+  ],
 
   "depositItems": [
     { "name": "Solar Panels (14 × JA Solar 600W) ★", "amountRands": 23884.42 },

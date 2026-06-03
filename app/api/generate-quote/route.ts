@@ -112,7 +112,7 @@ Quote ONLY the new/replacement components. State what is retained vs replaced.
   const includeCompetitive = !!(s.include_competitive)
 
   const MULTI_OPTION_FORMAT = `Output a single JSON object in a \`\`\`json code block using the multi-option format:
-{ "type": "multi-option", "quoteNumber": "...", "dateIssued": "...", "dateExpires": "...", "customerName": "...", "municipality": "...", "customerPhone": "...", "customerEmail": "...", "siteAddress": "...", "monthlyUsageKwh": "...", "comparisonTable": [...], "options": [{ "tier": "premium", "tierLabel": "★★★ Premium", ... }, { "tier": "recommended", "tierLabel": "★★☆ Recommended", "recommended": true, ... }, { "tier": "budget", "tierLabel": "★☆☆ Budget", ... }] }
+{ "type": "multi-option", "quoteNumber": "...", "dateIssued": "...", "dateExpires": "...", "customerName": "...", "municipality": "...", "customerPhone": "...", "customerEmail": "...", "siteAddress": "...", "monthlyUsageKwh": "...", "comparisonTable": [...], "options": [{ "tier": "premium", "tierLabel": "★★★ Premium", "supplierBom": [...], ... }, { "tier": "recommended", "tierLabel": "★★☆ Recommended", "recommended": true, "supplierBom": [...], ... }, { "tier": "budget", "tierLabel": "★☆☆ Budget", "supplierBom": [...], ... }] }
 Each option carries all QuoteData fields. No other text.`
 
   let outputInstruction: string
@@ -127,7 +127,7 @@ ${MULTI_OPTION_FORMAT}`
 ${MULTI_OPTION_FORMAT}`
   } else {
     outputInstruction = `The customer has specified equipment preferences — generate a SINGLE-OPTION quote matching those preferences exactly.
-Output a single JSON object in a \`\`\`json code block using the single-option format (camelCase fields: quoteNumber, customerName, inverterModel, panelCost, depositItems, monthlyGenTable, twentyYearTable, etc.). No other text.`
+Output a single JSON object in a \`\`\`json code block using the single-option format (camelCase fields: quoteNumber, customerName, inverterModel, panelCost, depositItems, supplierBom, monthlyGenTable, twentyYearTable, etc.). No other text.`
   }
 
   return `Today's date: ${today}${quoteNum ? `\nUse quote number: ${quoteNum}` : ''}

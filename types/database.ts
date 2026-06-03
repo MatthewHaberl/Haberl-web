@@ -161,6 +161,7 @@ export interface QuoteRequest {
   created_at: string
 
   // Customer info
+  site_number: number
   customer_name: string
   customer_phone: string | null
   customer_email: string | null

@@ -82,6 +82,7 @@ export function QuoteForm({ brands }: Props) {
   const [customerEmail, setCustomerEmail] = useState('')
   const [address,       setAddress]       = useState('')
   const [municipality,  setMunicipality]  = useState('City of Johannesburg')
+  const [siteNumber,    setSiteNumber]    = useState('1')
 
   // Existing system (amendment only)
   const [existingInverter,  setExistingInverter]  = useState('')
@@ -188,9 +189,10 @@ export function QuoteForm({ brands }: Props) {
 
       const avgKwh = usageMode === 'advanced' ? computeAverageKwh() : monthlyKwh
 
-      const { error: dbErr } = await supabase.from('quote_requests').insert({
+      const payload = {
         submitted_by:    user.id,
         // Customer
+        site_number:     parseInt(siteNumber, 10) || 1,
         customer_name:   customerName,
         customer_phone:  customerPhone  || null,
         customer_email:  customerEmail  || null,
@@ -228,7 +230,15 @@ export function QuoteForm({ brands }: Props) {
         // Photos + notes
         photo_urls: photoUrls,
         notes:      notes || null,
-      })
+      }
+
+      let { error: dbErr } = await supabase.from('quote_requests').insert(payload)
+      if (dbErr?.message?.includes('site_number')) {
+        const fallbackPayload = { ...payload }
+        delete (fallbackPayload as typeof payload & { site_number?: number }).site_number
+        const retry = await supabase.from('quote_requests').insert(fallbackPayload)
+        dbErr = retry.error
+      }
 
       if (dbErr) { setError(dbErr.message); return }
       setSubmitted(true)
@@ -301,6 +311,9 @@ export function QuoteForm({ brands }: Props) {
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Customer Name" required>
                 <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="John Smith" />
+              </Field>
+              <Field label="Site Number">
+                <Select value={siteNumber} onChange={setSiteNumber} options={['1', '2', '3', '4', '5']} />
               </Field>
               <Field label="Phone">
                 <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="082 000 0000" />

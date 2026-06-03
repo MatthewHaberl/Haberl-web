@@ -7,6 +7,17 @@ export interface DepositItem {
   amountRands: number
 }
 
+export interface SupplierBomItem {
+  section: string
+  sku: string
+  description: string
+  quantity: number
+  unitCostRands: number
+  unitSellRands: number
+  lineCostRands: number
+  lineSellRands: number
+}
+
 export interface MonthlyGenRow {
   month: string
   solarGenKwh: number
@@ -113,6 +124,9 @@ export interface QuoteData {
 
   // Deposit line items
   depositItems: DepositItem[]
+
+  // Supplier-facing itemized BOM
+  supplierBom?: SupplierBomItem[]
 
   // Monthly generation table (optional — new format)
   monthlyGenTable?: MonthlyGenRow[]
@@ -237,10 +251,6 @@ function renderSingleOptionHtml(data: QuoteData, tierLabel?: string): string {
 // ── Multi-option renderer ─────────────────────────────────────────────────────
 
 function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
-  const premiumOpt  = data.options.find(o => o.tier === 'premium')
-  const recOpt      = data.options.find(o => o.tier === 'recommended')
-  const budgetOpt   = data.options.find(o => o.tier === 'budget')
-
   const comparisonRows = (data.comparisonTable ?? []).map(row => `
     <tr>
       <td class="comp-label">${row.label}</td>

@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { extractQuoteJson, type AnyQuoteData } from '@/lib/solar/render-quote'
 import { GenerateButton } from './GenerateButton'
-import type { QuoteRequestStatus } from '@/types/database'
 import { FileText, Workflow, Image, ClipboardList, Sun, Pencil, Save, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { MUNICIPALITIES } from '@/lib/solar/municipalities'
@@ -104,6 +103,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   const [editErr,   setEditErr]   = useState('')
 
   const [eName,         setEName]         = useState<string>(req.customer_name  ?? '')
+  const [eSiteNumber,   setESiteNumber]   = useState<string>(String(req.site_number ?? 1))
   const [ePhone,        setEPhone]        = useState<string>(req.customer_phone ?? '')
   const [eEmail,        setEEmail]        = useState<string>(req.customer_email ?? '')
   const [eAddress,      setEAddress]      = useState<string>(req.address        ?? '')
@@ -124,6 +124,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
 
   function cancelEdit() {
     setEName(req.customer_name ?? '')
+    setESiteNumber(String(req.site_number ?? 1))
     setEPhone(req.customer_phone ?? '')
     setEEmail(req.customer_email ?? '')
     setEAddress(req.address ?? '')
@@ -150,29 +151,43 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
     setEditErr('')
     try {
       const supabase = createClient()
-      const { error } = await supabase
+      const payload = {
+        customer_name:      eName,
+        site_number:        parseInt(eSiteNumber, 10) || 1,
+        customer_phone:     ePhone        || null,
+        customer_email:     eEmail        || null,
+        address:            eAddress      || null,
+        municipality:       eMunicipality,
+        grid_supply:        eGridSupply,
+        roof_type:          eRoofType,
+        storeys:            eStoreys,
+        monthly_kwh:        eMonthlyKwh   || null,
+        system_type:        eSystemType,
+        battery_hours:      eBatteryHours,
+        essential_load:     eEssentialLoad || null,
+        target_offgrid_pct: eTargetOffgrid ? parseInt(eTargetOffgrid) : null,
+        ev_charger:         eEvCharger,
+        inverter_brand:     eInverterBrand,
+        battery_brand:      eBatteryBrand,
+        panel_brand:        ePanelBrand,
+        notes:              eNotes        || null,
+      }
+
+      let { error } = await supabase
         .from('quote_requests')
-        .update({
-          customer_name:      eName,
-          customer_phone:     ePhone        || null,
-          customer_email:     eEmail        || null,
-          address:            eAddress      || null,
-          municipality:       eMunicipality,
-          grid_supply:        eGridSupply,
-          roof_type:          eRoofType,
-          storeys:            eStoreys,
-          monthly_kwh:        eMonthlyKwh   || null,
-          system_type:        eSystemType,
-          battery_hours:      eBatteryHours,
-          essential_load:     eEssentialLoad || null,
-          target_offgrid_pct: eTargetOffgrid ? parseInt(eTargetOffgrid) : null,
-          ev_charger:         eEvCharger,
-          inverter_brand:     eInverterBrand,
-          battery_brand:      eBatteryBrand,
-          panel_brand:        ePanelBrand,
-          notes:              eNotes        || null,
-        })
+        .update(payload)
         .eq('id', req.id)
+
+      if (error?.message?.includes('site_number')) {
+        const fallbackPayload = { ...payload }
+        delete (fallbackPayload as typeof payload & { site_number?: number }).site_number
+        const retry = await supabase
+          .from('quote_requests')
+          .update(fallbackPayload)
+          .eq('id', req.id)
+        error = retry.error
+      }
+
       if (error) { setEditErr(error.message); return }
       setIsEditing(false)
       router.refresh()
@@ -275,6 +290,10 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
                       <Input value={eName} onChange={(e) => setEName(e.target.value)} />
                     </label>
                     <label className="flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">Site Number</span>
+                      <EditSelect value={eSiteNumber} onChange={setESiteNumber} options={['1', '2', '3', '4', '5']} />
+                    </label>
+                    <label className="flex flex-col gap-1">
                       <span className="text-xs text-muted-foreground">Phone</span>
                       <Input value={ePhone} onChange={(e) => setEPhone(e.target.value)} />
                     </label>
@@ -299,6 +318,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
               ) : (
                 <>
                   <Row label="Name"         value={req.customer_name} />
+                  <Row label="Site Number"  value={`Site ${req.site_number ?? 1}`} />
                   <Row label="Phone"        value={req.customer_phone} />
                   <Row label="Email"        value={req.customer_email} />
                   <Row label="Address"      value={req.address} />
@@ -485,6 +505,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
                 existingHtml={req.quote_html ?? null}
                 existingDepositItems={(req.deposit_items ?? []) as string[]}
                 existingQuoteNumber={req.quote_number ?? null}
+                existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
                 nextQuoteNumber={nextQuoteNum}
                 onQuoteDataChange={setLiveQuoteData}
               />

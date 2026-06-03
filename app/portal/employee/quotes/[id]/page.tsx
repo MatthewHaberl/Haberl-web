@@ -67,6 +67,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
           </Button>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-primary">{req.customer_name}</h1>
+            <Badge variant="default">Site {req.site_number ?? 1}</Badge>
             {req.is_amendment && <Badge variant="warning">Amendment</Badge>}
             {req.quote_number && (
               <span className="text-sm font-mono text-muted-foreground">{req.quote_number}</span>
