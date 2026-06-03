@@ -18,7 +18,7 @@ import {
   type Connection,
 } from '@xyflow/react'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Maximize2, X, Link2, RefreshCw, RotateCcw, Download, Grid3X3 } from 'lucide-react'
+import { Maximize2, X, Link2, RefreshCw, RotateCcw, Download, Grid3X3, Layers } from 'lucide-react'
 import { toPng } from 'html-to-image'
 import type { AnyQuoteData, QuoteData, MultiOptionQuoteData } from '@/lib/solar/render-quote'
 import {
@@ -31,6 +31,15 @@ import {
 import { nodeTypes, CLR } from './sld-nodes'
 import { edgeTypes } from './sld-edges'
 import { SLDPanel } from './SLDPanel'
+import { SLDContext } from './sld-context'
+import type { DiagramLayerState } from '@/types/sld-components'
+import {
+  loadLayerVisibilityFromStorage,
+  saveLayerVisibilityToStorage,
+  toggleLayerVisibility,
+  showAllLayers,
+  CIRCUIT_LAYER_COLORS,
+} from '@/lib/solar/circuit-layer-manager'
 
 interface Props {
   quoteData: AnyQuoteData
@@ -49,7 +58,7 @@ const NODE_COLORS: Record<string, string> = {
   earthing:   CLR.earth,
 }
 
-const PANEL_W = 272
+const PANEL_W = 280
 
 const BTN_BASE: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 4,
@@ -60,10 +69,7 @@ const BTN_BASE: React.CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
-function inferCircuitType(
-  srcType: string,
-  tgtType: string,
-): CableEdgeData['circuitType'] {
+function inferCircuitType(srcType: string, tgtType: string): CableEdgeData['circuitType'] {
   if (srcType === 'earthing' || tgtType === 'earthing') return 'earth'
   if (['solarArray', 'combiner', 'dcIsolator', 'spd'].includes(srcType)) return 'dc'
   if (srcType === 'battery' || tgtType === 'battery') return 'battery'
@@ -77,6 +83,51 @@ function specForCircuit(ct: CableEdgeData['circuitType']): string {
   return 'CU 6mm²'
 }
 
+// ── Layer visibility pills ─────────────────────────────────────────────────────
+const LAYER_DEFS: Array<{ key: keyof DiagramLayerState; short: string; color: string }> = [
+  { key: 'live',          short: 'L',    color: CIRCUIT_LAYER_COLORS.live          },
+  { key: 'neutral',       short: 'N',    color: CIRCUIT_LAYER_COLORS.neutral       },
+  { key: 'earth',         short: 'E',    color: CIRCUIT_LAYER_COLORS.earth         },
+  { key: 'communication', short: 'COM',  color: CIRCUIT_LAYER_COLORS.communication },
+]
+
+function LayerPills({
+  layers,
+  onChange,
+  showAll,
+}: {
+  layers: DiagramLayerState
+  onChange: (l: DiagramLayerState) => void
+  showAll: () => void
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <Layers size={11} style={{ color: '#6b7280', flexShrink: 0 }} />
+      {LAYER_DEFS.map(({ key, short, color }) => {
+        const active = layers[key]
+        return (
+          <button
+            key={key}
+            onClick={() => onChange(toggleLayerVisibility(layers, key))}
+            title={`${active ? 'Hide' : 'Show'} ${key} circuits`}
+            style={{
+              ...BTN_BASE,
+              padding: '2px 7px',
+              background: active ? color + '20' : '#f3f4f6',
+              borderColor: active ? color : '#d1d5db',
+              color: active ? color : '#9ca3af',
+              fontWeight: 700, fontSize: 10,
+              opacity: active ? 1 : 0.65,
+            }}
+          >
+            {short}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Inner component (needs ReactFlowProvider above) ───────────────────────────
 
 function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Props) {
@@ -85,26 +136,29 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [connectMode, setConnectMode] = useState(false)
   const [snapGrid, setSnapGrid] = useState(false)
+  const [layerVisibility, setLayerVisibility] = useState<DiagramLayerState>(
+    () => loadLayerVisibilityFromStorage()
+  )
   const canvasRef = useRef<HTMLDivElement>(null)
   const { fitView } = useReactFlow()
+
+  // Persist layer state
+  useEffect(() => {
+    saveLayerVisibilityToStorage(layerVisibility)
+  }, [layerVisibility])
 
   // Multi-option support
   const isMulti = 'options' in quoteData
   const tiers = isMulti ? (quoteData as MultiOptionQuoteData).options : []
   const [selectedTierIdx, setSelectedTierIdx] = useState(() => {
     if (!isMulti) return 0
-    const recIdx = (quoteData as MultiOptionQuoteData).options.findIndex(
-      (o) => o.tier === 'recommended',
-    )
+    const recIdx = (quoteData as MultiOptionQuoteData).options.findIndex((o) => o.tier === 'recommended')
     return recIdx >= 0 ? recIdx : 0
   })
 
-  const quote: QuoteData = isMulti
-    ? (tiers[selectedTierIdx] as QuoteData)
-    : (quoteData as QuoteData)
+  const quote: QuoteData = isMulti ? (tiers[selectedTierIdx] as QuoteData) : (quoteData as QuoteData)
 
   const { nodes: initNodes, edges: initEdges } = buildSLDFromQuote(quote, gridSupply)
-
   const [nodes, setNodes, onNodesChange] = useNodesState(initNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initEdges)
 
@@ -122,7 +176,7 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     quote.dcCombinerConfig, gridSupply, selectedTierIdx,
   ])
 
-  // ── Selection ─────────────────────────────────────────────────────────────────
+  // ── Selection ──────────────────────────────────────────────────────────────
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null
 
@@ -141,7 +195,7 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     setSelectedEdgeId(null)
   }, [])
 
-  // ── CRUD ──────────────────────────────────────────────────────────────────────
+  // ── CRUD ──────────────────────────────────────────────────────────────────
   const updateNodeData = useCallback((id: string, patch: Record<string, unknown>) => {
     setNodes((nds) => nds.map((n) => n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
   }, [setNodes])
@@ -192,7 +246,16 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     setSelectedNodeId(newId)
   }, [nodes, setNodes])
 
-  // ── Connect (draw new cable between two nodes) ────────────────────────────────
+  // ── Waypoint change (from edge drag) ──────────────────────────────────────
+  const onWaypointChange = useCallback((edgeId: string, waypoints: Array<{ x: number; y: number }>) => {
+    setEdges((eds) => eds.map((e) => {
+      if (e.id !== edgeId) return e
+      const newData = { ...(e.data ?? {}), waypoints } as CableEdgeData
+      return { ...e, data: newData }
+    }))
+  }, [setEdges])
+
+  // ── Connect ────────────────────────────────────────────────────────────────
   const onConnect = useCallback((connection: Connection) => {
     const srcType = nodes.find((n) => n.id === connection.source)?.type ?? ''
     const tgtType = nodes.find((n) => n.id === connection.target)?.type ?? ''
@@ -217,12 +280,11 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     setSelectedNodeId(null)
   }, [nodes, setEdges])
 
-  // ── Edge reconnect (drag an endpoint to a different handle) ───────────────────
   const onReconnect = useCallback((oldEdge: Edge, newConnection: Connection) => {
     setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds))
   }, [setEdges])
 
-  // ── Keyboard delete ───────────────────────────────────────────────────────────
+  // ── Keyboard delete ────────────────────────────────────────────────────────
   const selectedNodeRef = useRef(selectedNodeId)
   const selectedEdgeRef = useRef(selectedEdgeId)
   selectedNodeRef.current = selectedNodeId
@@ -240,7 +302,7 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     return () => window.removeEventListener('keydown', onKey)
   }, [deleteNode, deleteEdge])
 
-  // ── Reset diagram to quote ────────────────────────────────────────────────────
+  // ── Reset ──────────────────────────────────────────────────────────────────
   const resetDiagram = useCallback(() => {
     const { nodes: n, edges: e } = buildSLDFromQuote(quote, gridSupply)
     setNodes(n)
@@ -249,13 +311,11 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     setSelectedEdgeId(null)
   }, [quote, gridSupply, setNodes, setEdges])
 
-  // ── Export PNG ────────────────────────────────────────────────────────────────
+  // ── Export PNG ─────────────────────────────────────────────────────────────
   const exportPng = useCallback(() => {
     const el = canvasRef.current
     if (!el) return
-    // Fit view before capture so all nodes are visible
     fitView({ padding: 0.15, duration: 0 })
-    // Brief delay for the view to settle
     setTimeout(() => {
       const toolbar = el.querySelector('[data-export-hide]') as HTMLElement | null
       if (toolbar) toolbar.style.visibility = 'hidden'
@@ -275,14 +335,14 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     }, 50)
   }, [quote.quoteNumber, quote.inverterModel, fitView])
 
-  // ── SLD → Quote sync ─────────────────────────────────────────────────────────
+  // ── SLD → Quote sync ───────────────────────────────────────────────────────
   const syncToQuote = useCallback(() => {
     if (!onSldChange) return
-    const patch = sldNodesToQuoteData(nodes)
+    const patch = sldNodesToQuoteData(nodes, edges)
     onSldChange({ ...quote, ...patch } as QuoteData)
-  }, [nodes, quote, onSldChange])
+  }, [nodes, edges, quote, onSldChange])
 
-  // ── Canvas toolbar ────────────────────────────────────────────────────────────
+  // ── UI pieces ──────────────────────────────────────────────────────────────
   const sysFooter = (
     <div style={{
       position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10,
@@ -314,10 +374,9 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
         </button>
       )}
 
-      {/* Connect mode toggle */}
       <button
         onClick={() => setConnectMode((v) => !v)}
-        title={connectMode ? 'Click a handle to start a cable, click another handle to finish' : 'Enter connect mode to draw cables between components'}
+        title={connectMode ? 'Drawing cable — click handles to connect' : 'Enter connect mode to draw cables'}
         style={{
           ...BTN_BASE,
           background: connectMode ? '#2563eb' : '#fff',
@@ -329,7 +388,13 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
         {connectMode ? 'Connecting…' : 'Connect'}
       </button>
 
-      {/* Tier selector — only shown for multi-option quotes */}
+      {/* Layer visibility pills */}
+      <LayerPills
+        layers={layerVisibility}
+        onChange={setLayerVisibility}
+        showAll={() => setLayerVisibility(showAllLayers())}
+      />
+
       {isMulti && tiers.length > 1 && (
         <select
           value={selectedTierIdx}
@@ -344,30 +409,18 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
         </select>
       )}
 
-      {/* Sync to Quote — only shown when parent provides onSldChange */}
       {onSldChange && (
-        <button
-          onClick={syncToQuote}
-          title="Push node changes (model, specs) back to the quote"
-          style={BTN_BASE}
-        >
+        <button onClick={syncToQuote} title="Push changes back to the quote" style={BTN_BASE}>
           <RefreshCw size={12} /> Sync to Quote
         </button>
       )}
 
-      {/* Reset diagram to match the current quote */}
-      <button
-        onClick={resetDiagram}
-        title="Discard diagram edits and rebuild from current quote data"
-        style={BTN_BASE}
-      >
+      <button onClick={resetDiagram} title="Reset diagram from current quote" style={BTN_BASE}>
         <RotateCcw size={12} /> Reset
       </button>
 
-      {/* Snap to grid toggle */}
       <button
         onClick={() => setSnapGrid((v) => !v)}
-        title="Snap nodes to a 20px grid"
         style={{
           ...BTN_BASE,
           background: snapGrid ? '#f0fdf4' : '#fff',
@@ -378,12 +431,7 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
         <Grid3X3 size={12} />
       </button>
 
-      {/* Export as PNG */}
-      <button
-        onClick={exportPng}
-        title="Download the diagram as a PNG image"
-        style={BTN_BASE}
-      >
+      <button onClick={exportPng} title="Download as PNG" style={BTN_BASE}>
         <Download size={12} /> PNG
       </button>
     </div>
@@ -432,6 +480,8 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     selectedEdge,
     nodes,
     edges,
+    layerVisibility,
+    onLayerVisibilityChange: setLayerVisibility,
     onUpdateNode: updateNodeData,
     onUpdateEdge: updateEdgeData,
     onDeleteNode: deleteNode,
@@ -443,66 +493,69 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     onToggleConnect: () => setConnectMode((v) => !v),
   }
 
-  // ── Fullscreen ────────────────────────────────────────────────────────────────
+  // ── Context value ──────────────────────────────────────────────────────────
+  const sldContextValue = { layerVisibility, onWaypointChange }
+
+  const panel = (
+    <div style={{
+      width: PANEL_W, borderLeft: '1px solid #e5e7eb',
+      background: '#fff', overflowY: 'auto', flexShrink: 0,
+      display: 'flex', flexDirection: 'column',
+    }}>
+      <SLDPanel {...panelProps} />
+    </div>
+  )
+
   if (isFullscreen) {
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 16px', background: '#1e3a5f', color: '#fff', flexShrink: 0,
-        }}>
-          <span style={{ fontWeight: 700, fontSize: 13 }}>
-            Wiring Diagram
-            {isMulti && tiers[selectedTierIdx] && ` — ${tiers[selectedTierIdx].tierLabel ?? tiers[selectedTierIdx].tier ?? ''}`}
-            {!isMulti && quote.inverterModel ? ` — ${quote.inverterModel}` : ''}
-          </span>
-          <button
-            onClick={() => setIsFullscreen(false)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6,
-              padding: '4px 10px', cursor: 'pointer', color: '#fff', fontSize: 12,
-            }}
-          >
-            <X size={13} /> Close
-          </button>
+      <SLDContext.Provider value={sldContextValue}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 16px', background: '#1e3a5f', color: '#fff', flexShrink: 0,
+          }}>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>
+              Wiring Diagram
+              {isMulti && tiers[selectedTierIdx] ? ` — ${tiers[selectedTierIdx].tierLabel ?? tiers[selectedTierIdx].tier ?? ''}` : ''}
+              {!isMulti && quote.inverterModel ? ` — ${quote.inverterModel}` : ''}
+            </span>
+            <button
+              onClick={() => setIsFullscreen(false)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6,
+                padding: '4px 10px', cursor: 'pointer', color: '#fff', fontSize: 12,
+              }}
+            >
+              <X size={13} /> Close
+            </button>
+          </div>
+          <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+            <div ref={canvasRef} style={{ flex: 1, position: 'relative', touchAction: 'none' }}>
+              {toolbar}
+              {flow}
+              {sysFooter}
+            </div>
+            {panel}
+          </div>
         </div>
+      </SLDContext.Provider>
+    )
+  }
 
-        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          <div ref={canvasRef} style={{ flex: 1, position: 'relative', touchAction: 'none' }}>
+  return (
+    <SLDContext.Provider value={sldContextValue}>
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', height }}>
+          <div ref={canvasRef} style={{ flex: 1, position: 'relative', touchAction: 'none', minWidth: 0 }}>
             {toolbar}
             {flow}
             {sysFooter}
           </div>
-          <div style={{
-            width: PANEL_W, borderLeft: '1px solid #e5e7eb',
-            background: '#fff', overflowY: 'auto', flexShrink: 0,
-          }}>
-            <SLDPanel {...panelProps} />
-          </div>
+          {panel}
         </div>
       </div>
-    )
-  }
-
-  // ── Normal mode ───────────────────────────────────────────────────────────────
-  return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', height: height }}>
-        <div ref={canvasRef} style={{ flex: 1, position: 'relative', touchAction: 'none', minWidth: 0 }}>
-          {toolbar}
-          {flow}
-          {sysFooter}
-        </div>
-        <div style={{
-          width: PANEL_W, borderLeft: '1px solid #e5e7eb',
-          background: '#fff', overflowY: 'auto', flexShrink: 0,
-          display: 'flex', flexDirection: 'column',
-        }}>
-          <SLDPanel {...panelProps} />
-        </div>
-      </div>
-    </div>
+    </SLDContext.Provider>
   )
 }
 

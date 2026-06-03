@@ -39,12 +39,22 @@ function conductors(type: 'dc' | 'ac1p' | 'ac3p' | 'battery' | 'earth'): string 
 export interface CableEdgeData extends Record<string, unknown> {
   spec: string
   lengthM: number
-  circuitType: 'dc' | 'ac' | 'battery' | 'earth'
+  circuitType: 'dc' | 'ac' | 'battery' | 'earth' | 'communication'
   cableType?: string
   crossSection?: string
   conductors?: Record<string, boolean>
   segments?: Array<{ id: string; routeType: string; lengthM: number }>
   routingType?: 'smoothstep' | 'bezier' | 'straight'
+  // Enhanced fields
+  waypoints?: Array<{ x: number; y: number }>
+  circuitLayer?: 'live' | 'neutral' | 'earth' | 'communication'
+  lugs?: { count: number; size: string; material?: string }
+  connectorType?: string
+  // Communication-specific
+  sourceProtocol?: string[]
+  targetProtocol?: string[]
+  compatible?: boolean
+  overrideProtocolMismatch?: boolean
 }
 
 // ── Builder ───────────────────────────────────────────────────────────────────
@@ -68,29 +78,39 @@ export function buildSLDFromQuote(
   const specs = cableSpecs(kw)
 
   const panelsPerStr = panelCount > 0 ? Math.ceil(panelCount / stringCount) : 0
-  const wpPerPanel =
-    panelCount > 0 && kwp > 0 ? Math.round((kwp * 1000) / panelCount) : 0
-
+  const wpPerPanel = panelCount > 0 && kwp > 0 ? Math.round((kwp * 1000) / panelCount) : 0
   const acCond = conductors(is3Phase ? 'ac3p' : 'ac1p')
 
-  // ── Layout ──────────────────────────────────────────────────────────────────
-  const CX = 400
+  // ── Layout ─────────────────────────────────────────────────────────────────
+  // New layout: Grid LEFT | Inverter CENTER | DB RIGHT
+  //             Battery BELOW inverter | Earthing BELOW DB
+  const CX = 500
   const ARRAY_GAP = 280
   const totalArraySpan = (stringCount - 1) * ARRAY_GAP
   const arrayStartX = CX - totalArraySpan / 2
 
   const Y0 = 0
-  const Y1 = 240
-  const Y_INV = useCombiner ? 490 : 260
-  const Y_DB = Y_INV + 260
-  const Y_EARTH = Y_DB
+  const Y_COMB = 240
+  const Y_INV = useCombiner ? 490 : 290
+  const Y_BAT = Y_INV + 280    // battery below inverter
+  const Y_DB = Y_INV           // DB at same height as inverter (to the right)
+  const Y_EARTH = Y_DB + 260   // earthing below DB
+
+  const INV_X = CX - 130
+  const GRID_X = INV_X - 380   // grid on LEFT
+  const DB_X = INV_X + 380     // DB on RIGHT
+  const BAT_X = INV_X          // battery directly below
 
   const nodes: Node[] = []
   const edges: Edge[] = []
 
-  // ── Solar Arrays ────────────────────────────────────────────────────────────
+  // Restore component configs from quote if saved
+  const savedConfig = (quote as any).components_config as Record<string, unknown> | undefined
+
+  // ── Solar Arrays ───────────────────────────────────────────────────────────
   for (let i = 0; i < stringCount; i++) {
     const x = arrayStartX + i * ARRAY_GAP - 110
+    const savedStr = (savedConfig?.strings as any[])?.[i]
     nodes.push({
       id: `array-${i}`,
       type: 'solarArray',
@@ -102,26 +122,39 @@ export function buildSLDFromQuote(
         wpPerPanel,
         totalKwp: kwp > 0 ? +(kwp / stringCount).toFixed(1) : 0,
         config: panelsPerStr > 0 ? `${panelsPerStr}S` : '',
+        // Restore saved component config if available
+        ...(savedStr ? {
+          connectorType: savedStr.connectorType,
+          connectorQty: savedStr.connectorQty,
+          mountingRows: savedStr.mountingRows,
+          mountingCols: savedStr.mountingCols,
+          mountingOrientation: savedStr.mountingOrientation,
+          earthingRequired: savedStr.earthingRequired,
+          earthingMethod: savedStr.earthingMethod,
+        } : {}),
       },
     })
   }
 
-  // ── DC Combiner ─────────────────────────────────────────────────────────────
+  // ── DC Combiner ────────────────────────────────────────────────────────────
   if (useCombiner) {
+    const savedComb = savedConfig?.combiner as Record<string, unknown> | undefined
     nodes.push({
       id: 'combiner',
       type: 'combiner',
-      position: { x: CX - 110, y: Y1 },
+      position: { x: CX - 110, y: Y_COMB },
       data: {
         label: 'DC Combiner Box',
         stringCount,
         fuseRating: kw <= 5 ? '20A' : '32A',
         hasSpd: true,
         config: quote.dcCombinerConfig || `${stringCount}-string`,
+        ...(savedComb ?? {}),
       },
     })
 
     for (let i = 0; i < stringCount; i++) {
+      const savedEdge = (savedConfig?.cables as any[])?.find((c: any) => c.id === `e-arr${i}-comb`)
       edges.push({
         id: `e-arr${i}-comb`,
         source: `array-${i}`,
@@ -129,17 +162,23 @@ export function buildSLDFromQuote(
         sourceHandle: 'dc-out',
         targetHandle: `str-${i}`,
         type: 'cable',
-        data: { spec: specs.dcStr, lengthM: 12, circuitType: 'dc' } as CableEdgeData,
-        label: `${specs.dcStr} · ${conductors('dc')} · ~12m`,
+        data: {
+          spec: specs.dcStr, lengthM: 12, circuitType: 'dc',
+          cableType: specs.dcStr.split(' ')[0],
+          crossSection: specs.dcStr.match(/\d+mm²/)?.[0],
+          ...(savedEdge ? { waypoints: savedEdge.waypoints, circuitLayer: savedEdge.circuitLayer } : {}),
+        } as CableEdgeData,
+        label: buildEdgeLabel({ spec: specs.dcStr, lengthM: 12, circuitType: 'dc' }),
       })
     }
   }
 
-  // ── Inverter ─────────────────────────────────────────────────────────────────
+  // ── Inverter ───────────────────────────────────────────────────────────────
+  const savedInv = savedConfig?.inverter as Record<string, unknown> | undefined
   nodes.push({
     id: 'inverter',
     type: 'inverter',
-    position: { x: CX - 130, y: Y_INV },
+    position: { x: INV_X, y: Y_INV },
     data: {
       label: 'Inverter',
       model: quote.inverterModel || '',
@@ -147,6 +186,9 @@ export function buildSLDFromQuote(
       phases: is3Phase ? 3 : 1,
       hasBattery: !!quote.batteryModel,
       hasGenerator: false,
+      outputCount: 1,
+      hasEpsOutput: false,
+      ...(savedInv ?? {}),
     },
   })
 
@@ -160,7 +202,7 @@ export function buildSLDFromQuote(
       targetHandle: 'pv-in',
       type: 'cable',
       data: { spec: specs.dcMain, lengthM: 8, circuitType: 'dc' } as CableEdgeData,
-      label: `${specs.dcMain} · ${conductors('dc')} · ~8m`,
+      label: buildEdgeLabel({ spec: specs.dcMain, lengthM: 8, circuitType: 'dc' }),
     })
   } else {
     edges.push({
@@ -171,16 +213,16 @@ export function buildSLDFromQuote(
       targetHandle: 'pv-in',
       type: 'cable',
       data: { spec: specs.dcStr, lengthM: 15, circuitType: 'dc' } as CableEdgeData,
-      label: `${specs.dcStr} · ${conductors('dc')} · ~15m`,
+      label: buildEdgeLabel({ spec: specs.dcStr, lengthM: 15, circuitType: 'dc' }),
     })
   }
 
-  // ── Battery ──────────────────────────────────────────────────────────────────
+  // ── Battery ────────────────────────────────────────────────────────────────
   if (quote.batteryModel) {
     nodes.push({
       id: 'battery',
       type: 'battery',
-      position: { x: CX - 430, y: Y_INV + 20 },
+      position: { x: BAT_X, y: Y_BAT },
       data: {
         label: 'Battery Bank',
         model: quote.batteryModel,
@@ -197,21 +239,21 @@ export function buildSLDFromQuote(
       targetHandle: 'bat-in',
       type: 'cable',
       data: { spec: specs.bat, lengthM: 3, circuitType: 'battery' } as CableEdgeData,
-      label: `${specs.bat} · ${conductors('battery')} · ~3m`,
+      label: buildEdgeLabel({ spec: specs.bat, lengthM: 3, circuitType: 'battery' }),
     })
   }
 
-  // ── Grid Supply ──────────────────────────────────────────────────────────────
+  // ── Grid Supply — LEFT of inverter ─────────────────────────────────────────
   nodes.push({
     id: 'grid',
     type: 'grid',
-    position: { x: CX + 360, y: Y_INV + 20 },
+    position: { x: GRID_X, y: Y_INV + 20 },
     data: {
       label: 'Grid Supply',
       utility: quote.municipality || 'Eskom',
       voltage: is3Phase ? 400 : 230,
       phases: is3Phase ? 3 : 1,
-      breakerA: is3Phase ? 63 : 63,
+      breakerA: 63,
     },
   })
   edges.push({
@@ -222,14 +264,14 @@ export function buildSLDFromQuote(
     targetHandle: 'grid-in',
     type: 'cable',
     data: { spec: specs.ac, lengthM: 5, circuitType: 'ac' } as CableEdgeData,
-    label: `${specs.ac} · ${acCond} · ~5m`,
+    label: buildEdgeLabel({ spec: specs.ac, lengthM: 5, circuitType: 'ac' }),
   })
 
-  // ── Distribution Board ───────────────────────────────────────────────────────
+  // ── Distribution Board — RIGHT of inverter ─────────────────────────────────
   nodes.push({
     id: 'db',
     type: 'dbBoard',
-    position: { x: CX - 110, y: Y_DB },
+    position: { x: DB_X, y: Y_DB },
     data: {
       label: 'Distribution Board',
       mainBreakerA: is3Phase ? 63 : 40,
@@ -245,15 +287,15 @@ export function buildSLDFromQuote(
     targetHandle: 'ac-in',
     type: 'cable',
     data: { spec: specs.ac, lengthM: 8, circuitType: 'ac' } as CableEdgeData,
-    label: `${specs.ac} · ${acCond} · ~8m`,
+    label: buildEdgeLabel({ spec: specs.ac, lengthM: 8, circuitType: 'ac' }),
   })
 
-  // ── Earthing System ──────────────────────────────────────────────────────────
+  // ── Earthing System — below DB ─────────────────────────────────────────────
   const earthSpikes = kw <= 3 ? 2 : kw <= 6 ? 2 : kw <= 10 ? 3 : 4
   nodes.push({
     id: 'earth',
     type: 'earthing',
-    position: { x: CX + 360, y: Y_EARTH },
+    position: { x: DB_X, y: Y_EARTH },
     data: {
       label: 'Earthing System',
       spikeCount: earthSpikes,
@@ -267,14 +309,14 @@ export function buildSLDFromQuote(
     sourceHandle: 'earth-out',
     targetHandle: 'earth-in',
     type: 'cable',
-    data: { spec: 'CU GY 10mm²', lengthM: 5, circuitType: 'earth' } as CableEdgeData,
+    data: { spec: 'CU GY 10mm²', lengthM: 5, circuitType: 'earth', circuitLayer: 'earth' } as CableEdgeData,
     label: `CU GY 10mm² · E`,
   })
 
   return { nodes, edges }
 }
 
-// ── Edge label builder (used when panel edits data) ───────────────────────────
+// ── Edge label builder ────────────────────────────────────────────────────────
 
 export function buildEdgeLabel(data: CableEdgeData): string {
   const cableType    = (data.cableType    as string | undefined) ?? data.spec?.split(' ')[0] ?? 'Cable'
@@ -314,27 +356,32 @@ const BLOCK_COLORS: Record<string, string> = {
 
 // ── SLD → QuoteData (sync back from diagram edits) ────────────────────────────
 
-export function sldNodesToQuoteData(nodes: Node[]): Partial<import('./render-quote').QuoteData> {
+export function sldNodesToQuoteData(
+  nodes: Node[],
+  edges: Edge[] = [],
+): Partial<import('./render-quote').QuoteData> {
   const inv  = nodes.find((n) => n.type === 'inverter')
   const bat  = nodes.find((n) => n.type === 'battery')
   const arrs = nodes.filter((n) => n.type === 'solarArray')
   const grid = nodes.find((n) => n.type === 'grid')
+  const comb = nodes.find((n) => n.type === 'combiner')
 
-  const totalKwp   = arrs.reduce((s, a) => s + (((a.data as Record<string,unknown>).totalKwp as number) || 0), 0)
+  const totalKwp    = arrs.reduce((s, a) => s + (((a.data as Record<string,unknown>).totalKwp as number) || 0), 0)
   const totalPanels = arrs.reduce((s, a) => s + (((a.data as Record<string,unknown>).panelCount as number) || 0), 0)
 
   type QD = import('./render-quote').QuoteData
-  const patch: Partial<QD> = {}
-  if (inv)  {
-    const d = inv.data  as Record<string, unknown>
+  const patch: Partial<QD & { components_config: unknown }> = {}
+
+  if (inv) {
+    const d = inv.data as Record<string, unknown>
     if (d.model !== undefined) patch.inverterModel = String(d.model || d.inverterModel || '')
     if (d.kw    !== undefined) patch.inverterKw    = String(d.kw ?? '')
   }
   if (bat) {
     const d = bat.data as Record<string, unknown>
-    if (d.model !== undefined) patch.batteryModel = String(d.model || '')
-    if (d.qty   !== undefined) patch.batteryQty   = String(d.qty   ?? '')
-    if (d.totalKwh !== undefined) patch.batteryKwh = String(d.totalKwh ?? '')
+    if (d.model    !== undefined) patch.batteryModel = String(d.model || '')
+    if (d.qty      !== undefined) patch.batteryQty   = String(d.qty   ?? '')
+    if (d.totalKwh !== undefined) patch.batteryKwh   = String(d.totalKwh ?? '')
   }
   if (totalPanels > 0) {
     patch.panelCount = String(totalPanels)
@@ -348,20 +395,71 @@ export function sldNodesToQuoteData(nodes: Node[]): Partial<import('./render-quo
     const d = grid.data as Record<string, unknown>
     if (d.utility !== undefined) patch.municipality = String(d.utility || '')
   }
-  return patch
+
+  // Build component config to persist in quote_json
+  const strings = arrs.map((a) => {
+    const d = a.data as Record<string, unknown>
+    return {
+      id:                  a.id,
+      connectorType:       d.connectorType,
+      connectorQty:        d.connectorQty,
+      mountingRows:        d.mountingRows,
+      mountingCols:        d.mountingCols,
+      mountingOrientation: d.mountingOrientation,
+      earthingRequired:    d.earthingRequired,
+      earthingMethod:      d.earthingMethod,
+      earthPointCount:     d.earthPointCount,
+    }
+  })
+
+  const combinerData = comb ? (() => {
+    const d = comb.data as Record<string, unknown>
+    return { plastic: d.plastic, metal: d.metal, requiresEarth: d.requiresEarth, earthingSource: d.earthingSource }
+  })() : undefined
+
+  const inverterData = inv ? (() => {
+    const d = inv.data as Record<string, unknown>
+    return {
+      outputCount:      d.outputCount,
+      hasEpsOutput:     d.hasEpsOutput,
+      ioLayout:         d.ioLayout,
+      pvConnectorType:  d.pvConnectorType,
+      pvConnectorQty:   d.pvConnectorQty,
+      acOutCableSpec:   d.acOutCableSpec,
+      acOut2CableSpec:  d.acOut2CableSpec,
+    }
+  })() : undefined
+
+  const cableData = edges.map((e) => {
+    const d = e.data as CableEdgeData
+    return {
+      id:          e.id,
+      sourceNode:  e.source,
+      targetNode:  e.target,
+      spec:        d?.spec,
+      circuitLayer: d?.circuitLayer,
+      waypoints:   d?.waypoints,
+      lugs:        d?.lugs,
+      connectorType: d?.connectorType,
+    }
+  }).filter((c) => c.spec)
+
+  patch.components_config = { strings, combiner: combinerData, inverter: inverterData, cables: cableData }
+
+  return patch as Partial<QD>
 }
 
 export function getDefaultNodeData(type: string): Record<string, unknown> {
   const color = BLOCK_COLORS[type] ?? '#6b7280'
   const base: Record<string, Record<string, unknown>> = {
-    dcIsolator:  { label: 'DC Isolator',          rating: '1000V DC 32A', color },
-    acIsolator:  { label: 'AC Isolator',           rating: '63A 230V',    color },
-    spd:         { label: 'Surge Protection (SPD)',rating: 'Type 2 20kA', color },
-    generator:   { label: 'Generator',             kva: 5,  fuelType: 'Diesel', color },
-    changeover:  { label: 'Changeover Switch',     rating: '63A DP',      color },
-    meter:       { label: 'Energy Meter',          model: '',             color },
-    evCharger:   { label: 'EV Charger',            kw: 7.4,              color },
-    custom:      { label: 'Custom Block',          model: '',             color },
+    dcIsolator:  { label: 'DC Isolator',           rating: '1000V DC 32A', color },
+    acIsolator:  { label: 'AC Isolator',            rating: '63A 230V',    color },
+    spd:         { label: 'Surge Protection (SPD)', rating: 'Type 2 20kA', color },
+    generator:   { label: 'Generator',              kva: 5, fuelType: 'Diesel', color },
+    changeover:  { label: 'Changeover Switch',      rating: '63A DP',      color },
+    meter:       { label: 'Energy Meter',           model: '',             color },
+    evCharger:   { label: 'EV Charger',             kw: 7.4,              color },
+    custom:      { label: 'Custom Block',           model: '',             color },
     textNote:    { text: 'All DC cables: UV resistant H1Z2Z2\nInstalled per SANS 10400-XA', bold: false },
   }
   return base[type] ?? { label: type, color }

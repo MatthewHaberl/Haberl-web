@@ -151,6 +151,16 @@ export interface QuoteData {
   annualReturnRate?: string
   twentyYearTable?: TwentyYearRow[]
   sizingInputs?: QuoteSizingInputs
+
+  // SLD Diagram Component Configurations (optional — new format)
+  // Stores detailed component specs from the enhanced diagram editor
+  components_config?: Record<string, unknown> // ComponentsConfigData JSON
+  cable_details?: Record<string, unknown> // CableDetailsData JSON
+  diagram_state?: Record<string, unknown> // DiagramState JSON
+
+  // Additional component costs derived from diagram (added to BOM)
+  extraLugsCost?: string
+  mountingCost?: string
 }
 
 // ── Multi-option types ────────────────────────────────────────────────────────
