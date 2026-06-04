@@ -174,9 +174,10 @@ export function QuoteForm({ brands, prefill }: Props) {
   const [amendmentScope,    setAmendmentScope]    = useState('')
 
   // Site
-  const [gridSupply, setGridSupply] = useState(prefill?.grid_supply ?? 'Single Phase')
-  const [roofType,   setRoofType]   = useState(prefill?.roof_type   ?? 'IBR')
-  const [storeys,    setStoreys]    = useState(prefill?.storeys      ?? '1')
+  const [gridSupply,    setGridSupply]    = useState(prefill?.grid_supply ?? 'Single Phase')
+  const [roofType,      setRoofType]      = useState(prefill?.roof_type   ?? 'IBR')
+  const [roofTypeOther, setRoofTypeOther] = useState('')
+  const [storeys,       setStoreys]       = useState(prefill?.storeys      ?? '1')
 
   // Usage
   const [usageMode,   setUsageMode]   = useState<'monthly' | 'advanced'>('monthly')
@@ -194,8 +195,11 @@ export function QuoteForm({ brands, prefill }: Props) {
 
   // Equipment preferences
   const [inverterBrand, setInverterBrand] = useState(prefill?.inverter_brand ?? 'No preference — AI will recommend')
+  const [inverterModel, setInverterModel] = useState('')
   const [batteryBrand,  setBatteryBrand]  = useState(prefill?.battery_brand  ?? 'No preference — AI will recommend')
+  const [batteryModel,  setBatteryModel]  = useState('')
   const [panelBrand,    setPanelBrand]    = useState(prefill?.panel_brand    ?? 'No preference — AI will recommend')
+  const [panelModel,    setPanelModel]    = useState('')
 
   // Photos
   const [photoUrls,   setPhotoUrls]   = useState<string[]>([])
@@ -279,8 +283,8 @@ export function QuoteForm({ brands, prefill }: Props) {
         address:         address        || null,
         municipality,
         // Site
-        grid_supply:     gridSupply,
-        roof_type:       roofType,
+        grid_supply: gridSupply,
+        roof_type:   roofType === 'Other' && roofTypeOther ? `Other — ${roofTypeOther}` : roofType,
         storeys,
         // Usage
         usage_mode:      usageMode,
@@ -295,9 +299,9 @@ export function QuoteForm({ brands, prefill }: Props) {
         ev_charger:          evCharger,
         target_offgrid_pct:  targetOffgrid ? parseInt(targetOffgrid) : null,
         // Equipment
-        inverter_brand:  inverterBrand,
-        battery_brand:   batteryBrand,
-        panel_brand:     panelBrand,
+        inverter_brand: [inverterBrand, inverterModel].filter(s => s && s !== 'No preference — AI will recommend').join(' ') || inverterBrand,
+        battery_brand:  [batteryBrand,  batteryModel ].filter(s => s && s !== 'No preference — AI will recommend').join(' ') || batteryBrand,
+        panel_brand:    [panelBrand,    panelModel   ].filter(s => s && s !== 'No preference — AI will recommend').join(' ') || panelBrand,
         // Amendment
         is_amendment:          isAmendment,
         existing_inverter:     isAmendment ? existingInverter  || null : null,
@@ -483,8 +487,16 @@ export function QuoteForm({ brands, prefill }: Props) {
                 <Select value={gridSupply} onChange={setGridSupply} options={['Single Phase', 'Three Phase']} />
               </Field>
               <Field label="Roof Type">
-                <Select value={roofType} onChange={setRoofType}
+                <Select value={roofType} onChange={(v) => { setRoofType(v); if (v !== 'Other') setRoofTypeOther('') }}
                   options={['IBR', 'Corrugated Iron', 'Kliplok', 'Tile', 'Flat/Concrete', 'Other']} />
+                {roofType === 'Other' && (
+                  <Input
+                    value={roofTypeOther}
+                    onChange={(e) => setRoofTypeOther(e.target.value)}
+                    placeholder="Describe (e.g. Box profile, Zincalume…)"
+                    className="mt-1"
+                  />
+                )}
               </Field>
               <Field label="Storeys">
                 <Select value={storeys} onChange={setStoreys} options={['1', '2', '3+']} />
@@ -586,16 +598,28 @@ export function QuoteForm({ brands, prefill }: Props) {
             <SectionHead title="Equipment Preference" />
             <div className="grid sm:grid-cols-3 gap-4">
               <Field label="Inverter Brand">
-                <Select value={inverterBrand} onChange={setInverterBrand}
-                  options={inverterBrands.length ? inverterBrands : ['No preference — AI will recommend']} />
+                <Select value={inverterBrand} onChange={(v) => { setInverterBrand(v); if (!v || v === 'No preference — AI will recommend') setInverterModel('') }}
+                  options={['No preference — AI will recommend', ...inverterBrands]} />
+                {inverterBrand && inverterBrand !== 'No preference — AI will recommend' && (
+                  <Input value={inverterModel} onChange={(e) => setInverterModel(e.target.value)}
+                    placeholder="Specific model (optional)" className="mt-1" />
+                )}
               </Field>
               <Field label="Battery Brand">
-                <Select value={batteryBrand} onChange={setBatteryBrand}
-                  options={batteryBrands.length ? batteryBrands : ['No preference — AI will recommend']} />
+                <Select value={batteryBrand} onChange={(v) => { setBatteryBrand(v); if (!v || v === 'No preference — AI will recommend') setBatteryModel('') }}
+                  options={['No preference — AI will recommend', ...batteryBrands]} />
+                {batteryBrand && batteryBrand !== 'No preference — AI will recommend' && (
+                  <Input value={batteryModel} onChange={(e) => setBatteryModel(e.target.value)}
+                    placeholder="Specific model (optional)" className="mt-1" />
+                )}
               </Field>
               <Field label="Panel Brand">
-                <Select value={panelBrand} onChange={setPanelBrand}
-                  options={panelBrands.length ? panelBrands : ['No preference — AI will recommend']} />
+                <Select value={panelBrand} onChange={(v) => { setPanelBrand(v); if (!v || v === 'No preference — AI will recommend') setPanelModel('') }}
+                  options={['No preference — AI will recommend', ...panelBrands]} />
+                {panelBrand && panelBrand !== 'No preference — AI will recommend' && (
+                  <Input value={panelModel} onChange={(e) => setPanelModel(e.target.value)}
+                    placeholder="Specific model (optional)" className="mt-1" />
+                )}
               </Field>
             </div>
           </CardContent>
