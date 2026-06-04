@@ -41,6 +41,9 @@ export async function POST(req: Request) {
   )
 
   if (!solarRes.ok) {
+    if (solarRes.status === 404) {
+      return Response.json({ fallback: true, latitude: lat, longitude: lng })
+    }
     const errText = await solarRes.text()
     return Response.json(
       { error: `Google Solar API error (${solarRes.status}): ${errText}` },

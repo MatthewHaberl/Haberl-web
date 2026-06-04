@@ -34,6 +34,8 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
   const [panelWatts, setPanelWatts] = useState(415)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [designMode, setDesignMode] = useState<'solar' | 'manual'>('solar')
+  const [solarInsights, setSolarInsights] = useState<BuildingInsights | null>(null)
   const nextCustomId = useRef(-1)
 
   // ── Derived ──────────────────────────────────────────────────────────────────
@@ -65,11 +67,31 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
+  function buildManualStub(latitude: number, longitude: number): BuildingInsights {
+    return {
+      name: 'manual',
+      center: { latitude, longitude },
+      boundingBox: { sw: { latitude, longitude }, ne: { latitude, longitude } },
+      imageryDate: { year: 0, month: 0, day: 0 },
+      imageryProcessedDate: { year: 0, month: 0, day: 0 },
+      postalCode: '', administrativeArea: '', statisticalArea: '', regionCode: '',
+      imageryQuality: 'LOW',
+      solarPotential: {
+        maxArrayPanelsCount: 0, maxArrayAreaMeters2: 0,
+        maxSunshineHoursPerYear: 0, carbonOffsetFactorKgPerMwh: 0,
+        panelCapacityWatts: 415, panelHeightMeters: 1.762, panelWidthMeters: 1.134, panelLifetimeYears: 25,
+        buildingStats: { areaMeters2: 0, sunshineQuantiles: [], groundAreaMeters2: 0 },
+        roofSegmentStats: [], solarPanels: [], solarPanelGroups: [],
+      },
+    }
+  }
+
   async function handleLoad() {
     if (!address) return
     setLoadState('loading'); setError(''); setBuildingInsights(null)
     setEnabledPanels(new Set()); setCustomPanels([]); setEnabledCustomPanels(new Set())
     setPanelOrientations({}); setSelectedCustomPanelId(null); setSaved(false)
+    setSolarInsights(null); setDesignMode('solar')
 
     try {
       const res = await fetch('/api/solar-insights', {
@@ -81,9 +103,19 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error ?? `HTTP ${res.status}`)
       }
-      const data: BuildingInsights = await res.json()
-      setBuildingInsights(data)
-      setEnabledPanels(new Set(data.solarPotential.solarPanels.map((_, i) => i)))
+      const data = await res.json()
+      if (data.fallback) {
+        const stub = buildManualStub(data.latitude, data.longitude)
+        setBuildingInsights(stub)
+        setSolarInsights(null)
+        setDesignMode('manual')
+      } else {
+        const insights = data as BuildingInsights
+        setBuildingInsights(insights)
+        setSolarInsights(insights)
+        setEnabledPanels(new Set(insights.solarPotential.solarPanels.map((_, i) => i)))
+        setDesignMode('solar')
+      }
       setLoadState('ready')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load roof data')
@@ -170,6 +202,19 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
 
   function handleClearAll() {
     setEnabledPanels(new Set()); setEnabledCustomPanels(new Set()); setSaved(false)
+  }
+
+  function handleModeSwitch(newMode: 'solar' | 'manual') {
+    if (newMode === designMode) return
+    setDesignMode(newMode)
+    if (newMode === 'solar' && solarInsights) {
+      setBuildingInsights(solarInsights)
+      setEnabledPanels(new Set(solarInsights.solarPotential.solarPanels.map((_, i) => i)))
+    } else if (newMode === 'manual' && solarInsights) {
+      setBuildingInsights(buildManualStub(solarInsights.center.latitude, solarInsights.center.longitude))
+      setEnabledPanels(new Set())
+    }
+    setSaved(false)
   }
 
   async function handleConfirm() {
@@ -260,6 +305,30 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
             </Button>
           </div>
 
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleModeSwitch('solar')}
+              disabled={!solarInsights}
+              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                designMode === 'solar'
+                  ? 'bg-foreground text-background border-foreground'
+                  : solarInsights
+                  ? 'bg-background text-muted-foreground border-border hover:border-foreground/40'
+                  : 'opacity-40 cursor-not-allowed bg-background text-muted-foreground border-border'
+              }`}>
+              Google Solar{solarInsights ? ` · ${solarInsights.solarPotential.solarPanels.length} panels` : ' · no coverage'}
+            </button>
+            <button
+              onClick={() => handleModeSwitch('manual')}
+              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                designMode === 'manual'
+                  ? 'bg-accent text-accent-foreground border-accent'
+                  : 'bg-background text-muted-foreground border-border hover:border-accent/50'
+              }`}>
+              Manual placement
+            </button>
+          </div>
+
           <SolarMap
             buildingInsights={buildingInsights}
             enabledPanels={enabledPanels}
@@ -291,10 +360,16 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
             onConfirm={handleConfirm}
           />
 
-          <p className="text-xs text-muted-foreground">
-            Google Solar data · {buildingInsights.imageryDate.year}/{String(buildingInsights.imageryDate.month).padStart(2, '0')}/{String(buildingInsights.imageryDate.day).padStart(2, '0')} imagery
-            · {buildingInsights.solarPotential.maxArrayPanelsCount} panels max capacity
-          </p>
+          {designMode === 'solar' && solarInsights ? (
+            <p className="text-xs text-muted-foreground">
+              Google Solar data · {solarInsights.imageryDate.year}/{String(solarInsights.imageryDate.month).padStart(2, '0')}/{String(solarInsights.imageryDate.day).padStart(2, '0')} imagery
+              · {solarInsights.solarPotential.maxArrayPanelsCount} panels max capacity
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Manual placement · satellite imagery via Google Maps · place panels by clicking or drag-to-row
+            </p>
+          )}
         </>
       )}
     </div>
