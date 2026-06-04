@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
   // Deduplicate by related product id, pick highest priority relationship
   const seen = new Map<string, typeof data[0]>()
   for (const row of (data ?? [])) {
-    const relId = (row.related_product as { id: string } | null)?.id
+    const relId = (row.related_product as unknown as { id: string } | null)?.id
     if (!relId || product_ids.includes(relId)) continue  // skip if already in cart
     const existing = seen.get(relId)
     if (!existing || TYPE_PRIORITY[row.relationship_type] < TYPE_PRIORITY[existing.relationship_type]) {
