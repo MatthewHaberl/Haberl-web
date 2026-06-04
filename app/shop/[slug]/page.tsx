@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Navbar } from '@/components/layout/Navbar'
 import { CartButton } from '../components/CartButton'
 import { CartSidebar } from '../components/CartSidebar'
@@ -105,16 +106,17 @@ export default async function ProductDetailPage({
           {/* Product hero */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
             {/* Image panel */}
-            <div className="bg-card border border-border rounded-2xl flex items-center justify-center h-72 lg:h-[420px] overflow-hidden">
+            <div className="relative bg-card border border-border rounded-2xl h-72 lg:h-[420px] overflow-hidden">
               {product.images?.[0] ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={product.images[0]}
                   alt={product.name}
-                  className="h-full w-full object-contain p-10"
+                  fill
+                  className="object-contain p-10"
+                  sizes="(max-width: 1024px) 100vw, 50vw"
                 />
               ) : (
-                <div className="flex flex-col items-center gap-3 opacity-25">
+                <div className="flex flex-col items-center justify-center gap-3 opacity-25 h-full">
                   {categoryIcon[cat] ?? categoryIcon.other}
                   <span className="text-sm text-muted-foreground">{categoryLabel[cat] ?? 'Product'}</span>
                 </div>
@@ -187,7 +189,7 @@ export default async function ProductDetailPage({
               {/* Delivery note */}
               <p className="text-xs text-muted-foreground">
                 Delivery available nationwide · WhatsApp{' '}
-                <a href="https://wa.me/27000000000" className="text-accent hover:underline">
+                <a href="https://wa.me/27615193016" className="text-accent hover:underline">
                   for a quote
                 </a>
               </p>

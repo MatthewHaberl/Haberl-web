@@ -11,7 +11,13 @@ const TYPE_PRIORITY: Record<string, number> = {
 }
 
 export async function POST(req: NextRequest) {
-  const { product_ids }: { product_ids: string[] } = await req.json()
+  let product_ids: string[]
+  try {
+    const body = await req.json()
+    product_ids = body?.product_ids
+  } catch {
+    return NextResponse.json({ recommendations: [] })
+  }
 
   if (!product_ids?.length) {
     return NextResponse.json({ recommendations: [] })

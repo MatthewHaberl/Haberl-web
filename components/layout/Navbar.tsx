@@ -109,7 +109,7 @@ export function Navbar({ isLoggedIn = false }: Props) {
                 <Link href="/auth/login">Log in</Link>
               </Button>
               <Button variant="accent" size="sm" asChild>
-                <Link href="/auth/register">Get started</Link>
+                <a href="/#contact">Get a quote</a>
               </Button>
             </>
           )}
@@ -176,7 +176,7 @@ export function Navbar({ isLoggedIn = false }: Props) {
                   <Link href="/auth/login">Log in</Link>
                 </Button>
                 <Button variant="accent" asChild>
-                  <Link href="/auth/register">Get started</Link>
+                  <a href="/#contact">Get a quote</a>
                 </Button>
               </>
             )}

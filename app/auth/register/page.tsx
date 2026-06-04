@@ -17,6 +17,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -24,7 +25,7 @@ export default function RegisterPage() {
     setLoading(true)
 
     const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -38,6 +39,13 @@ export default function RegisterPage() {
 
     if (error) {
       setError(error.message)
+      setLoading(false)
+      return
+    }
+
+    // Supabase returns session: null when email confirmation is required
+    if (!data.session) {
+      setConfirmed(true)
       setLoading(false)
       return
     }
@@ -58,6 +66,14 @@ export default function RegisterPage() {
           <p className="mt-1 text-sm text-muted-foreground">Access your installation portal and order history</p>
         </div>
 
+        {confirmed ? (
+          <div className="bg-card rounded-xl border border-border p-6 shadow-sm text-center">
+            <p className="font-semibold text-foreground mb-2">Check your email</p>
+            <p className="text-sm text-muted-foreground">
+              We sent a confirmation link to <strong>{email}</strong>. Click the link to activate your account, then sign in.
+            </p>
+          </div>
+        ) : (
         <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
@@ -121,6 +137,7 @@ export default function RegisterPage() {
             </Button>
           </form>
         </div>
+        )}
 
         <p className="mt-4 text-center text-sm text-muted-foreground">
           Already have an account?{' '}

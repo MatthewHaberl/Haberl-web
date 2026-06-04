@@ -2,7 +2,7 @@
 
 # haberl-web — Project Instructions
 
-Next.js 15 web app for Haberl Electrical & Solar. Replaces WordPress at haberl.co.za.
+Next.js 16 web app for Haberl Electrical & Solar. Replaces WordPress at haberl.co.za.
 
 ## Stack
 - **Framework:** Next.js 16 (App Router), React 19, TypeScript
@@ -20,7 +20,7 @@ Next.js 15 web app for Haberl Electrical & Solar. Replaces WordPress at haberl.c
 
 ## Key files
 - `app/globals.css` — brand color tokens (change here to rebrand the whole site)
-- `middleware.ts` — auth guard on `/portal/*`, redirects to `/auth/login`
+- `app/portal/layout.tsx` — auth guard on `/portal/*`, redirects to `/auth/login`; also role-routes `/portal` → customer or employee dashboard
 - `lib/supabase/client.ts` — browser Supabase client
 - `lib/supabase/server.ts` — server component Supabase client
 - `types/database.ts` — TypeScript types for all DB tables

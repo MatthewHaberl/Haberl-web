@@ -4,8 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { MapPin, ShoppingBag, FileText, ChevronRight } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { MapPin, ShoppingBag, FileText, ChevronRight, CheckCircle } from 'lucide-react'
+import { formatCurrency, formatDate } from '@/lib/utils'
 
 export default async function CustomerDashboard() {
   const user = await getUser()
@@ -55,8 +55,11 @@ export default async function CustomerDashboard() {
               <FileText className="h-5 w-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">COC</p>
-              <p className="text-xs text-muted-foreground">Docs available</p>
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-success">
+                <CheckCircle className="h-4 w-4 shrink-0" />
+                Available
+              </p>
+              <p className="text-xs text-muted-foreground">Compliance docs (COC)</p>
             </div>
           </CardContent>
         </Card>
@@ -119,7 +122,7 @@ export default async function CustomerDashboard() {
                     <p className="text-xs text-muted-foreground">{formatDate(order.created_at)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold">R {(order.total / 100).toFixed(2)}</p>
+                    <p className="text-sm font-semibold">{formatCurrency(order.total)}</p>
                     <Badge variant={order.status === 'paid' ? 'success' : 'default'}>{order.status}</Badge>
                   </div>
                 </div>

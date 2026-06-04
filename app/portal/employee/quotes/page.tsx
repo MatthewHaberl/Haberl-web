@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { FileText, Plus, ChevronRight, Clock } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils'
 import type { QuoteRequestStatus } from '@/types/database'
 
 const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success'> = {
@@ -106,7 +107,7 @@ function RequestGroupCard({ group, isManager }: { group: CustomerGroup; isManage
                   )}
                   {request.total_amount != null && (
                     <span className="text-xs font-semibold text-foreground">
-                      R{(request.total_amount / 100).toLocaleString('en-ZA')}
+                      {formatCurrency(request.total_amount)}
                     </span>
                   )}
                 </div>
@@ -163,7 +164,7 @@ function RequestGroupCard({ group, isManager }: { group: CustomerGroup; isManage
                   )}
                   {request.total_amount != null && (
                     <span className="text-xs font-semibold text-foreground">
-                      R{(request.total_amount / 100).toLocaleString('en-ZA')}
+                      {formatCurrency(request.total_amount)}
                     </span>
                   )}
                 </div>

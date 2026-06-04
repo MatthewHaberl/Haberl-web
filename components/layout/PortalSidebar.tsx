@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
-  BarChart2, Users, Zap, User, Menu, X, Globe, FileText, Settings,
+  BarChart2, Users, Zap, User, Menu, X, FileText, Settings,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -90,15 +90,7 @@ function SidebarContent({ links, pathname, name, role, onLinkClick, onSignOut }:
       </nav>
 
       {/* Footer actions */}
-      <div className="mt-auto px-3 py-4 border-t border-white/10 flex flex-col gap-1">
-        <Link
-          href="/"
-          onClick={onLinkClick}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-text hover:bg-white/10 hover:text-white transition-colors"
-        >
-          <Globe className="h-4 w-4 shrink-0" />
-          Back to website
-        </Link>
+      <div className="mt-auto px-3 py-4 border-t border-white/10">
         <button
           onClick={onSignOut}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-text hover:bg-white/10 hover:text-white transition-colors"

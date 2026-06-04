@@ -10,6 +10,13 @@ const anthropic = new Anthropic({
 })
 
 export async function POST(req: Request) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return new Response(
+      'AI generation is not configured — add ANTHROPIC_API_KEY to .env.local',
+      { status: 503 }
+    )
+  }
+
   // Only admins may call the AI quote generator
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
