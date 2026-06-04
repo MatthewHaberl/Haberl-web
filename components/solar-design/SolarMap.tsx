@@ -116,7 +116,7 @@ export function SolarMap({
     if (existing) { existing.addEventListener('load', () => setMapsLoaded(true), { once: true }); return }
     const script = document.createElement('script')
     script.setAttribute('data-gmaps', '1')
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&libraries=places`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}`
     script.async = true
     script.onload = () => setMapsLoaded(true)
     document.head.appendChild(script)

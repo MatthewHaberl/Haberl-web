@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 
 declare global {
   interface Window { google: any } // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -13,71 +13,117 @@ interface Props {
   placeholder?: string
 }
 
-function loadGooglePlaces(): Promise<void> {
-  return new Promise((resolve) => {
-    if (window.google?.maps?.places) { resolve(); return }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PlacesLib = any
 
-    let script = document.querySelector<HTMLScriptElement>('script[data-gmaps]')
-    if (!script) {
-      script = document.createElement('script')
-      script.setAttribute('data-gmaps', '1')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&libraries=places`
-      script.async = true
-      document.head.appendChild(script)
+function loadPlaces(): Promise<PlacesLib> {
+  return new Promise((resolve, reject) => {
+    function doImport() {
+      window.google.maps.importLibrary('places').then(resolve).catch(reject)
     }
-    script.addEventListener('load', () => resolve(), { once: true })
-    // If script already finished loading before this listener was added
-    if ((script as any).readyState === 'complete' || window.google?.maps?.places) resolve()
+
+    // Already loaded
+    if (window.google?.maps?.importLibrary) { doImport(); return }
+
+    // Another script tag is already being injected — wait for it
+    if (document.querySelector('script[data-gmaps]')) {
+      const iv = setInterval(() => {
+        if (window.google?.maps?.importLibrary) { clearInterval(iv); doImport() }
+      }, 50)
+      return
+    }
+
+    // Inject fresh — use loading=async to get the new importLibrary bootstrap
+    const s = document.createElement('script')
+    s.setAttribute('data-gmaps', '1')
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&loading=async`
+    s.async = true
+    s.onload = () => doImport()
+    s.onerror = reject
+    document.head.appendChild(s)
   })
 }
 
 export function AddressAutocomplete({ value, onChange, onBlur, placeholder }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const acRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [open, setOpen] = useState(false)
+  const placesRef = useRef<PlacesLib>(null)
+  const sessionRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
-  // Sync external value changes to uncontrolled input (e.g. form reset)
   useEffect(() => {
-    if (inputRef.current && document.activeElement !== inputRef.current) {
-      inputRef.current.value = value
-    }
-  }, [value])
-
-  // Boot autocomplete once Maps + Places library is available
-  useEffect(() => {
-    if (!inputRef.current) return
-    let cancelled = false
-
-    loadGooglePlaces().then(() => {
-      if (cancelled || !inputRef.current || acRef.current) return
-
-      const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
-        types: ['address'],
-        componentRestrictions: { country: 'za' },
-        fields: ['formatted_address'],
-      })
-
-      ac.addListener('place_changed', () => {
-        const place = ac.getPlace()
-        const addr: string = place.formatted_address ?? inputRef.current?.value ?? ''
-        if (inputRef.current) inputRef.current.value = addr
-        onChange(addr)
-      })
-
-      acRef.current = ac
+    loadPlaces().then((places) => {
+      placesRef.current = places
+      sessionRef.current = new places.AutocompleteSessionToken()
     })
+  }, [])
 
-    return () => { cancelled = true }
-  }, [onChange])
+  const fetchSuggestions = useCallback(async (input: string) => {
+    if (!placesRef.current || input.length < 3) {
+      setSuggestions([])
+      setOpen(false)
+      return
+    }
+    try {
+      const { suggestions: results } =
+        await placesRef.current.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input,
+          sessionToken: sessionRef.current,
+          includedRegionCodes: ['za'],
+        })
+      const labels: string[] = (results as any[]) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .map((s) => s.placePrediction?.text?.toString())
+        .filter(Boolean)
+      setSuggestions(labels)
+      setOpen(labels.length > 0)
+    } catch {
+      setSuggestions([])
+      setOpen(false)
+    }
+  }, [])
+
+  function handleChange(v: string) {
+    onChange(v)
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => fetchSuggestions(v), 300)
+  }
+
+  function handleSelect(address: string) {
+    onChange(address)
+    setSuggestions([])
+    setOpen(false)
+    if (placesRef.current) {
+      sessionRef.current = new placesRef.current.AutocompleteSessionToken()
+    }
+  }
 
   return (
-    <input
-      ref={inputRef}
-      defaultValue={value}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={onBlur}
-      placeholder={placeholder}
-      autoComplete="off"
-      className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent placeholder:text-muted-foreground"
-    />
+    <div className="relative">
+      <input
+        value={value}
+        onChange={(e) => handleChange(e.target.value)}
+        onBlur={() => {
+          setTimeout(() => setOpen(false), 150)
+          onBlur?.()
+        }}
+        onFocus={() => { if (suggestions.length > 0) setOpen(true) }}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent placeholder:text-muted-foreground"
+      />
+      {open && suggestions.length > 0 && (
+        <ul className="absolute z-50 mt-1 w-full rounded-md border border-border bg-background shadow-lg text-sm overflow-hidden">
+          {suggestions.map((s, i) => (
+            <li
+              key={i}
+              onMouseDown={() => handleSelect(s)}
+              className="px-3 py-2.5 cursor-pointer hover:bg-muted transition-colors"
+            >
+              {s}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
