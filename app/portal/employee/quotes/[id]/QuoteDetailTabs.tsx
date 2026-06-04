@@ -208,7 +208,6 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   ]
 
   const diagramData = liveQuoteData
-  const forceAiOverride = !!req.is_amendment
 
   return (
     <div className="flex flex-col gap-0">
@@ -495,47 +494,24 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
                   {req.quote_html || req.generated_quote ? 'Generated Quote' : 'Generate Quote'}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {forceAiOverride
-                    ? 'This job stays on the AI path because amendments need manual judgement.'
-                    : req.quote_html || req.generated_quote
-                      ? 'Quote generated. Recalculate to refresh, or adjust deposit items before saving again.'
-                      : 'Select equipment, then calculate the quote instantly. AI stays available for edge cases.'}
+                  {req.quote_html || req.generated_quote
+                    ? 'Quote generated. Recalculate to refresh, or adjust deposit items before saving again.'
+                    : 'Select equipment, then calculate the quote instantly. AI stays available for edge cases.'}
                 </p>
               </div>
-              {!forceAiOverride ? (
-                <>
-                  <EquipmentSelector
-                    requestId={req.id}
-                    request={req}
-                    existingQuote={req.generated_quote ?? null}
-                    existingHtml={req.quote_html ?? null}
-                    existingDepositItems={(req.deposit_items ?? []) as string[]}
-                    existingQuoteNumber={req.quote_number ?? null}
-                    existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
-                    nextQuoteNumber={nextQuoteNum}
-                    onQuoteDataChange={setLiveQuoteData}
-                  />
-                  <details className="rounded-lg border border-border p-4">
-                    <summary className="cursor-pointer text-sm font-medium text-foreground">
-                      AI Override (amendments, complex systems)
-                    </summary>
-                    <div className="mt-4">
-                      <GenerateButton
-                        requestId={req.id}
-                        request={req}
-                        existingQuote={req.generated_quote ?? null}
-                        existingHtml={req.quote_html ?? null}
-                        existingDepositItems={(req.deposit_items ?? []) as string[]}
-                        existingQuoteNumber={req.quote_number ?? null}
-                        existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
-                        nextQuoteNumber={nextQuoteNum}
-                        onQuoteDataChange={setLiveQuoteData}
-                      />
-                    </div>
-                  </details>
-                </>
-              ) : (
-                <details className="rounded-lg border border-amber-200 bg-amber-50/60 p-4" open>
+              <>
+                <EquipmentSelector
+                  requestId={req.id}
+                  request={req}
+                  existingQuote={req.generated_quote ?? null}
+                  existingHtml={req.quote_html ?? null}
+                  existingDepositItems={(req.deposit_items ?? []) as string[]}
+                  existingQuoteNumber={req.quote_number ?? null}
+                  existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
+                  nextQuoteNumber={nextQuoteNum}
+                  onQuoteDataChange={setLiveQuoteData}
+                />
+                <details className="rounded-lg border border-border p-4">
                   <summary className="cursor-pointer text-sm font-medium text-foreground">
                     AI Override (amendments, complex systems)
                   </summary>
@@ -553,7 +529,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
                     />
                   </div>
                 </details>
-              )}
+              </>
             </>
           ) : (
             <>
