@@ -554,6 +554,16 @@ export function EquipmentSelector({
 
       if (error) throw error
       setSaved(true)
+
+      // Silently sync used equipment to the shop products table (inactive until manually activated)
+      const catalogIds = [selectedInverter?.id, selectedBattery?.id, selectedPanel?.id].filter(Boolean)
+      if (catalogIds.length) {
+        fetch('/api/sync-to-shop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ catalogIds }),
+        }).catch(() => {/* non-critical */})
+      }
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Save failed')
     } finally {
