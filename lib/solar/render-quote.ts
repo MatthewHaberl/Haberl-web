@@ -161,6 +161,11 @@ export interface QuoteData {
   // Additional component costs derived from diagram (added to BOM)
   extraLugsCost?: string
   mountingCost?: string
+
+  // EV Charger add-on (present when ev_charger is selected in the survey)
+  evChargerKw?: string       // e.g., "7kW"
+  evChargerCost?: string     // formatted section subtotal
+  evChargerSubtotal?: string // same as evChargerCost — used in template summary row
 }
 
 // ── Multi-option types ────────────────────────────────────────────────────────
@@ -262,6 +267,15 @@ function renderSingleOptionHtml(data: QuoteData, tierLabel?: string): string {
     html = html.replace('{{TWENTY_YEAR_SECTION}}', renderTwentyYearSection(data))
   } else {
     html = html.replace('{{TWENTY_YEAR_SECTION}}', '')
+  }
+
+  // Inject EV charger section if present
+  if (data.evChargerKw && data.evChargerCost) {
+    html = html.replace('{{EV_CHARGER_SECTION}}', renderEvChargerSection(data))
+    html = html.replace('{{EV_CHARGER_SUMMARY_ROW}}', `<tr><td>EV Charger (${data.evChargerKw})</td><td>${data.evChargerCost}</td></tr>`)
+  } else {
+    html = html.replace('{{EV_CHARGER_SECTION}}', '')
+    html = html.replace('{{EV_CHARGER_SUMMARY_ROW}}', '')
   }
 
   return html
@@ -451,6 +465,12 @@ function renderCustomerSingleHtml(data: QuoteData, tierLabel?: string): string {
     html = html.replace('{{TWENTY_YEAR_SECTION}}', '')
   }
 
+  if (data.evChargerKw) {
+    html = html.replace('{{EV_CHARGER_SYSTEM_ROW}}', `<tr><td>EV Charger</td><td>${data.evChargerKw} Type 2 Wallbox</td></tr>`)
+  } else {
+    html = html.replace('{{EV_CHARGER_SYSTEM_ROW}}', '')
+  }
+
   return html
 }
 
@@ -578,6 +598,29 @@ function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
 </div>
 </body>
 </html>`
+}
+
+// ── EV Charger section (injected when evChargerKw is set) ────────────────────
+
+function renderEvChargerSection(data: QuoteData): string {
+  if (!data.evChargerKw || !data.evChargerCost) return ''
+  return `
+  <div class="card no-break">
+    <div class="card-header"><h2>EV Charger</h2></div>
+    <div class="card-body">
+      <table class="bom-table">
+        <thead><tr><th style="width:50%">Description</th><th class="right">Qty</th><th class="right">Total (R)</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>${data.evChargerKw} Type 2 EV Wallbox &#9733;<div class="subtitle">Dedicated EV charging circuit — ${data.evChargerKw === '7kW' ? '10m 6mm² single-phase cable, 32A DP MCB' : data.evChargerKw === '11kW' ? '10m 6mm² 3-phase cable, 20A TP MCB' : '10m 10mm² 3-phase cable, 32A TP MCB'}, glands, conduit, and installation labour</div></td>
+            <td class="right">1</td>
+            <td class="right">${data.evChargerCost}</td>
+          </tr>
+          <tr class="subtotal-row"><td>Section Total</td><td class="right" colspan="2">${data.evChargerCost}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>`
 }
 
 // ── Monthly generation section ────────────────────────────────────────────────
@@ -1163,6 +1206,8 @@ const SINGLE_TEMPLATE = `<!DOCTYPE html>
     </div>
   </div>
 
+  {{EV_CHARGER_SECTION}}
+
   <div class="section-heading">Total Investment</div>
 
   <div class="summary-block no-break">
@@ -1176,6 +1221,7 @@ const SINGLE_TEMPLATE = `<!DOCTYPE html>
       <tr><td>Earthing System</td><td>{{earthingSubtotal}}</td></tr>
       <tr><td>Consumables &amp; Compliance</td><td>{{consumablesSubtotal}}</td></tr>
       <tr><td>Installation Labour</td><td>{{labourSubtotal}}</td></tr>
+      {{EV_CHARGER_SUMMARY_ROW}}
       <tr class="total-row divider"><td>QUOTE TOTAL</td><td>{{quoteTotal}}</td></tr>
     </table>
     <div class="vat-badge">Haberl Electrical &amp; Solar does not add VAT &mdash; all prices inclusive</div>
@@ -1360,6 +1406,7 @@ const CUSTOMER_TEMPLATE = `<!DOCTYPE html>
         <tr><td>Solar panels</td><td>{{panelCount}} &times; {{panelModel}}</td></tr>
         <tr><td>Total capacity</td><td>{{totalKwp}}kWp</td></tr>
         <tr><td>Est. monthly generation</td><td>~{{monthlyGenKwh}} kWh</td></tr>
+        {{EV_CHARGER_SYSTEM_ROW}}
       </table>
     </div>
   </div>

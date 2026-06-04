@@ -105,6 +105,7 @@ export function buildCalculatorInput(
     panelCountOverride: options.panelCountOverride ?? null,
     targetInverterKwOverride: options.targetInverterKwOverride ?? null,
     minimumBatteryKwhOverride: options.minimumBatteryKwhOverride ?? null,
+    evCharger: coerceText(request.ev_charger, 'No'),
     equipment,
   }
 

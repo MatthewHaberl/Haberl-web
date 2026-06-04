@@ -74,6 +74,33 @@ const EARTH_CLAMP_SELL_RANDS = 33.86
 const EARTH_MUTI_SELL_RANDS = 423.2
 const BARE_EARTH_WIRE_SELL_PER_M = 54.26
 
+// ── EV Charger pricing ────────────────────────────────────────────────────────
+const EV_CHARGER_CABLE_ROUTE_M = 10
+
+interface EvChargerSpec {
+  chargerCostRands: number
+  chargerSellRands: number
+  cableSellPerM: number
+  mcbSellRands: number
+  labourSellRands: number
+}
+
+const EV_CHARGER_SPECS: Record<string, EvChargerSpec> = {
+  '7kW':  { chargerCostRands: 4350,  chargerSellRands: roundCurrency(4350  * MARKUP), cableSellPerM: 32, mcbSellRands: 350, labourSellRands: 1500 },
+  '11kW': { chargerCostRands: 6500,  chargerSellRands: roundCurrency(6500  * MARKUP), cableSellPerM: 48, mcbSellRands: 520, labourSellRands: 1800 },
+  '22kW': { chargerCostRands: 11300, chargerSellRands: roundCurrency(11300 * MARKUP), cableSellPerM: 68, mcbSellRands: 690, labourSellRands: 2200 },
+}
+
+const EV_CONSUMABLES_SELL_RANDS = 200
+
+function parseEvChargerSize(evCharger: string | undefined | null): string | null {
+  if (!evCharger || evCharger === 'No') return null
+  if (evCharger.includes('22kW')) return '22kW'
+  if (evCharger.includes('11kW')) return '11kW'
+  if (evCharger.includes('7kW'))  return '7kW'
+  return null
+}
+
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MONTHLY_SOLAR_FACTORS = [0.93, 0.94, 0.98, 1.01, 1.04, 1.05, 1.06, 1.05, 1.02, 0.98, 0.96, 0.98]
 
@@ -163,6 +190,7 @@ export interface CalculatorInput {
   panelCountOverride?: number | null
   targetInverterKwOverride?: number | null
   minimumBatteryKwhOverride?: number | null
+  evCharger?: string
   equipment: {
     inverter: EquipmentCatalogItem
     battery: EquipmentCatalogItem
@@ -207,6 +235,9 @@ type Breakdown = {
   cumulativeImpact20Y: number
   npv: number
   roiPct: number
+  evChargerSubtotalRands: number
+  evChargerSizeKw: string
+  evChargerUnitSellRands: number
 }
 
 function roundCurrency(value: number) {
@@ -886,11 +917,34 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   )
   addBomItem(supplierBom, 'Labour', 'LABOUR', 'Installation labour and commissioning', 1, labourSubtotalRands, labourSubtotalRands)
 
+  // ── EV Charger (optional add-on) ───────────────────────────────────────────
+  const evSize = parseEvChargerSize(input.evCharger)
+  let evChargerSubtotalRands = 0
+  let evChargerSizeKw = ''
+  let evChargerUnitSellRands = 0
+
+  if (evSize && EV_CHARGER_SPECS[evSize]) {
+    const spec = EV_CHARGER_SPECS[evSize]
+    evChargerUnitSellRands = spec.chargerSellRands
+    const evCableSell = roundCurrency(spec.cableSellPerM * EV_CHARGER_CABLE_ROUTE_M)
+    evChargerSubtotalRands = roundCurrency(
+      evChargerUnitSellRands + evCableSell + spec.mcbSellRands + EV_CONSUMABLES_SELL_RANDS + spec.labourSellRands,
+    )
+    evChargerSizeKw = evSize
+
+    addBomItem(supplierBom, 'EV Charger', `EV-${evSize}`, `${evSize} Type 2 EV Wallbox — deposit item`, 1, evChargerUnitSellRands, spec.chargerCostRands)
+    addBomItem(supplierBom, 'EV Charger', 'EV-CABLE', `EV charger cable — ${EV_CHARGER_CABLE_ROUTE_M}m run`, EV_CHARGER_CABLE_ROUTE_M, spec.cableSellPerM, spec.cableSellPerM / MARKUP)
+    addBomItem(supplierBom, 'EV Charger', 'EV-MCB', 'Dedicated EV circuit MCB', 1, spec.mcbSellRands, spec.mcbSellRands / MARKUP)
+    addBomItem(supplierBom, 'EV Charger', 'EV-CONS', 'EV installation consumables and conduit', 1, EV_CONSUMABLES_SELL_RANDS, EV_CONSUMABLES_SELL_RANDS / MARKUP)
+    addBomItem(supplierBom, 'EV Charger', 'EV-LABOUR', 'EV charger installation labour', 1, spec.labourSellRands, spec.labourSellRands)
+  }
+
   const depositItems: QuoteData['depositItems'] = [
     { name: 'Solar Panels', amountRands: panelSellTotal },
     { name: 'Inverter', amountRands: inverterSellTotal },
     { name: 'Battery', amountRands: batterySellTotal },
     { name: 'Mounting', amountRands: mountingSellTotal },
+    ...(evSize ? [{ name: `${evSize} EV Charger`, amountRands: evChargerUnitSellRands }] : []),
   ]
 
   const materialsLabourSubtotal = roundCurrency(
@@ -901,7 +955,8 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
       acDbSubtotalRands +
       earthingSubtotalRands +
       consumablesSubtotalRands +
-      labourSubtotalRands,
+      labourSubtotalRands +
+      evChargerSubtotalRands,
   )
 
   const quoteTotalRands = materialsLabourSubtotal
@@ -956,6 +1011,9 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
     cumulativeImpact20Y,
     npv,
     roiPct,
+    evChargerSubtotalRands,
+    evChargerSizeKw,
+    evChargerUnitSellRands,
   }
 }
 
@@ -1051,6 +1109,9 @@ export function calculateQuote(input: CalculatorInput): QuoteData {
       targetPanelCount: breakdown.panelCount,
     },
     calculationWarnings: breakdown.warnings,
+    evChargerKw: breakdown.evChargerSizeKw || undefined,
+    evChargerCost: breakdown.evChargerSubtotalRands > 0 ? formatRands(breakdown.evChargerSubtotalRands) : undefined,
+    evChargerSubtotal: breakdown.evChargerSubtotalRands > 0 ? formatRands(breakdown.evChargerSubtotalRands) : undefined,
   }
 
   return data

@@ -208,7 +208,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   ]
 
   const diagramData = liveQuoteData
-  const forceAiOverride = req.is_amendment || (req.ev_charger && req.ev_charger !== 'No')
+  const forceAiOverride = !!req.is_amendment
 
   return (
     <div className="flex flex-col gap-0">
@@ -496,7 +496,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
                   {forceAiOverride
-                    ? 'This job stays on the AI path because amendments and EV work still need manual judgement.'
+                    ? 'This job stays on the AI path because amendments need manual judgement.'
                     : req.quote_html || req.generated_quote
                       ? 'Quote generated. Recalculate to refresh, or adjust deposit items before saving again.'
                       : 'Select equipment, then calculate the quote instantly. AI stays available for edge cases.'}
@@ -517,7 +517,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
                   />
                   <details className="rounded-lg border border-border p-4">
                     <summary className="cursor-pointer text-sm font-medium text-foreground">
-                      AI Override (amendments, EV, complex systems)
+                      AI Override (amendments, complex systems)
                     </summary>
                     <div className="mt-4">
                       <GenerateButton
@@ -537,7 +537,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
               ) : (
                 <details className="rounded-lg border border-amber-200 bg-amber-50/60 p-4" open>
                   <summary className="cursor-pointer text-sm font-medium text-foreground">
-                    AI Override (amendments, EV, complex systems)
+                    AI Override (amendments, complex systems)
                   </summary>
                   <div className="mt-4">
                     <GenerateButton

@@ -830,6 +830,24 @@ export function EquipmentSelector({
         </label>
       </div>
 
+      {(() => {
+        const evCharger = toOptionalString(request.ev_charger)
+        if (!evCharger || evCharger === 'No') return null
+        const cableDesc = evCharger.includes('7kW')
+          ? '10m 6mm² cable, 32A DP MCB'
+          : evCharger.includes('11kW')
+            ? '10m 6mm² 3-phase cable, 20A TP MCB'
+            : '10m 10mm² 3-phase cable, 32A TP MCB'
+        return (
+          <div className="flex items-center gap-2 rounded-md border border-accent/40 bg-accent/5 px-3 py-2 text-sm">
+            <span className="font-medium text-accent">EV Charger</span>
+            <span className="text-muted-foreground">
+              {evCharger} — charger unit, {cableDesc}, and installation will be added automatically.
+            </span>
+          </div>
+        )
+      })()}
+
       <div className="flex items-center gap-3 flex-wrap">
         <Button variant="accent" onClick={calculateSingle} disabled={calculating || !selectedInverter || !selectedBattery || !selectedPanel}>
           {calculating
