@@ -28,7 +28,11 @@ export async function GET(req: Request) {
     }),
   })
 
-  if (!res.ok) return Response.json({ suggestions: [] })
+  if (!res.ok) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const errBody: any = await res.json().catch(() => ({}))
+    return Response.json({ suggestions: [], _debug: { status: res.status, error: errBody } })
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data: any = await res.json()
@@ -37,5 +41,5 @@ export async function GET(req: Request) {
     .map((s: any) => s.placePrediction?.text?.text as string | undefined)
     .filter(Boolean)
 
-  return Response.json({ suggestions })
+  return Response.json({ suggestions, _debug: { count: suggestions.length } })
 }
