@@ -89,50 +89,66 @@ function groupRequests(requests: QuoteRow[]): CustomerGroup[] {
     })
 }
 
+function NewOptionLink({ fromId }: { fromId: string }) {
+  return (
+    <Link
+      href={`/portal/employee/quotes/new?from=${fromId}`}
+      className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors whitespace-nowrap"
+      title="New quote option for this customer"
+    >
+      <Plus className="h-3 w-3" />
+      New option
+    </Link>
+  )
+}
+
 function RequestGroupCard({ group, isManager }: { group: CustomerGroup; isManager: boolean }) {
   if (group.requests.length === 1) {
     const request = group.requests[0]
 
     return (
-      <Link href={`/portal/employee/quotes/${request.id}`}>
-        <Card className="hover:border-accent transition-colors cursor-pointer">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-semibold text-sm truncate">{request.customer_name}</p>
-                  <Badge variant="default">Site {request.site_number ?? 1}</Badge>
-                  {request.quote_number && (
-                    <span className="text-xs font-mono text-muted-foreground">{request.quote_number}</span>
-                  )}
-                  {request.total_amount != null && (
-                    <span className="text-xs font-semibold text-foreground">
-                      {formatCurrency(request.total_amount)}
+      <Card className="hover:border-accent transition-colors">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex items-center gap-2">
+            <Link href={`/portal/employee/quotes/${request.id}`} className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-sm truncate">{request.customer_name}</p>
+                    <Badge variant="default">Site {request.site_number ?? 1}</Badge>
+                    {request.quote_number && (
+                      <span className="text-xs font-mono text-muted-foreground">{request.quote_number}</span>
+                    )}
+                    {request.total_amount != null && (
+                      <span className="text-xs font-semibold text-foreground">
+                        {formatCurrency(request.total_amount)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {request.address || 'No address'} · {request.system_type}
+                    {request.monthly_kwh ? ` · ${request.monthly_kwh} kWh/mo` : ''}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {timeAgo(request.created_at)}
                     </span>
-                  )}
+                    {isManager && request.submitter?.full_name && (
+                      <span>by {request.submitter.full_name}</span>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground truncate">
-                  {request.address || 'No address'} · {request.system_type}
-                  {request.monthly_kwh ? ` · ${request.monthly_kwh} kWh/mo` : ''}
-                </p>
-                <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {timeAgo(request.created_at)}
-                  </span>
-                  {isManager && request.submitter?.full_name && (
-                    <span>by {request.submitter.full_name}</span>
-                  )}
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant={statusVariant[request.status]}>{request.status}</Badge>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Badge variant={statusVariant[request.status]}>{request.status}</Badge>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </Link>
+            </Link>
+            <NewOptionLink fromId={request.id} />
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
@@ -143,41 +159,45 @@ function RequestGroupCard({ group, isManager }: { group: CustomerGroup; isManage
           <div>
             <p className="font-semibold text-sm">{group.customerName}</p>
             <p className="text-xs text-muted-foreground">
-              {group.requests.length} sites for this customer
+              {group.requests.length} sites / options for this customer
             </p>
           </div>
-          <Badge variant="default">{group.requests.length} sites</Badge>
+          <Badge variant="default">{group.requests.length} quotes</Badge>
         </div>
 
         <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
           {group.requests.map((request) => (
-            <Link
-              key={request.id}
-              href={`/portal/employee/quotes/${request.id}`}
-              className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-medium">Site {request.site_number ?? 1}</p>
-                  {request.quote_number && (
-                    <span className="text-xs font-mono text-muted-foreground">{request.quote_number}</span>
-                  )}
-                  {request.total_amount != null && (
-                    <span className="text-xs font-semibold text-foreground">
-                      {formatCurrency(request.total_amount)}
-                    </span>
-                  )}
+            <div key={request.id} className="flex items-center">
+              <Link
+                href={`/portal/employee/quotes/${request.id}`}
+                className="flex-1 flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/50 transition-colors min-w-0"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium">Site {request.site_number ?? 1}</p>
+                    {request.quote_number && (
+                      <span className="text-xs font-mono text-muted-foreground">{request.quote_number}</span>
+                    )}
+                    {request.total_amount != null && (
+                      <span className="text-xs font-semibold text-foreground">
+                        {formatCurrency(request.total_amount)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {request.address || 'No address'} · {request.system_type}
+                    {request.monthly_kwh ? ` · ${request.monthly_kwh} kWh/mo` : ''}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground truncate">
-                  {request.address || 'No address'} · {request.system_type}
-                  {request.monthly_kwh ? ` · ${request.monthly_kwh} kWh/mo` : ''}
-                </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant={statusVariant[request.status]}>{request.status}</Badge>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </Link>
+              <div className="px-3 shrink-0">
+                <NewOptionLink fromId={request.id} />
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Badge variant={statusVariant[request.status]}>{request.status}</Badge>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </Link>
+            </div>
           ))}
         </div>
       </CardContent>

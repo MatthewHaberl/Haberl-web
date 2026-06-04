@@ -69,21 +69,41 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
 }
 
 // ── Main component ───────────────────────────────────────────
-interface Props { brands: EquipmentBrand[] }
+interface Prefill {
+  customer_name: string
+  customer_phone: string | null
+  customer_email: string | null
+  address: string | null
+  municipality: string
+  site_number: number | null
+  grid_supply: string
+  roof_type: string
+  storeys: string
+  monthly_kwh: string | null
+  system_type: string
+  battery_hours: string
+  essential_load: string | null
+  ev_charger: string
+  inverter_brand: string
+  battery_brand: string
+  panel_brand: string
+}
 
-export function QuoteForm({ brands }: Props) {
+interface Props { brands: EquipmentBrand[]; prefill?: Prefill | null }
+
+export function QuoteForm({ brands, prefill }: Props) {
   const router = useRouter()
 
   // Job type
   const [isAmendment, setIsAmendment] = useState(false)
 
   // Customer
-  const [customerName,  setCustomerName]  = useState('')
-  const [customerPhone, setCustomerPhone] = useState('')
-  const [customerEmail, setCustomerEmail] = useState('')
-  const [address,       setAddress]       = useState('')
-  const [municipality,  setMunicipality]  = useState('City of Johannesburg')
-  const [siteNumber,    setSiteNumber]    = useState('1')
+  const [customerName,  setCustomerName]  = useState(prefill?.customer_name  ?? '')
+  const [customerPhone, setCustomerPhone] = useState(prefill?.customer_phone ?? '')
+  const [customerEmail, setCustomerEmail] = useState(prefill?.customer_email ?? '')
+  const [address,       setAddress]       = useState(prefill?.address        ?? '')
+  const [municipality,  setMunicipality]  = useState(prefill?.municipality   ?? 'City of Johannesburg')
+  const [siteNumber,    setSiteNumber]    = useState(String(prefill?.site_number ?? 1))
 
   // Existing system (amendment only)
   const [existingInverter,  setExistingInverter]  = useState('')
@@ -95,28 +115,28 @@ export function QuoteForm({ brands }: Props) {
   const [amendmentScope,    setAmendmentScope]    = useState('')
 
   // Site
-  const [gridSupply, setGridSupply] = useState('Single Phase')
-  const [roofType,   setRoofType]   = useState('IBR')
-  const [storeys,    setStoreys]    = useState('1')
+  const [gridSupply, setGridSupply] = useState(prefill?.grid_supply ?? 'Single Phase')
+  const [roofType,   setRoofType]   = useState(prefill?.roof_type   ?? 'IBR')
+  const [storeys,    setStoreys]    = useState(prefill?.storeys      ?? '1')
 
   // Usage
   const [usageMode,   setUsageMode]   = useState<'monthly' | 'advanced'>('monthly')
-  const [monthlyKwh,  setMonthlyKwh]  = useState('')
+  const [monthlyKwh,  setMonthlyKwh]  = useState(prefill?.monthly_kwh ?? '')
   const [monthlyBreakdown, setMonthlyBreakdown] = useState<Record<MonthKey, string>>(
     Object.fromEntries(MONTHS.map((m) => [m, ''])) as Record<MonthKey, string>
   )
 
   // System requirements
-  const [systemType,       setSystemType]       = useState('AI will determine')
-  const [batteryHours,     setBatteryHours]      = useState('AI will determine')
-  const [essentialLoad,    setEssentialLoad]     = useState('')
+  const [systemType,       setSystemType]       = useState(prefill?.system_type    ?? 'AI will determine')
+  const [batteryHours,     setBatteryHours]      = useState(prefill?.battery_hours  ?? 'AI will determine')
+  const [essentialLoad,    setEssentialLoad]     = useState(prefill?.essential_load ?? '')
   const [targetOffgrid,    setTargetOffgrid]     = useState('')
-  const [evCharger,        setEvCharger]         = useState('No')
+  const [evCharger,        setEvCharger]         = useState(prefill?.ev_charger     ?? 'No')
 
   // Equipment preferences
-  const [inverterBrand, setInverterBrand] = useState('No preference — AI will recommend')
-  const [batteryBrand,  setBatteryBrand]  = useState('No preference — AI will recommend')
-  const [panelBrand,    setPanelBrand]    = useState('No preference — AI will recommend')
+  const [inverterBrand, setInverterBrand] = useState(prefill?.inverter_brand ?? 'No preference — AI will recommend')
+  const [batteryBrand,  setBatteryBrand]  = useState(prefill?.battery_brand  ?? 'No preference — AI will recommend')
+  const [panelBrand,    setPanelBrand]    = useState(prefill?.panel_brand    ?? 'No preference — AI will recommend')
 
   // Photos
   const [photoUrls,   setPhotoUrls]   = useState<string[]>([])
@@ -286,6 +306,12 @@ export function QuoteForm({ brands }: Props) {
           Fill in the site survey — Matthew will review and generate the quote.
         </p>
       </div>
+
+      {prefill && (
+        <div className="rounded-md bg-accent/10 border border-accent/30 px-4 py-2.5 text-sm text-accent">
+          Pre-filled from an existing quote — review and adjust before submitting.
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
 

@@ -3,7 +3,7 @@ import { createClient, getUser } from '@/lib/supabase/server'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { ArrowLeft, Clock, User } from 'lucide-react'
+import { ArrowLeft, Clock, User, Plus } from 'lucide-react'
 import { QuoteDetailTabs } from './QuoteDetailTabs'
 import { QuoteStatusBar } from './QuoteStatusBar'
 import type { QuoteRequestStatus } from '@/types/database'
@@ -67,7 +67,16 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
           </Button>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-primary">{req.customer_name}</h1>
-            <Badge variant="default">Site {req.site_number ?? 1}</Badge>
+            <Link
+              href={`/portal/employee/quotes/new?from=${req.id}`}
+              title="New quote option for this customer"
+              className="inline-flex"
+            >
+              <Badge variant="default" className="cursor-pointer hover:opacity-75 transition-opacity gap-1">
+                Site {req.site_number ?? 1}
+                <Plus className="h-3 w-3" />
+              </Badge>
+            </Link>
             {req.is_amendment && <Badge variant="warning">Amendment</Badge>}
             {req.quote_number && (
               <span className="text-sm font-mono text-muted-foreground">{req.quote_number}</span>
