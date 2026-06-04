@@ -1,14 +1,21 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
-import { Menu, X, Zap } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Menu, X, Zap, Battery, Sun, Package, Wrench, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+
+const SHOP_CATEGORIES = [
+  { label: 'All Products', href: '/shop',                   Icon: Package },
+  { label: 'Inverters',    href: '/shop?category=inverter', Icon: Zap     },
+  { label: 'Batteries',    href: '/shop?category=battery',  Icon: Battery },
+  { label: 'Solar Panels', href: '/shop?category=panel',    Icon: Sun     },
+  { label: 'Components',   href: '/shop?category=other',    Icon: Wrench  },
+]
 
 const navLinks = [
   { label: 'Home',     href: '/' },
   { label: 'Services', href: '/#services' },
-  { label: 'Shop',     href: '/shop' },
   { label: 'About',    href: '/#about' },
   { label: 'Contact',  href: '/#contact' },
 ]
@@ -19,6 +26,18 @@ interface Props {
 
 export function Navbar({ isLoggedIn = false }: Props) {
   const [open, setOpen] = useState(false)
+  const [shopOpen, setShopOpen] = useState(false)
+  const [mobileShopOpen, setMobileShopOpen] = useState(false)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function handleShopEnter() {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    setShopOpen(true)
+  }
+
+  function handleShopLeave() {
+    closeTimer.current = setTimeout(() => setShopOpen(false), 120)
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur">
@@ -40,6 +59,43 @@ export function Navbar({ isLoggedIn = false }: Props) {
               {l.label}
             </Link>
           ))}
+
+          {/* Shop dropdown */}
+          <div
+            className="relative"
+            onMouseEnter={handleShopEnter}
+            onMouseLeave={handleShopLeave}
+          >
+            <Link
+              href="/shop"
+              className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Shop
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${shopOpen ? 'rotate-180' : ''}`} />
+            </Link>
+
+            {shopOpen && (
+              <div
+                className="absolute top-full left-1/2 -translate-x-1/2 pt-3 z-50"
+                onMouseEnter={handleShopEnter}
+                onMouseLeave={handleShopLeave}
+              >
+                <div className="bg-card border border-border rounded-xl shadow-xl p-2 w-52">
+                  {SHOP_CATEGORIES.map((cat) => (
+                    <Link
+                      key={cat.href}
+                      href={cat.href}
+                      onClick={() => setShopOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-muted transition-colors group"
+                    >
+                      <cat.Icon className="h-4 w-4 text-accent/60 group-hover:text-accent transition-colors shrink-0" />
+                      <span className="font-medium text-foreground/80 group-hover:text-foreground">{cat.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
@@ -71,7 +127,7 @@ export function Navbar({ isLoggedIn = false }: Props) {
 
       {/* Mobile menu */}
       {open && (
-        <div className="md:hidden border-t border-border bg-background px-4 py-4 flex flex-col gap-4">
+        <div className="md:hidden border-t border-border bg-background px-4 py-4 flex flex-col gap-3">
           {navLinks.map((l) => (
             <Link
               key={l.href}
@@ -82,6 +138,33 @@ export function Navbar({ isLoggedIn = false }: Props) {
               {l.label}
             </Link>
           ))}
+
+          {/* Mobile shop accordion */}
+          <div>
+            <button
+              onClick={() => setMobileShopOpen(v => !v)}
+              className="flex items-center justify-between w-full text-sm font-medium text-muted-foreground hover:text-foreground py-0.5"
+            >
+              Shop
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${mobileShopOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {mobileShopOpen && (
+              <div className="mt-2 ml-3 flex flex-col gap-1 border-l-2 border-border pl-3">
+                {SHOP_CATEGORIES.map((cat) => (
+                  <Link
+                    key={cat.href}
+                    href={cat.href}
+                    onClick={() => { setOpen(false); setMobileShopOpen(false) }}
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground py-1"
+                  >
+                    <cat.Icon className="h-3.5 w-3.5 text-accent/60 shrink-0" />
+                    {cat.label}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-col gap-2 pt-2 border-t border-border">
             {isLoggedIn ? (
               <Button variant="accent" asChild>

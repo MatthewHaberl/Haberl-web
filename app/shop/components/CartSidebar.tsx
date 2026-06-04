@@ -4,6 +4,7 @@ import { X, ShoppingCart, Trash2, Plus, Minus, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { useCart } from '@/lib/store/cart-context'
+import { RelatedProducts } from './RelatedProducts'
 import Link from 'next/link'
 
 export function CartSidebar() {
@@ -97,6 +98,9 @@ export function CartSidebar() {
             </ul>
           )}
         </div>
+
+        {/* Related products / "don't forget" */}
+        {items.length > 0 && <RelatedProducts />}
 
         {/* Footer */}
         {items.length > 0 && (

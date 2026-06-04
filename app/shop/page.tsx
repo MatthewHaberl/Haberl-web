@@ -8,7 +8,12 @@ import type { Product } from '@/types/database'
 
 export const metadata: Metadata = { title: 'Shop' }
 
-export default async function ShopPage() {
+export default async function ShopPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string; brand?: string }>
+}) {
+  const { category, brand } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -16,7 +21,7 @@ export default async function ShopPage() {
     .from('products')
     .select('*')
     .eq('active', true)
-    .not('external_id', 'is', null)   // only seeded catalog products
+    .not('external_id', 'is', null)
     .order('category')
     .order('brand')
 
@@ -38,9 +43,13 @@ export default async function ShopPage() {
           </div>
         </div>
 
-        {/* Product grid */}
+        {/* Product grid with sidebar */}
         <div className="max-w-6xl mx-auto px-4 py-8">
-          <ProductGrid products={(products ?? []) as Product[]} />
+          <ProductGrid
+            products={(products ?? []) as Product[]}
+            initialCategory={category ?? ''}
+            initialBrand={brand ?? ''}
+          />
         </div>
       </main>
 

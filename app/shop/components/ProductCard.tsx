@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { ShoppingCart, Zap, Battery, Sun, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -33,7 +34,9 @@ export function ProductCard({ product }: { product: Product }) {
   const cat = product.category ?? 'other'
   const spec = productSpec(product)
 
-  function handleAdd() {
+  function handleAdd(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
     addItem({
       product_id: product.id,
       slug: product.slug,
@@ -47,37 +50,47 @@ export function ProductCard({ product }: { product: Product }) {
   }
 
   return (
-    <div className="bg-card border border-border rounded-xl flex flex-col overflow-hidden hover:shadow-md transition-shadow">
-      {/* Image / placeholder */}
-      <div className="bg-muted flex items-center justify-center h-40 relative">
-        {product.images?.[0] ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={product.images[0]} alt={product.name} className="h-full w-full object-contain p-4" />
-        ) : (
-          <div className="flex flex-col items-center gap-2 opacity-40">
-            {categoryIcon[cat] ?? categoryIcon.other}
-            <span className="text-xs text-muted-foreground">{categoryLabel[cat] ?? 'Product'}</span>
-          </div>
-        )}
-        {spec && (
-          <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full">
-            {spec}
-          </span>
-        )}
-      </div>
+    <div className="bg-card border border-border rounded-xl flex flex-col overflow-hidden hover:shadow-md hover:border-primary/20 transition-all group">
+      {/* Clickable area → product detail */}
+      <Link href={`/shop/${product.slug}`} className="flex flex-col flex-1">
+        {/* Image / placeholder */}
+        <div className="bg-muted flex items-center justify-center h-40 relative overflow-hidden">
+          {product.images?.[0] ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={product.images[0]}
+              alt={product.name}
+              className="h-full w-full object-contain p-4 group-hover:scale-105 transition-transform duration-300"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-2 opacity-40">
+              {categoryIcon[cat] ?? categoryIcon.other}
+              <span className="text-xs text-muted-foreground">{categoryLabel[cat] ?? 'Product'}</span>
+            </div>
+          )}
+          {spec && (
+            <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full">
+              {spec}
+            </span>
+          )}
+        </div>
 
-      {/* Content */}
-      <div className="flex flex-col flex-1 p-4 gap-3">
-        <div className="flex-1">
-          <div className="flex items-start justify-between gap-2 mb-1">
+        {/* Name + meta */}
+        <div className="flex flex-col flex-1 p-4 pb-3 gap-2">
+          <div className="flex items-start justify-between gap-2 mb-0.5">
             <p className="text-xs text-muted-foreground font-mono">{product.sku ?? '—'}</p>
             {product.brand && (
               <Badge variant="outline" className="text-[10px] shrink-0">{product.brand}</Badge>
             )}
           </div>
-          <p className="text-sm font-medium text-foreground leading-snug line-clamp-2">{product.name}</p>
+          <p className="text-sm font-medium text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+            {product.name}
+          </p>
         </div>
+      </Link>
 
+      {/* Price + Add — outside the Link so clicks don't navigate */}
+      <div className="px-4 pb-4">
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="text-lg font-bold text-primary">{formatCurrency(product.price)}</p>

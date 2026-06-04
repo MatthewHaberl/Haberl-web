@@ -1,34 +1,41 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { Search, X, Zap, Battery, Sun, Package, Wrench } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { ProductCard } from './ProductCard'
 import type { Product } from '@/types/database'
 
 const CATEGORIES = [
-  { value: '', label: 'All products' },
-  { value: 'inverter', label: 'Inverters' },
-  { value: 'battery', label: 'Batteries' },
-  { value: 'panel', label: 'Solar Panels' },
-  { value: 'other', label: 'Components' },
+  { value: '',         label: 'All Products', Icon: Package },
+  { value: 'inverter', label: 'Inverters',    Icon: Zap     },
+  { value: 'battery',  label: 'Batteries',    Icon: Battery },
+  { value: 'panel',    label: 'Solar Panels', Icon: Sun     },
+  { value: 'other',    label: 'Components',   Icon: Wrench  },
 ]
 
 interface Props {
   products: Product[]
+  initialCategory?: string
+  initialBrand?: string
 }
 
-export function ProductGrid({ products }: Props) {
+export function ProductGrid({ products, initialCategory = '', initialBrand = '' }: Props) {
   const [search, setSearch] = useState('')
-  const [category, setCategory] = useState('')
-  const [brand, setBrand] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
+  const [category, setCategory] = useState(initialCategory)
+  const [brand, setBrand] = useState(initialBrand)
 
   const brands = useMemo(() => {
     const all = products.map(p => p.brand).filter(Boolean) as string[]
     return Array.from(new Set(all)).sort()
+  }, [products])
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { '': products.length }
+    for (const p of products) {
+      if (p.category) counts[p.category] = (counts[p.category] ?? 0) + 1
+    }
+    return counts
   }, [products])
 
   const filtered = useMemo(() => {
@@ -47,13 +54,73 @@ export function ProductGrid({ products }: Props) {
     })
   }, [products, category, brand, search])
 
-  const activeFilterCount = [category, brand].filter(Boolean).length
-
   return (
-    <div className="flex flex-col gap-4">
-      {/* Search + filter bar */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
+    <div className="flex gap-6">
+      {/* Left sidebar — desktop only */}
+      <aside className="hidden lg:flex flex-col w-52 shrink-0 gap-6">
+        {/* Categories */}
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-1">
+            Categories
+          </p>
+          <nav className="flex flex-col gap-0.5">
+            {CATEGORIES.map(({ value, label, Icon }) => (
+              <button
+                key={value}
+                onClick={() => setCategory(value)}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors text-left w-full ${
+                  category === value
+                    ? 'bg-primary text-primary-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="flex-1">{label}</span>
+                {categoryCounts[value] !== undefined && (
+                  <span className={`text-[10px] font-mono tabular-nums ${category === value ? 'opacity-70' : 'opacity-40'}`}>
+                    {categoryCounts[value]}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {/* Brand filter */}
+        {brands.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Brand</p>
+              {brand && (
+                <button onClick={() => setBrand('')} className="text-[10px] text-accent hover:underline">
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="flex flex-col gap-0.5">
+              {brands.map(b => (
+                <button
+                  key={b}
+                  onClick={() => setBrand(brand === b ? '' : b)}
+                  className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors text-left w-full ${
+                    brand === b
+                      ? 'bg-accent/10 text-accent font-medium'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${brand === b ? 'bg-accent' : 'bg-muted-foreground/30'}`} />
+                  {b}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col gap-4 min-w-0">
+        {/* Search bar */}
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search by name, SKU, or brand…"
@@ -70,109 +137,61 @@ export function ProductGrid({ products }: Props) {
             </button>
           )}
         </div>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setShowFilters(v => !v)}
-          className="relative"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          {activeFilterCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-accent text-accent-foreground text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
-              {activeFilterCount}
-            </span>
-          )}
-        </Button>
-      </div>
 
-      {/* Category pills (always visible) */}
-      <div className="flex gap-2 flex-wrap">
-        {CATEGORIES.map(c => (
-          <button
-            key={c.value}
-            onClick={() => setCategory(c.value)}
-            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
-              category === c.value
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'border-border hover:bg-muted'
-            }`}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Expanded filters */}
-      {showFilters && (
-        <div className="bg-muted rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">Filter by brand</p>
-            {brand && (
-              <button onClick={() => setBrand('')} className="text-xs text-accent hover:underline">
-                Clear
-              </button>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {brands.map(b => (
-              <button
-                key={b}
-                onClick={() => setBrand(brand === b ? '' : b)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${
-                  brand === b
-                    ? 'bg-accent text-accent-foreground border-accent'
-                    : 'bg-card border-border hover:bg-muted-foreground/10'
-                }`}
-              >
-                {b}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Active filters summary */}
-      {(category || brand) && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground">Active filters:</span>
-          {category && (
-            <Badge variant="accent" className="gap-1 cursor-pointer" onClick={() => setCategory('')}>
-              {CATEGORIES.find(c => c.value === category)?.label}
-              <X className="h-3 w-3" />
-            </Badge>
-          )}
-          {brand && (
-            <Badge variant="accent" className="gap-1 cursor-pointer" onClick={() => setBrand('')}>
-              {brand}
-              <X className="h-3 w-3" />
-            </Badge>
-          )}
-        </div>
-      )}
-
-      {/* Results count */}
-      <p className="text-sm text-muted-foreground">
-        {filtered.length} product{filtered.length !== 1 ? 's' : ''} found
-      </p>
-
-      {/* Grid */}
-      {filtered.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground">
-          <p className="font-medium">No products match your search</p>
-          <button
-            onClick={() => { setSearch(''); setCategory(''); setBrand('') }}
-            className="text-sm text-accent hover:underline mt-2"
-          >
-            Clear all filters
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {filtered.map(product => (
-            <ProductCard key={product.id} product={product} />
+        {/* Category pills — mobile/tablet only (hidden on lg) */}
+        <div className="flex gap-2 flex-wrap lg:hidden">
+          {CATEGORIES.map(({ value, label, Icon }) => (
+            <button
+              key={value}
+              onClick={() => setCategory(value)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                category === value
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'border-border hover:bg-muted'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
           ))}
         </div>
-      )}
+
+        {/* Results summary */}
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            {filtered.length} product{filtered.length !== 1 ? 's' : ''}
+            {category ? ` · ${CATEGORIES.find(c => c.value === category)?.label}` : ''}
+            {brand ? ` · ${brand}` : ''}
+          </p>
+          {(category || brand || search) && (
+            <button
+              onClick={() => { setSearch(''); setCategory(''); setBrand('') }}
+              className="text-xs text-accent hover:underline shrink-0"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+
+        {/* Grid */}
+        {filtered.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground">
+            <p className="font-medium">No products match your search</p>
+            <button
+              onClick={() => { setSearch(''); setCategory(''); setBrand('') }}
+              className="text-sm text-accent hover:underline mt-2"
+            >
+              Clear all filters
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filtered.map(product => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

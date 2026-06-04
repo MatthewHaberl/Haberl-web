@@ -25,6 +25,7 @@ const employeeLinks = [
   { label: 'Customers', href: '/portal/employee/customers',        icon: Users,     roles: ['manager', 'admin'] },
   { label: 'Metrics',   href: '/portal/employee/metrics',          icon: BarChart2, roles: ['manager', 'admin'] },
   { label: 'Profile',   href: '/portal/employee/profile',          icon: User,      roles: ['field_worker', 'manager', 'admin'] },
+  { label: 'Shop Mgmt', href: '/portal/employee/shop',             icon: ShoppingBag, roles: ['admin'] },
   { label: 'Settings',  href: '/portal/employee/settings/brands',  icon: Settings,  roles: ['admin'] },
 ]
 
