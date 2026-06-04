@@ -112,11 +112,11 @@ export function SolarMap({
 
   useEffect(() => {
     if (window.google?.maps) { setMapsLoaded(true); return }
-    const existing = document.querySelector<HTMLScriptElement>('script[data-solar-maps]')
+    const existing = document.querySelector<HTMLScriptElement>('script[data-gmaps]')
     if (existing) { existing.addEventListener('load', () => setMapsLoaded(true), { once: true }); return }
     const script = document.createElement('script')
-    script.setAttribute('data-solar-maps', '1')
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}`
+    script.setAttribute('data-gmaps', '1')
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&libraries=places`
     script.async = true
     script.onload = () => setMapsLoaded(true)
     document.head.appendChild(script)

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import { detectMunicipality, MUNICIPALITIES } from '@/lib/solar/municipalities'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { FileText, Loader2, CheckCircle2, Upload, X, Image as ImageIcon } from 'lucide-react'
 import type { EquipmentBrand } from '@/types/database'
 
@@ -326,11 +327,11 @@ export function QuoteForm({ brands }: Props) {
               </Field>
             </div>
             <Field label="Address">
-              <Input
+              <AddressAutocomplete
                 value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                onChange={setAddress}
                 onBlur={handleAddressBlur}
-                placeholder="12 Maple Street, Midrand, 1685 — municipality auto-detects on exit"
+                placeholder="Start typing an address — select from Google suggestions"
               />
             </Field>
           </CardContent>
