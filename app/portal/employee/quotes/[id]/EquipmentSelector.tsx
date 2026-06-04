@@ -332,24 +332,35 @@ export function EquipmentSelector({
   const preferredBatteryBrand = isSpecificBrand(request.battery_brand) ? String(request.battery_brand) : null
   const preferredPanelBrand = isSpecificBrand(request.panel_brand) ? String(request.panel_brand) : null
 
-  const inverterOptions = useMemo(
-    () => catalog.filter((item) =>
+  const inverterBrandInCatalog = !preferredInverterBrand || catalog.some((item) => item.category === 'inverter' && item.active && brandMatchesPreference(item.brand, preferredInverterBrand))
+  const batteryBrandInCatalog = !preferredBatteryBrand || catalog.some((item) => item.category === 'battery' && item.active && brandMatchesPreference(item.brand, preferredBatteryBrand))
+  const panelBrandInCatalog = !preferredPanelBrand || catalog.some((item) => item.category === 'panel' && item.active && brandMatchesPreference(item.brand, preferredPanelBrand))
+
+  const inverterOptions = useMemo(() => {
+    const filtered = catalog.filter((item) =>
       item.category === 'inverter' &&
       item.active &&
       (item.phase === phase || item.phase === 'any') &&
       brandMatchesPreference(item.brand, preferredInverterBrand),
-    ),
-    [catalog, phase, preferredInverterBrand],
-  )
+    )
+    if (filtered.length > 0) return filtered
+    // Brand not in catalog — show all phase-compatible inverters
+    return catalog.filter((item) =>
+      item.category === 'inverter' &&
+      item.active &&
+      (item.phase === phase || item.phase === 'any'),
+    )
+  }, [catalog, phase, preferredInverterBrand])
 
-  const panelOptions = useMemo(
-    () => catalog.filter((item) =>
+  const panelOptions = useMemo(() => {
+    const filtered = catalog.filter((item) =>
       item.category === 'panel' &&
       item.active &&
       brandMatchesPreference(item.brand, preferredPanelBrand),
-    ),
-    [catalog, preferredPanelBrand],
-  )
+    )
+    if (filtered.length > 0) return filtered
+    return catalog.filter((item) => item.category === 'panel' && item.active)
+  }, [catalog, preferredPanelBrand])
 
   const fallbackInverter = useMemo(
     () => pickClosestInverter(inverterOptions, targetKw),
@@ -359,15 +370,21 @@ export function EquipmentSelector({
     ? inverterId
     : (fallbackInverter?.id ?? inverterOptions[0]?.id ?? '')
   const selectedInverter = inverterOptions.find((item) => item.id === effectiveInverterId) ?? catalog.find((item) => item.id === effectiveInverterId) ?? null
-  const batteryOptions = useMemo(
-    () => catalog.filter((item) =>
+  const batteryOptions = useMemo(() => {
+    const filtered = catalog.filter((item) =>
       item.category === 'battery' &&
       item.active &&
       brandMatchesPreference(item.brand, preferredBatteryBrand) &&
       (!selectedInverter || isBatteryCompatibleWithInverter(selectedInverter, item)),
-    ),
-    [catalog, preferredBatteryBrand, selectedInverter],
-  )
+    )
+    if (filtered.length > 0) return filtered
+    // Brand not in catalog — show all compatible batteries
+    return catalog.filter((item) =>
+      item.category === 'battery' &&
+      item.active &&
+      (!selectedInverter || isBatteryCompatibleWithInverter(selectedInverter, item)),
+    )
+  }, [catalog, preferredBatteryBrand, selectedInverter])
   const effectiveBatteryId = batteryOptions.some((item) => item.id === batteryId) ? batteryId : (batteryOptions[0]?.id ?? '')
   const effectivePanelId = panelOptions.some((item) => item.id === panelId) ? panelId : (panelOptions[0]?.id ?? '')
   const selectedBattery = batteryOptions.find((item) => item.id === effectiveBatteryId) ?? catalog.find((item) => item.id === effectiveBatteryId) ?? null
@@ -610,7 +627,11 @@ export function EquipmentSelector({
               <option key={item.id} value={item.id}>{optionLabel(item)}</option>
             ))}
           </select>
-          {preferredInverterBrand && <span className="text-xs text-muted-foreground">Filtered to {preferredInverterBrand}</span>}
+          {preferredInverterBrand && (
+            <span className={`text-xs ${inverterBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
+              {inverterBrandInCatalog ? `Filtered to ${preferredInverterBrand}` : `${preferredInverterBrand} not in catalog — showing all`}
+            </span>
+          )}
         </label>
 
         <label className="flex flex-col gap-1.5">
@@ -627,7 +648,11 @@ export function EquipmentSelector({
               <option key={item.id} value={item.id}>{optionLabel(item)}</option>
             ))}
           </select>
-          {preferredBatteryBrand && <span className="text-xs text-muted-foreground">Filtered to {preferredBatteryBrand}</span>}
+          {preferredBatteryBrand && (
+            <span className={`text-xs ${batteryBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
+              {batteryBrandInCatalog ? `Filtered to ${preferredBatteryBrand}` : `${preferredBatteryBrand} not in catalog — showing all`}
+            </span>
+          )}
           {!preferredBatteryBrand && selectedInverter && (
             <span className="text-xs text-muted-foreground">
               Showing batteries that work with {selectedInverter.brand}.
@@ -649,7 +674,11 @@ export function EquipmentSelector({
               <option key={item.id} value={item.id}>{optionLabel(item)}</option>
             ))}
           </select>
-          {preferredPanelBrand && <span className="text-xs text-muted-foreground">Filtered to {preferredPanelBrand}</span>}
+          {preferredPanelBrand && (
+            <span className={`text-xs ${panelBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
+              {panelBrandInCatalog ? `Filtered to ${preferredPanelBrand}` : `${preferredPanelBrand} not in catalog — showing all`}
+            </span>
+          )}
         </label>
       </div>
 
