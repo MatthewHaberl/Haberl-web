@@ -11,9 +11,9 @@ export async function GET(req: Request) {
   const input = searchParams.get('input')?.trim() ?? ''
   if (input.length < 3) return Response.json({ suggestions: [] })
 
-  // Prefer the solar key (server-only, no referrer restrictions).
-  // Fall back to the Maps key which also has Places API (New) enabled.
-  const apiKey = process.env.GOOGLE_SOLAR_API_KEY ?? process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY
+  // Use the Maps key — confirmed to have Places API (New) enabled.
+  // Server-to-server calls skip referrer restrictions entirely.
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? process.env.GOOGLE_SOLAR_API_KEY
   if (!apiKey) return Response.json({ suggestions: [] })
 
   const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
