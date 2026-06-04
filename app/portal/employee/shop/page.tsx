@@ -119,7 +119,7 @@ export default async function ShopAdminPage() {
             <p className="text-sm text-muted-foreground text-center py-6">No orders yet</p>
           ) : (
             <div className="divide-y divide-border">
-              {recentOrders.map((o: { id: string; status: string; total: number | null; created_at: string; customer?: { full_name: string } | null }) => (
+              {(recentOrders as unknown as Array<{ id: string; status: string; total: number | null; created_at: string; customer?: { full_name: string } | null }>).map((o) => (
                 <div key={o.id} className="flex items-center justify-between py-3 gap-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">

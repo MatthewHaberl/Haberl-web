@@ -66,7 +66,7 @@ export default async function OrdersPage() {
         <div className="flex flex-col gap-4">
           {orders.map(order => {
             const customer = Array.isArray(order.customer) ? order.customer[0] : order.customer
-            const items = (order.items ?? []) as Array<{
+            const items = (order.items ?? []) as unknown as Array<{
               id: string; quantity: number; unit_price: number; total_price: number
               product: { name: string; sku: string | null } | null
             }>

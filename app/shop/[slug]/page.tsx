@@ -127,7 +127,7 @@ export default async function ProductDetailPage({
               <div className="flex items-center gap-2 flex-wrap">
                 {product.brand && <Badge variant="outline">{product.brand}</Badge>}
                 {product.category && (
-                  <Badge variant="secondary">{categoryLabel[product.category] ?? product.category}</Badge>
+                  <Badge variant="outline">{categoryLabel[product.category] ?? product.category}</Badge>
                 )}
               </div>
 
