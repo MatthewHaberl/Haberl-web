@@ -255,6 +255,71 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     }))
   }, [setEdges])
 
+  // ── Label move (from dragging cable label) ────────────────────────────────
+  const onEdgeLabelMove = useCallback((edgeId: string, offsetX: number, offsetY: number) => {
+    setEdges((eds) => eds.map((e) => {
+      if (e.id !== edgeId) return e
+      const newData = { ...(e.data ?? {}), labelOffsetX: offsetX, labelOffsetY: offsetY } as unknown as CableEdgeData
+      return { ...e, data: newData }
+    }))
+  }, [setEdges])
+
+  // ── Add connector node adjacent to a specific handle ──────────────────────
+  const onAddConnectorAt = useCallback((nodeId: string, handleId: string, connectorType = 'MC4') => {
+    const node = nodes.find((n) => n.id === nodeId)
+    if (!node) return
+    const NW = 210 // approx node width
+    const NH = 140 // approx node height
+
+    // Estimate position based on handle side
+    let cx = node.position.x + NW / 2 - 45 // connector ~90px wide, center it
+    let cy = node.position.y
+
+    if (['dc-out', 'bat-out', 'earth-out', 'out'].includes(handleId)) {
+      cy = node.position.y + NH + 30
+    } else if (['pv-in', 'in', 'bat-in'].includes(handleId) || handleId.startsWith('str-')) {
+      cy = node.position.y - 80
+    } else if (['grid-in', 'gen-in', 'ac-in', 'in-l'].includes(handleId)) {
+      cx = node.position.x - 120
+      cy = node.position.y + NH / 2 - 25
+    } else if (['ac-out', 'ac-out-2', 'out-r'].includes(handleId)) {
+      cx = node.position.x + NW + 20
+      cy = node.position.y + NH / 2 - 25
+    }
+
+    const connId = `connector-${Date.now()}`
+    const connData = { label: connectorType, connectorType, qty: 2, color: '#64748b' }
+    const newConn: Node = { id: connId, type: 'connector', position: { x: cx, y: cy }, data: connData }
+
+    // Auto-draw an edge between the parent handle and the connector
+    const circuitType = inferCircuitType(node.type ?? '', 'connector')
+    const spec = specForCircuit(circuitType)
+    const edgeData: CableEdgeData = {
+      spec, lengthM: 1, circuitType,
+      cableType: spec.split(' ')[0],
+      crossSection: spec.match(/\d+mm²/)?.[0] ?? '6mm²',
+      isDirect: true, // connector-to-node is a direct link by default
+    }
+    const edgeId = `e-${nodeId}-${connId}`
+    const isSource = ['dc-out', 'bat-out', 'earth-out', 'ac-out', 'ac-out-2', 'out', 'out-r'].includes(handleId)
+
+    const newEdge: Edge = {
+      id: edgeId,
+      type: 'cable',
+      source: isSource ? nodeId : connId,
+      sourceHandle: isSource ? handleId : 'out',
+      target: isSource ? connId : nodeId,
+      targetHandle: isSource ? 'in' : handleId,
+      data: edgeData,
+      label: 'Direct Bus',
+    }
+
+    setNodes((nds) => [...nds, newConn])
+    setEdges((eds) => [...eds, newEdge])
+    setSelectedNodeId(connId)
+    setSelectedEdgeId(null)
+  }, [nodes, setNodes, setEdges])
+
   // ── Connect ────────────────────────────────────────────────────────────────
   const onConnect = useCallback((connection: Connection) => {
     const srcType = nodes.find((n) => n.id === connection.source)?.type ?? ''
@@ -491,10 +556,11 @@ function DiagramInner({ quoteData, gridSupply, height = 680, onSldChange }: Prop
     onDeselect: handlePaneClick,
     connectMode,
     onToggleConnect: () => setConnectMode((v) => !v),
+    onAddConnectorAt,
   }
 
   // ── Context value ──────────────────────────────────────────────────────────
-  const sldContextValue = { layerVisibility, onWaypointChange }
+  const sldContextValue = { layerVisibility, onWaypointChange, onEdgeLabelMove }
 
   const panel = (
     <div style={{

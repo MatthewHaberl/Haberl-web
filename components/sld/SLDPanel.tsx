@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import { Trash2, Plus, MousePointerClick, Copy, BarChart2, Layers } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Trash2, Plus, MousePointerClick, Copy, BarChart2, Layers, Database } from 'lucide-react'
 import type { Node, Edge } from '@xyflow/react'
 import { CLR } from './sld-nodes'
 import type { CableEdgeData } from '@/lib/solar/sld-builder'
 import type { DiagramLayerState } from '@/types/sld-components'
 import { getLugSpecsCached, estimateMountingStructure, calculateOptimalEarthPoints } from '@/lib/solar/lug-calculator'
+import { createClient } from '@/lib/supabase/client'
 import { CIRCUIT_LAYER_COLORS, toggleLayerVisibility, showAllLayers } from '@/lib/solar/circuit-layer-manager'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -306,13 +307,120 @@ function MountingStructurePreview({ panelCount, rows, cols, orientation, mountTy
 
 // ── Node editor ───────────────────────────────────────────────────────────────
 
+// ── Connector node editor with product DB lookup ──────────────────────────────
+
+interface CatalogConnector { id: string; sku: string; description: string; brand?: string | null }
+
+function ConnectorEditor({
+  data, onUpdate,
+}: {
+  data: Record<string, unknown>
+  onUpdate: (patch: Record<string, unknown>) => void
+}) {
+  const [catalog, setCatalog] = useState<CatalogConnector[]>([])
+  const [loading, setLoading] = useState(false)
+  const [showCatalog, setShowCatalog] = useState(false)
+
+  const loadCatalog = async () => {
+    if (catalog.length > 0) { setShowCatalog(true); return }
+    setLoading(true)
+    const sb = createClient()
+    const { data: rows } = await sb
+      .from('equipment_catalog')
+      .select('id, sku, description, brand')
+      .eq('category', 'connector')
+      .eq('active', true)
+      .order('brand', { ascending: true })
+    setCatalog((rows as CatalogConnector[] | null) ?? [])
+    setLoading(false)
+    setShowCatalog(true)
+  }
+
+  const pick = (item: CatalogConnector) => {
+    const label = item.description.split(' ')[0] // e.g. "MC4"
+    onUpdate({ label, connectorType: label, sku: item.sku, catalogId: item.id, notes: item.description })
+    setShowCatalog(false)
+  }
+
+  return (
+    <>
+      <SectionHead title="Connector" />
+      <FieldRow label="Type">
+        <SInput
+          value={String(data.connectorType ?? 'MC4')}
+          onChange={(v) => onUpdate({ connectorType: v, label: v })}
+          options={CONNECTOR_TYPES}
+        />
+      </FieldRow>
+      <FieldRow label="Qty">
+        <NInput value={data.qty as number ?? 1} onChange={(v) => onUpdate({ qty: v })} min={1} />
+      </FieldRow>
+      <FieldRow label="Notes / pin ref">
+        <TInput
+          value={String(data.notes ?? '')}
+          onChange={(v) => onUpdate({ notes: v })}
+          placeholder="e.g. +/− pair, male side"
+        />
+      </FieldRow>
+      {data.sku && (
+        <div className="text-xs text-muted-foreground mb-2">SKU: <span className="font-mono">{String(data.sku)}</span></div>
+      )}
+      <button
+        type="button"
+        onClick={loadCatalog}
+        className="flex items-center gap-1.5 text-xs text-accent hover:text-accent/80 mb-2"
+      >
+        <Database size={11} /> {loading ? 'Loading…' : 'Pick from product catalog'}
+      </button>
+      {showCatalog && catalog.length > 0 && (
+        <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden', marginBottom: 8 }}>
+          <div style={{ background: '#f9fafb', padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>
+            Connector catalog
+            <button type="button" onClick={() => setShowCatalog(false)} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#9ca3af' }}>✕</button>
+          </div>
+          {catalog.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => pick(item)}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, borderBottom: '1px solid #f3f4f6' }}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = '#f0f9ff')}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'none')}
+            >
+              <span style={{ fontWeight: 600, color: '#111827' }}>{item.sku}</span>
+              <span style={{ color: '#6b7280', marginLeft: 6 }}>{item.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {showCatalog && catalog.length === 0 && !loading && (
+        <p className="text-xs text-muted-foreground mb-2">No connector products in catalog yet.</p>
+      )}
+    </>
+  )
+}
+
+// ── "Add connector at handle" button ─────────────────────────────────────────
+function AddConnBtn({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-accent px-2 py-0.5 rounded border border-slate-200 hover:border-accent/40 hover:bg-accent/5 mb-1 mr-1"
+    >
+      <Plus size={9} /> {label}
+    </button>
+  )
+}
+
 function NodeEditor({
-  node, edges, onUpdate, onDelete, onDuplicate,
+  node, edges, onUpdate, onDelete, onDuplicate, onAddConnectorAt,
 }: {
   node: Node; edges: Edge[]
   onUpdate: (id: string, patch: Record<string, unknown>) => void
   onDelete: (id: string) => void
   onDuplicate: (id: string) => void
+  onAddConnectorAt?: (nodeId: string, handleId: string) => void
 }) {
   const d = node.data as Record<string, unknown>
   const t = node.type ?? 'custom'
@@ -356,17 +464,32 @@ function NodeEditor({
           <SectionHead title="PV String" />
           <div className="grid grid-cols-2 gap-2">
             <FieldRow label="Panel count">
-              <NInput value={d.panelCount as number ?? 0} onChange={(v) => set('panelCount', v)} min={1} />
+              <NInput
+                value={d.panelCount as number ?? 0}
+                onChange={(v) => {
+                  const kwp = +(((d.wpPerPanel as number ?? 0) * v) / 1000).toFixed(2)
+                  onUpdate(node.id, { panelCount: v, config: `${v}S`, ...(kwp > 0 ? { totalKwp: kwp } : {}) })
+                }}
+                min={1}
+              />
             </FieldRow>
             <FieldRow label="W / panel">
-              <NInput value={d.wpPerPanel as number ?? 0} onChange={(v) => set('wpPerPanel', v)} min={1} />
+              <NInput
+                value={d.wpPerPanel as number ?? 0}
+                onChange={(v) => {
+                  const kwp = +(((d.panelCount as number ?? 0) * v) / 1000).toFixed(2)
+                  onUpdate(node.id, { wpPerPanel: v, ...(kwp > 0 ? { totalKwp: kwp } : {}) })
+                }}
+                min={1}
+              />
             </FieldRow>
           </div>
-          <FieldRow label="Config (e.g. 4S)">
-            <TInput value={String(d.config ?? '')} onChange={(v) => set('config', v)} placeholder="4S or 2S×3P" />
+          {/* Config is auto-calculated but user can override */}
+          <FieldRow label="Config (auto-calc, override if needed)">
+            <TInput value={String(d.config ?? '')} onChange={(v) => set('config', v)} placeholder="7S" />
           </FieldRow>
 
-          <SectionHead title="Connector" />
+          <SectionHead title="DC Output Connector" />
           <div className="grid grid-cols-2 gap-2">
             <FieldRow label="Type">
               <SInput value={String(d.connectorType ?? 'MC4')} onChange={(v) => set('connectorType', v)} options={CONNECTOR_TYPES} />
@@ -375,6 +498,9 @@ function NodeEditor({
               <NInput value={d.connectorQty as number ?? (d.panelCount as number ?? 0)} onChange={(v) => set('connectorQty', v)} min={1} />
             </FieldRow>
           </div>
+          {onAddConnectorAt && (
+            <AddConnBtn label="Place connector block at DC output" onClick={() => onAddConnectorAt(node.id, 'dc-out')} />
+          )}
 
           <SectionHead title="Mounting Layout" />
           {(() => {
@@ -384,7 +510,18 @@ function NodeEditor({
                 <>
                   <RowLayoutEditor
                     rows={layout}
-                    onChange={(rows) => set('mountingLayout', rows)}
+                    onChange={(rows) => {
+                      const total = rows.reduce((s, r) => s + (r.count || 0), 0)
+                      const kwp = +(((d.wpPerPanel as number ?? 0) * total) / 1000).toFixed(2)
+                      onUpdate(node.id, {
+                        mountingLayout: rows,
+                        ...(total > 0 ? {
+                          panelCount: total,
+                          config: `${total}S`,
+                          ...(kwp > 0 ? { totalKwp: kwp } : {}),
+                        } : {}),
+                      })
+                    }}
                   />
                   <MountingStructurePreview
                     panelCount={layout.reduce((s, r) => s + (r.count || 0), 0) || (d.panelCount as number ?? 0)}
@@ -433,14 +570,17 @@ function NodeEditor({
                 />
                 <button
                   type="button"
-                  onClick={() => set('mountingLayout', [
-                    {
-                      id: `row-${Date.now()}`,
-                      count: d.panelCount as number ?? 0,
-                      orientation: (String(d.mountingOrientation ?? 'portrait')) as 'portrait' | 'landscape',
-                      mountType: String(d.mountingType ?? 'Rail system'),
-                    },
-                  ])}
+                  onClick={() => onUpdate(node.id, {
+                    mountingLayout: [
+                      {
+                        id: `row-${Date.now()}`,
+                        count: d.panelCount as number ?? 0,
+                        orientation: (String(d.mountingOrientation ?? 'portrait')) as 'portrait' | 'landscape',
+                        mountType: String(d.mountingType ?? 'Rail system'),
+                      },
+                    ],
+                    config: `${d.panelCount as number ?? 0}S`,
+                  })}
                   className="text-xs text-accent hover:text-accent/80 mt-1 flex items-center gap-1"
                 >
                   <Plus size={11} /> Custom rows
@@ -489,6 +629,14 @@ function NodeEditor({
           </FieldRow>
           <CheckRow label="SPD (Type 2) included" checked={!!d.hasSpd} onChange={(v) => set('hasSpd', v)} />
 
+          <SectionHead title="Connectors at string inputs" />
+          {onAddConnectorAt && Array.from({ length: Math.max(1, d.stringCount as number ?? 2) }, (_, i) => (
+            <AddConnBtn key={i} label={`String ${i + 1} input`} onClick={() => onAddConnectorAt(node.id, `str-${i}`)} />
+          ))}
+          {onAddConnectorAt && (
+            <AddConnBtn label="DC output" onClick={() => onAddConnectorAt(node.id, 'dc-out')} />
+          )}
+
           <SectionHead title="Material & Earthing" />
           <CheckRow label="Plastic housing" checked={!!d.plastic} onChange={(v) => set('plastic', v)} />
           <CheckRow label="Metal frame / enclosure" checked={!!d.metal} onChange={(v) => set('metal', v)} />
@@ -529,6 +677,15 @@ function NodeEditor({
           </div>
           <CheckRow label="Has EPS / backup output" checked={!!d.hasEpsOutput} onChange={(v) => set('hasEpsOutput', v)} />
           <CheckRow label="Has generator input" checked={!!d.hasGenerator} onChange={(v) => set('hasGenerator', v)} />
+
+          {onAddConnectorAt && (
+            <div className="flex flex-wrap gap-1 mt-1 mb-2">
+              <AddConnBtn label="PV input" onClick={() => onAddConnectorAt(node.id, 'pv-in')} />
+              <AddConnBtn label="Battery port" onClick={() => onAddConnectorAt(node.id, 'bat-in')} />
+              <AddConnBtn label="Grid input" onClick={() => onAddConnectorAt(node.id, 'grid-in')} />
+              <AddConnBtn label="AC output" onClick={() => onAddConnectorAt(node.id, 'ac-out')} />
+            </div>
+          )}
 
           <SectionHead title="Output 1 — Main AC" />
           <FieldRow label="Connector type">
@@ -591,6 +748,9 @@ function NodeEditor({
           <FieldRow label="Chemistry">
             <SInput value={String(d.chemistry ?? 'LiFePO4')} onChange={(v) => set('chemistry', v)} options={['LiFePO4', 'Li-NMC', 'Lead Acid', 'Other']} />
           </FieldRow>
+          {onAddConnectorAt && (
+            <AddConnBtn label="Place connector at battery output" onClick={() => onAddConnectorAt(node.id, 'bat-out')} />
+          )}
         </>
       )}
 
@@ -624,6 +784,9 @@ function NodeEditor({
               <NInput value={d.rccbA as number ?? 30} onChange={(v) => set('rccbA', v)} />
             </FieldRow>
           </div>
+          {onAddConnectorAt && (
+            <AddConnBtn label="Place connector at AC input" onClick={() => onAddConnectorAt(node.id, 'ac-in')} />
+          )}
         </>
       )}
 
@@ -677,18 +840,7 @@ function NodeEditor({
 
       {/* ── Connector / Lug ──────────────────────────────────────────────────── */}
       {t === 'connector' && (
-        <>
-          <SectionHead title="Connector" />
-          <FieldRow label="Type">
-            <SInput value={String(d.connectorType ?? 'MC4')} onChange={(v) => { set('connectorType', v); set('label', v) }} options={CONNECTOR_TYPES} />
-          </FieldRow>
-          <FieldRow label="Qty">
-            <NInput value={d.qty as number ?? 1} onChange={(v) => set('qty', v)} min={1} />
-          </FieldRow>
-          <FieldRow label="Notes / pin ref">
-            <TInput value={String(d.notes ?? '')} onChange={(v) => set('notes', v)} placeholder="e.g. +/− pair, male side" />
-          </FieldRow>
-        </>
+        <ConnectorEditor data={d} onUpdate={(patch) => onUpdate(node.id, patch)} />
       )}
 
       {/* ── Conductors + SKU ─────────────────────────────────────────────────── */}
@@ -1026,6 +1178,7 @@ export interface SLDPanelProps {
   onDeselect: () => void
   connectMode?: boolean
   onToggleConnect?: () => void
+  onAddConnectorAt?: (nodeId: string, handleId: string) => void
 }
 
 export function SLDPanel({
@@ -1039,6 +1192,7 @@ export function SLDPanel({
   onDeselect,
   connectMode = false,
   onToggleConnect,
+  onAddConnectorAt,
 }: SLDPanelProps) {
   const hasSelection = !!(selectedNode ?? selectedEdge)
   const title = selectedNode ? 'Component' : selectedEdge ? 'Cable' : connectMode ? 'Connect Mode' : 'Diagram'
@@ -1073,6 +1227,7 @@ export function SLDPanel({
             onUpdate={onUpdateNode}
             onDelete={onDeleteNode}
             onDuplicate={onDuplicateNode}
+            onAddConnectorAt={onAddConnectorAt}
           />
         )}
 

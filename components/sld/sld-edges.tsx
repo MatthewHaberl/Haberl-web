@@ -51,7 +51,7 @@ export function CableEdge({
   selected,
 }: EdgeProps) {
   const d = data as CableEdgeData | undefined
-  const { layerVisibility, onWaypointChange } = useSLDContext()
+  const { layerVisibility, onWaypointChange, onEdgeLabelMove } = useSLDContext()
   const { screenToFlowPosition } = useReactFlow()
 
   // Layer visibility check
@@ -127,6 +127,28 @@ export function CableEdge({
   const lugSpec = (d as any)?.lugs as { count: number; size: string } | undefined
   const lugSuffix = lugSpec ? ` (${lugSpec.count}×${lugSpec.size})` : ''
   const dispLabel = (label as string | undefined) ?? ''
+
+  // Label drag offset (persisted in edge data)
+  const labelOffsetX = ((d as any)?.labelOffsetX as number) ?? 0
+  const labelOffsetY = ((d as any)?.labelOffsetY as number) ?? 0
+
+  const startLabelDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const fp0 = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+    const origX = labelOffsetX
+    const origY = labelOffsetY
+    const onMove = (mv: PointerEvent) => {
+      const fp = screenToFlowPosition({ x: mv.clientX, y: mv.clientY })
+      onEdgeLabelMove(id, origX + (fp.x - fp0.x), origY + (fp.y - fp0.y))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 
   // Direct bus connection — thick solid line, no cable label
   if (isDirect) {
@@ -243,20 +265,24 @@ export function CableEdge({
           </div>
         )}
 
-        {/* Cable label (power circuits) */}
+        {/* Cable label (power circuits) — draggable */}
         {dispLabel && !isCommunication && (
           <div
             className="nodrag nopan"
+            onPointerDown={startLabelDrag}
+            title="Drag to reposition label"
             style={{
               position: 'absolute',
-              transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)`,
+              transform: `translate(-50%,-50%) translate(${labelX + labelOffsetX}px,${labelY + labelOffsetY}px)`,
               pointerEvents: 'all',
+              cursor: 'grab',
               background: '#fff', border: `1.5px solid ${color}`,
               borderRadius: 4, padding: '2px 6px',
               fontSize: 9, color, fontWeight: 700,
               fontFamily: 'ui-monospace, monospace',
               whiteSpace: 'nowrap', lineHeight: 1.5,
               boxShadow: '0 1px 4px rgba(0,0,0,0.10)',
+              userSelect: 'none',
             }}
           >
             {dispLabel}{lugSuffix}
