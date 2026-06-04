@@ -68,6 +68,65 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
   )
 }
 
+// ── Existing-equipment row (dropdown + qty + model text) ─────
+function ExistingEquipmentRow({
+  label,
+  brands,
+  withQty,
+  modelPlaceholder,
+  onChange,
+}: {
+  label: string
+  brands: string[]
+  withQty: boolean
+  modelPlaceholder: string
+  onChange: (v: string) => void
+}) {
+  const [brand, setBrand] = useState('')
+  const [model, setModel] = useState('')
+  const [qty,   setQty]   = useState('1')
+
+  function emit(b: string, m: string, q: string) {
+    const desc = b === 'Other' || !b
+      ? m
+      : [b, m].filter(Boolean).join(' ')
+    if (!desc) { onChange(''); return }
+    onChange(withQty ? `${q} × ${desc}` : desc)
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <div className="flex gap-2">
+        {withQty && (
+          <Input
+            value={qty}
+            onChange={(e) => { setQty(e.target.value); emit(brand, model, e.target.value) }}
+            type="number" min="1"
+            className="w-16 shrink-0"
+            placeholder="Qty"
+          />
+        )}
+        <select
+          value={brand}
+          onChange={(e) => { setBrand(e.target.value); emit(e.target.value, model, qty) }}
+          className="flex h-10 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <option value="">Brand…</option>
+          {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+          <option value="Other">Other</option>
+        </select>
+        <Input
+          value={model}
+          onChange={(e) => { setModel(e.target.value); emit(brand, e.target.value, qty) }}
+          placeholder={brand === 'Other' ? 'Describe fully (brand + model + size)…' : modelPlaceholder}
+          className="flex-1"
+        />
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ───────────────────────────────────────────
 interface Prefill {
   customer_name: string
@@ -368,16 +427,28 @@ export function QuoteForm({ brands, prefill }: Props) {
           <Card className="border-warning">
             <CardContent className="pt-5 pb-5 flex flex-col gap-4">
               <SectionHead title="Existing System" />
-              <div className="grid sm:grid-cols-2 gap-4">
-                <Field label="Current Inverter (brand + model)">
-                  <Input value={existingInverter} onChange={(e) => setExistingInverter(e.target.value)} placeholder="e.g. Deye 16kW SUN-16K-SG01LP1-EU" />
-                </Field>
-                <Field label="Current Batteries (qty × brand × kWh)">
-                  <Input value={existingBatteries} onChange={(e) => setExistingBatteries(e.target.value)} placeholder="e.g. 2 × Deye SE-G5.3 (5.32kWh each)" />
-                </Field>
-                <Field label="Current Panels (qty × brand × W)">
-                  <Input value={existingPanels} onChange={(e) => setExistingPanels(e.target.value)} placeholder="e.g. 8 × JA Solar 600W" />
-                </Field>
+              <div className="flex flex-col gap-4">
+                <ExistingEquipmentRow
+                  label="Current Inverter"
+                  brands={inverterBrands}
+                  withQty={false}
+                  modelPlaceholder="Model (e.g. SUN-16K-SG01LP1-EU)"
+                  onChange={setExistingInverter}
+                />
+                <ExistingEquipmentRow
+                  label="Current Batteries"
+                  brands={batteryBrands}
+                  withQty={true}
+                  modelPlaceholder="Model + capacity (e.g. SE-G5.3 5.32kWh)"
+                  onChange={setExistingBatteries}
+                />
+                <ExistingEquipmentRow
+                  label="Current Panels"
+                  brands={panelBrands}
+                  withQty={true}
+                  modelPlaceholder="Wattage (e.g. 600W)"
+                  onChange={setExistingPanels}
+                />
               </div>
               <div className="grid sm:grid-cols-3 gap-4">
                 <Field label="Monthly Usage (kWh)">
