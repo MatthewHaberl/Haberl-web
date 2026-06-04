@@ -49,7 +49,7 @@ export function AddressAutocomplete({ value, onChange, onBlur, placeholder }: Pr
   const [open, setOpen] = useState(false)
   const placesRef = useRef<PlacesLib>(null)
   const sessionRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     loadPlaces().then((places) => {
