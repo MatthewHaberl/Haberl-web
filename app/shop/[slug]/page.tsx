@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { ChevronRight, Zap, Battery, Sun, Package } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Metadata } from 'next'
-import type { Product, EquipmentCatalogItem } from '@/types/database'
+import type { Product, EquipmentCatalogItem, ProductDocument } from '@/types/database'
 
 const categoryLabel: Record<string, string> = {
   inverter: 'Inverters',
@@ -73,6 +73,34 @@ export default async function ProductDetailPage({
       .eq('id', product.external_id)
       .single()
     catalogItem = data ?? null
+  }
+
+  // Fetch published product documents for this product's brand
+  let productDocs: ProductDocument[] = []
+  if (product.brand) {
+    const query = supabase
+      .from('product_documents')
+      .select('*')
+      .eq('status', 'published')
+      .eq('brand', product.brand)
+      .order('doc_type')
+      .order('title')
+
+    // Prefer docs linked directly to this product, then brand-wide docs
+    const { data: linked } = await supabase
+      .from('product_documents')
+      .select('*')
+      .eq('status', 'published')
+      .eq('product_id', product.id)
+      .order('doc_type')
+      .order('title')
+
+    if (linked && linked.length > 0) {
+      productDocs = linked as ProductDocument[]
+    } else {
+      const { data: brandDocs } = await query
+      productDocs = (brandDocs ?? []) as ProductDocument[]
+    }
   }
 
   const cat = product.category ?? 'other'
@@ -198,7 +226,7 @@ export default async function ProductDetailPage({
 
           {/* Tabs: Overview | Specifications | Downloads */}
           <div className="mt-10 bg-card border border-border rounded-2xl overflow-hidden">
-            <ProductTabs product={product} catalogItem={catalogItem} />
+            <ProductTabs product={product} catalogItem={catalogItem} productDocs={productDocs} />
           </div>
         </div>
       </main>

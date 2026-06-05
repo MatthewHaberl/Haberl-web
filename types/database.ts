@@ -247,6 +247,31 @@ export interface ProductRelationship {
   related_product?: Product
 }
 
+export type ProductDocType =
+  | 'datasheet' | 'manual' | 'installation_guide' | 'drawing'
+  | '3d_model' | 'wiring_diagram' | 'warranty' | 'certification' | 'other'
+
+export type ProductDocStatus = 'pending_review' | 'published' | 'rejected'
+
+export interface ProductDocument {
+  id: string
+  product_id: string | null
+  brand: string
+  product_family: string
+  doc_type: ProductDocType
+  title: string
+  url: string | null
+  file_path: string | null
+  file_size_kb: number | null
+  language: string
+  version: string | null
+  status: ProductDocStatus
+  notes: string | null
+  source: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Order {
   id: string
   customer_id: string
