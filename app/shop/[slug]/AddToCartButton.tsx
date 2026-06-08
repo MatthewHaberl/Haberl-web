@@ -36,7 +36,7 @@ export function AddToCartButton({ product, disabled = false }: Props) {
       variant={added ? 'outline' : 'accent'}
       onClick={handleAdd}
       disabled={disabled}
-      className="flex-1 sm:flex-none sm:min-w-40 transition-all"
+      className="w-full transition-all"
     >
       {added ? (
         <>

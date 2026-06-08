@@ -210,7 +210,9 @@ export default async function ProductDetailPage({
 
               {/* Actions */}
               <div className="flex items-center gap-3">
-                <AddToCartButton product={product} disabled={product.stock_qty === 0} />
+                <div className="flex-1">
+                  <AddToCartButton product={product} disabled={product.stock_qty === 0} />
+                </div>
                 <CartButton />
               </div>
 
