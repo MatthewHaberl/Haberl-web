@@ -272,6 +272,23 @@ export interface ProductDocument {
   updated_at: string
 }
 
+export type ProductImageStatus = 'pending_review' | 'published' | 'rejected'
+
+export interface ProductImage {
+  id: string
+  product_id: string | null
+  brand: string
+  product_family: string
+  url: string
+  alt_text: string | null
+  source: string | null
+  notes: string | null
+  status: ProductImageStatus
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
 export interface Order {
   id: string
   customer_id: string

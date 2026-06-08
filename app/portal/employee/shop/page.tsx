@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
 import {
-  ShoppingBag, Package, Tag, Percent, Truck, BarChart2, ArrowRight, TrendingUp, FileText
+  ShoppingBag, Package, Tag, Percent, Truck, BarChart2, ArrowRight, TrendingUp, FileText, Images
 } from 'lucide-react'
 import type { Metadata } from 'next'
 
@@ -25,6 +25,7 @@ export default async function ShopAdminPage() {
     { count: priceListCount },
     { count: discountCount },
     { count: pendingDocsCount },
+    { count: pendingImagesCount },
     { data: recentOrders },
     { data: revenueData },
   ] = await Promise.all([
@@ -33,6 +34,7 @@ export default async function ShopAdminPage() {
     supabase.from('price_lists').select('id', { count: 'exact', head: true }).eq('active', true),
     supabase.from('discount_codes').select('id', { count: 'exact', head: true }).eq('active', true),
     supabase.from('product_documents').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
+    supabase.from('product_images').select('id', { count: 'exact', head: true }).eq('status', 'pending_review'),
     supabase.from('orders').select('id, status, total, created_at, customer:user_profiles(full_name)').order('created_at', { ascending: false }).limit(5),
     supabase.from('orders').select('total').eq('status', 'paid'),
   ])
@@ -47,6 +49,7 @@ export default async function ShopAdminPage() {
     { label: 'Orders', desc: `${orderCount ?? 0} total orders`, href: '/portal/employee/shop/orders', icon: ShoppingBag, badge: String(orderCount ?? 0) },
     { label: 'Product Relationships', desc: '"Goes with this" recommendations', href: '/portal/employee/shop/relationships', icon: BarChart2, badge: null },
     { label: 'Product Documents', desc: `${pendingDocsCount ?? 0} pending review`, href: '/portal/employee/shop/product-docs', icon: FileText, badge: pendingDocsCount ? String(pendingDocsCount) : null },
+    { label: 'Product Images', desc: `${pendingImagesCount ?? 0} pending review`, href: '/portal/employee/shop/product-images', icon: Images, badge: pendingImagesCount ? String(pendingImagesCount) : null },
   ]
 
   return (
