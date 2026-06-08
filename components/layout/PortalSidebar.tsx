@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
-  BarChart2, Users, Zap, User, Menu, X, FileText, Settings,
+  BarChart2, Users, Zap, User, Menu, X, FileText, Settings, Activity,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -12,10 +12,11 @@ import { createClient } from '@/lib/supabase/client'
 import type { Role } from '@/types/database'
 
 const customerLinks = [
-  { label: 'Dashboard', href: '/portal/customer',         icon: Home },
-  { label: 'My Sites',  href: '/portal/customer/sites',   icon: MapPin },
-  { label: 'Orders',    href: '/portal/customer/orders',  icon: ShoppingBag },
-  { label: 'Profile',   href: '/portal/customer/profile', icon: User },
+  { label: 'Dashboard',   href: '/portal/customer',              icon: Home },
+  { label: 'My Sites',    href: '/portal/customer/sites',        icon: MapPin },
+  { label: 'Monitoring',  href: '/portal/customer/monitoring',   icon: Activity },
+  { label: 'Orders',      href: '/portal/customer/orders',       icon: ShoppingBag },
+  { label: 'Profile',     href: '/portal/customer/profile',      icon: User },
 ]
 
 const employeeLinks = [
@@ -23,6 +24,7 @@ const employeeLinks = [
   { label: 'Jobs',      href: '/portal/employee/jobs',             icon: Briefcase, roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Quotes',    href: '/portal/employee/quotes',            icon: FileText,  roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Customers', href: '/portal/employee/customers',        icon: Users,     roles: ['manager', 'admin'] },
+  { label: 'Monitoring', href: '/portal/employee/monitoring',        icon: Activity,  roles: ['manager', 'admin'] },
   { label: 'Metrics',   href: '/portal/employee/metrics',          icon: BarChart2, roles: ['manager', 'admin'] },
   { label: 'Profile',   href: '/portal/employee/profile',          icon: User,      roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Shop Mgmt', href: '/portal/employee/shop',             icon: ShoppingBag, roles: ['admin'] },

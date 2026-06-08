@@ -1,0 +1,45 @@
+import type { BrandAdapter, MonitoringBrand } from '../types'
+import { AdapterError } from '../types'
+import { solarmanAdapter } from './solarman'
+import { sigenegyAdapter } from './sigenergy'
+import { foxessAdapter }   from './foxess'
+import { growattAdapter }  from './growatt'
+import { victronAdapter }  from './victron'
+import { solaxAdapter }    from './solax'
+import { solisAdapter }    from './solis'
+import { goodweAdapter }   from './goodwe'
+import { huaweiAdapter }   from './huawei'
+import { luxpowerAdapter } from './luxpower'
+
+function notImplemented(brand: MonitoringBrand): BrandAdapter {
+  return {
+    async fetchReading() {
+      throw new AdapterError(`${brand} adapter not yet implemented`, brand, false)
+    },
+  }
+}
+
+const adapters: Record<MonitoringBrand, BrandAdapter> = {
+  // Solarman cloud backend — covers both Deye and Sunsynk
+  sunsynk:   solarmanAdapter,
+  deye:      solarmanAdapter,
+  // Individual cloud APIs
+  sigenergy: sigenegyAdapter,
+  foxess:    foxessAdapter,
+  growatt:   growattAdapter,
+  victron:   victronAdapter,
+  solax:     solaxAdapter,
+  solis:     solisAdapter,
+  goodwe:    goodweAdapter,
+  huawei:    huaweiAdapter,
+  // Local RS485 only — no public cloud API
+  luxpower:  luxpowerAdapter,
+  // Local push endpoint (Pi/ESP device POSTs to /api/monitoring/local-push)
+  local:     notImplemented('local'),
+}
+
+export function getAdapter(brand: MonitoringBrand): BrandAdapter {
+  return adapters[brand]
+}
+
+export { AdapterError }
