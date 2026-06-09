@@ -4,14 +4,13 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { MapPin, Calendar, ChevronLeft } from 'lucide-react'
+import { MapPin, Calendar, ChevronLeft, FileText } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import type { Job, JobTask, JobStatus } from '@/types/database'
+import { STAGE_META } from '@/lib/jobs/stages'
+import type { Job, JobTask, JobMaterial, JobStatusHistory } from '@/types/database'
 import { JobActions } from './JobActions'
-
-const statusVariant: Record<JobStatus, 'default' | 'warning' | 'success' | 'destructive'> = {
-  pending: 'default', in_progress: 'warning', completed: 'success', cancelled: 'destructive',
-}
+import { StagePipeline } from './StagePipeline'
+import { MaterialsPanel } from './MaterialsPanel'
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -20,16 +19,27 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const supabase = await createClient()
 
-  const [{ data: jobData }, { data: taskData }] = await Promise.all([
+  const [{ data: jobData }, { data: taskData }, { data: materialData }, { data: historyData }, { data: profile }] = await Promise.all([
     supabase.from('jobs').select('*, site:sites(name, address), assignee:user_profiles(full_name)').eq('id', id).single(),
     supabase.from('job_tasks').select('*').eq('job_id', id).order('id'),
+    supabase.from('job_materials').select('*').eq('job_id', id).order('sort_order'),
+    supabase.from('job_status_history').select('*, changer:user_profiles!changed_by(full_name)').eq('job_id', id).order('created_at'),
+    supabase.from('user_profiles').select('role').eq('id', user.id).single(),
   ])
 
   if (!jobData) notFound()
 
   const job = jobData as Job
   const tasks = (taskData as JobTask[]) ?? []
+  const materials = (materialData as JobMaterial[]) ?? []
+  const history = (historyData as JobStatusHistory[]) ?? []
   const site = job.site as { name: string; address: string } | null
+
+  const role = profile?.role ?? 'field_worker'
+  const isManager = role === 'manager' || role === 'admin'
+  const canAdvance = isManager || job.assigned_to === user.id
+
+  const stageMeta = STAGE_META[job.stage]
 
   return (
     <div className="flex flex-col gap-6">
@@ -47,8 +57,25 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             </p>
           )}
         </div>
-        <Badge variant={statusVariant[job.status]}>{job.status.replace('_', ' ')}</Badge>
+        <div className="flex items-center gap-2 shrink-0">
+          {job.quote_request_id && (
+            <Button asChild variant="ghost" size="sm">
+              <Link href={`/portal/employee/quotes/${job.quote_request_id}`}>
+                <FileText className="h-3.5 w-3.5" /> Quote
+              </Link>
+            </Button>
+          )}
+          <Badge variant={job.stage === 'completed' ? 'success' : job.stage === 'cancelled' ? 'destructive' : 'warning'}>
+            {stageMeta?.label ?? job.stage}
+          </Badge>
+        </div>
       </div>
+
+      <StagePipeline
+        job={{ id: job.id, stage: job.stage, on_hold_reason: job.on_hold_reason }}
+        history={history}
+        canAdvance={canAdvance}
+      />
 
       <div className="grid sm:grid-cols-2 gap-4">
         {job.scheduled_date && (
@@ -73,6 +100,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       </div>
 
       <JobActions initialJob={job} initialTasks={tasks} />
+
+      <MaterialsPanel
+        jobTitle={job.title}
+        materials={materials}
+        showPrices={isManager}
+      />
     </div>
   )
 }

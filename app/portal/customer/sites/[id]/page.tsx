@@ -5,19 +5,37 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { FileText, Calendar, Shield, Download, Wrench } from 'lucide-react'
+import { InstallationTracker } from '@/components/jobs/InstallationTracker'
+import type { Job, JobStatusHistory } from '@/types/database'
 
 export default async function SiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const user = await getUser()
   const supabase = await createClient()
 
-  const [{ data: site }, { data: documents }, { data: serviceRecords }] = await Promise.all([
+  const [{ data: site }, { data: documents }, { data: serviceRecords }, { data: jobs }] = await Promise.all([
     supabase.from('sites').select('*').eq('id', id).eq('customer_id', user!.id).single(),
     supabase.from('documents').select('*').eq('site_id', id).order('created_at', { ascending: false }),
     supabase.from('service_records').select('*, technician:user_profiles(full_name)').eq('site_id', id).order('date', { ascending: false }).limit(10),
+    supabase.from('jobs').select('id, title, stage, scheduled_date').eq('site_id', id).neq('stage', 'completed').neq('stage', 'cancelled').order('created_at', { ascending: false }),
   ])
 
   if (!site) notFound()
+
+  const activeJobs = (jobs ?? []) as Pick<Job, 'id' | 'title' | 'stage' | 'scheduled_date'>[]
+  const jobHistories = new Map<string, JobStatusHistory[]>()
+  if (activeJobs.length) {
+    const { data: historyRows } = await supabase
+      .from('job_status_history')
+      .select('*')
+      .in('job_id', activeJobs.map((j) => j.id))
+      .order('created_at')
+    for (const row of (historyRows ?? []) as JobStatusHistory[]) {
+      const list = jobHistories.get(row.job_id) ?? []
+      list.push(row)
+      jobHistories.set(row.job_id, list)
+    }
+  }
 
   const docTypeLabel: Record<string, string> = {
     coc: 'COC', sld: 'SLD', warranty: 'Warranty', invoice: 'Invoice', photo: 'Photo', other: 'Document',
@@ -55,6 +73,15 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
           </Card>
         ))}
       </div>
+
+      {/* Active installation progress */}
+      {activeJobs.map((job) => (
+        <InstallationTracker
+          key={job.id}
+          job={job}
+          history={jobHistories.get(job.id) ?? []}
+        />
+      ))}
 
       {/* Documents */}
       <Card>

@@ -51,6 +51,9 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   const photoUrls     = (req.photo_urls ?? []) as string[]
   const nextQuoteNum  = isAdmin ? await getNextQuoteNumber(supabase) : ''
 
+  const { data: linkedJob } = await supabase
+    .from('jobs').select('id').eq('quote_request_id', id).maybeSingle()
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const reqObj = req as Record<string, any>
 
@@ -100,6 +103,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
           <QuoteStatusBar
             requestId={req.id}
             initialStatus={req.status as QuoteRequestStatus}
+            initialJobId={linkedJob?.id ?? null}
           />
         ) : (
           <Badge variant={statusVariant[req.status as QuoteRequestStatus]} className="mt-1 shrink-0">

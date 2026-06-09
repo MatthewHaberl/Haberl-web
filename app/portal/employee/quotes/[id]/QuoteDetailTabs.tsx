@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { extractQuoteJson, type AnyQuoteData } from '@/lib/solar/render-quote'
 import { EquipmentSelector } from './EquipmentSelector'
-import { GenerateButton } from './GenerateButton'
-import { FileText, Workflow, Image, ClipboardList, Sun, Pencil, Save, X } from 'lucide-react'
+import { BomTab } from './BomTab'
+import { FileText, Workflow, Image, ClipboardList, Sun, Pencil, Save, X, PackageCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { MUNICIPALITIES } from '@/lib/solar/municipalities'
 
@@ -43,7 +43,7 @@ const SLDDiagram = dynamic(
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'] as const
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-type TabId = 'survey' | 'quote' | 'roof-design' | 'diagram' | 'photos'
+type TabId = 'survey' | 'quote' | 'roof-design' | 'diagram' | 'bom' | 'photos'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -113,8 +113,8 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   const [eRoofType,     setERoofType]     = useState<string>(req.roof_type      ?? '')
   const [eStoreys,      setEStoreys]      = useState<string>(req.storeys        ?? '')
   const [eMonthlyKwh,   setEMonthlyKwh]   = useState<string>(String(req.monthly_kwh ?? ''))
-  const [eSystemType,   setESystemType]   = useState<string>(req.system_type    ?? '')
-  const [eBatteryHours, setEBatteryHours] = useState<string>(req.battery_hours  ?? '')
+  const [eSystemType,   setESystemType]   = useState<string>(req.system_type === 'AI will determine' ? 'Auto — sized from usage' : (req.system_type ?? ''))
+  const [eBatteryHours, setEBatteryHours] = useState<string>(req.battery_hours === 'AI will determine' ? 'Auto — sized from usage' : (req.battery_hours ?? ''))
   const [eEssentialLoad,setEEssentialLoad]= useState<string>(String(req.essential_load ?? ''))
   const [eTargetOffgrid,setETargetOffgrid]= useState<string>(req.target_offgrid_pct != null ? String(req.target_offgrid_pct) : '')
   const [eEvCharger,    setEEvCharger]    = useState<string>(req.ev_charger     ?? '')
@@ -202,6 +202,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
     { id: 'quote',       label: 'Quote',       icon: FileText },
     { id: 'roof-design', label: 'Roof Design', icon: Sun },
     { id: 'diagram',     label: 'Diagram',     icon: Workflow },
+    ...(isAdmin ? [{ id: 'bom' as TabId, label: 'BOM', icon: PackageCheck }] : []),
     ...(photoUrls.length > 0
       ? [{ id: 'photos' as TabId, label: `Photos (${photoUrls.length})`, icon: Image }]
       : []),
@@ -393,12 +394,12 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
                     <label className="flex flex-col gap-1">
                       <span className="text-xs text-muted-foreground">System Type</span>
                       <EditSelect value={eSystemType} onChange={setESystemType}
-                        options={['AI will determine', 'Hybrid', 'Off-grid', 'Grid-tie']} />
+                        options={['Auto — sized from usage', 'Hybrid', 'Off-grid', 'Grid-tie']} />
                     </label>
                     <label className="flex flex-col gap-1">
                       <span className="text-xs text-muted-foreground">Battery Backup</span>
                       <EditSelect value={eBatteryHours} onChange={setEBatteryHours}
-                        options={['AI will determine', '2 hours', '4 hours', '6 hours', '8 hours', '12 hours']} />
+                        options={['Auto — sized from usage', '2 hours', '4 hours', '6 hours', '8 hours', '12 hours']} />
                     </label>
                     <label className="flex flex-col gap-1">
                       <span className="text-xs text-muted-foreground">Essential Load (kW)</span>
@@ -496,40 +497,20 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
                 <p className="text-sm text-muted-foreground mt-1">
                   {req.quote_html || req.generated_quote
                     ? 'Quote generated. Recalculate to refresh, or adjust deposit items before saving again.'
-                    : 'Select equipment, then calculate the quote instantly. AI stays available for edge cases.'}
+                    : 'Select equipment, then calculate the quote instantly — every price comes from the catalog rules.'}
                 </p>
               </div>
-              <>
-                <EquipmentSelector
-                  requestId={req.id}
-                  request={req}
-                  existingQuote={req.generated_quote ?? null}
-                  existingHtml={req.quote_html ?? null}
-                  existingDepositItems={(req.deposit_items ?? []) as string[]}
-                  existingQuoteNumber={req.quote_number ?? null}
-                  existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
-                  nextQuoteNumber={nextQuoteNum}
-                  onQuoteDataChange={setLiveQuoteData}
-                />
-                <details className="rounded-lg border border-border p-4">
-                  <summary className="cursor-pointer text-sm font-medium text-foreground">
-                    AI Override (amendments, complex systems)
-                  </summary>
-                  <div className="mt-4">
-                    <GenerateButton
-                      requestId={req.id}
-                      request={req}
-                      existingQuote={req.generated_quote ?? null}
-                      existingHtml={req.quote_html ?? null}
-                      existingDepositItems={(req.deposit_items ?? []) as string[]}
-                      existingQuoteNumber={req.quote_number ?? null}
-                      existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
-                      nextQuoteNumber={nextQuoteNum}
-                      onQuoteDataChange={setLiveQuoteData}
-                    />
-                  </div>
-                </details>
-              </>
+              <EquipmentSelector
+                requestId={req.id}
+                request={req}
+                existingQuote={req.generated_quote ?? null}
+                existingHtml={req.quote_html ?? null}
+                existingDepositItems={(req.deposit_items ?? []) as string[]}
+                existingQuoteNumber={req.quote_number ?? null}
+                existingQuoteVersion={(req.quote_version ?? 'simplified') as 'simplified' | 'detailed'}
+                nextQuoteNumber={nextQuoteNum}
+                onQuoteDataChange={setLiveQuoteData}
+              />
             </>
           ) : (
             <>
@@ -629,6 +610,19 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
               </CardContent>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* ── BOM tab ────────────────────────────────────────────────────────────── */}
+      {activeTab === 'bom' && isAdmin && (
+        <div className="pt-6">
+          <BomTab
+            quoteData={liveQuoteData}
+            quoteNumber={req.quote_number ?? null}
+            customerName={req.customer_name ?? ''}
+            siteAddress={req.address ?? ''}
+            onGoToQuoteTab={() => setActiveTab('quote')}
+          />
         </div>
       )}
 

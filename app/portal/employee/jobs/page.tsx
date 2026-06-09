@@ -4,13 +4,14 @@ import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { Briefcase, ChevronRight, Calendar, User } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import type { JobStatus, JobPriority } from '@/types/database'
+import { PIPELINE_STAGES, STAGE_META, stageIndex } from '@/lib/jobs/stages'
+import type { JobStage, JobPriority } from '@/types/database'
 
-const statusVariant: Record<JobStatus, 'default' | 'warning' | 'success' | 'destructive'> = {
-  pending:     'default',
-  in_progress: 'warning',
-  completed:   'success',
-  cancelled:   'destructive',
+const stageVariant = (stage: JobStage): 'default' | 'warning' | 'success' | 'destructive' => {
+  if (stage === 'completed') return 'success'
+  if (stage === 'cancelled') return 'destructive'
+  if (stage === 'on_hold') return 'destructive'
+  return 'warning'
 }
 
 const priorityVariant: Record<JobPriority, 'default' | 'warning' | 'destructive' | 'outline'> = {
@@ -43,8 +44,16 @@ export default async function JobsPage() {
 
   const { data: jobs } = await query
 
-  const active  = jobs?.filter((j) => j.status !== 'completed' && j.status !== 'cancelled') ?? []
-  const done    = jobs?.filter((j) => j.status === 'completed') ?? []
+  const active  = (jobs?.filter((j) => j.stage !== 'completed' && j.stage !== 'cancelled') ?? [])
+    .sort((a, b) => stageIndex(a.stage as JobStage) - stageIndex(b.stage as JobStage))
+  const done    = jobs?.filter((j) => j.stage === 'completed') ?? []
+
+  // Pipeline overview counts (active stages only)
+  const stageCounts = PIPELINE_STAGES.filter((s) => s !== 'completed').map((s) => ({
+    stage: s,
+    count: active.filter((j) => j.stage === s).length,
+  }))
+  const onHoldCount = active.filter((j) => j.stage === 'on_hold').length
 
   function JobCard({ job }: { job: typeof jobs extends (infer T)[] | null ? T : never }) {
     return (
@@ -55,7 +64,9 @@ export default async function JobsPage() {
               <p className="font-semibold text-sm leading-snug min-w-0 truncate">{job.title}</p>
               <div className="flex items-center gap-1.5 shrink-0">
                 <Badge variant={priorityVariant[job.priority as JobPriority]}>{job.priority}</Badge>
-                <Badge variant={statusVariant[job.status as JobStatus]}>{job.status.replace('_', ' ')}</Badge>
+                <Badge variant={stageVariant(job.stage as JobStage)}>
+                  {STAGE_META[job.stage as JobStage]?.label ?? job.stage}
+                </Badge>
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -94,6 +105,24 @@ export default async function JobsPage() {
           {active.length} active · {done.length} completed
         </p>
       </div>
+
+      {/* Pipeline overview */}
+      {active.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {stageCounts.filter(({ count }) => count > 0).map(({ stage, count }) => (
+            <div key={stage} className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs">
+              <span className="font-semibold">{count}</span>
+              <span className="text-muted-foreground">{STAGE_META[stage].label}</span>
+            </div>
+          ))}
+          {onHoldCount > 0 && (
+            <div className="flex items-center gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-2.5 py-1 text-xs">
+              <span className="font-semibold text-destructive">{onHoldCount}</span>
+              <span className="text-destructive">On hold</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {!active.length && !done.length ? (
         <Card>

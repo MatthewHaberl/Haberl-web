@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import { detectMunicipality, MUNICIPALITIES } from '@/lib/solar/municipalities'
+import { getTariffRateForMunicipality } from '@/lib/solar/quote-calculator'
 import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { FileText, Loader2, CheckCircle2, Upload, X, Image as ImageIcon } from 'lucide-react'
 import type { EquipmentBrand } from '@/types/database'
@@ -16,6 +17,19 @@ const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 type MonthKey = typeof MONTHS[number]
+
+const AUTO_SIZE = 'Auto — sized from usage'
+const NO_PREFERENCE = 'No preference'
+
+// Older quote requests stored AI-era labels — normalize so prefilled selects still match
+function normalizeAuto(value: string | null | undefined) {
+  if (!value || value === 'AI will determine') return AUTO_SIZE
+  return value
+}
+function normalizePreference(value: string | null | undefined) {
+  if (!value || value.startsWith('No preference')) return NO_PREFERENCE
+  return value
+}
 
 // ── Sub-components ───────────────────────────────────────────
 function SectionHead({ title }: { title: string }) {
@@ -182,23 +196,24 @@ export function QuoteForm({ brands, prefill }: Props) {
   // Usage
   const [usageMode,   setUsageMode]   = useState<'monthly' | 'advanced'>('monthly')
   const [monthlyKwh,  setMonthlyKwh]  = useState(prefill?.monthly_kwh ?? '')
+  const [monthlyBill, setMonthlyBill] = useState('')
   const [monthlyBreakdown, setMonthlyBreakdown] = useState<Record<MonthKey, string>>(
     Object.fromEntries(MONTHS.map((m) => [m, ''])) as Record<MonthKey, string>
   )
 
   // System requirements
-  const [systemType,       setSystemType]       = useState(prefill?.system_type    ?? 'AI will determine')
-  const [batteryHours,     setBatteryHours]      = useState(prefill?.battery_hours  ?? 'AI will determine')
+  const [systemType,       setSystemType]       = useState(normalizeAuto(prefill?.system_type))
+  const [batteryHours,     setBatteryHours]      = useState(normalizeAuto(prefill?.battery_hours))
   const [essentialLoad,    setEssentialLoad]     = useState(prefill?.essential_load ?? '')
   const [targetOffgrid,    setTargetOffgrid]     = useState('')
   const [evCharger,        setEvCharger]         = useState(prefill?.ev_charger     ?? 'No')
 
   // Equipment preferences
-  const [inverterBrand, setInverterBrand] = useState(prefill?.inverter_brand ?? 'No preference — AI will recommend')
+  const [inverterBrand, setInverterBrand] = useState(normalizePreference(prefill?.inverter_brand))
   const [inverterModel, setInverterModel] = useState('')
-  const [batteryBrand,  setBatteryBrand]  = useState(prefill?.battery_brand  ?? 'No preference — AI will recommend')
+  const [batteryBrand,  setBatteryBrand]  = useState(normalizePreference(prefill?.battery_brand))
   const [batteryModel,  setBatteryModel]  = useState('')
-  const [panelBrand,    setPanelBrand]    = useState(prefill?.panel_brand    ?? 'No preference — AI will recommend')
+  const [panelBrand,    setPanelBrand]    = useState(normalizePreference(prefill?.panel_brand))
   const [panelModel,    setPanelModel]    = useState('')
 
   // Photos
@@ -222,6 +237,24 @@ export function QuoteForm({ brands, prefill }: Props) {
   function handleAddressBlur() {
     const detected = detectMunicipality(address)
     if (detected) setMunicipality(detected)
+  }
+
+  // ── Bill (R) ↔ kWh conversion via municipality tariff ────
+  const tariffRate = getTariffRateForMunicipality(municipality)
+
+  function handleBillChange(value: string) {
+    setMonthlyBill(value)
+    const bill = parseFloat(value)
+    if (Number.isFinite(bill) && bill > 0 && tariffRate > 0) {
+      setMonthlyKwh(String(Math.round(bill / tariffRate)))
+    } else if (!value) {
+      setMonthlyKwh('')
+    }
+  }
+
+  function handleKwhChange(value: string) {
+    setMonthlyKwh(value)
+    setMonthlyBill('')
   }
 
   // ── Computed average kWh for advanced mode ────────────────
@@ -299,9 +332,9 @@ export function QuoteForm({ brands, prefill }: Props) {
         ev_charger:          evCharger,
         target_offgrid_pct:  targetOffgrid ? parseInt(targetOffgrid) : null,
         // Equipment
-        inverter_brand: [inverterBrand, inverterModel].filter(s => s && s !== 'No preference — AI will recommend').join(' ') || inverterBrand,
-        battery_brand:  [batteryBrand,  batteryModel ].filter(s => s && s !== 'No preference — AI will recommend').join(' ') || batteryBrand,
-        panel_brand:    [panelBrand,    panelModel   ].filter(s => s && s !== 'No preference — AI will recommend').join(' ') || panelBrand,
+        inverter_brand: [inverterBrand, inverterModel].filter(s => s && s !== NO_PREFERENCE).join(' ') || inverterBrand,
+        battery_brand:  [batteryBrand,  batteryModel ].filter(s => s && s !== NO_PREFERENCE).join(' ') || batteryBrand,
+        panel_brand:    [panelBrand,    panelModel   ].filter(s => s && s !== NO_PREFERENCE).join(' ') || panelBrand,
         // Amendment
         is_amendment:          isAmendment,
         existing_inverter:     isAmendment ? existingInverter  || null : null,
@@ -366,7 +399,8 @@ export function QuoteForm({ brands, prefill }: Props) {
       <div>
         <h1 className="text-2xl font-bold text-primary">New Quote Request</h1>
         <p className="text-muted-foreground mt-1">
-          Fill in the site survey — Matthew will review and generate the quote.
+          Only the customer name and energy usage are required — the calculator
+          auto-sizes the system, BOM, and pricing from those. Everything else refines the result.
         </p>
       </div>
 
@@ -524,13 +558,36 @@ export function QuoteForm({ brands, prefill }: Props) {
               </div>
 
               {usageMode === 'monthly' ? (
-                <Input
-                  value={monthlyKwh}
-                  onChange={(e) => setMonthlyKwh(e.target.value)}
-                  placeholder="Average monthly usage in kWh (e.g. 850)"
-                  type="number"
-                  min="0"
-                />
+                <div className="flex flex-col gap-1.5">
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">Average monthly usage (kWh)</span>
+                      <Input
+                        value={monthlyKwh}
+                        onChange={(e) => handleKwhChange(e.target.value)}
+                        placeholder="e.g. 850"
+                        type="number"
+                        min="0"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">…or average monthly bill (R)</span>
+                      <Input
+                        value={monthlyBill}
+                        onChange={(e) => handleBillChange(e.target.value)}
+                        placeholder="e.g. 2 400"
+                        type="number"
+                        min="0"
+                      />
+                    </label>
+                  </div>
+                  {monthlyBill && monthlyKwh && (
+                    <p className="text-xs text-muted-foreground">
+                      ≈ <span className="font-medium text-foreground">{monthlyKwh} kWh/month</span> at
+                      R{tariffRate.toFixed(2)}/kWh ({municipality})
+                    </p>
+                  )}
+                </div>
               ) : (
                 <div className="flex flex-col gap-2">
                   <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
@@ -559,6 +616,20 @@ export function QuoteForm({ brands, prefill }: Props) {
           </CardContent>
         </Card>
 
+        {/* ── Design preferences (optional — calculator auto-sizes) ── */}
+        <details className="group rounded-xl border border-border">
+          <summary className="cursor-pointer list-none px-5 py-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Design Preferences</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Optional — leave closed and the calculator sizes the system from usage alone.
+              </p>
+            </div>
+            <span className="text-xs text-muted-foreground group-open:hidden">Expand</span>
+            <span className="text-xs text-muted-foreground hidden group-open:inline">Collapse</span>
+          </summary>
+          <div className="flex flex-col gap-5 px-5 pb-5">
+
         {/* ── System requirements ───────────────────────────── */}
         <Card>
           <CardContent className="pt-5 pb-5 flex flex-col gap-4">
@@ -566,11 +637,11 @@ export function QuoteForm({ brands, prefill }: Props) {
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="System Type">
                 <Select value={systemType} onChange={setSystemType}
-                  options={['AI will determine', 'Hybrid', 'Off-grid', 'Grid-tie']} />
+                  options={[AUTO_SIZE, 'Hybrid', 'Off-grid', 'Grid-tie']} />
               </Field>
               <Field label="Battery Backup">
                 <Select value={batteryHours} onChange={setBatteryHours}
-                  options={['AI will determine', '2 hours', '4 hours', '6 hours', '8 hours', '12 hours']} />
+                  options={[AUTO_SIZE, '2 hours', '4 hours', '6 hours', '8 hours', '12 hours']} />
               </Field>
               <Field label="Essential Load During Backup (kW)">
                 <Input value={essentialLoad} onChange={(e) => setEssentialLoad(e.target.value)}
@@ -598,25 +669,25 @@ export function QuoteForm({ brands, prefill }: Props) {
             <SectionHead title="Equipment Preference" />
             <div className="grid sm:grid-cols-3 gap-4">
               <Field label="Inverter Brand">
-                <Select value={inverterBrand} onChange={(v) => { setInverterBrand(v); if (!v || v === 'No preference — AI will recommend') setInverterModel('') }}
-                  options={['No preference — AI will recommend', ...inverterBrands]} />
-                {inverterBrand && inverterBrand !== 'No preference — AI will recommend' && (
+                <Select value={inverterBrand} onChange={(v) => { setInverterBrand(v); if (!v || v === NO_PREFERENCE) setInverterModel('') }}
+                  options={[NO_PREFERENCE, ...inverterBrands]} />
+                {inverterBrand && inverterBrand !== NO_PREFERENCE && (
                   <Input value={inverterModel} onChange={(e) => setInverterModel(e.target.value)}
                     placeholder="Specific model (optional)" className="mt-1" />
                 )}
               </Field>
               <Field label="Battery Brand">
-                <Select value={batteryBrand} onChange={(v) => { setBatteryBrand(v); if (!v || v === 'No preference — AI will recommend') setBatteryModel('') }}
-                  options={['No preference — AI will recommend', ...batteryBrands]} />
-                {batteryBrand && batteryBrand !== 'No preference — AI will recommend' && (
+                <Select value={batteryBrand} onChange={(v) => { setBatteryBrand(v); if (!v || v === NO_PREFERENCE) setBatteryModel('') }}
+                  options={[NO_PREFERENCE, ...batteryBrands]} />
+                {batteryBrand && batteryBrand !== NO_PREFERENCE && (
                   <Input value={batteryModel} onChange={(e) => setBatteryModel(e.target.value)}
                     placeholder="Specific model (optional)" className="mt-1" />
                 )}
               </Field>
               <Field label="Panel Brand">
-                <Select value={panelBrand} onChange={(v) => { setPanelBrand(v); if (!v || v === 'No preference — AI will recommend') setPanelModel('') }}
-                  options={['No preference — AI will recommend', ...panelBrands]} />
-                {panelBrand && panelBrand !== 'No preference — AI will recommend' && (
+                <Select value={panelBrand} onChange={(v) => { setPanelBrand(v); if (!v || v === NO_PREFERENCE) setPanelModel('') }}
+                  options={[NO_PREFERENCE, ...panelBrands]} />
+                {panelBrand && panelBrand !== NO_PREFERENCE && (
                   <Input value={panelModel} onChange={(e) => setPanelModel(e.target.value)}
                     placeholder="Specific model (optional)" className="mt-1" />
                 )}
@@ -624,6 +695,9 @@ export function QuoteForm({ brands, prefill }: Props) {
             </div>
           </CardContent>
         </Card>
+
+          </div>
+        </details>
 
         {/* ── Site photos ───────────────────────────────────── */}
         <Card>

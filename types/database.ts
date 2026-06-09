@@ -82,6 +82,18 @@ export interface QuoteTierConfig {
   updated_at?: string
 }
 export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
+export type JobStage =
+  | 'deposit_pending'
+  | 'procurement'
+  | 'scheduled'
+  | 'installation'
+  | 'commissioning'
+  | 'coc'
+  | 'handover'
+  | 'follow_up'
+  | 'completed'
+  | 'on_hold'
+  | 'cancelled'
 export type OrderStatus = 'pending' | 'paid' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 export type DocumentType = 'coc' | 'sld' | 'warranty' | 'invoice' | 'photo' | 'other'
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'declined'
@@ -133,6 +145,9 @@ export interface Job {
   description: string | null
   scheduled_date: string | null
   status: JobStatus
+  stage: JobStage
+  on_hold_reason: string | null
+  quote_request_id: string | null
   priority: JobPriority
   created_by: string
   created_at: string
@@ -141,6 +156,34 @@ export interface Job {
   site?: Site
   assignee?: UserProfile
   tasks?: JobTask[]
+}
+
+export interface JobStatusHistory {
+  id: string
+  job_id: string
+  stage: JobStage | string
+  note: string | null
+  customer_visible: boolean
+  changed_by: string | null
+  created_at: string
+  // joined
+  changer?: { full_name: string }
+}
+
+export interface JobMaterial {
+  id: string
+  job_id: string
+  section: string
+  sku: string
+  description: string
+  qty_planned: number
+  qty_loaded: number
+  qty_used: number
+  qty_returned: number
+  unit_cost_cents: number
+  unit_sell_cents: number
+  sort_order: number
+  created_at: string
 }
 
 export interface JobTask {
