@@ -142,3 +142,32 @@ test('string physics blocks over-voltage strings and EV BOM carries Type B prote
   const swa = checks.find((c) => c.id === 'armoured-glands')
   assert.equal(swa?.status, 'pass', swa?.detail)
 })
+
+test('battery voltage class mismatch is a blocker (RULE-INV-06)', () => {
+  const fixture: CalculatorInput = {
+    ...michelleFixture,
+    equipment: {
+      ...michelleFixture.equipment,
+      // HV-battery inverter (Sungrow SH20T style spec) with a 51.2V LV battery
+      inverter: {
+        ...michelleFixture.equipment.inverter,
+        brand: 'Sungrow',
+        description: 'Sungrow 20kW 3P Hybrid',
+        notes: JSON.stringify({
+          max_dc_voltage: 1000, mppt_min: 150, mppts: 3,
+          battery_class: 'HV', battery_voltage_range: '100-700',
+        }),
+      },
+      battery: {
+        ...michelleFixture.equipment.battery,
+        brand: 'Sunsynk',
+        description: 'Sunsynk 5.32kWh LFP Wall Mount',
+        notes: JSON.stringify({ voltage: 51.2, battery_class: 'LV' }),
+      },
+      panel: { ...michelleFixture.equipment.panel, voc_volts: 52.16, isc_amps: 13.89 },
+    },
+  }
+  const quote = calculateQuote(fixture)
+  const check = (quote.complianceChecks ?? []).find((c) => c.id === 'battery-class')
+  assert.equal(check?.status, 'blocker', check?.detail)
+})

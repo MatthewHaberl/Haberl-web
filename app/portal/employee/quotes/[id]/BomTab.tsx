@@ -258,6 +258,9 @@ function CompliancePanel({ checks, warnings }: { checks: ComplianceCheck[]; warn
             {blockers > 0 && <Badge variant="destructive">{blockers} blocker{blockers === 1 ? '' : 's'}</Badge>}
             {warningCount > 0 && <Badge variant="warning">{warningCount} warning{warningCount === 1 ? '' : 's'}</Badge>}
             {blockers === 0 && warningCount === 0 && <Badge variant="success">All checks passing</Badge>}
+            <a href="/portal/employee/settings/rules" className="text-accent underline underline-offset-2">
+              All rules
+            </a>
           </div>
         </div>
 

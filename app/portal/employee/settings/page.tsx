@@ -17,6 +17,11 @@ const sections = [
     title: 'Tier Configs',
     description: 'Map size brackets to Premium, Recommended, and Budget equipment bundles.',
   },
+  {
+    href: '/portal/employee/settings/rules',
+    title: 'Design Rules',
+    description: 'Every SANS 10142-1 and field rule the calculator enforces, plus a live string designer using real catalog specs.',
+  },
 ]
 
 export default function SettingsRoot() {
@@ -29,7 +34,7 @@ export default function SettingsRoot() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         {sections.map((section) => (
           <Link key={section.href} href={section.href}>
             <Card className="h-full transition-colors hover:border-accent">

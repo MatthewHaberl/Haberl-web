@@ -124,6 +124,25 @@ export function estimateDcVoltageDropPct(opts: {
 
 // ── BOM verification ──────────────────────────────────────────────────────────
 
+// Battery voltage class from catalog notes JSON, with description fallback
+// (51.2/52V nameplate → LV; ≥90V → HV).
+export function parseBatteryClass(battery: Pick<EquipmentCatalogItem, 'notes' | 'description'>): 'LV' | 'HV' | 'PROPRIETARY' | null {
+  if (battery.notes) {
+    try {
+      const parsed = JSON.parse(battery.notes) as Record<string, unknown>
+      const cls = typeof parsed.battery_class === 'string' ? parsed.battery_class.toUpperCase() : null
+      if (cls === 'LV' || cls === 'HV' || cls === 'PROPRIETARY') return cls
+      const voltage = Number(parsed.voltage)
+      if (Number.isFinite(voltage) && voltage > 0) return voltage < 90 ? 'LV' : 'HV'
+    } catch { /* fall through to description */ }
+  }
+  const description = battery.description.toLowerCase()
+  if (/\b5[12](\.\d+)?\s*v\b/.test(description) || /\b48\s*v\b/.test(description)) return 'LV'
+  const voltsMatch = description.match(/(\d{2,3}(?:\.\d+)?)\s*v\b/)
+  if (voltsMatch) return Number(voltsMatch[1]) < 90 ? 'LV' : 'HV'
+  return null
+}
+
 export interface ComplianceContext {
   bom: SupplierBomItem[]
   layout: StringLayout
@@ -276,6 +295,41 @@ export function runComplianceChecks(ctx: ComplianceContext): ComplianceCheck[] {
   }
   add('earthing-site', 'Spike count site verification', 'RULE-ETH-01', 'info',
     'Final spike count is confirmed on site by soil resistivity test — quote carries the standard disclaimer.')
+
+  // ── Battery ↔ inverter voltage class (RULE-INV-06) ─────────────────────────
+  // LV (48/52V) batteries only on LV inverters; HV stacks only on HV inverters.
+  // Mixing destroys equipment. PROPRIETARY (Sigenergy) is brand-locked upstream.
+  if (battery.kwh) {
+    const batteryClass = parseBatteryClass(battery)
+    const inverterClass = spec?.batteryClass ?? null
+    if (inverterClass === 'PROPRIETARY' || batteryClass === 'PROPRIETARY') {
+      add('battery-class', 'Battery ↔ inverter voltage class', 'RULE-INV-06 / datasheet', 'pass',
+        'Proprietary stack system — brand compatibility enforced by the equipment selector.')
+    } else if (inverterClass && batteryClass) {
+      if (inverterClass === batteryClass) {
+        add('battery-class', 'Battery ↔ inverter voltage class', 'RULE-INV-06 / datasheet', 'pass',
+          `${batteryClass} battery on ${inverterClass} inverter${spec?.batteryVoltageRange ? ` (inverter window ${spec.batteryVoltageRange}V)` : ''}.`)
+      } else {
+        add('battery-class', 'Battery ↔ inverter voltage class', 'RULE-INV-06 / datasheet', 'blocker',
+          `${batteryClass} battery paired with ${inverterClass}-battery inverter — never mix voltage classes. ${battery.description} cannot connect to ${ctx.inverter.description}.`)
+      }
+    } else {
+      add('battery-class', 'Battery ↔ inverter voltage class', 'RULE-INV-06', 'info',
+        'Voltage class missing on inverter or battery catalog notes — add battery_class to enable this check.')
+    }
+  }
+
+  // ── Panel Isc vs MPPT input rating (datasheet physics) ──────────────────────
+  if (panel.isc_amps && spec?.maxIscPerMpptA) {
+    const perStringIsc = panel.isc_amps * layout.parallelStringsPerMppt
+    if (perStringIsc > spec.maxIscPerMpptA) {
+      add('mppt-isc', 'String current vs MPPT rating', 'Datasheet / IEC 62548', 'warning',
+        `≈ ${perStringIsc.toFixed(1)}A short-circuit current into one MPPT exceeds the inverter's ${spec.maxIscPerMpptA}A rating — reduce parallel strings or pick a lower-current panel.`)
+    } else {
+      add('mppt-isc', 'String current vs MPPT rating', 'Datasheet', 'pass',
+        `${perStringIsc.toFixed(1)}A per MPPT within the ${spec.maxIscPerMpptA}A input rating.`)
+    }
+  }
 
   // ── Battery ancillaries (RULE-INV-02/04, §7.12.4) ──────────────────────────
   if (battery.kwh) {

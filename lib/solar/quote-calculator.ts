@@ -150,6 +150,9 @@ export interface InverterSizingSpec {
   mpptMinVoltage?: number
   mpptMaxVoltage?: number
   mpptCount?: number
+  maxIscPerMpptA?: number
+  batteryClass?: string          // 'LV' | 'HV' | 'PROPRIETARY'
+  batteryVoltageRange?: string   // e.g. '40-60'
   rawNotes?: string
 }
 
@@ -382,6 +385,9 @@ export function parseInverterSizingSpec(notes: string | null | undefined): Inver
       mpptMinVoltage: coercePositiveNumber(parsed.mpptMinVoltage ?? parsed.mppt_min_voltage ?? parsed.mppt_min) ?? undefined,
       mpptMaxVoltage: coercePositiveNumber(parsed.mpptMaxVoltage ?? parsed.mppt_max_voltage ?? parsed.mppt_max) ?? undefined,
       mpptCount: coercePositiveNumber(parsed.mpptCount ?? parsed.mppt_count ?? parsed.mppts) ?? undefined,
+      maxIscPerMpptA: coercePositiveNumber(parsed.maxIscPerMpptA ?? parsed.max_isc_per_mppt_a) ?? undefined,
+      batteryClass: typeof parsed.battery_class === 'string' ? parsed.battery_class.trim().toUpperCase() : (typeof parsed.batteryClass === 'string' ? parsed.batteryClass.trim().toUpperCase() : undefined),
+      batteryVoltageRange: typeof parsed.battery_voltage_range === 'string' ? parsed.battery_voltage_range.trim() : undefined,
       rawNotes,
     }
   } catch {
