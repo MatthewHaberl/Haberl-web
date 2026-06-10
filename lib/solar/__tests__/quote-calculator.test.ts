@@ -1,9 +1,7 @@
+// Run with: npx tsx --test lib/solar/__tests__/quote-calculator.test.ts
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { CalculatorInput } from '../quote-calculator'
-
-// @ts-expect-error Node's strip-types runner needs the file extension here.
-const { calculateQuote } = await import('../quote-calculator.ts')
+import { calculateQuote, type CalculatorInput } from '../quote-calculator'
 
 const michelleFixture: CalculatorInput = {
   quoteNumber: 'QUO-2026-027',
@@ -87,9 +85,60 @@ test('calculator produces a deterministic Michelle quote close to the reference 
 
   assert.equal(Number(quote.panelCount), 14)
   assert.equal(Number(quote.batteryQty), 2)
-  assert.ok(Math.abs(quote.quoteTotalRands - 187024.24) <= 200, `Quote total was ${quote.quoteTotalRands}`)
+  // Reference 187,024.24 + R2,000 storey premium (RULE-SZ-04) + 2nd string DC
+  // breaker (RULE-STR-01) + string-count MC4 formula (RULE-MC4-01)
+  assert.ok(Math.abs(quote.quoteTotalRands - 189485.39) <= 250, `Quote total was ${quote.quoteTotalRands}`)
   assert.equal(Number(quote.depositTotalRands.toFixed(2)), Number(depositTotal.toFixed(2)))
-  assert.equal(labourValue, 8142.5)
+  // Labour = base 8,142.50 + R2,000 two-storey access premium
+  assert.equal(labourValue, 10142.5)
   assert.equal(Number(quote.earthingSpikeCount), 6)
-  assert.ok(Number(quote.paybackMonths) >= 68 && Number(quote.paybackMonths) <= 74, `Payback months was ${quote.paybackMonths}`)
+  assert.ok(Number(quote.paybackMonths) >= 68 && Number(quote.paybackMonths) <= 76, `Payback months was ${quote.paybackMonths}`)
+})
+
+test('SANS compliance checks pass on a standard hybrid BOM', () => {
+  const quote = calculateQuote(michelleFixture)
+  const checks = quote.complianceChecks ?? []
+
+  assert.ok(checks.length >= 10, `Expected a full check list, got ${checks.length}`)
+  const blockers = checks.filter((c) => c.status === 'blocker')
+  assert.deepEqual(blockers, [], `Unexpected blockers: ${blockers.map((c) => c.id).join(', ')}`)
+
+  // 14 panels with no inverter voltage spec \u2192 assumed 2 strings \u2192 2 DC breakers
+  const dcBreakers = quote.supplierBom!.find((item) => item.sku.startsWith('DC-MCB'))
+  assert.equal(dcBreakers?.quantity, 2)
+
+  // Glands itemized so RULE-CON-04 is verifiable
+  assert.ok(quote.supplierBom!.some((item) => /gland/i.test(item.description)))
+})
+
+test('string physics blocks over-voltage strings and EV BOM carries Type B protection', () => {
+  const fixture: CalculatorInput = {
+    ...michelleFixture,
+    evCharger: 'Yes \u2014 7kW',
+    equipment: {
+      ...michelleFixture.equipment,
+      inverter: {
+        ...michelleFixture.equipment.inverter,
+        // 500V max input forces short strings; 14 panels at 41.3V Voc in one
+        // string of 12 would exceed it cold
+        notes: JSON.stringify({ max_dc_voltage: 500, mppt_min: 100, mppts: 3 }),
+      },
+      panel: { ...michelleFixture.equipment.panel, voc_volts: 41.3, isc_amps: 13.95 },
+    },
+  }
+  const quote = calculateQuote(fixture)
+  const checks = quote.complianceChecks ?? []
+
+  const voc = checks.find((c) => c.id === 'string-voc')
+  assert.equal(voc?.status, 'pass', voc?.detail)
+
+  // EV protection kit (RULE-EV-01) \u2014 all mandatory items present
+  for (const id of ['ev-type-b', 'ev-db', 'ev-spd', 'ev-labels']) {
+    const check = checks.find((c) => c.id === id)
+    assert.equal(check?.status, 'pass', `${id}: ${check?.detail}`)
+  }
+
+  // Armoured EV feed carries SWA compression glands (\u00A76.3.7/\u00A76.13)
+  const swa = checks.find((c) => c.id === 'armoured-glands')
+  assert.equal(swa?.status, 'pass', swa?.detail)
 })

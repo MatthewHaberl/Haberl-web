@@ -12,7 +12,8 @@ import {
   type QuoteData,
   type SupplierBomItem,
 } from '@/lib/solar/render-quote'
-import { Download, PackageCheck, Printer } from 'lucide-react'
+import type { ComplianceCheck, ComplianceStatus } from '@/lib/solar/compliance'
+import { AlertTriangle, CheckCircle2, Download, Info, PackageCheck, Printer, ShieldCheck, XCircle } from 'lucide-react'
 
 function isMultiOption(data: AnyQuoteData): data is MultiOptionQuoteData {
   return (data as MultiOptionQuoteData).type === 'multi-option'
@@ -214,7 +215,81 @@ export function BomTab({ quoteData, quoteNumber, customerName, siteAddress, onGo
         <Badge variant="warning" className="mr-2">Internal</Badge>
         Cost columns are internal only — the printed picking list and customer quote never include them.
       </p>
+
+      <CompliancePanel
+        checks={activeOption?.complianceChecks ?? []}
+        warnings={activeOption?.calculationWarnings ?? []}
+      />
     </div>
+  )
+}
+
+const COMPLIANCE_STYLE: Record<ComplianceStatus, { icon: React.ElementType; className: string; label: string }> = {
+  pass:    { icon: CheckCircle2,  className: 'text-success',          label: 'Pass' },
+  info:    { icon: Info,          className: 'text-muted-foreground', label: 'Site check' },
+  warning: { icon: AlertTriangle, className: 'text-warning',          label: 'Warning' },
+  blocker: { icon: XCircle,       className: 'text-destructive',      label: 'Blocker' },
+}
+
+function CompliancePanel({ checks, warnings }: { checks: ComplianceCheck[]; warnings: string[] }) {
+  if (checks.length === 0 && warnings.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-5 text-sm text-muted-foreground">
+          No compliance results stored on this quote — recalculate to run the SANS 10142-1 checks.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const blockers = checks.filter((c) => c.status === 'blocker').length
+  const warningCount = checks.filter((c) => c.status === 'warning').length
+  const order: ComplianceStatus[] = ['blocker', 'warning', 'info', 'pass']
+  const sorted = [...checks].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status))
+
+  return (
+    <Card>
+      <CardContent className="pt-4 pb-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-accent" /> SANS 10142-1 &amp; Design Rule Checks
+          </h3>
+          <div className="flex items-center gap-2 text-xs">
+            {blockers > 0 && <Badge variant="destructive">{blockers} blocker{blockers === 1 ? '' : 's'}</Badge>}
+            {warningCount > 0 && <Badge variant="warning">{warningCount} warning{warningCount === 1 ? '' : 's'}</Badge>}
+            {blockers === 0 && warningCount === 0 && <Badge variant="success">All checks passing</Badge>}
+          </div>
+        </div>
+
+        <div className="flex flex-col divide-y divide-border">
+          {sorted.map((check) => {
+            const style = COMPLIANCE_STYLE[check.status]
+            const Icon = style.icon
+            return (
+              <div key={check.id} className="flex gap-3 py-2 text-sm">
+                <Icon className={`h-4 w-4 shrink-0 mt-0.5 ${style.className}`} />
+                <div className="min-w-0">
+                  <p className="font-medium leading-snug">
+                    {check.title}
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">{check.reference}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{check.detail}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {warnings.length > 0 && (
+          <div className="rounded-md bg-warning/10 border border-warning/40 px-3 py-2">
+            <p className="text-xs font-semibold mb-1">Calculator notes</p>
+            <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5">
+              {warnings.map((warning) => <li key={warning}>{warning}</li>)}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

@@ -7,6 +7,12 @@ import type {
   SupplierBomItem,
   TwentyYearRow,
 } from './render-quote'
+import {
+  computeStringLayout,
+  runComplianceChecks,
+  type ComplianceCheck,
+  type StringLayout,
+} from './compliance'
 
 export const PSH_GAUTENG = 5.3
 export const SYSTEM_EFFICIENCY = 0.8
@@ -53,9 +59,34 @@ const DC_BREAKER_SELL_BY_STANDARD: Record<number, number> = {
   40: 425.5,
 }
 
+// AC & DB section itemized per RULE-AC-01..04 (prices from pricing-reference.md).
+// The summed total replaces the old opaque "AC-DB-BUNDLE" line.
+const AC_DB_COMPONENTS = [
+  { sku: 'JN2125G63A', description: 'Chint 2P 63A changeover switch (grid/inverter isolation)', costRands: 468.8, sellRands: 539.12 },
+  { sku: 'NXB-63G-2P-C63', description: 'Chint 63A 2P MCB C-curve 6kA', costRands: 158.72, sellRands: 182.53 },
+  { sku: 'NU6-IIG-2P-40KA-275V', description: 'Chint AC SPD Type 2, 2P 40kA 275V', costRands: 484.29, sellRands: 556.93 },
+  { sku: 'DB-SH12PN', description: 'Chint 12-way essential loads DB IP65', costRands: 861.22, sellRands: 990.4 },
+  { sku: 'SP8X12-12-BK', description: '12-way black DIN terminal bar 25mm', costRands: 98, sellRands: 112.7 },
+  { sku: 'SP8X12-12-BLU', description: '12-way blue DIN terminal bar 25mm', costRands: 98, sellRands: 112.7 },
+  { sku: 'SP6X9-12-GN', description: '12-way green earth bar 16mm DIN', costRands: 52.44, sellRands: 60.31 },
+  { sku: 'CT50X50WHT', description: 'CT trunking PVC 50×50 white 3m', costRands: 205.68, sellRands: 236.53 },
+  { sku: 'AC-DB-SUNDRY', description: 'DB wiring sundries and integration allowance', costRands: roundCurrency(2200 / MARKUP), sellRands: 2200 },
+]
 const AC_DB_BUNDLE_SELL_RANDS = roundCurrency(
-  539.12 + 182.53 + 556.93 + 990.4 + 112.7 + 112.7 + 60.31 + 236.53 + 2200,
+  AC_DB_COMPONENTS.reduce((sum, item) => sum + item.sellRands, 0),
 )
+
+// Items priced at market estimate (RULE-PRC-03) — flagged for supplier
+// confirmation in the calculation warnings whenever they land on a BOM.
+const PV_STRING_FUSE_SELL_RANDS = roundCurrency(85 * MARKUP)            // gPV fuse + holder, per pole
+const BATTERY_COMMS_CABLE_SELL_RANDS = roundCurrency(250 * MARKUP)      // BMS↔inverter CAN/RS485 lead
+const BATTERY_CABLE_SET_SELL_RANDS = roundCurrency(807.68 * MARKUP)     // 4m 50mm² flex + 4× LS0440 lugs (RULE-INV-03)
+const BATTERY_FUSE_DISCONNECT_SELL_RANDS = 1036.84                      // 143018 KELEC NH00 2P 160A (priced)
+const EV_TYPE_B_ELCB_SELL_RANDS = roundCurrency(3200 * MARKUP)          // Noark EX9LB63 1P+N 63A 30mA Type B
+const EV_INPUT_DB_SELL_RANDS = 353.64                                   // DB-SH6PN (priced)
+const EV_SPD_SELL_RANDS = 556.93                                        // NU6-IIG-2P-40KA-275V (priced)
+const EV_WARNING_LABELS_SELL_RANDS = roundCurrency(120 * MARKUP)
+const SWA_GLAND_SELL_RANDS = roundCurrency(45 * MARKUP)                 // CW-type compression gland, per end
 const DC_COMBINER_ENCLOSURE_SELL_RANDS = 900
 const DC_SPD_SELL_RANDS = 1151.77
 const MC4_PAIR_SELL_RANDS = 19.55
@@ -114,6 +145,11 @@ export interface InverterSizingSpec {
   seriesMax?: number
   stringExample?: string
   batteryBrands?: string[]
+  // Electrical limits for string physics validation (compliance.ts)
+  maxDcVoltage?: number
+  mpptMinVoltage?: number
+  mpptMaxVoltage?: number
+  mpptCount?: number
   rawNotes?: string
 }
 
@@ -227,6 +263,8 @@ type Breakdown = {
   paybackMonthsEscalated: number
   warnings: string[]
   supplierBom: SupplierBomItem[]
+  complianceChecks: ComplianceCheck[]
+  stringLayout: StringLayout
   dcCombinerConfig: string
   monthlyGenTable: MonthlyGenRow[]
   twentyYearTable: TwentyYearRow[]
@@ -340,6 +378,10 @@ export function parseInverterSizingSpec(notes: string | null | undefined): Inver
       seriesMax: coercePositiveNumber(parsed.seriesMax ?? parsed.series_max) ?? undefined,
       stringExample: typeof parsed.stringExample === 'string' ? parsed.stringExample.trim() : (typeof parsed.string_example === 'string' ? parsed.string_example.trim() : undefined),
       batteryBrands: batteryBrands ?? undefined,
+      maxDcVoltage: coercePositiveNumber(parsed.maxDcVoltage ?? parsed.max_dc_voltage ?? parsed.max_input_voltage) ?? undefined,
+      mpptMinVoltage: coercePositiveNumber(parsed.mpptMinVoltage ?? parsed.mppt_min_voltage ?? parsed.mppt_min) ?? undefined,
+      mpptMaxVoltage: coercePositiveNumber(parsed.mpptMaxVoltage ?? parsed.mppt_max_voltage ?? parsed.mppt_max) ?? undefined,
+      mpptCount: coercePositiveNumber(parsed.mpptCount ?? parsed.mppt_count ?? parsed.mppts) ?? undefined,
       rawNotes,
     }
   } catch {
@@ -393,6 +435,23 @@ export function parseInverterSizingSpec(notes: string | null | undefined): Inver
         case 'compatible_battery_brands':
         case 'battery_compatibility':
           spec.batteryBrands = value.split(',').map((entry) => entry.trim()).filter(Boolean)
+          break
+        case 'max_dc_voltage':
+        case 'max_input_voltage':
+        case 'voc_max':
+          spec.maxDcVoltage = coercePositiveNumber(value) ?? undefined
+          break
+        case 'mppt_min_voltage':
+        case 'mppt_min':
+          spec.mpptMinVoltage = coercePositiveNumber(value) ?? undefined
+          break
+        case 'mppt_max_voltage':
+        case 'mppt_max':
+          spec.mpptMaxVoltage = coercePositiveNumber(value) ?? undefined
+          break
+        case 'mppt_count':
+        case 'mppts':
+          spec.mpptCount = coercePositiveNumber(value) ?? undefined
           break
         default:
           break
@@ -646,16 +705,20 @@ function getBatteryCount(input: CalculatorInput) {
   return Math.max(1, Math.ceil(requiredBatteryKwh / Math.max(batteryKwh, 0.1)))
 }
 
+// RULE-SZ-04: storey access premium — scaffolding/boom time on multi-storey roofs
 function getStoreysPremium(storeys: string) {
-  void storeys
+  const trimmed = (storeys ?? '').trim()
+  if (trimmed.startsWith('3')) return 5000
+  if (trimmed.startsWith('2')) return 2000
   return 0
 }
 
+// Matthew's confirmed rule: ≤3kW → 2, 4–5kW → 4, 6–10kW → 6, 11kW+ → 6
+// (final count always confirmed on site by soil resistivity test)
 function getEarthingSpikeCount(inverterKw: number) {
   if (inverterKw <= 3) return 2
   if (inverterKw <= 5) return 4
-  if (inverterKw <= 10) return 6
-  return 8
+  return 6
 }
 
 function getConsumablesBase(panelCount: number) {
@@ -664,19 +727,20 @@ function getConsumablesBase(panelCount: number) {
   return 1800
 }
 
+// RULE-CON-01/03: conduit in 4m lengths (round up), couplings = lengths − 1,
+// saddles = ceil(m/1.25), anchors = saddles × 2. Glands are itemized separately
+// (RULE-CON-04) so the BOM and compliance check can see them.
 function getConduitSellTotal(routeMetres: number) {
   const lengths = Math.max(1, Math.ceil(routeMetres / 4))
   const couplings = Math.max(0, lengths - 1)
   const saddles = Math.max(2, Math.ceil(routeMetres / 1.25))
   const anchors = saddles * 2
-  const glands = 2
 
   return roundCurrency(
     lengths * CONDUIT_LENGTH_SELL_RANDS +
       couplings * CONDUIT_COUPLING_SELL_RANDS +
       saddles * CONDUIT_SADDLE_SELL_RANDS +
-      anchors * CONDUIT_ANCHOR_SELL_RANDS +
-      glands * CONDUIT_GLAND_SELL_RANDS,
+      anchors * CONDUIT_ANCHOR_SELL_RANDS,
   )
 }
 
@@ -812,6 +876,10 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
     )
   }
 
+  // String layout from panel Voc + inverter electrical spec (physics in compliance.ts)
+  const sizingSpec = parseInverterSizingSpec(inverter.notes)
+  const stringLayout = computeStringLayout({ panelCount, panel, spec: sizingSpec })
+
   const minimumBatteryBankKwh = estimateMinimumBatteryKwh(inverterKw)
   const selectedBatteryBankKwh = roundCurrency((battery.kwh ?? 0) * batteryCount)
   if (selectedBatteryBankKwh < minimumBatteryBankKwh) {
@@ -830,7 +898,8 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   addBomItem(supplierBom, 'Panels & Mounting', panel.sku, `${panel.description} star deposit item`, panelCount, panelSell, panel.cost_rands)
   addBomItem(supplierBom, 'Panels & Mounting', 'MOUNT-STD', 'Mounting kit and rails', panelCount, 250, 250 / MARKUP)
 
-  const mc4PairCount = Math.max(2, Math.ceil(panelCount / 7))
+  // RULE-MC4-01: pairs by string count (2 per string) + 10% spare — never visual estimates
+  const mc4PairCount = Math.max(2, stringLayout.stringCount * 2 + Math.ceil(stringLayout.stringCount * 2 * 0.1))
   const cablesSellTotal = roundCurrency(
     routeMetres * CABLE_4MM_SELL_PER_M * 2 +
       routeMetres * EARTH_FLEX_SELL_PER_M +
@@ -848,15 +917,37 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
     warnings.push(`Panel Isc was missing, so the calculator estimated ${estimatedIsc.toFixed(2)}A from watts/40.`)
   }
 
+  // RULE-STR-01: breaker per string at Isc × 1.25. SANS 10142-1 §7.12.4: DC
+  // isolation + SPD on every install, even single strings. String fuses only
+  // when parallel strings share an MPPT (gPV, both poles).
   const dcBreakerStandard = getDcBreakerStandard(estimatedIsc * 1.25)
   const dcBreakerSell = DC_BREAKER_SELL_BY_STANDARD[dcBreakerStandard]
-  const dcProtectionSubtotalRands = roundCurrency(dcBreakerSell + DC_SPD_SELL_RANDS + DC_COMBINER_ENCLOSURE_SELL_RANDS)
-  const dcCombinerConfig = `${dcBreakerStandard}A DC breaker + SPD`
-  addBomItem(supplierBom, 'DC Protection', `DC-MCB-${dcBreakerStandard}`, `PV DC breaker ${dcBreakerStandard}A`, 1, dcBreakerSell, dcBreakerSell / MARKUP)
+  const stringFuseCount = stringLayout.parallelStringsPerMppt > 1 ? stringLayout.stringCount * 2 : 0
+  const dcProtectionSubtotalRands = roundCurrency(
+    dcBreakerSell * stringLayout.stringCount +
+      DC_SPD_SELL_RANDS +
+      DC_COMBINER_ENCLOSURE_SELL_RANDS +
+      stringFuseCount * PV_STRING_FUSE_SELL_RANDS,
+  )
+  const dcCombinerConfig = `${stringLayout.stringCount}-in, ${stringLayout.stringCount}-out — ${dcBreakerStandard}A breaker per string + SPD`
+  addBomItem(supplierBom, 'DC Protection', `DC-MCB-${dcBreakerStandard}`, `PV DC breaker ${dcBreakerStandard}A (per string)`, stringLayout.stringCount, dcBreakerSell, dcBreakerSell / MARKUP)
   addBomItem(supplierBom, 'DC Protection', 'DC-SPD', 'PV surge protection device', 1, DC_SPD_SELL_RANDS, 1001.54)
   addBomItem(supplierBom, 'DC Protection', 'DC-COMB', 'DC combiner enclosure', 1, DC_COMBINER_ENCLOSURE_SELL_RANDS, DC_COMBINER_ENCLOSURE_SELL_RANDS / MARKUP)
+  if (stringFuseCount > 0) {
+    addBomItem(supplierBom, 'DC Protection', 'GPV-FUSE', 'gPV string fuse + holder (both poles, paralleled strings)', stringFuseCount, PV_STRING_FUSE_SELL_RANDS)
+    warnings.push('gPV string fuses priced at market estimate — confirm with supplier before ordering (RULE-PRC-03).')
+  }
 
+  // RULE-INV-01/02/03/04: every battery system needs a monitoring device per
+  // inverter, BMS comms cable, DC fuse/disconnect, and properly sized DC cables.
+  // Brands with a configured gateway kit (Sigenergy) use it; everything else
+  // gets the generic ancillary set so these items are never silently omitted.
   const accessories = getBatteryAccessories(inverter.brand) ?? getBatteryAccessories(battery.brand)
+  const genericBatteryAncillariesSell = roundCurrency(
+    BATTERY_COMMS_CABLE_SELL_RANDS * inverterCount +
+      BATTERY_FUSE_DISCONNECT_SELL_RANDS * inverterCount +
+      BATTERY_CABLE_SET_SELL_RANDS * batteryCount,
+  )
   const batteryAccessoriesSellTotal = accessories
     ? roundCurrency(
         (
@@ -867,7 +958,7 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
           accessories.lugSellRands
         ) * inverterCount,
       )
-    : 0
+    : genericBatteryAncillariesSell
   const inverterSellTotal = roundCurrency(inverterCount * inverterSell)
   const batterySellTotal = roundCurrency(batteryCount * batterySell)
   const inverterBatterySubtotalRands = roundCurrency(inverterSellTotal + batterySellTotal + batteryAccessoriesSellTotal)
@@ -879,10 +970,17 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
     addBomItem(supplierBom, 'Inverter & Battery System', 'COMMS', 'Communication module', inverterCount, accessories.commsSellRands)
     addBomItem(supplierBom, 'Inverter & Battery System', 'FUSE', 'Battery fuse holder', inverterCount, accessories.fuseHolderSellRands)
     addBomItem(supplierBom, 'Inverter & Battery System', 'BAT-CABLE', 'Battery cable set and lugs', inverterCount, roundCurrency(accessories.cableSellRands + accessories.lugSellRands))
+  } else {
+    addBomItem(supplierBom, 'Inverter & Battery System', 'BAT-COMMS', 'Battery BMS communication cable (CAN/RS485)', inverterCount, BATTERY_COMMS_CABLE_SELL_RANDS)
+    addBomItem(supplierBom, 'Inverter & Battery System', '143018', 'KELEC NH00 battery fuse holder disconnect 2P 160A', inverterCount, BATTERY_FUSE_DISCONNECT_SELL_RANDS, 901.6)
+    addBomItem(supplierBom, 'Inverter & Battery System', 'BAT-CABLE-50', 'Battery cable set 50mm² flex (4m) + lugs', batteryCount, BATTERY_CABLE_SET_SELL_RANDS)
+    warnings.push('Battery comms cable and 50mm² cable set priced at market estimate — confirm with supplier before ordering (RULE-PRC-03). Check whether the inverter ships with a built-in monitoring dongle; add a gateway line if not.')
   }
 
   const acDbSubtotalRands = AC_DB_BUNDLE_SELL_RANDS
-  addBomItem(supplierBom, 'AC & DB Protection', 'AC-DB-BUNDLE', 'AC protection and essential loads DB bundle', 1, AC_DB_BUNDLE_SELL_RANDS)
+  for (const component of AC_DB_COMPONENTS) {
+    addBomItem(supplierBom, 'AC & DB Protection', component.sku, component.description, 1, component.sellRands, component.costRands)
+  }
 
   const earthingSpikeCount = getEarthingSpikeCount(inverterKw)
   const earthMutiCount = earthingSpikeCount
@@ -903,19 +1001,25 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   addBomItem(supplierBom, 'Earthing System', 'BCEW16.0MM', 'Bare copper earth wire', earthingWireMetres, BARE_EARTH_WIRE_SELL_PER_M, 47.18)
 
   const conduitSellTotal = getConduitSellTotal(routeMetres)
+  // RULE-CON-04: minimum 2 glands per DB (entry + exit) — IP rating is void without them
+  const dbGlandCount = 2
   const consumablesBase = roundCurrency(getConsumablesBase(panelCount) * MARKUP)
-  const consumablesSubtotalRands = roundCurrency(consumablesBase + conduitSellTotal + COC_RANDS)
+  const consumablesSubtotalRands = roundCurrency(consumablesBase + conduitSellTotal + dbGlandCount * CONDUIT_GLAND_SELL_RANDS + COC_RANDS)
   addBomItem(supplierBom, 'Consumables & Compliance', 'CONS-STD', 'Consumables allowance', 1, consumablesBase, consumablesBase / MARKUP)
   addBomItem(supplierBom, 'Consumables & Compliance', 'CONDUIT', 'Conduit and routing accessories', 1, conduitSellTotal, conduitSellTotal / MARKUP)
+  addBomItem(supplierBom, 'Consumables & Compliance', 'PMGB25-18', 'Nylon cable gland 25mm IP68 (DB entry/exit)', dbGlandCount, CONDUIT_GLAND_SELL_RANDS, 7.27)
   addBomItem(supplierBom, 'Consumables & Compliance', 'COC', 'Certificate of Compliance', 1, COC_RANDS, COC_RANDS)
 
   const storeysPremium = getStoreysPremium(input.storeys)
-  const labourSubtotalRands = roundCurrency(
+  const labourBaseRands = roundCurrency(
     (inverterWatts * inverterCount) * 0.25 +
-      panelCount * panelWatts * 0.75 +
-      storeysPremium,
+      panelCount * panelWatts * 0.75,
   )
-  addBomItem(supplierBom, 'Labour', 'LABOUR', 'Installation labour and commissioning', 1, labourSubtotalRands, labourSubtotalRands)
+  const labourSubtotalRands = roundCurrency(labourBaseRands + storeysPremium)
+  addBomItem(supplierBom, 'Labour', 'LABOUR', 'Installation labour and commissioning', 1, labourBaseRands, labourBaseRands)
+  if (storeysPremium > 0) {
+    addBomItem(supplierBom, 'Labour', 'LABOUR-ACCESS', `${input.storeys}-storey roof access premium (scaffolding/boom time) — RULE-SZ-04`, 1, storeysPremium, storeysPremium)
+  }
 
   // ── EV Charger (optional add-on) ───────────────────────────────────────────
   const evSize = parseEvChargerSize(input.evCharger)
@@ -924,19 +1028,30 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   let evChargerUnitSellRands = 0
 
   if (evSize && EV_CHARGER_SPECS[evSize]) {
+    // RULE-EV-01 (BLOCKER class): an EV circuit may never be quoted without
+    // Type B earth leakage, its own input DB, surge protection, correctly sized
+    // cable, and warning labels — SANS 10142-1 §6.16.8 / §6.7.5.
     const spec = EV_CHARGER_SPECS[evSize]
     evChargerUnitSellRands = spec.chargerSellRands
     const evCableSell = roundCurrency(spec.cableSellPerM * EV_CHARGER_CABLE_ROUTE_M)
     evChargerSubtotalRands = roundCurrency(
-      evChargerUnitSellRands + evCableSell + spec.mcbSellRands + EV_CONSUMABLES_SELL_RANDS + spec.labourSellRands,
+      evChargerUnitSellRands + evCableSell + spec.mcbSellRands + EV_CONSUMABLES_SELL_RANDS + spec.labourSellRands +
+        EV_TYPE_B_ELCB_SELL_RANDS + EV_INPUT_DB_SELL_RANDS + EV_SPD_SELL_RANDS + EV_WARNING_LABELS_SELL_RANDS +
+        2 * SWA_GLAND_SELL_RANDS,
     )
     evChargerSizeKw = evSize
 
     addBomItem(supplierBom, 'EV Charger', `EV-${evSize}`, `${evSize} Type 2 EV Wallbox — deposit item`, 1, evChargerUnitSellRands, spec.chargerCostRands)
-    addBomItem(supplierBom, 'EV Charger', 'EV-CABLE', `EV charger cable — ${EV_CHARGER_CABLE_ROUTE_M}m run`, EV_CHARGER_CABLE_ROUTE_M, spec.cableSellPerM, spec.cableSellPerM / MARKUP)
+    addBomItem(supplierBom, 'EV Charger', 'EV-CABLE-SWA', `6mm² 3-core SWA armoured cable — ${EV_CHARGER_CABLE_ROUTE_M}m run`, EV_CHARGER_CABLE_ROUTE_M, spec.cableSellPerM, spec.cableSellPerM / MARKUP)
+    addBomItem(supplierBom, 'EV Charger', 'CW20-SWA', 'SWA compression gland 20mm (armour earthed at entry)', 2, SWA_GLAND_SELL_RANDS)
+    addBomItem(supplierBom, 'EV Charger', 'EX9LB63-1PN-63-30B', 'Noark Type B ELCB 63A 30mA (DC-sensitive — EV requirement)', 1, EV_TYPE_B_ELCB_SELL_RANDS)
+    addBomItem(supplierBom, 'EV Charger', 'DB-SH6PN', 'Chint 6-way EV input DB IP66', 1, EV_INPUT_DB_SELL_RANDS, 307.51)
+    addBomItem(supplierBom, 'EV Charger', 'NU6-IIG-2P-40KA-275V', 'EV circuit AC SPD Type 2, 2P 40kA', 1, EV_SPD_SELL_RANDS, 484.29)
     addBomItem(supplierBom, 'EV Charger', 'EV-MCB', 'Dedicated EV circuit MCB', 1, spec.mcbSellRands, spec.mcbSellRands / MARKUP)
+    addBomItem(supplierBom, 'EV Charger', 'EV-LABELS', 'EV circuit warning labels', 1, EV_WARNING_LABELS_SELL_RANDS)
     addBomItem(supplierBom, 'EV Charger', 'EV-CONS', 'EV installation consumables and conduit', 1, EV_CONSUMABLES_SELL_RANDS, EV_CONSUMABLES_SELL_RANDS / MARKUP)
-    addBomItem(supplierBom, 'EV Charger', 'EV-LABOUR', 'EV charger installation labour', 1, spec.labourSellRands, spec.labourSellRands)
+    addBomItem(supplierBom, 'EV Charger', 'EV-LABOUR', 'EV charger installation and commissioning labour', 1, spec.labourSellRands, spec.labourSellRands)
+    warnings.push('Type B ELCB, SWA glands, and EV labels priced at market estimate — confirm with supplier before ordering (RULE-PRC-03).')
   }
 
   const depositItems: QuoteData['depositItems'] = [
@@ -974,6 +1089,28 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   )
   const roiPct = roundCurrency((estimatedNetSavings / Math.max(quoteTotalRands, 1)) * 100)
 
+  // Independent verification of the final BOM — SANS 10142-1 + design rules.
+  // Blockers are also surfaced as calculation warnings so they cannot be missed.
+  const complianceChecks = runComplianceChecks({
+    bom: supplierBom,
+    layout: stringLayout,
+    spec: sizingSpec,
+    panel,
+    inverter,
+    battery,
+    inverterCount,
+    batteryCount,
+    panelCount,
+    evChargerKw: evChargerSizeKw,
+    routeMetres,
+    gridSupply: input.gridSupply,
+  })
+  for (const check of complianceChecks) {
+    if (check.status === 'blocker') {
+      warnings.push(`COMPLIANCE BLOCKER — ${check.title} (${check.reference}): ${check.detail}`)
+    }
+  }
+
   return {
     panelCount,
     batteryCount,
@@ -1003,6 +1140,8 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
     paybackMonthsEscalated,
     warnings,
     supplierBom,
+    complianceChecks,
+    stringLayout,
     dcCombinerConfig,
     monthlyGenTable: buildMonthlyGenTable(input.monthlyKwh, monthlyGenerationKwh, tariffRate, input.advancedMonthlyKwh),
     twentyYearTable,
@@ -1109,6 +1248,7 @@ export function calculateQuote(input: CalculatorInput): QuoteData {
       targetPanelCount: breakdown.panelCount,
     },
     calculationWarnings: breakdown.warnings,
+    complianceChecks: breakdown.complianceChecks,
     evChargerKw: breakdown.evChargerSizeKw || undefined,
     evChargerCost: breakdown.evChargerSubtotalRands > 0 ? formatRands(breakdown.evChargerSubtotalRands) : undefined,
     evChargerSubtotal: breakdown.evChargerSubtotalRands > 0 ? formatRands(breakdown.evChargerSubtotalRands) : undefined,

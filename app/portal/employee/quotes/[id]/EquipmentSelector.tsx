@@ -128,8 +128,11 @@ function openHtmlPreview(html: string) {
   preview.document.close()
 }
 
+// RULE-SZ-04: storey access premium — mirrors getStoreysPremium in quote-calculator
 function getStoreysPremium(storeys: unknown) {
-  void storeys
+  const trimmed = String(storeys ?? '').trim()
+  if (trimmed.startsWith('3')) return 5000
+  if (trimmed.startsWith('2')) return 2000
   return 0
 }
 
@@ -906,6 +909,34 @@ export function EquipmentSelector({
       {calcError && (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{calcError}</p>
       )}
+
+      {/* SANS 10142-1 / design-rule verdict for the calculated quote — full detail in the BOM tab */}
+      {depositSource?.complianceChecks?.length ? (() => {
+        const blockers = depositSource.complianceChecks!.filter((c) => c.status === 'blocker')
+        const complianceWarnings = depositSource.complianceChecks!.filter((c) => c.status === 'warning')
+        if (blockers.length === 0 && complianceWarnings.length === 0) {
+          return (
+            <p className="rounded-md bg-success/10 border border-success/30 px-3 py-2 text-xs text-success">
+              SANS 10142-1 &amp; design-rule checks passing ({depositSource.complianceChecks!.length} checks). Full detail in the BOM tab.
+            </p>
+          )
+        }
+        return (
+          <div className={`rounded-md px-3 py-2 text-xs border ${blockers.length ? 'bg-destructive/10 border-destructive/40' : 'bg-warning/10 border-warning/40'}`}>
+            <p className="font-semibold mb-1">
+              {blockers.length > 0
+                ? `${blockers.length} compliance blocker${blockers.length === 1 ? '' : 's'} — resolve before sending`
+                : `${complianceWarnings.length} compliance warning${complianceWarnings.length === 1 ? '' : 's'}`}
+            </p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              {[...blockers, ...complianceWarnings].slice(0, 4).map((check) => (
+                <li key={check.id}>{check.title} ({check.reference})</li>
+              ))}
+            </ul>
+            <p className="mt-1 text-muted-foreground">Full detail in the BOM tab.</p>
+          </div>
+        )
+      })() : null}
 
       {previewHtml && (
         <>

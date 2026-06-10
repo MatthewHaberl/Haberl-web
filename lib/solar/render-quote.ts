@@ -1,5 +1,7 @@
 'use client'
 
+import type { ComplianceCheck } from './compliance'
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface DepositItem {
@@ -135,6 +137,10 @@ export interface QuoteData {
 
   // Supplier-facing itemized BOM
   supplierBom?: SupplierBomItem[]
+
+  // SANS 10142-1 / design-rule verification results (internal — admin only)
+  complianceChecks?: ComplianceCheck[]
+  calculationWarnings?: string[]
 
   // Monthly generation table (optional — new format)
   monthlyGenTable?: MonthlyGenRow[]
