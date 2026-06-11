@@ -9,10 +9,12 @@ import { MapPin, Calendar, ChevronLeft, FileText } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { STAGE_META } from '@/lib/jobs/stages'
 import type { Job, JobTask, JobMaterial, JobStatusHistory } from '@/types/database'
+import type { Supplier } from '@/types/database'
 import { JobActions } from './JobActions'
 import { StagePipeline } from './StagePipeline'
 import { MaterialsPanel } from './MaterialsPanel'
 import { DepositPanel } from './DepositPanel'
+import { CreatePoDialog } from './CreatePoDialog'
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -68,6 +70,37 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   }
   const showDepositPanel =
     job.stage === 'deposit_pending' || !!job.deposit_proof_url || !!job.deposit_confirmed_at
+
+  // Procurement: suppliers + POs on this job + which material lines are ordered
+  let suppliers: Supplier[] = []
+  let existingPos: Array<{ id: string; po_number: string; status: string; supplier_name: string | null }> = []
+  let orderedMaterialIds: string[] = []
+  if (isManager) {
+    const [{ data: supplierRows }, { data: poRows }] = await Promise.all([
+      supabase.from('suppliers').select('*').eq('active', true).order('name'),
+      supabase
+        .from('purchase_orders')
+        .select('id, po_number, status, supplier:suppliers(name)')
+        .eq('job_id', id)
+        .order('created_at'),
+    ])
+    suppliers = (supplierRows ?? []) as Supplier[]
+    existingPos = (poRows ?? []).map((po) => ({
+      id: po.id,
+      po_number: po.po_number,
+      status: po.status,
+      supplier_name: (po.supplier as unknown as { name: string } | null)?.name ?? null,
+    }))
+    if (existingPos.length) {
+      const { data: lineRows } = await supabase
+        .from('purchase_order_lines')
+        .select('job_material_id')
+        .in('po_id', existingPos.map((po) => po.id))
+      orderedMaterialIds = (lineRows ?? [])
+        .map((line) => line.job_material_id)
+        .filter((value): value is string => !!value)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -139,6 +172,16 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       </div>
 
       <JobActions initialJob={job} initialTasks={tasks} />
+
+      {isManager && (
+        <CreatePoDialog
+          jobId={job.id}
+          materials={materials}
+          suppliers={suppliers}
+          existingPos={existingPos}
+          orderedMaterialIds={orderedMaterialIds}
+        />
+      )}
 
       <MaterialsPanel
         jobTitle={job.title}

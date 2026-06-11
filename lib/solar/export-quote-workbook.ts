@@ -461,8 +461,7 @@ function safeFilename(value: string) {
   return value.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
 }
 
-export function buildQuoteWorkbook(data: AnyQuoteData): WorkbookFile {
-  const sheets = buildSheets(data)
+function assembleWorkbook(sheets: Sheet[]): Uint8Array {
   const encoder = new TextEncoder()
   const files = [
     { name: '[Content_Types].xml', data: encoder.encode(contentTypesXml(sheets.length)) },
@@ -475,11 +474,27 @@ export function buildQuoteWorkbook(data: AnyQuoteData): WorkbookFile {
       data: encoder.encode(worksheetXml(sheet.rows)),
     })),
   ]
+  return createZip(files)
+}
 
+export function buildQuoteWorkbook(data: AnyQuoteData): WorkbookFile {
+  const sheets = buildSheets(data)
   const filenameBase = safeFilename(data.quoteNumber || data.customerName || 'haberl-quote')
 
   return {
     filename: `${filenameBase}-supplier-bom.xlsx`,
-    bytes: createZip(files),
+    bytes: assembleWorkbook(sheets),
+  }
+}
+
+// ── Generic export for non-quote workbooks (purchase orders etc.) ─────────────
+
+export type WorkbookCell = CellValue
+export type WorkbookSheet = Sheet
+
+export function buildGenericWorkbook(filename: string, sheets: WorkbookSheet[]): WorkbookFile {
+  return {
+    filename: `${safeFilename(filename) || 'export'}.xlsx`,
+    bytes: assembleWorkbook(sheets),
   }
 }

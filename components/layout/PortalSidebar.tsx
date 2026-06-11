@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
   BarChart2, Users, Zap, User, Menu, X, FileText, Settings, Activity,
+  ClipboardList, PackageX,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -23,9 +24,11 @@ const employeeLinks = [
   { label: 'Dashboard', href: '/portal/employee',                  icon: Home,      roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Jobs',      href: '/portal/employee/jobs',             icon: Briefcase, roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Quotes',    href: '/portal/employee/quotes',            icon: FileText,  roles: ['field_worker', 'manager', 'admin'] },
+  { label: 'Procurement', href: '/portal/employee/procurement',    icon: ClipboardList, roles: ['manager', 'admin'] },
   { label: 'Customers', href: '/portal/employee/customers',        icon: Users,     roles: ['manager', 'admin'] },
   { label: 'Monitoring', href: '/portal/employee/monitoring',        icon: Activity,  roles: ['manager', 'admin'] },
   { label: 'Metrics',   href: '/portal/employee/metrics',          icon: BarChart2, roles: ['manager', 'admin'] },
+  { label: 'Wastage',   href: '/portal/employee/reports/wastage',  icon: PackageX,  roles: ['manager', 'admin'] },
   { label: 'Profile',   href: '/portal/employee/profile',          icon: User,      roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Shop Mgmt', href: '/portal/employee/shop',             icon: ShoppingBag, roles: ['admin'] },
   { label: 'Settings',  href: '/portal/employee/settings/brands',  icon: Settings,  roles: ['admin'] },

@@ -191,6 +191,8 @@ export interface EquipmentCatalogItem {
   active: boolean
   sort_order: number
   notes: string | null
+  /** Stamped by DB trigger whenever cost_rands changes (migration 030). */
+  price_updated_at?: string | null
 }
 
 export interface QuoteTierConfig {

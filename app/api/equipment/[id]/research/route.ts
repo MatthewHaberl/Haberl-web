@@ -1,4 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
+import type {
+  ContentBlock,
+  ContentBlockParam,
+  MessageParam,
+  TextBlock,
+  ToolResultBlockParam,
+  ToolUseBlock,
+  WebSearchTool20250305,
+} from '@anthropic-ai/sdk/resources/messages/messages'
 
 export const runtime = 'nodejs'
 export const maxDuration = 180
@@ -15,6 +24,8 @@ type ResearchItem = {
   source_domain: string | null
   confidence: number
 }
+
+type CatalogResearchSource = Record<string, unknown>
 
 const VALID_TYPES = new Set([
   'description', 'datasheet', 'photo', 'sld', 'model_3d', 'manual', 'compatibility', 'spec_table',
@@ -67,12 +78,28 @@ function extractJsonArray(text: string): ResearchItem[] | null {
   }
 }
 
+function isTextBlock(block: ContentBlock): block is TextBlock {
+  return block.type === 'text'
+}
+
+function isToolUseBlock(block: ContentBlock): block is ToolUseBlock {
+  return block.type === 'tool_use'
+}
+
+function asText(value: unknown) {
+  return typeof value === 'string' ? value : ''
+}
+
+function asNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
 async function runAnthropicResearch(userMessage: string): Promise<ResearchItem[]> {
   // Dynamic import so module load doesn't fail when no API key is present
   const Anthropic = (await import('@anthropic-ai/sdk')).default
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-  type MessageParam = { role: 'user' | 'assistant'; content: any }
+  const webSearchTool: WebSearchTool20250305 = { type: 'web_search_20250305', name: 'web_search' }
   let messages: MessageParam[] = [{ role: 'user', content: userMessage }]
   let finalText = ''
 
@@ -80,15 +107,14 @@ async function runAnthropicResearch(userMessage: string): Promise<ResearchItem[]
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 8192,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tools: [{ type: 'web_search_20250305', name: 'web_search' } as any],
+      tools: [webSearchTool],
       system: RESEARCH_SYSTEM_PROMPT,
       messages,
     })
 
     const textContent = response.content
-      .filter((b: any) => b.type === 'text')
-      .map((b: any) => b.text as string)
+      .filter(isTextBlock)
+      .map((b) => b.text)
       .join('')
 
     if (response.stop_reason === 'end_turn') {
@@ -97,18 +123,20 @@ async function runAnthropicResearch(userMessage: string): Promise<ResearchItem[]
     }
 
     if (response.stop_reason === 'tool_use') {
+      const toolResults: ToolResultBlockParam[] = response.content
+        .filter(isToolUseBlock)
+        .map((b) => ({
+          type: 'tool_result',
+          tool_use_id: b.id,
+          content: '',
+        }))
+
       messages = [
         ...messages,
-        { role: 'assistant', content: response.content },
+        { role: 'assistant', content: response.content as ContentBlockParam[] },
         {
           role: 'user',
-          content: response.content
-            .filter((b: any) => b.type === 'tool_use')
-            .map((b: any) => ({
-              type: 'tool_result' as const,
-              tool_use_id: b.id as string,
-              content: (b.content as string) ?? '',
-            })),
+          content: toolResults,
         },
       ]
     } else {
@@ -200,26 +228,36 @@ function categorise(title: string, url: string, snippet: string): string | null 
   return null
 }
 
-function buildTemplateDescription(item: Record<string, any>): ResearchItem {
+function buildTemplateDescription(item: CatalogResearchSource): ResearchItem {
+  const brand = asText(item.brand)
+  const sku = asText(item.sku)
+  const description = asText(item.description)
+  const category = asText(item.category)
+  const phase = asText(item.phase)
+  const notes = asText(item.notes)
+  const wattsAc = asNumber(item.watts_ac)
+  const wattsDc = asNumber(item.watts_dc)
+  const kwh = asNumber(item.kwh)
+
   const spec = [
-    item.watts_ac ? `${(item.watts_ac / 1000).toFixed(1)} kW AC output` : null,
-    item.watts_dc ? `${item.watts_dc} Wp DC input` : null,
-    item.kwh ? `${item.kwh} kWh capacity` : null,
-    item.phase !== 'any' ? `${item.phase}-phase` : null,
+    wattsAc ? `${(wattsAc / 1000).toFixed(1)} kW AC output` : null,
+    wattsDc ? `${wattsDc} Wp DC input` : null,
+    kwh ? `${kwh} kWh capacity` : null,
+    phase && phase !== 'any' ? `${phase}-phase` : null,
   ].filter(Boolean).join(', ')
 
   const content = [
-    `## ${item.brand} ${item.sku}`,
+    `## ${brand} ${sku}`,
     '',
-    item.description,
+    description,
     '',
     spec ? `**Key specifications:** ${spec}` : null,
     '',
-    `The ${item.brand} ${item.sku} is a ${item.category} designed for South African solar installations.`,
-    item.notes ? `\n**Notes:** ${item.notes}` : null,
+    `The ${brand} ${sku} is a ${category} designed for South African solar installations.`,
+    notes ? `\n**Notes:** ${notes}` : null,
     '',
     '_Description auto-generated from catalog data. Accept a researched description to replace this._',
-  ].filter((l) => l !== null).join('\n')
+  ].filter((line) => line !== null).join('\n')
 
   return {
     resource_type: 'description',
@@ -233,8 +271,10 @@ function buildTemplateDescription(item: Record<string, any>): ResearchItem {
   }
 }
 
-async function runDDGResearch(item: Record<string, any>): Promise<ResearchItem[]> {
-  const q = `"${item.brand}" "${item.sku}"`
+async function runDDGResearch(item: CatalogResearchSource): Promise<ResearchItem[]> {
+  const brand = asText(item.brand)
+  const sku = asText(item.sku)
+  const q = `"${brand}" "${sku}"`
 
   const searches = await Promise.allSettled([
     ddgSearch(`${q} datasheet filetype:pdf`),
@@ -271,7 +311,7 @@ async function runDDGResearch(item: Record<string, any>): Promise<ResearchItem[]
       thumbnail_url: type === 'photo' ? r.url : null,
       file_type: ft,
       source_domain: sourceDomain(r.url),
-      confidence: r.url.toLowerCase().includes(item.brand.toLowerCase()) ? 75 : 55,
+      confidence: brand && r.url.toLowerCase().includes(brand.toLowerCase()) ? 75 : 55,
     })
   }
 

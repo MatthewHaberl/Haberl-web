@@ -21,7 +21,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     const actor = quote.generated_by ?? quote.submitted_by
     if (actor) {
       const retry = await createJobFromQuote(supabase, quote, actor)
-      if (!retry.ok) console.error('[public/accept] job retry failed:', retry.error)
+      if (!retry.ok) {
+        console.error('[public/accept] job retry failed:', retry.error)
+        return new Response('Could not open the installation job - please contact us', { status: 500 })
+      }
     }
     return NextResponse.json({ ok: true })
   }
@@ -79,7 +82,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   } else {
     jobWarning = 'No staff account linked to this quote — create the job manually.'
   }
-  if (jobWarning) console.error('[public/accept] job creation:', jobWarning)
+  if (jobWarning) {
+    console.error('[public/accept] job creation:', jobWarning)
+    await supabase
+      .from('quote_requests')
+      .update({
+        status: quote.status,
+        accepted_at: null,
+        acceptance_name: null,
+        acceptance_ip: null,
+        accepted_tier: null,
+        total_amount: quote.total_amount,
+        deposit_amount: quote.deposit_amount,
+      })
+      .eq('id', quote.id)
+      .eq('status', 'accepted')
+
+    return new Response('Could not open the installation job - please try again or contact us', { status: 500 })
+  }
 
   // Notify admin — never block the customer on email problems
   try {

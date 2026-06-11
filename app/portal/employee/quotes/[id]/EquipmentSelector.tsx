@@ -253,11 +253,12 @@ export function EquipmentSelector({
   const [batteryQuantity, setBatteryQuantity] = useState<string>(String(Math.min(2, Math.max(1, coerceNumber(initialSizingInputs?.batteryQty ?? request.selected_battery_qty, 1) || 1))))
   const [targetInverterKwInput, setTargetInverterKwInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.targetInverterKw, autoTargetKw)))
   const [minimumBatteryKwhInput, setMinimumBatteryKwhInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.minimumBatteryKwh, autoTargetKw * 2)))
+  const initialPanelTarget = Math.max(
+    0,
+    Math.round(readSavedSizingValue(initialSizingInputs?.targetPanelCount ?? initialSingleQuote?.panelCount, lockedPanelCount ?? 0)),
+  )
   const [targetPanelCountInput, setTargetPanelCountInput] = useState<string>(
-    String(Math.max(
-      0,
-      Math.round(readSavedSizingValue(initialSizingInputs?.targetPanelCount ?? initialSingleQuote?.panelCount, lockedPanelCount ?? 0)),
-    )),
+    initialPanelTarget > 0 ? String(initialPanelTarget) : '',
   )
   const targetKw = Math.max(1, Math.round(coerceNumber(targetInverterKwInput, autoTargetKw) || autoTargetKw))
   const inverterQuantityValue = Math.min(2, Math.max(1, Math.round(coerceNumber(inverterQuantity, 1) || 1)))
@@ -442,12 +443,6 @@ export function EquipmentSelector({
   const depositSource = getDepositSource(quoteData)
   const defaultWarning = Number(cableRouteM || 0) === 15
   const hasRecommendedMulti = tierConfigs.some((config) => config.tier === 'recommended' && (config.phase === phase || config.phase === 'any'))
-
-  useEffect(() => {
-    if (selectedPanel && targetPanelCountOverride === 0 && sizingSnapshot.targetPanelCount > 0) {
-      setTargetPanelCountInput(String(sizingSnapshot.targetPanelCount))
-    }
-  }, [selectedPanel, sizingSnapshot.targetPanelCount, targetPanelCountOverride])
 
   async function calculateSingle() {
     if (!selectedInverter || !selectedBattery || !selectedPanel) {
@@ -851,6 +846,7 @@ export function EquipmentSelector({
               min="0"
               step="1"
               value={targetPanelCountInput}
+              placeholder={String(sizingSnapshot.targetPanelCount || '')}
               onChange={(event) => {
                 setTargetPanelCountInput(event.target.value)
                 setSaved(false)
@@ -980,6 +976,25 @@ export function EquipmentSelector({
       {calcError && (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{calcError}</p>
       )}
+
+      {/* Price staleness: supplier costs older than 60 days deserve a check */}
+      {(() => {
+        const STALE_MS = 60 * 86_400_000
+        const stale = [selectedInverter, selectedBattery, selectedPanel]
+          .filter((item): item is EquipmentCatalogItem => !!item)
+          .filter((item) => item.price_updated_at && Date.now() - new Date(item.price_updated_at).getTime() > STALE_MS)
+        if (stale.length === 0) return null
+        return (
+          <p className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>
+              Price check recommended — last confirmed over 60 days ago:{' '}
+              {stale.map((item) => `${item.description} (${new Date(item.price_updated_at!).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })})`).join(', ')}.
+              Update costs in Settings → Catalog before sending.
+            </span>
+          </p>
+        )
+      })()}
 
       {/* SANS 10142-1 / design-rule verdict for the calculated quote — full detail in the BOM tab */}
       {depositSource?.complianceChecks?.length ? (() => {

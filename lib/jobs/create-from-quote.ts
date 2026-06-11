@@ -152,6 +152,10 @@ export async function createJobFromQuote(
   const { error: tasksError } = await supabase.from('job_tasks').insert(
     INSTALL_CHECKLIST.map((description) => ({ job_id: job.id, description })),
   )
+  if (tasksError) {
+    await supabase.from('jobs').delete().eq('id', job.id)
+    return { ok: false, error: `Checklist not created: ${tasksError.message}`, status: 500 }
+  }
 
   // Design lock: a frozen bom_snapshot beats the live quote — procurement
   // buys exactly what was locked, even if the quote was recalculated since.
@@ -159,20 +163,24 @@ export async function createJobFromQuote(
     ? JSON.stringify(quote.bom_snapshot)
     : quote.generated_quote
   const bom = extractBom(bomSource, quote.accepted_tier)
-  const { error: materialsError } = bom.length
-    ? await supabase.from('job_materials').insert(
-        bom.map((line, index) => ({
-          job_id: job.id,
-          section: line.section ?? '',
-          sku: line.sku ?? '',
-          description: line.description ?? '',
-          qty_planned: line.quantity ?? 0,
-          unit_cost_cents: Math.round((line.unitCostRands ?? 0) * 100),
-          unit_sell_cents: Math.round((line.unitSellRands ?? 0) * 100),
-          sort_order: index,
-        })),
-      )
-    : { error: null }
+  if (bom.length) {
+    const { error: materialsError } = await supabase.from('job_materials').insert(
+      bom.map((line, index) => ({
+        job_id: job.id,
+        section: line.section ?? '',
+        sku: line.sku ?? '',
+        description: line.description ?? '',
+        qty_planned: line.quantity ?? 0,
+        unit_cost_cents: Math.round((line.unitCostRands ?? 0) * 100),
+        unit_sell_cents: Math.round((line.unitSellRands ?? 0) * 100),
+        sort_order: index,
+      })),
+    )
+    if (materialsError) {
+      await supabase.from('jobs').delete().eq('id', job.id)
+      return { ok: false, error: `Materials not seeded: ${materialsError.message}`, status: 500 }
+    }
+  }
 
   return {
     ok: true,
@@ -180,8 +188,6 @@ export async function createJobFromQuote(
     created: true,
     materialsSeeded: bom.length,
     warnings: [
-      ...(tasksError ? [`Checklist not created: ${tasksError.message}`] : []),
-      ...(materialsError ? [`Materials not seeded: ${materialsError.message}`] : []),
       ...(bom.length === 0 ? ['No supplier BOM found in saved quote — recalculate and save, then re-link.'] : []),
       ...(siteId ? [] : ['No registered customer account matched this quote — job is not yet visible to the customer portal.']),
     ],

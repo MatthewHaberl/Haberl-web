@@ -508,6 +508,48 @@ export interface CableRoute {
   created_at: string
 }
 
+export interface Supplier {
+  id: string
+  name: string
+  contact_person: string | null
+  email: string | null
+  phone: string | null
+  notes: string | null
+  active: boolean
+  created_at: string
+}
+
+export type PurchaseOrderStatus = 'draft' | 'sent' | 'partial' | 'received' | 'cancelled'
+
+export interface PurchaseOrder {
+  id: string
+  po_number: string
+  job_id: string | null
+  supplier_id: string | null
+  status: PurchaseOrderStatus
+  expected_date: string | null
+  sent_at: string | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  // joined
+  supplier?: Supplier | null
+  job?: { id: string; title: string } | null
+  lines?: PurchaseOrderLine[]
+}
+
+export interface PurchaseOrderLine {
+  id: string
+  po_id: string
+  job_material_id: string | null
+  sku: string
+  description: string
+  qty_ordered: number
+  qty_received: number
+  unit_cost_cents: number
+  sort_order: number
+}
+
 export type LeadStatus = 'new' | 'contacted' | 'converted' | 'discarded'
 
 export interface Lead {

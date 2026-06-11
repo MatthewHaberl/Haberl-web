@@ -1,9 +1,31 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendAdminNotice } from '@/lib/email/quotes'
-import { getBaseUrl, getCompanySettings } from '@/lib/quotes/server'
+import { getBaseUrl, getClientIp, getCompanySettings } from '@/lib/quotes/server'
 
 export const runtime = 'nodejs'
+
+const IP_WINDOW_MS = 60_000
+const MAX_LEADS_PER_IP_WINDOW = 5
+const MAX_LEADS_PER_PHONE_DAY = 3
+const ipHits = new Map<string, number[]>()
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function checkIpRateLimit(ip: string) {
+  const now = Date.now()
+  const recent = (ipHits.get(ip) ?? []).filter((timestamp) => now - timestamp < IP_WINDOW_MS)
+  if (recent.length >= MAX_LEADS_PER_IP_WINDOW) return false
+  ipHits.set(ip, [...recent, now])
+  return true
+}
 
 /** Public lead capture (name/phone/suburb). Honeypot-guarded, service-role insert. */
 export async function POST(req: Request) {
@@ -14,9 +36,14 @@ export async function POST(req: Request) {
     return new Response('Invalid request', { status: 400 })
   }
 
-  // Honeypot: bots fill the hidden field — accept silently, store nothing
+  // Honeypot: bots fill the hidden field; accept silently and store nothing.
   if (body.website && String(body.website).trim().length > 0) {
     return NextResponse.json({ ok: true })
+  }
+
+  const ip = getClientIp(req)
+  if (!checkIpRateLimit(ip)) {
+    return new Response('Too many requests - please try again shortly', { status: 429 })
   }
 
   const name = String(body.name ?? '').trim().slice(0, 120)
@@ -29,22 +56,38 @@ export async function POST(req: Request) {
   const note = String(body.note ?? '').trim().slice(0, 1000) || null
 
   const supabase = createAdminClient()
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { count: recentPhoneCount } = await supabase
+    .from('leads')
+    .select('id', { count: 'exact', head: true })
+    .eq('phone', phone)
+    .gte('created_at', since)
+
+  if ((recentPhoneCount ?? 0) >= MAX_LEADS_PER_PHONE_DAY) {
+    return new Response('We already have your request - we will contact you shortly', { status: 429 })
+  }
+
   const { error } = await supabase.from('leads').insert({ name, phone, suburb, note, source: 'website' })
   if (error) {
     console.error('[public/leads]', error)
-    return new Response('Could not save your request — please call us instead', { status: 500 })
+    return new Response('Could not save your request - please call us instead', { status: 500 })
   }
 
   try {
     const settings = await getCompanySettings(supabase)
+    const safeName = escapeHtml(name)
+    const safePhone = escapeHtml(phone)
+    const safeSuburb = suburb ? escapeHtml(suburb) : null
+    const safeNote = note ? escapeHtml(note) : null
+
     await sendAdminNotice(
       settings?.contact_email ?? null,
-      `New website lead — ${name}`,
+      `New website lead - ${name.replace(/[\r\n]/g, ' ')}`,
       [
-        `<strong>${name}</strong> requested a callback.`,
-        `Phone: <a href="tel:${phoneDigits}">${phone}</a>`,
-        ...(suburb ? [`Suburb: ${suburb}`] : []),
-        ...(note ? [`Note: ${note}`] : []),
+        `<strong>${safeName}</strong> requested a callback.`,
+        `Phone: <a href="tel:${phoneDigits}">${safePhone}</a>`,
+        ...(safeSuburb ? [`Suburb: ${safeSuburb}`] : []),
+        ...(safeNote ? [`Note: ${safeNote}`] : []),
       ],
       `${getBaseUrl()}/portal/employee/quotes`,
       'Open quotes & leads',
