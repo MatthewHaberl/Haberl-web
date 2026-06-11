@@ -6,15 +6,15 @@ import type { EquipmentBrand } from '@/types/database'
 export default async function NewQuotePage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string }>
+  searchParams: Promise<{ from?: string; lead?: string }>
 }) {
   const user = await getUser()
   if (!user) redirect('/auth/login')
 
   const supabase = await createClient()
-  const { from } = await searchParams
+  const { from, lead } = await searchParams
 
-  const [{ data: brands }, prefillResult] = await Promise.all([
+  const [{ data: brands }, prefillResult, leadResult] = await Promise.all([
     supabase
       .from('equipment_brands')
       .select('*')
@@ -30,12 +30,25 @@ export default async function NewQuotePage({
           .eq('id', from)
           .single()
       : Promise.resolve({ data: null }),
+    lead
+      ? supabase.from('leads').select('id, name, phone, suburb').eq('id', lead).single()
+      : Promise.resolve({ data: null }),
   ])
+
+  // Website lead → seed the survey with what the customer gave us
+  const leadPrefill = leadResult.data
+    ? {
+        customer_name: leadResult.data.name,
+        customer_phone: leadResult.data.phone,
+        address: leadResult.data.suburb ?? null,
+      }
+    : null
 
   return (
     <QuoteForm
       brands={(brands ?? []) as EquipmentBrand[]}
-      prefill={prefillResult.data ?? null}
+      prefill={prefillResult.data ?? leadPrefill}
+      leadId={leadResult.data?.id ?? null}
     />
   )
 }

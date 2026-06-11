@@ -152,6 +152,11 @@ export interface Job {
   created_by: string
   created_at: string
   completed_at: string | null
+  // EFT deposit reconciliation (migration 024)
+  deposit_proof_url: string | null
+  deposit_proof_uploaded_at: string | null
+  deposit_confirmed_at: string | null
+  deposit_confirmed_by: string | null
   // joined
   site?: Site
   assignee?: UserProfile
@@ -465,8 +470,52 @@ export interface QuoteRequest {
   design_segments: Array<{ azimuth: number; pitch: number; panelCount: number }> | null
   design_confirmed_at: string | null
 
+  // Public share + online acceptance (migration 024)
+  share_token: string
+  expiry_date: string | null
+  sent_at: string | null
+  viewed_at: string | null
+  accepted_at: string | null
+  declined_at: string | null
+  decline_reason: string | null
+  acceptance_name: string | null
+  acceptance_ip: string | null
+  reminder_count: number
+  last_reminder_at: string | null
+
   // Joined
   submitter?: { full_name: string }
+}
+
+export type LeadStatus = 'new' | 'contacted' | 'converted' | 'discarded'
+
+export interface Lead {
+  id: string
+  name: string
+  phone: string
+  suburb: string | null
+  note: string | null
+  status: LeadStatus
+  quote_request_id: string | null
+  source: string
+  created_at: string
+  contacted_at: string | null
+}
+
+export interface CompanySettings {
+  id: boolean
+  company_name: string
+  contact_email: string | null
+  contact_phone: string | null
+  banking: {
+    bank?: string
+    account_name?: string
+    account_number?: string
+    branch_code?: string
+    account_type?: string
+  }
+  quote_expiry_days: number
+  updated_at: string
 }
 
 // Metrics computed from DB (manager dashboard)

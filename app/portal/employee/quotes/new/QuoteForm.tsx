@@ -162,9 +162,14 @@ interface Prefill {
   panel_brand: string
 }
 
-interface Props { brands: EquipmentBrand[]; prefill?: Prefill | null }
+interface Props {
+  brands: EquipmentBrand[]
+  prefill?: Partial<Prefill> | null
+  /** When converting a website lead — marks it converted after submit. */
+  leadId?: string | null
+}
 
-export function QuoteForm({ brands, prefill }: Props) {
+export function QuoteForm({ brands, prefill, leadId }: Props) {
   const router = useRouter()
 
   // Job type
@@ -349,15 +354,26 @@ export function QuoteForm({ brands, prefill }: Props) {
         notes:      notes || null,
       }
 
-      let { error: dbErr } = await supabase.from('quote_requests').insert(payload)
+      let { data: inserted, error: dbErr } = await supabase
+        .from('quote_requests').insert(payload).select('id').single()
       if (dbErr?.message?.includes('site_number')) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { site_number: _removed, ...fallbackPayload } = payload as typeof payload & { site_number?: number }
-        const retry = await supabase.from('quote_requests').insert(fallbackPayload)
+        const retry = await supabase.from('quote_requests').insert(fallbackPayload).select('id').single()
         dbErr = retry.error
+        inserted = retry.data
       }
 
       if (dbErr) { setError(dbErr.message); return }
+
+      // Originating website lead → mark converted (best effort)
+      if (leadId && inserted?.id) {
+        await supabase
+          .from('leads')
+          .update({ status: 'converted', quote_request_id: inserted.id })
+          .eq('id', leadId)
+      }
+
       setSubmitted(true)
     } finally {
       setLoading(false)

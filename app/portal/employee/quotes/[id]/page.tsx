@@ -104,6 +104,9 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             requestId={req.id}
             initialStatus={req.status as QuoteRequestStatus}
             initialJobId={linkedJob?.id ?? null}
+            shareToken={req.share_token}
+            customerEmail={req.customer_email ?? null}
+            viewedAt={req.viewed_at ?? null}
           />
         ) : (
           <Badge variant={statusVariant[req.status as QuoteRequestStatus]} className="mt-1 shrink-0">

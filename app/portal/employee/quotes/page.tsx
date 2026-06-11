@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { FileText, Plus, ChevronRight, Clock } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
-import type { QuoteRequestStatus } from '@/types/database'
+import type { Lead, QuoteRequestStatus } from '@/types/database'
+import { LeadCard } from './LeadCard'
 
 const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success'> = {
   pending: 'warning',
@@ -225,7 +226,17 @@ export default async function QuotesPage() {
 
   if (!isManager) query.eq('submitted_by', user!.id)
 
-  const { data: requests } = await query
+  const [{ data: requests }, { data: leadRows }] = await Promise.all([
+    query,
+    isManager
+      ? supabase
+          .from('leads')
+          .select('*')
+          .in('status', ['new', 'contacted'])
+          .order('created_at', { ascending: false })
+      : Promise.resolve({ data: null }),
+  ])
+  const leads = (leadRows ?? []) as Lead[]
 
   const pending = (requests?.filter((request) => request.status === 'pending') ?? []) as QuoteRow[]
   const generated = (requests?.filter((request) => request.status !== 'pending') ?? []) as QuoteRow[]
@@ -250,6 +261,19 @@ export default async function QuotesPage() {
           </Link>
         </Button>
       </div>
+
+      {leads.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+            Website Leads — call back ({leads.length})
+          </h2>
+          <div className="flex flex-col gap-2">
+            {leads.map((lead) => (
+              <LeadCard key={lead.id} lead={lead} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {!requests?.length ? (
         <Card>

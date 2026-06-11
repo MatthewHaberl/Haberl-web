@@ -47,7 +47,7 @@ export default async function HomePage() {
                     Go to my portal <ChevronRight className="h-4 w-4" />
                   </Link>
                 ) : (
-                  <a href="#contact">
+                  <a href="/quote-request">
                     Get a quote <ChevronRight className="h-4 w-4" />
                   </a>
                 )}
@@ -143,6 +143,9 @@ export default async function HomePage() {
             <h2 className="text-3xl font-bold text-primary mb-3">Get in touch</h2>
             <p className="text-muted-foreground mb-8">Ready for a quote? Have a question?</p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Button variant="accent" size="lg" asChild>
+                <a href="/quote-request">Request a callback</a>
+              </Button>
               <Button size="lg" asChild>
                 <a href="tel:+27615193016"><Phone className="h-4 w-4" /> Call us</a>
               </Button>

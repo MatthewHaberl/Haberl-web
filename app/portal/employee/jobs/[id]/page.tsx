@@ -1,4 +1,5 @@
 import { createClient, getUser } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,6 +12,7 @@ import type { Job, JobTask, JobMaterial, JobStatusHistory } from '@/types/databa
 import { JobActions } from './JobActions'
 import { StagePipeline } from './StagePipeline'
 import { MaterialsPanel } from './MaterialsPanel'
+import { DepositPanel } from './DepositPanel'
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -40,6 +42,32 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const canAdvance = isManager || job.assigned_to === user.id
 
   const stageMeta = STAGE_META[job.stage]
+
+  // Deposit reconciliation: quote amount + a short-lived signed URL for the
+  // proof file (private bucket — service role only)
+  let depositCents: number | null = null
+  let proofSignedUrl: string | null = null
+  if (job.quote_request_id) {
+    const { data: quote } = await supabase
+      .from('quote_requests')
+      .select('deposit_amount')
+      .eq('id', job.quote_request_id)
+      .maybeSingle()
+    depositCents = quote?.deposit_amount ?? null
+  }
+  if (job.deposit_proof_url && isManager) {
+    try {
+      const admin = createAdminClient()
+      const { data: signed } = await admin.storage
+        .from('payment-proofs')
+        .createSignedUrl(job.deposit_proof_url, 60 * 60)
+      proofSignedUrl = signed?.signedUrl ?? null
+    } catch {
+      proofSignedUrl = null
+    }
+  }
+  const showDepositPanel =
+    job.stage === 'deposit_pending' || !!job.deposit_proof_url || !!job.deposit_confirmed_at
 
   return (
     <div className="flex flex-col gap-6">
@@ -76,6 +104,17 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         history={history}
         canAdvance={canAdvance}
       />
+
+      {showDepositPanel && (
+        <DepositPanel
+          jobId={job.id}
+          depositCents={depositCents}
+          proofSignedUrl={proofSignedUrl}
+          proofUploadedAt={job.deposit_proof_uploaded_at}
+          confirmedAt={job.deposit_confirmed_at}
+          canConfirm={isManager}
+        />
+      )}
 
       <div className="grid sm:grid-cols-2 gap-4">
         {job.scheduled_date && (
