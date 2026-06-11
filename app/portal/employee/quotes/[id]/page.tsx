@@ -16,14 +16,17 @@ const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success
   declined:  'default',
 }
 
+// Peek the next number for DISPLAY only — the atomic next_quote_number() rpc
+// consumes it at save time (EquipmentSelector), so page views never burn numbers.
 async function getNextQuoteNumber(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
   const year = new Date().getFullYear()
-  const { count } = await supabase
-    .from('quote_requests')
-    .select('*', { count: 'exact', head: true })
-    .not('quote_number', 'is', null)
-  const next = (count ?? 0) + 1
-  return `QUO-${year}-${String(next).padStart(3, '0')}`
+  const [{ data: seq }, { data: settings }] = await Promise.all([
+    supabase.from('quote_sequences').select('next_number').eq('year', year).maybeSingle(),
+    supabase.from('company_settings').select('quote_prefix').eq('id', true).maybeSingle(),
+  ])
+  const prefix = settings?.quote_prefix ?? 'QUO'
+  const next = seq?.next_number ?? 1
+  return `${prefix}-${year}-${String(next).padStart(3, '0')}`
 }
 
 export default async function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {

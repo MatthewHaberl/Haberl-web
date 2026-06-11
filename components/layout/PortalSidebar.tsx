@@ -31,7 +31,7 @@ const employeeLinks = [
   { label: 'Wastage',   href: '/portal/employee/reports/wastage',  icon: PackageX,  roles: ['manager', 'admin'] },
   { label: 'Profile',   href: '/portal/employee/profile',          icon: User,      roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Shop Mgmt', href: '/portal/employee/shop',             icon: ShoppingBag, roles: ['admin'] },
-  { label: 'Settings',  href: '/portal/employee/settings/brands',  icon: Settings,  roles: ['admin'] },
+  { label: 'Settings',  href: '/portal/employee/settings/company', icon: Settings,  roles: ['admin'] },
 ]
 
 interface SidebarContentProps {

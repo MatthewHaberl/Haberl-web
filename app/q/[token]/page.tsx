@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { formatCents, isQuoteExpired, isValidShareToken, parseTierOptions } from '@/lib/quotes/public'
 import { QuoteFrame } from './QuoteFrame'
 import { PublicQuoteActions } from './PublicQuoteActions'
+import { PrintQuoteButton } from './PrintQuoteButton'
 
 export const metadata: Metadata = {
   title: 'Your Solar Quote',
@@ -142,6 +143,9 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
         )}
 
         {/* The quote itself */}
+        <div className="flex justify-end">
+          <PrintQuoteButton html={quote.quote_html} />
+        </div>
         <QuoteFrame html={quote.quote_html} />
 
         <footer className="pb-8 pt-2 text-center text-xs text-muted-foreground">

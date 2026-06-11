@@ -28,6 +28,53 @@ export const TARIFF_BY_MUNICIPALITY: Record<string, number> = {
   Eskom: 2.65,
 }
 
+// ── Pricing settings (company_settings, migration 031) ───────────────────────
+// Business-policy knobs extracted from the constants above. Defaults reproduce
+// the historical behaviour exactly — quotes without explicit pricing are
+// byte-identical to pre-extraction output (locked by the test suite).
+
+export interface PricingSettings {
+  /** Sell = cost × markup for equipment + market-estimate items (1.15 = 15%). */
+  markup: number
+  cocRands: number
+  labourInverterPerW: number
+  labourPanelPerW: number
+  storeyPremium2: number
+  storeyPremium3: number
+  tariffs: Record<string, number>
+}
+
+export const DEFAULT_PRICING: PricingSettings = {
+  markup: MARKUP,
+  cocRands: COC_RANDS,
+  labourInverterPerW: 0.25,
+  labourPanelPerW: 0.75,
+  storeyPremium2: 2000,
+  storeyPremium3: 5000,
+  tariffs: TARIFF_BY_MUNICIPALITY,
+}
+
+/** Map a company_settings row to PricingSettings; anything missing → default. */
+export function mapSettingsToPricing(row: Record<string, unknown> | null | undefined): PricingSettings {
+  if (!row) return DEFAULT_PRICING
+  const num = (value: unknown, fallback: number) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+  }
+  const tariffs = row.tariffs && typeof row.tariffs === 'object' && !Array.isArray(row.tariffs)
+    ? { ...TARIFF_BY_MUNICIPALITY, ...(row.tariffs as Record<string, number>) }
+    : TARIFF_BY_MUNICIPALITY
+  return {
+    markup: 1 + num(row.markup_pct, 15) / 100,
+    cocRands: num(row.coc_fee_rands, COC_RANDS),
+    labourInverterPerW: num(row.labour_inverter_per_w, 0.25),
+    labourPanelPerW: num(row.labour_panel_per_w, 0.75),
+    storeyPremium2: num(row.storey_premium_2, 2000),
+    storeyPremium3: num(row.storey_premium_3, 5000),
+    tariffs,
+  }
+}
+
 type GatewayConfig = {
   gatewaySellRands: number
   commsSellRands: number
@@ -36,18 +83,71 @@ type GatewayConfig = {
   lugSellRands: number
 }
 
-const SIGENERGY_GATEWAY: GatewayConfig = {
-  gatewaySellRands: roundCurrency(6980.5 * MARKUP),
-  commsSellRands: roundCurrency(2104.5 * MARKUP),
-  fuseHolderSellRands: roundCurrency(901.6 * MARKUP),
-  cableSellRands: roundCurrency((278.71 * MARKUP) * 4),
-  lugSellRands: roundCurrency((16.92 * MARKUP) * 4),
+// Market-estimate items whose SELL derives from cost × markup. Anything with a
+// literal sell price below comes from the supplier price list and does NOT
+// flex with markup — a different installer edits the price list, not these.
+interface MarkupDerivedPrices {
+  gatewayByBrand: Record<string, GatewayConfig | null>
+  pvStringFuseSell: number
+  batteryCommsCableSell: number
+  batteryCableSetSell: number
+  evTypeBElcbSell: number
+  evWarningLabelsSell: number
+  swaGlandSell: number
+  acDbComponents: Array<{ sku: string; description: string; costRands: number; sellRands: number }>
+  acDbBundleSell: number
+  evChargerSpecs: Record<string, EvChargerSpec>
 }
 
-export const GATEWAY_BY_BRAND: Record<string, GatewayConfig | null> = {
-  Sigenergy: SIGENERGY_GATEWAY,
-  SigenStor: SIGENERGY_GATEWAY,
-  'Sigenergy/SigenStor': SIGENERGY_GATEWAY,
+const derivedPricesCache = new Map<number, MarkupDerivedPrices>()
+
+function getDerivedPrices(markup: number): MarkupDerivedPrices {
+  const cached = derivedPricesCache.get(markup)
+  if (cached) return cached
+
+  const sigenergyGateway: GatewayConfig = {
+    gatewaySellRands: roundCurrency(6980.5 * markup),
+    commsSellRands: roundCurrency(2104.5 * markup),
+    fuseHolderSellRands: roundCurrency(901.6 * markup),
+    cableSellRands: roundCurrency((278.71 * markup) * 4),
+    lugSellRands: roundCurrency((16.92 * markup) * 4),
+  }
+
+  // AC & DB section itemized per RULE-AC-01..04 (prices from pricing-reference.md).
+  const acDbComponents = [
+    { sku: 'JN2125G63A', description: 'Chint 2P 63A changeover switch (grid/inverter isolation)', costRands: 468.8, sellRands: 539.12 },
+    { sku: 'NXB-63G-2P-C63', description: 'Chint 63A 2P MCB C-curve 6kA', costRands: 158.72, sellRands: 182.53 },
+    { sku: 'NU6-IIG-2P-40KA-275V', description: 'Chint AC SPD Type 2, 2P 40kA 275V', costRands: 484.29, sellRands: 556.93 },
+    { sku: 'DB-SH12PN', description: 'Chint 12-way essential loads DB IP65', costRands: 861.22, sellRands: 990.4 },
+    { sku: 'SP8X12-12-BK', description: '12-way black DIN terminal bar 25mm', costRands: 98, sellRands: 112.7 },
+    { sku: 'SP8X12-12-BLU', description: '12-way blue DIN terminal bar 25mm', costRands: 98, sellRands: 112.7 },
+    { sku: 'SP6X9-12-GN', description: '12-way green earth bar 16mm DIN', costRands: 52.44, sellRands: 60.31 },
+    { sku: 'CT50X50WHT', description: 'CT trunking PVC 50×50 white 3m', costRands: 205.68, sellRands: 236.53 },
+    { sku: 'AC-DB-SUNDRY', description: 'DB wiring sundries and integration allowance', costRands: roundCurrency(2200 / markup), sellRands: 2200 },
+  ]
+
+  const value: MarkupDerivedPrices = {
+    gatewayByBrand: {
+      Sigenergy: sigenergyGateway,
+      SigenStor: sigenergyGateway,
+      'Sigenergy/SigenStor': sigenergyGateway,
+    },
+    pvStringFuseSell: roundCurrency(85 * markup),
+    batteryCommsCableSell: roundCurrency(250 * markup),
+    batteryCableSetSell: roundCurrency(807.68 * markup),
+    evTypeBElcbSell: roundCurrency(3200 * markup),
+    evWarningLabelsSell: roundCurrency(120 * markup),
+    swaGlandSell: roundCurrency(45 * markup),
+    acDbComponents,
+    acDbBundleSell: roundCurrency(acDbComponents.reduce((sum, item) => sum + item.sellRands, 0)),
+    evChargerSpecs: {
+      '7kW':  { chargerCostRands: 4350,  chargerSellRands: roundCurrency(4350  * markup), cableSellPerM: 32, mcbSellRands: 350, labourSellRands: 1500 },
+      '11kW': { chargerCostRands: 6500,  chargerSellRands: roundCurrency(6500  * markup), cableSellPerM: 48, mcbSellRands: 520, labourSellRands: 1800 },
+      '22kW': { chargerCostRands: 11300, chargerSellRands: roundCurrency(11300 * markup), cableSellPerM: 68, mcbSellRands: 690, labourSellRands: 2200 },
+    },
+  }
+  derivedPricesCache.set(markup, value)
+  return value
 }
 
 const DC_BREAKER_SELL_BY_STANDARD: Record<number, number> = {
@@ -59,34 +159,11 @@ const DC_BREAKER_SELL_BY_STANDARD: Record<number, number> = {
   40: 425.5,
 }
 
-// AC & DB section itemized per RULE-AC-01..04 (prices from pricing-reference.md).
-// The summed total replaces the old opaque "AC-DB-BUNDLE" line.
-const AC_DB_COMPONENTS = [
-  { sku: 'JN2125G63A', description: 'Chint 2P 63A changeover switch (grid/inverter isolation)', costRands: 468.8, sellRands: 539.12 },
-  { sku: 'NXB-63G-2P-C63', description: 'Chint 63A 2P MCB C-curve 6kA', costRands: 158.72, sellRands: 182.53 },
-  { sku: 'NU6-IIG-2P-40KA-275V', description: 'Chint AC SPD Type 2, 2P 40kA 275V', costRands: 484.29, sellRands: 556.93 },
-  { sku: 'DB-SH12PN', description: 'Chint 12-way essential loads DB IP65', costRands: 861.22, sellRands: 990.4 },
-  { sku: 'SP8X12-12-BK', description: '12-way black DIN terminal bar 25mm', costRands: 98, sellRands: 112.7 },
-  { sku: 'SP8X12-12-BLU', description: '12-way blue DIN terminal bar 25mm', costRands: 98, sellRands: 112.7 },
-  { sku: 'SP6X9-12-GN', description: '12-way green earth bar 16mm DIN', costRands: 52.44, sellRands: 60.31 },
-  { sku: 'CT50X50WHT', description: 'CT trunking PVC 50×50 white 3m', costRands: 205.68, sellRands: 236.53 },
-  { sku: 'AC-DB-SUNDRY', description: 'DB wiring sundries and integration allowance', costRands: roundCurrency(2200 / MARKUP), sellRands: 2200 },
-]
-const AC_DB_BUNDLE_SELL_RANDS = roundCurrency(
-  AC_DB_COMPONENTS.reduce((sum, item) => sum + item.sellRands, 0),
-)
-
-// Items priced at market estimate (RULE-PRC-03) — flagged for supplier
-// confirmation in the calculation warnings whenever they land on a BOM.
-const PV_STRING_FUSE_SELL_RANDS = roundCurrency(85 * MARKUP)            // gPV fuse + holder, per pole
-const BATTERY_COMMS_CABLE_SELL_RANDS = roundCurrency(250 * MARKUP)      // BMS↔inverter CAN/RS485 lead
-const BATTERY_CABLE_SET_SELL_RANDS = roundCurrency(807.68 * MARKUP)     // 4m 50mm² flex + 4× LS0440 lugs (RULE-INV-03)
+// Items below carry literal supplier price-list values (RULE-PRC-03 market
+// estimates that flex with markup live in getDerivedPrices above).
 const BATTERY_FUSE_DISCONNECT_SELL_RANDS = 1036.84                      // 143018 KELEC NH00 2P 160A (priced)
-const EV_TYPE_B_ELCB_SELL_RANDS = roundCurrency(3200 * MARKUP)          // Noark EX9LB63 1P+N 63A 30mA Type B
 const EV_INPUT_DB_SELL_RANDS = 353.64                                   // DB-SH6PN (priced)
 const EV_SPD_SELL_RANDS = 556.93                                        // NU6-IIG-2P-40KA-275V (priced)
-const EV_WARNING_LABELS_SELL_RANDS = roundCurrency(120 * MARKUP)
-const SWA_GLAND_SELL_RANDS = roundCurrency(45 * MARKUP)                 // CW-type compression gland, per end
 const DC_COMBINER_ENCLOSURE_SELL_RANDS = 900
 const DC_SPD_SELL_RANDS = 1151.77
 const MC4_PAIR_SELL_RANDS = 19.55
@@ -114,12 +191,6 @@ interface EvChargerSpec {
   cableSellPerM: number
   mcbSellRands: number
   labourSellRands: number
-}
-
-const EV_CHARGER_SPECS: Record<string, EvChargerSpec> = {
-  '7kW':  { chargerCostRands: 4350,  chargerSellRands: roundCurrency(4350  * MARKUP), cableSellPerM: 32, mcbSellRands: 350, labourSellRands: 1500 },
-  '11kW': { chargerCostRands: 6500,  chargerSellRands: roundCurrency(6500  * MARKUP), cableSellPerM: 48, mcbSellRands: 520, labourSellRands: 1800 },
-  '22kW': { chargerCostRands: 11300, chargerSellRands: roundCurrency(11300 * MARKUP), cableSellPerM: 68, mcbSellRands: 690, labourSellRands: 2200 },
 }
 
 const EV_CONSUMABLES_SELL_RANDS = 200
@@ -229,6 +300,9 @@ export interface CalculatorInput {
    *  cableRouteMetres estimate for cable quantities, and the longest DC run
    *  drives the voltage-drop check. */
   cableRoutes?: MeasuredCableRoutes | null
+  /** Company pricing policy (migration 031). Missing fields → DEFAULT_PRICING,
+   *  which reproduces the historical hardcoded behaviour exactly. */
+  pricing?: Partial<PricingSettings> | null
   lockedPanelCount?: number | null
   inverterQuantity?: number | null
   batteryQuantityOverride?: number | null
@@ -677,7 +751,9 @@ function addBomItem(
   description: string,
   quantity: number,
   unitSellRands: number,
-  unitCostRands = unitSellRands / MARKUP,
+  // No default on purpose: the implied cost (sell ÷ markup) must use the
+  // markup in effect — buildBreakdown's pushBom wrapper supplies it.
+  unitCostRands: number,
 ) {
   items.push({
     section,
@@ -691,8 +767,11 @@ function addBomItem(
   })
 }
 
-export function getTariffRateForMunicipality(municipality: string) {
-  return TARIFF_BY_MUNICIPALITY[municipality] ?? TARIFF_BY_MUNICIPALITY.Eskom
+export function getTariffRateForMunicipality(
+  municipality: string,
+  tariffs: Record<string, number> = TARIFF_BY_MUNICIPALITY,
+) {
+  return tariffs[municipality] ?? tariffs.Eskom ?? TARIFF_BY_MUNICIPALITY.Eskom
 }
 
 function getPanelCount(input: CalculatorInput) {
@@ -725,10 +804,10 @@ function getBatteryCount(input: CalculatorInput) {
 }
 
 // RULE-SZ-04: storey access premium — scaffolding/boom time on multi-storey roofs
-function getStoreysPremium(storeys: string) {
+export function getStoreysPremium(storeys: string, premium2 = 2000, premium3 = 5000) {
   const trimmed = (storeys ?? '').trim()
-  if (trimmed.startsWith('3')) return 5000
-  if (trimmed.startsWith('2')) return 2000
+  if (trimmed.startsWith('3')) return premium3
+  if (trimmed.startsWith('2')) return premium2
   return 0
 }
 
@@ -763,12 +842,12 @@ function getConduitSellTotal(routeMetres: number) {
   )
 }
 
-function getBatteryAccessories(brand: string) {
-  const direct = GATEWAY_BY_BRAND[brand]
+function getBatteryAccessories(brand: string, gatewayByBrand: Record<string, GatewayConfig | null>) {
+  const direct = gatewayByBrand[brand]
   if (direct) return direct
 
   const normalized = normalizeBrand(brand)
-  const match = Object.entries(GATEWAY_BY_BRAND).find(([key]) => normalized.includes(normalizeBrand(key)))
+  const match = Object.entries(gatewayByBrand).find(([key]) => normalized.includes(normalizeBrand(key)))
   return match?.[1] ?? null
 }
 
@@ -858,7 +937,15 @@ function getPaybackMonthsEscalated(total: number, annualConsumptionKwh: number, 
 function buildBreakdown(input: CalculatorInput): Breakdown {
   const warnings: string[] = []
   const supplierBom: SupplierBomItem[] = []
-  const tariffRate = input.tariffRate ?? getTariffRateForMunicipality(input.municipality)
+  const pricing: PricingSettings = { ...DEFAULT_PRICING, ...(input.pricing ?? {}) }
+  const derived = getDerivedPrices(pricing.markup)
+  // Local wrapper so the implied internal cost (sell ÷ markup) always uses the
+  // markup actually in effect for this quote.
+  const pushBom = (
+    section: string, sku: string, description: string, quantity: number,
+    unitSellRands: number, unitCostRands: number = unitSellRands / pricing.markup,
+  ) => addBomItem(supplierBom, section, sku, description, quantity, unitSellRands, unitCostRands)
+  const tariffRate = input.tariffRate ?? getTariffRateForMunicipality(input.municipality, pricing.tariffs)
   // Measured routes (map designer) beat the manual estimate. The longest DC
   // run is the voltage-drop worst case; totals drive cable quantities.
   const measured = input.cableRoutes &&
@@ -925,15 +1012,15 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
     )
   }
 
-  const panelSell = roundCurrency(panel.cost_rands * MARKUP)
-  const inverterSell = roundCurrency(inverter.cost_rands * MARKUP)
-  const batterySell = roundCurrency(battery.cost_rands * MARKUP)
+  const panelSell = roundCurrency(panel.cost_rands * pricing.markup)
+  const inverterSell = roundCurrency(inverter.cost_rands * pricing.markup)
+  const batterySell = roundCurrency(battery.cost_rands * pricing.markup)
   const panelSellTotal = roundCurrency(panelCount * panelSell)
   const mountingSellTotal = roundCurrency(panelCount * 250)
   const panelMountingSubtotalRands = roundCurrency(panelSellTotal + mountingSellTotal)
 
-  addBomItem(supplierBom, 'Panels & Mounting', panel.sku, `${panel.description} star deposit item`, panelCount, panelSell, panel.cost_rands)
-  addBomItem(supplierBom, 'Panels & Mounting', 'MOUNT-STD', 'Mounting kit and rails', panelCount, 250, 250 / MARKUP)
+  pushBom('Panels & Mounting', panel.sku, `${panel.description} star deposit item`, panelCount, panelSell, panel.cost_rands)
+  pushBom('Panels & Mounting', 'MOUNT-STD', 'Mounting kit and rails', panelCount, 250)
 
   // RULE-MC4-01: pairs by string count (2 per string) + 10% spare — never visual estimates
   const mc4PairCount = Math.max(2, stringLayout.stringCount * 2 + Math.ceil(stringLayout.stringCount * 2 * 0.1))
@@ -943,11 +1030,11 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
       acCableM * FLEX_16MM_SELL_PER_M +
       mc4PairCount * MC4_PAIR_SELL_RANDS,
   )
-  addBomItem(supplierBom, 'Cables & Connectors', 'CAB-PV-004-BK', `4mm solar cable black${measuredTag}`, dcCableM, CABLE_4MM_SELL_PER_M, 13.74)
-  addBomItem(supplierBom, 'Cables & Connectors', 'CAB-PV-004-RD', `4mm solar cable red${measuredTag}`, dcCableM, CABLE_4MM_SELL_PER_M, 13.74)
-  addBomItem(supplierBom, 'Cables & Connectors', 'FPW6.0GRN-YELL', `Earth flex cable${measuredTag}`, earthCableM, EARTH_FLEX_SELL_PER_M, 20.18)
-  addBomItem(supplierBom, 'Cables & Connectors', 'FPW16.0BLACK', `16mm flex cable${measuredTag}`, acCableM, FLEX_16MM_SELL_PER_M, 52.53)
-  addBomItem(supplierBom, 'Cables & Connectors', 'MC4-PAIR', 'MC4 connector pair', mc4PairCount, MC4_PAIR_SELL_RANDS, 17)
+  pushBom('Cables & Connectors', 'CAB-PV-004-BK', `4mm solar cable black${measuredTag}`, dcCableM, CABLE_4MM_SELL_PER_M, 13.74)
+  pushBom('Cables & Connectors', 'CAB-PV-004-RD', `4mm solar cable red${measuredTag}`, dcCableM, CABLE_4MM_SELL_PER_M, 13.74)
+  pushBom('Cables & Connectors', 'FPW6.0GRN-YELL', `Earth flex cable${measuredTag}`, earthCableM, EARTH_FLEX_SELL_PER_M, 20.18)
+  pushBom('Cables & Connectors', 'FPW16.0BLACK', `16mm flex cable${measuredTag}`, acCableM, FLEX_16MM_SELL_PER_M, 52.53)
+  pushBom('Cables & Connectors', 'MC4-PAIR', 'MC4 connector pair', mc4PairCount, MC4_PAIR_SELL_RANDS, 17)
 
   const estimatedIsc = panel.isc_amps ?? roundCurrency(panelWatts / 40)
   if (panel.isc_amps == null) {
@@ -964,14 +1051,14 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
     dcBreakerSell * stringLayout.stringCount +
       DC_SPD_SELL_RANDS +
       DC_COMBINER_ENCLOSURE_SELL_RANDS +
-      stringFuseCount * PV_STRING_FUSE_SELL_RANDS,
+      stringFuseCount * derived.pvStringFuseSell,
   )
   const dcCombinerConfig = `${stringLayout.stringCount}-in, ${stringLayout.stringCount}-out — ${dcBreakerStandard}A breaker per string + SPD`
-  addBomItem(supplierBom, 'DC Protection', `DC-MCB-${dcBreakerStandard}`, `PV DC breaker ${dcBreakerStandard}A (per string)`, stringLayout.stringCount, dcBreakerSell, dcBreakerSell / MARKUP)
-  addBomItem(supplierBom, 'DC Protection', 'DC-SPD', 'PV surge protection device', 1, DC_SPD_SELL_RANDS, 1001.54)
-  addBomItem(supplierBom, 'DC Protection', 'DC-COMB', 'DC combiner enclosure', 1, DC_COMBINER_ENCLOSURE_SELL_RANDS, DC_COMBINER_ENCLOSURE_SELL_RANDS / MARKUP)
+  pushBom('DC Protection', `DC-MCB-${dcBreakerStandard}`, `PV DC breaker ${dcBreakerStandard}A (per string)`, stringLayout.stringCount, dcBreakerSell)
+  pushBom('DC Protection', 'DC-SPD', 'PV surge protection device', 1, DC_SPD_SELL_RANDS, 1001.54)
+  pushBom('DC Protection', 'DC-COMB', 'DC combiner enclosure', 1, DC_COMBINER_ENCLOSURE_SELL_RANDS)
   if (stringFuseCount > 0) {
-    addBomItem(supplierBom, 'DC Protection', 'GPV-FUSE', 'gPV string fuse + holder (both poles, paralleled strings)', stringFuseCount, PV_STRING_FUSE_SELL_RANDS)
+    pushBom('DC Protection', 'GPV-FUSE', 'gPV string fuse + holder (both poles, paralleled strings)', stringFuseCount, derived.pvStringFuseSell)
     warnings.push('gPV string fuses priced at market estimate — confirm with supplier before ordering (RULE-PRC-03).')
   }
 
@@ -979,11 +1066,13 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   // inverter, BMS comms cable, DC fuse/disconnect, and properly sized DC cables.
   // Brands with a configured gateway kit (Sigenergy) use it; everything else
   // gets the generic ancillary set so these items are never silently omitted.
-  const accessories = getBatteryAccessories(inverter.brand) ?? getBatteryAccessories(battery.brand)
+  const accessories =
+    getBatteryAccessories(inverter.brand, derived.gatewayByBrand) ??
+    getBatteryAccessories(battery.brand, derived.gatewayByBrand)
   const genericBatteryAncillariesSell = roundCurrency(
-    BATTERY_COMMS_CABLE_SELL_RANDS * inverterCount +
+    derived.batteryCommsCableSell * inverterCount +
       BATTERY_FUSE_DISCONNECT_SELL_RANDS * inverterCount +
-      BATTERY_CABLE_SET_SELL_RANDS * batteryCount,
+      derived.batteryCableSetSell * batteryCount,
   )
   const batteryAccessoriesSellTotal = accessories
     ? roundCurrency(
@@ -1000,23 +1089,23 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   const batterySellTotal = roundCurrency(batteryCount * batterySell)
   const inverterBatterySubtotalRands = roundCurrency(inverterSellTotal + batterySellTotal + batteryAccessoriesSellTotal)
 
-  addBomItem(supplierBom, 'Inverter & Battery System', inverter.sku, `${inverter.description} star deposit item`, inverterCount, inverterSell, inverter.cost_rands)
-  addBomItem(supplierBom, 'Inverter & Battery System', battery.sku, `${battery.description} star deposit item`, batteryCount, batterySell, battery.cost_rands)
+  pushBom('Inverter & Battery System', inverter.sku, `${inverter.description} star deposit item`, inverterCount, inverterSell, inverter.cost_rands)
+  pushBom('Inverter & Battery System', battery.sku, `${battery.description} star deposit item`, batteryCount, batterySell, battery.cost_rands)
   if (accessories) {
-    addBomItem(supplierBom, 'Inverter & Battery System', 'GATEWAY', 'Gateway and monitoring', inverterCount, accessories.gatewaySellRands)
-    addBomItem(supplierBom, 'Inverter & Battery System', 'COMMS', 'Communication module', inverterCount, accessories.commsSellRands)
-    addBomItem(supplierBom, 'Inverter & Battery System', 'FUSE', 'Battery fuse holder', inverterCount, accessories.fuseHolderSellRands)
-    addBomItem(supplierBom, 'Inverter & Battery System', 'BAT-CABLE', 'Battery cable set and lugs', inverterCount, roundCurrency(accessories.cableSellRands + accessories.lugSellRands))
+    pushBom('Inverter & Battery System', 'GATEWAY', 'Gateway and monitoring', inverterCount, accessories.gatewaySellRands)
+    pushBom('Inverter & Battery System', 'COMMS', 'Communication module', inverterCount, accessories.commsSellRands)
+    pushBom('Inverter & Battery System', 'FUSE', 'Battery fuse holder', inverterCount, accessories.fuseHolderSellRands)
+    pushBom('Inverter & Battery System', 'BAT-CABLE', 'Battery cable set and lugs', inverterCount, roundCurrency(accessories.cableSellRands + accessories.lugSellRands))
   } else {
-    addBomItem(supplierBom, 'Inverter & Battery System', 'BAT-COMMS', 'Battery BMS communication cable (CAN/RS485)', inverterCount, BATTERY_COMMS_CABLE_SELL_RANDS)
-    addBomItem(supplierBom, 'Inverter & Battery System', '143018', 'KELEC NH00 battery fuse holder disconnect 2P 160A', inverterCount, BATTERY_FUSE_DISCONNECT_SELL_RANDS, 901.6)
-    addBomItem(supplierBom, 'Inverter & Battery System', 'BAT-CABLE-50', 'Battery cable set 50mm² flex (4m) + lugs', batteryCount, BATTERY_CABLE_SET_SELL_RANDS)
+    pushBom('Inverter & Battery System', 'BAT-COMMS', 'Battery BMS communication cable (CAN/RS485)', inverterCount, derived.batteryCommsCableSell)
+    pushBom('Inverter & Battery System', '143018', 'KELEC NH00 battery fuse holder disconnect 2P 160A', inverterCount, BATTERY_FUSE_DISCONNECT_SELL_RANDS, 901.6)
+    pushBom('Inverter & Battery System', 'BAT-CABLE-50', 'Battery cable set 50mm² flex (4m) + lugs', batteryCount, derived.batteryCableSetSell)
     warnings.push('Battery comms cable and 50mm² cable set priced at market estimate — confirm with supplier before ordering (RULE-PRC-03). Check whether the inverter ships with a built-in monitoring dongle; add a gateway line if not.')
   }
 
-  const acDbSubtotalRands = AC_DB_BUNDLE_SELL_RANDS
-  for (const component of AC_DB_COMPONENTS) {
-    addBomItem(supplierBom, 'AC & DB Protection', component.sku, component.description, 1, component.sellRands, component.costRands)
+  const acDbSubtotalRands = derived.acDbBundleSell
+  for (const component of derived.acDbComponents) {
+    pushBom('AC & DB Protection', component.sku, component.description, 1, component.sellRands, component.costRands)
   }
 
   const earthingSpikeCount = getEarthingSpikeCount(inverterKw)
@@ -1030,32 +1119,32 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
       earthMutiCount * EARTH_MUTI_SELL_RANDS +
       earthingWireMetres * BARE_EARTH_WIRE_SELL_PER_M,
   )
-  addBomItem(supplierBom, 'Earthing System', 'ER1615', 'Earth rods', earthingSpikeCount, EARTH_ROD_SELL_RANDS, 193.2)
-  addBomItem(supplierBom, 'Earthing System', 'ERA02', 'Earth rod driving tips', earthingSpikeCount, EARTH_TIP_SELL_RANDS, 71.76)
-  addBomItem(supplierBom, 'Earthing System', 'ERA03', 'Earth rod couplings', earthingSpikeCount, EARTH_COUPLING_SELL_RANDS, 119.6)
-  addBomItem(supplierBom, 'Earthing System', 'ERA04', 'Earth rod clamps', earthingSpikeCount, EARTH_CLAMP_SELL_RANDS, 29.44)
-  addBomItem(supplierBom, 'Earthing System', 'EM25KG', 'Earthmuti bucket', earthMutiCount, EARTH_MUTI_SELL_RANDS, 368)
-  addBomItem(supplierBom, 'Earthing System', 'BCEW16.0MM', 'Bare copper earth wire', earthingWireMetres, BARE_EARTH_WIRE_SELL_PER_M, 47.18)
+  pushBom('Earthing System', 'ER1615', 'Earth rods', earthingSpikeCount, EARTH_ROD_SELL_RANDS, 193.2)
+  pushBom('Earthing System', 'ERA02', 'Earth rod driving tips', earthingSpikeCount, EARTH_TIP_SELL_RANDS, 71.76)
+  pushBom('Earthing System', 'ERA03', 'Earth rod couplings', earthingSpikeCount, EARTH_COUPLING_SELL_RANDS, 119.6)
+  pushBom('Earthing System', 'ERA04', 'Earth rod clamps', earthingSpikeCount, EARTH_CLAMP_SELL_RANDS, 29.44)
+  pushBom('Earthing System', 'EM25KG', 'Earthmuti bucket', earthMutiCount, EARTH_MUTI_SELL_RANDS, 368)
+  pushBom('Earthing System', 'BCEW16.0MM', 'Bare copper earth wire', earthingWireMetres, BARE_EARTH_WIRE_SELL_PER_M, 47.18)
 
   const conduitSellTotal = getConduitSellTotal(routeMetres)
   // RULE-CON-04: minimum 2 glands per DB (entry + exit) — IP rating is void without them
   const dbGlandCount = 2
-  const consumablesBase = roundCurrency(getConsumablesBase(panelCount) * MARKUP)
-  const consumablesSubtotalRands = roundCurrency(consumablesBase + conduitSellTotal + dbGlandCount * CONDUIT_GLAND_SELL_RANDS + COC_RANDS)
-  addBomItem(supplierBom, 'Consumables & Compliance', 'CONS-STD', 'Consumables allowance', 1, consumablesBase, consumablesBase / MARKUP)
-  addBomItem(supplierBom, 'Consumables & Compliance', 'CONDUIT', 'Conduit and routing accessories', 1, conduitSellTotal, conduitSellTotal / MARKUP)
-  addBomItem(supplierBom, 'Consumables & Compliance', 'PMGB25-18', 'Nylon cable gland 25mm IP68 (DB entry/exit)', dbGlandCount, CONDUIT_GLAND_SELL_RANDS, 7.27)
-  addBomItem(supplierBom, 'Consumables & Compliance', 'COC', 'Certificate of Compliance', 1, COC_RANDS, COC_RANDS)
+  const consumablesBase = roundCurrency(getConsumablesBase(panelCount) * pricing.markup)
+  const consumablesSubtotalRands = roundCurrency(consumablesBase + conduitSellTotal + dbGlandCount * CONDUIT_GLAND_SELL_RANDS + pricing.cocRands)
+  pushBom('Consumables & Compliance', 'CONS-STD', 'Consumables allowance', 1, consumablesBase)
+  pushBom('Consumables & Compliance', 'CONDUIT', 'Conduit and routing accessories', 1, conduitSellTotal)
+  pushBom('Consumables & Compliance', 'PMGB25-18', 'Nylon cable gland 25mm IP68 (DB entry/exit)', dbGlandCount, CONDUIT_GLAND_SELL_RANDS, 7.27)
+  pushBom('Consumables & Compliance', 'COC', 'Certificate of Compliance', 1, pricing.cocRands, pricing.cocRands)
 
-  const storeysPremium = getStoreysPremium(input.storeys)
+  const storeysPremium = getStoreysPremium(input.storeys, pricing.storeyPremium2, pricing.storeyPremium3)
   const labourBaseRands = roundCurrency(
-    (inverterWatts * inverterCount) * 0.25 +
-      panelCount * panelWatts * 0.75,
+    (inverterWatts * inverterCount) * pricing.labourInverterPerW +
+      panelCount * panelWatts * pricing.labourPanelPerW,
   )
   const labourSubtotalRands = roundCurrency(labourBaseRands + storeysPremium)
-  addBomItem(supplierBom, 'Labour', 'LABOUR', 'Installation labour and commissioning', 1, labourBaseRands, labourBaseRands)
+  pushBom('Labour', 'LABOUR', 'Installation labour and commissioning', 1, labourBaseRands, labourBaseRands)
   if (storeysPremium > 0) {
-    addBomItem(supplierBom, 'Labour', 'LABOUR-ACCESS', `${input.storeys}-storey roof access premium (scaffolding/boom time) — RULE-SZ-04`, 1, storeysPremium, storeysPremium)
+    pushBom('Labour', 'LABOUR-ACCESS', `${input.storeys}-storey roof access premium (scaffolding/boom time) — RULE-SZ-04`, 1, storeysPremium, storeysPremium)
   }
 
   // ── EV Charger (optional add-on) ───────────────────────────────────────────
@@ -1064,30 +1153,30 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   let evChargerSizeKw = ''
   let evChargerUnitSellRands = 0
 
-  if (evSize && EV_CHARGER_SPECS[evSize]) {
+  if (evSize && derived.evChargerSpecs[evSize]) {
     // RULE-EV-01 (BLOCKER class): an EV circuit may never be quoted without
     // Type B earth leakage, its own input DB, surge protection, correctly sized
     // cable, and warning labels — SANS 10142-1 §6.16.8 / §6.7.5.
-    const spec = EV_CHARGER_SPECS[evSize]
+    const spec = derived.evChargerSpecs[evSize]
     evChargerUnitSellRands = spec.chargerSellRands
     const evCableSell = roundCurrency(spec.cableSellPerM * EV_CHARGER_CABLE_ROUTE_M)
     evChargerSubtotalRands = roundCurrency(
       evChargerUnitSellRands + evCableSell + spec.mcbSellRands + EV_CONSUMABLES_SELL_RANDS + spec.labourSellRands +
-        EV_TYPE_B_ELCB_SELL_RANDS + EV_INPUT_DB_SELL_RANDS + EV_SPD_SELL_RANDS + EV_WARNING_LABELS_SELL_RANDS +
-        2 * SWA_GLAND_SELL_RANDS,
+        derived.evTypeBElcbSell + EV_INPUT_DB_SELL_RANDS + EV_SPD_SELL_RANDS + derived.evWarningLabelsSell +
+        2 * derived.swaGlandSell,
     )
     evChargerSizeKw = evSize
 
-    addBomItem(supplierBom, 'EV Charger', `EV-${evSize}`, `${evSize} Type 2 EV Wallbox — deposit item`, 1, evChargerUnitSellRands, spec.chargerCostRands)
-    addBomItem(supplierBom, 'EV Charger', 'EV-CABLE-SWA', `6mm² 3-core SWA armoured cable — ${EV_CHARGER_CABLE_ROUTE_M}m run`, EV_CHARGER_CABLE_ROUTE_M, spec.cableSellPerM, spec.cableSellPerM / MARKUP)
-    addBomItem(supplierBom, 'EV Charger', 'CW20-SWA', 'SWA compression gland 20mm (armour earthed at entry)', 2, SWA_GLAND_SELL_RANDS)
-    addBomItem(supplierBom, 'EV Charger', 'EX9LB63-1PN-63-30B', 'Noark Type B ELCB 63A 30mA (DC-sensitive — EV requirement)', 1, EV_TYPE_B_ELCB_SELL_RANDS)
-    addBomItem(supplierBom, 'EV Charger', 'DB-SH6PN', 'Chint 6-way EV input DB IP66', 1, EV_INPUT_DB_SELL_RANDS, 307.51)
-    addBomItem(supplierBom, 'EV Charger', 'NU6-IIG-2P-40KA-275V', 'EV circuit AC SPD Type 2, 2P 40kA', 1, EV_SPD_SELL_RANDS, 484.29)
-    addBomItem(supplierBom, 'EV Charger', 'EV-MCB', 'Dedicated EV circuit MCB', 1, spec.mcbSellRands, spec.mcbSellRands / MARKUP)
-    addBomItem(supplierBom, 'EV Charger', 'EV-LABELS', 'EV circuit warning labels', 1, EV_WARNING_LABELS_SELL_RANDS)
-    addBomItem(supplierBom, 'EV Charger', 'EV-CONS', 'EV installation consumables and conduit', 1, EV_CONSUMABLES_SELL_RANDS, EV_CONSUMABLES_SELL_RANDS / MARKUP)
-    addBomItem(supplierBom, 'EV Charger', 'EV-LABOUR', 'EV charger installation and commissioning labour', 1, spec.labourSellRands, spec.labourSellRands)
+    pushBom('EV Charger', `EV-${evSize}`, `${evSize} Type 2 EV Wallbox — deposit item`, 1, evChargerUnitSellRands, spec.chargerCostRands)
+    pushBom('EV Charger', 'EV-CABLE-SWA', `6mm² 3-core SWA armoured cable — ${EV_CHARGER_CABLE_ROUTE_M}m run`, EV_CHARGER_CABLE_ROUTE_M, spec.cableSellPerM)
+    pushBom('EV Charger', 'CW20-SWA', 'SWA compression gland 20mm (armour earthed at entry)', 2, derived.swaGlandSell)
+    pushBom('EV Charger', 'EX9LB63-1PN-63-30B', 'Noark Type B ELCB 63A 30mA (DC-sensitive — EV requirement)', 1, derived.evTypeBElcbSell)
+    pushBom('EV Charger', 'DB-SH6PN', 'Chint 6-way EV input DB IP66', 1, EV_INPUT_DB_SELL_RANDS, 307.51)
+    pushBom('EV Charger', 'NU6-IIG-2P-40KA-275V', 'EV circuit AC SPD Type 2, 2P 40kA', 1, EV_SPD_SELL_RANDS, 484.29)
+    pushBom('EV Charger', 'EV-MCB', 'Dedicated EV circuit MCB', 1, spec.mcbSellRands)
+    pushBom('EV Charger', 'EV-LABELS', 'EV circuit warning labels', 1, derived.evWarningLabelsSell)
+    pushBom('EV Charger', 'EV-CONS', 'EV installation consumables and conduit', 1, EV_CONSUMABLES_SELL_RANDS)
+    pushBom('EV Charger', 'EV-LABOUR', 'EV charger installation and commissioning labour', 1, spec.labourSellRands, spec.labourSellRands)
     warnings.push('Type B ELCB, SWA glands, and EV labels priced at market estimate — confirm with supplier before ordering (RULE-PRC-03).')
   }
 
@@ -1195,7 +1284,10 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
 
 export function calculateQuote(input: CalculatorInput): QuoteData {
   const breakdown = buildBreakdown(input)
-  const tariffRate = input.tariffRate ?? getTariffRateForMunicipality(input.municipality)
+  const tariffRate = input.tariffRate ?? getTariffRateForMunicipality(
+    input.municipality,
+    { ...DEFAULT_PRICING.tariffs, ...(input.pricing?.tariffs ?? {}) },
+  )
   const today = new Date()
   const expires = new Date(today)
   expires.setDate(today.getDate() + 7)

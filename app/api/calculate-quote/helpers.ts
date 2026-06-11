@@ -3,10 +3,12 @@ import {
   calculateQuote,
   estimateTargetInverterKw,
   getTariffRateForMunicipality,
+  mapSettingsToPricing,
   type CalculatorInput,
   type EquipmentCatalogItem,
   type EquipmentCatalogPhase,
   type MeasuredCableRoutes,
+  type PricingSettings,
   type QuoteTier,
   type QuoteTierConfig,
 } from '@/lib/solar/quote-calculator'
@@ -70,6 +72,7 @@ export function buildCalculatorInput(
     quoteNumber: string
     cableRouteM: number
     cableRoutes?: MeasuredCableRoutes | null
+    pricing?: PricingSettings | null
     tariffRate?: number
     tier?: QuoteTier
     tierLabel?: string
@@ -99,9 +102,13 @@ export function buildCalculatorInput(
     advancedMonthlyKwh,
     batteryHours: coerceNumber(request.battery_hours, 4),
     essentialLoadKw: coerceNumber(request.essential_load, 0),
-    tariffRate: options.tariffRate ?? getTariffRateForMunicipality(String(request.municipality ?? 'Eskom')),
+    tariffRate: options.tariffRate ?? getTariffRateForMunicipality(
+      String(request.municipality ?? 'Eskom'),
+      options.pricing?.tariffs,
+    ),
     cableRouteMetres: options.cableRouteM,
     cableRoutes: options.cableRoutes ?? null,
+    pricing: options.pricing ?? null,
     lockedPanelCount: coerceNumber(request.design_panel_count, 0) || null,
     inverterQuantity: options.inverterQuantity ?? 1,
     batteryQuantityOverride: options.batteryQuantityOverride ?? null,
@@ -159,6 +166,18 @@ export async function fetchSurvey(
     .single()
 }
 
+/** Company pricing policy from company_settings (defaults when unset). */
+export async function fetchPricing(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<PricingSettings> {
+  const { data } = await supabase
+    .from('company_settings')
+    .select('markup_pct, coc_fee_rands, labour_inverter_per_w, labour_panel_per_w, storey_premium_2, storey_premium_3, tariffs')
+    .eq('id', true)
+    .maybeSingle()
+  return mapSettingsToPricing(data)
+}
+
 /** Measured cable routes drawn on the roof designer — null when none saved. */
 export async function fetchMeasuredRoutes(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -197,6 +216,7 @@ export function calculateOptionQuote(
     quoteNumber: string
     cableRouteM: number
     cableRoutes?: MeasuredCableRoutes | null
+    pricing?: PricingSettings | null
     tariffRate?: number
     tier: QuoteTier
     tierLabel: string

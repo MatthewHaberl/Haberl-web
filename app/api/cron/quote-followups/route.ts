@@ -18,9 +18,12 @@ export const maxDuration = 60
  *   expiry → admin alert, no further customer email
  */
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret')
+  // Accepts either ?secret= (VPS crontab style) or the Authorization: Bearer
+  // header Vercel Cron sends automatically when CRON_SECRET is set.
   const expected = process.env.CRON_SECRET ?? process.env.MONITORING_CRON_SECRET
-  if (!expected || secret !== expected) {
+  const querySecret = req.nextUrl.searchParams.get('secret')
+  const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+  if (!expected || (querySecret !== expected && bearer !== expected)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

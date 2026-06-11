@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { MARKUP, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
+import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { Loader2, Pencil, Plus, Search, X } from 'lucide-react'
 
 type CategoryTab = 'inverter' | 'battery' | 'panel'
@@ -92,6 +92,17 @@ export default function CatalogPage() {
   const [activeTab, setActiveTab] = useState<CategoryTab>('inverter')
   const [editing, setEditing] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
+  const [markup, setMarkup] = useState(DEFAULT_PRICING.markup)
+
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      const { data } = await supabase
+        .from('company_settings').select('markup_pct').eq('id', true).maybeSingle()
+      if (active && data) setMarkup(mapSettingsToPricing(data).markup)
+    })()
+    return () => { active = false }
+  }, [supabase])
 
   async function loadItems() {
     setLoading(true)
@@ -268,7 +279,7 @@ export default function CatalogPage() {
                         <td className="py-3 pr-4">{item.description}</td>
                         <td className="py-3 pr-4">{spec}</td>
                         <td className="py-3 pr-4">{formatRands(item.cost_rands)}</td>
-                        <td className="py-3 pr-4">{formatRands(item.cost_rands * MARKUP)}</td>
+                        <td className="py-3 pr-4">{formatRands(item.cost_rands * markup)}</td>
                         <td className="py-3 pr-4">{item.active ? 'Active' : 'Hidden'}</td>
                         <td className="py-3">
                           <div className="flex gap-2">
@@ -363,7 +374,7 @@ export default function CatalogPage() {
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium">Sell price (read-only)</span>
-                <Input value={formatRands(Number(editing.cost_rands || 0) * MARKUP)} readOnly />
+                <Input value={formatRands(Number(editing.cost_rands || 0) * markup)} readOnly />
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium">Isc (A)</span>

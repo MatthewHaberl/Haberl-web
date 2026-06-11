@@ -10,6 +10,7 @@ import {
   buildCalculatorInput,
   calculateTargetInverterKw,
   fetchMeasuredRoutes,
+  fetchPricing,
   fetchSurvey,
   getPhaseFromGridSupply,
   mapEquipmentRows,
@@ -83,7 +84,10 @@ export async function POST(req: Request) {
   }
 
   const equipmentMap = mapEquipmentRows((equipmentRows ?? []) as EquipmentCatalogItem[])
-  const measuredRoutes = await fetchMeasuredRoutes(auth.supabase, surveyId)
+  const [measuredRoutes, pricing] = await Promise.all([
+    fetchMeasuredRoutes(auth.supabase, surveyId),
+    fetchPricing(auth.supabase),
+  ])
 
   const options = tierConfigs.map((config) => {
     const inverter = equipmentMap.get(config!.inverter_id)
@@ -106,6 +110,7 @@ export async function POST(req: Request) {
           quoteNumber: String(body.quoteNumber ?? survey.quote_number ?? ''),
           cableRouteM: Number(body.cableRouteM ?? survey.cable_route_m ?? 15),
           cableRoutes: measuredRoutes,
+          pricing,
           tariffRate: body.tariffRate != null ? Number(body.tariffRate) : undefined,
           tier: config!.tier,
           tierLabel: TIER_LABELS[config!.tier],

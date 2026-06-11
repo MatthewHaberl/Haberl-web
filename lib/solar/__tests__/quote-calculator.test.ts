@@ -1,7 +1,7 @@
 // Run with: npx tsx --test lib/solar/__tests__/quote-calculator.test.ts
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { calculateQuote, type CalculatorInput } from '../quote-calculator'
+import { calculateQuote, getTariffRateForMunicipality, type CalculatorInput } from '../quote-calculator'
 
 const michelleFixture: CalculatorInput = {
   quoteNumber: 'QUO-2026-027',
@@ -178,6 +178,49 @@ test('measured cable routes replace the scalar estimate in the BOM', () => {
   const fallbackDc = fallback.supplierBom!.find((item) => item.sku === 'CAB-PV-004-BK')
   assert.equal(fallbackDc?.quantity, 15)
   assert.ok(fallback.calculationWarnings?.some((w) => w.includes('estimates')))
+})
+
+test('pricing settings override markup, COC, labour and storey premiums', () => {
+  const fixture: CalculatorInput = {
+    ...michelleFixture,
+    pricing: {
+      markup: 1.25,
+      cocRands: 2000,
+      labourInverterPerW: 0.3,
+      labourPanelPerW: 0.8,
+      storeyPremium2: 3000,
+      storeyPremium3: 7000,
+    },
+  }
+  const quote = calculateQuote(fixture)
+  const bom = quote.supplierBom!
+
+  // Equipment sell flexes with the configured markup (cost × 1.25)
+  const panel = bom.find((item) => item.sku === 'JAM72D40-585/MB')
+  assert.equal(panel?.unitSellRands, Math.round(1446.41 * 1.25 * 100) / 100)
+
+  // COC at the configured fee (no markup on compliance)
+  const coc = bom.find((item) => item.sku === 'COC')
+  assert.equal(coc?.unitSellRands, 2000)
+  assert.equal(coc?.unitCostRands, 2000)
+
+  // Labour formula uses the configured R/W rates: 8000×0.3 + 14×585×0.8
+  const labour = bom.find((item) => item.sku === 'LABOUR')
+  assert.equal(labour?.unitSellRands, 8952)
+
+  // Two-storey fixture → configured premium
+  const access = bom.find((item) => item.sku === 'LABOUR-ACCESS')
+  assert.equal(access?.unitSellRands, 3000)
+
+  // Tariff table override resolves per municipality
+  assert.equal(
+    getTariffRateForMunicipality('City of Johannesburg', { 'City of Johannesburg': 3.5, Eskom: 3 }),
+    3.5,
+  )
+
+  // And the default path is untouched — reference totals still hold
+  const baseline = calculateQuote(michelleFixture)
+  assert.ok(Math.abs(baseline.quoteTotalRands - 189485.39) <= 250, `Baseline drifted: ${baseline.quoteTotalRands}`)
 })
 
 test('battery voltage class mismatch is a blocker (RULE-INV-06)', () => {

@@ -10,6 +10,14 @@ const anthropic = new Anthropic({
 })
 
 export async function POST(req: Request) {
+  // Legacy path: the deterministic calculator replaced AI generation in the
+  // UI (2026-06-09). Kept behind an explicit flag for experimentation only.
+  if (process.env.ENABLE_AI_QUOTES !== 'true') {
+    return new Response(
+      'AI generation is disabled — quotes use the deterministic calculator. Set ENABLE_AI_QUOTES=true to re-enable this endpoint.',
+      { status: 403 }
+    )
+  }
   if (!process.env.ANTHROPIC_API_KEY) {
     return new Response(
       'AI generation is not configured — add ANTHROPIC_API_KEY to .env.local',

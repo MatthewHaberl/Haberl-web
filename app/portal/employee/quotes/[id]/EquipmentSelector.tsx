@@ -15,12 +15,15 @@ import {
 } from '@/lib/solar/render-quote'
 import {
   buildSizingSnapshot,
+  DEFAULT_PRICING,
   estimateTargetInverterKw,
+  getStoreysPremium,
   getTariffRateForMunicipality,
   isBatteryCompatibleWithInverter,
-  MARKUP,
+  mapSettingsToPricing,
   type EquipmentCatalogItem,
   type EquipmentCatalogPhase,
+  type PricingSettings,
   type QuoteTierConfig,
 } from '@/lib/solar/quote-calculator'
 import { DepositSelector } from './DepositSelector'
@@ -128,14 +131,6 @@ function openHtmlPreview(html: string) {
   preview.document.close()
 }
 
-// RULE-SZ-04: storey access premium — mirrors getStoreysPremium in quote-calculator
-function getStoreysPremium(storeys: unknown) {
-  const trimmed = String(storeys ?? '').trim()
-  if (trimmed.startsWith('3')) return 5000
-  if (trimmed.startsWith('2')) return 2000
-  return 0
-}
-
 function formatCatalogError(message: string) {
   if (message.includes('public.equipment_catalog')) {
     return 'Quote calculator setup is incomplete: Supabase table public.equipment_catalog is missing. Run migrations 006-008 and seed the catalog, then refresh. You can still use AI Override below.'
@@ -215,6 +210,22 @@ export function EquipmentSelector({
   const [lockedAt, setLockedAt] = useState<string | null>(toOptionalString(request.design_locked_at) || null)
   const [locking, setLocking] = useState(false)
   const [lockError, setLockError] = useState('')
+  // Company pricing (markup % etc. from settings) — display + saved premium
+  const [pricing, setPricing] = useState<PricingSettings>(DEFAULT_PRICING)
+
+  useEffect(() => {
+    let active = true
+    async function loadPricing() {
+      const { data } = await supabase
+        .from('company_settings')
+        .select('markup_pct, coc_fee_rands, labour_inverter_per_w, labour_panel_per_w, storey_premium_2, storey_premium_3, tariffs')
+        .eq('id', true)
+        .maybeSingle()
+      if (active && data) setPricing(mapSettingsToPricing(data))
+    }
+    void loadPricing()
+    return () => { active = false }
+  }, [supabase])
 
   useEffect(() => {
     let active = true
@@ -543,6 +554,18 @@ export function EquipmentSelector({
     setSaveError('')
 
     try {
+      // First save with the auto-suggested number → consume it atomically from
+      // the sequence so two open quotes can never collide. A custom typed
+      // number is respected as-is; an already-saved number never changes.
+      let finalQuoteNumber = quoteNumber
+      if (!existingQuoteNumber && quoteNumber === nextQuoteNumber) {
+        const { data: issued } = await supabase.rpc('next_quote_number')
+        if (typeof issued === 'string' && issued) {
+          finalQuoteNumber = issued
+          setQuoteNumber(issued)
+        }
+      }
+
       const depositQuote = getDepositSource(quoteData)
       const depositAmountCents = depositQuote?.depositItems?.length
         ? Math.round(
@@ -560,7 +583,7 @@ export function EquipmentSelector({
         .from('quote_requests')
         .update({
           quote_html: previewHtml || null,
-          quote_number: quoteNumber || null,
+          quote_number: finalQuoteNumber || null,
           quote_version: quoteVersion,
           generated_quote: JSON.stringify(quoteData, null, 2),
           generated_at: new Date().toISOString(),
@@ -575,7 +598,7 @@ export function EquipmentSelector({
           selected_battery_qty: depositQuote ? Number(isMultiOption(quoteData) ? getDepositSource(quoteData)?.batteryQty ?? null : (quoteData as QuoteData).batteryQty) : null,
           selected_panel_qty: depositQuote ? Number(isMultiOption(quoteData) ? getDepositSource(quoteData)?.panelCount ?? null : (quoteData as QuoteData).panelCount) : null,
           cable_route_m: Number(cableRouteM || 0),
-          storeys_premium_rands: getStoreysPremium(request.storeys),
+          storeys_premium_rands: getStoreysPremium(String(request.storeys ?? ''), pricing.storeyPremium2, pricing.storeyPremium3),
         })
         .eq('id', requestId)
 
@@ -647,7 +670,7 @@ export function EquipmentSelector({
   }
 
   function optionLabel(item: EquipmentCatalogItem) {
-    return `${item.description} - ${formatRands(item.cost_rands * MARKUP)}`
+    return `${item.description} - ${formatRands(item.cost_rands * pricing.markup)}`
   }
 
   if (loadingCatalog) {
