@@ -153,7 +153,12 @@ export async function createJobFromQuote(
     INSTALL_CHECKLIST.map((description) => ({ job_id: job.id, description })),
   )
 
-  const bom = extractBom(quote.generated_quote, quote.accepted_tier)
+  // Design lock: a frozen bom_snapshot beats the live quote — procurement
+  // buys exactly what was locked, even if the quote was recalculated since.
+  const bomSource = quote.bom_snapshot
+    ? JSON.stringify(quote.bom_snapshot)
+    : quote.generated_quote
+  const bom = extractBom(bomSource, quote.accepted_tier)
   const { error: materialsError } = bom.length
     ? await supabase.from('job_materials').insert(
         bom.map((line, index) => ({

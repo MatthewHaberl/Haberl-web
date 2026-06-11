@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Loader2, RotateCcw, MapPin } from 'lucide-react'
@@ -10,7 +10,18 @@ import { offsetLatLng } from '@/lib/solar/google-solar'
 import { SolarMap } from './SolarMap'
 import { DesignControls } from './DesignControls'
 import type { SegmentStat } from './DesignControls'
+import { RoutesPanel } from './RoutesPanel'
+import {
+  computeFinalM,
+  defaultVerticalM,
+  nextRouteLabel,
+  polylineLengthM,
+  routeTotals,
+  type RouteDraft,
+  type RoutePoint,
+} from '@/lib/solar/cable-routes'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY } from '@/lib/solar/quote-calculator'
+import type { CableRouteType } from '@/types/database'
 
 interface Props {
   address: string | null
@@ -18,11 +29,12 @@ interface Props {
   existingPanelCount: number | null
   existingKwp: number | null
   existingConfirmedAt: string | null
+  storeys?: string | null
 }
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 
-export function RoofDesigner({ address, quoteRequestId, existingPanelCount, existingKwp, existingConfirmedAt }: Props) {
+export function RoofDesigner({ address, quoteRequestId, existingPanelCount, existingKwp, existingConfirmedAt, storeys }: Props) {
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [error, setError] = useState('')
   const [buildingInsights, setBuildingInsights] = useState<BuildingInsights | null>(null)
@@ -37,6 +49,37 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
   const [designMode, setDesignMode] = useState<'solar' | 'manual'>('solar')
   const [solarInsights, setSolarInsights] = useState<BuildingInsights | null>(null)
   const nextCustomId = useRef(-1)
+
+  // Cable routes — measured runs drawn on the map
+  const [cableRoutes, setCableRoutes] = useState<RouteDraft[]>([])
+  const [armedRouteType, setArmedRouteType] = useState<CableRouteType | null>(null)
+  const [routesSaving, setRoutesSaving] = useState(false)
+  const [routesSaved, setRoutesSaved] = useState(true)
+  const [routesError, setRoutesError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    async function loadRoutes() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('cable_routes')
+        .select('*')
+        .eq('quote_request_id', quoteRequestId)
+        .order('sort_order')
+      if (!active || !data) return
+      setCableRoutes(data.map((row) => ({
+        id: row.id,
+        route_type: row.route_type as CableRouteType,
+        label: row.label ?? '',
+        points: (row.points ?? []) as RoutePoint[],
+        measured_m: Number(row.measured_m) || 0,
+        vertical_m: Number(row.vertical_m) || 0,
+        slack_pct: Number(row.slack_pct) || 0,
+      })))
+    }
+    void loadRoutes()
+    return () => { active = false }
+  }, [quoteRequestId])
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
@@ -217,6 +260,77 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
     setSaved(false)
   }
 
+  // ── Cable route handlers ─────────────────────────────────────────────────
+
+  const handleRouteComplete = useCallback((points: RoutePoint[]) => {
+    setArmedRouteType((armed) => {
+      if (!armed) return null
+      setCableRoutes((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          route_type: armed,
+          label: nextRouteLabel(armed, prev),
+          points,
+          measured_m: polylineLengthM(points),
+          vertical_m: defaultVerticalM(armed, storeys),
+          slack_pct: 10,
+        },
+      ])
+      setRoutesSaved(false)
+      return null // disarm after each completed run
+    })
+  }, [storeys])
+
+  const handleRouteUpdate = useCallback((id: string, patch: Partial<Pick<RouteDraft, 'vertical_m' | 'slack_pct' | 'label'>>) => {
+    setCableRoutes((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+    setRoutesSaved(false)
+  }, [])
+
+  const handleRouteDelete = useCallback((id: string) => {
+    setCableRoutes((prev) => prev.filter((r) => r.id !== id))
+    setRoutesSaved(false)
+  }, [])
+
+  async function handleRoutesSave() {
+    setRoutesSaving(true)
+    setRoutesError('')
+    try {
+      const supabase = createClient()
+      const rows = cableRoutes.map((r, i) => ({
+        id: r.id,
+        quote_request_id: quoteRequestId,
+        route_type: r.route_type,
+        label: r.label || null,
+        points: r.points,
+        measured_m: r.measured_m,
+        vertical_m: r.vertical_m,
+        slack_pct: r.slack_pct,
+        final_m: computeFinalM(r.measured_m, r.vertical_m, r.slack_pct),
+        sort_order: i,
+      }))
+      const { error: delError } = await supabase
+        .from('cable_routes').delete().eq('quote_request_id', quoteRequestId)
+      if (delError) throw delError
+      if (rows.length) {
+        const { error: insError } = await supabase.from('cable_routes').insert(rows)
+        if (insError) throw insError
+      }
+      // Keep the legacy scalar roughly in sync for display — best effort only
+      // (the calculator reads cable_routes directly; this update is admin-RLS'd)
+      const totals = routeTotals(cableRoutes)
+      if (totals.dcM > 0) {
+        await supabase.from('quote_requests')
+          .update({ cable_route_m: totals.dcM }).eq('id', quoteRequestId)
+      }
+      setRoutesSaved(true)
+    } catch (e) {
+      setRoutesError(e instanceof Error ? e.message : 'Could not save routes')
+    } finally {
+      setRoutesSaving(false)
+    }
+  }
+
   async function handleConfirm() {
     if (!buildingInsights || totalEnabledCount === 0) return
     setSaving(true)
@@ -343,6 +457,23 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
             onRemoveCustomPanel={handleRemoveCustomPanel}
             onSelectCustomPanel={handleSelectCustomPanel}
             onExtendRow={handleExtendRow}
+            cableRoutes={cableRoutes.map((r) => ({ id: r.id, routeType: r.route_type, points: r.points }))}
+            armedRouteType={armedRouteType}
+            onRouteComplete={handleRouteComplete}
+            onRouteCancel={() => setArmedRouteType(null)}
+            onRouteDelete={handleRouteDelete}
+          />
+
+          <RoutesPanel
+            routes={cableRoutes}
+            armedType={armedRouteType}
+            saving={routesSaving}
+            saved={routesSaved}
+            error={routesError}
+            onArm={setArmedRouteType}
+            onUpdate={handleRouteUpdate}
+            onDelete={handleRouteDelete}
+            onSave={handleRoutesSave}
           />
 
           <DesignControls

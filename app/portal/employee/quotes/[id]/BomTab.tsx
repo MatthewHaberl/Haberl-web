@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { createClient } from '@/lib/supabase/client'
 import { buildQuoteWorkbook } from '@/lib/solar/export-quote-workbook'
 import {
   type AnyQuoteData,
@@ -13,7 +14,12 @@ import {
   type SupplierBomItem,
 } from '@/lib/solar/render-quote'
 import type { ComplianceCheck, ComplianceStatus } from '@/lib/solar/compliance'
-import { AlertTriangle, CheckCircle2, Download, Info, PackageCheck, Printer, ShieldCheck, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, Info, PackageCheck, Printer, ShieldCheck, ShoppingCart, XCircle } from 'lucide-react'
+
+interface PackInfo {
+  pack_size: number
+  pack_unit: string
+}
 
 function isMultiOption(data: AnyQuoteData): data is MultiOptionQuoteData {
   return (data as MultiOptionQuoteData).type === 'multi-option'
@@ -45,6 +51,46 @@ export function BomTab({ quoteData, quoteNumber, customerName, siteAddress, onGo
 
   const activeOption = options.find((o) => o.tier === selectedTier) ?? options[0] ?? null
   const bom: SupplierBomItem[] = useMemo(() => activeOption?.supplierBom ?? [], [activeOption])
+
+  // Order-quantities view: needed qty rounded up to purchasable packs
+  const [view, setView] = useState<'pricing' | 'order'>('pricing')
+  const [packSizes, setPackSizes] = useState<Map<string, PackInfo>>(new Map())
+
+  useEffect(() => {
+    let active = true
+    async function loadPacks() {
+      const supabase = createClient()
+      const { data } = await supabase.from('bom_pack_sizes').select('sku, pack_size, pack_unit')
+      if (!active || !data) return
+      setPackSizes(new Map(data.map((row) => [row.sku, { pack_size: Number(row.pack_size), pack_unit: row.pack_unit }])))
+    }
+    void loadPacks()
+    return () => { active = false }
+  }, [])
+
+  async function savePackSize(sku: string, packSize: number, packUnit: string) {
+    const supabase = createClient()
+    if (packSize > 0) {
+      await supabase.from('bom_pack_sizes').upsert({ sku, pack_size: packSize, pack_unit: packUnit || 'pack', updated_at: new Date().toISOString() })
+      setPackSizes((prev) => new Map(prev).set(sku, { pack_size: packSize, pack_unit: packUnit || 'pack' }))
+    } else {
+      await supabase.from('bom_pack_sizes').delete().eq('sku', sku)
+      setPackSizes((prev) => { const next = new Map(prev); next.delete(sku); return next })
+    }
+  }
+
+  const orderTotals = useMemo(() => {
+    let surplusCost = 0
+    let linesWithPacks = 0
+    for (const item of bom) {
+      const pack = packSizes.get(item.sku)
+      if (!pack || pack.pack_size <= 1) continue
+      linesWithPacks++
+      const orderQty = Math.ceil(item.quantity / pack.pack_size) * pack.pack_size
+      surplusCost += (orderQty - item.quantity) * item.unitCostRands
+    }
+    return { surplusCost, linesWithPacks }
+  }, [bom, packSizes])
 
   const sections = useMemo(() => {
     const grouped = new Map<string, SupplierBomItem[]>()
@@ -164,52 +210,107 @@ export function BomTab({ quoteData, quoteNumber, customerName, siteAddress, onGo
         </div>
       </div>
 
-      {options.length > 1 && (
-        <div className="flex gap-2">
-          {options.map((option) => (
+      <div className="flex items-center gap-2 flex-wrap">
+        {options.length > 1 && options.map((option) => (
+          <button
+            key={option.tier}
+            type="button"
+            onClick={() => setSelectedTier(option.tier)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors
+              ${option.tier === selectedTier
+                ? 'border-accent text-accent bg-accent/10'
+                : 'border-border text-muted-foreground hover:text-foreground'}`}
+          >
+            {option.tierLabel}
+          </button>
+        ))}
+        <div className="ml-auto flex gap-1 rounded-md border border-border p-0.5">
+          {([['pricing', 'Pricing'], ['order', 'Order quantities']] as const).map(([id, label]) => (
             <button
-              key={option.tier}
+              key={id}
               type="button"
-              onClick={() => setSelectedTier(option.tier)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors
-                ${option.tier === selectedTier
-                  ? 'border-accent text-accent bg-accent/10'
-                  : 'border-border text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setView(id)}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                view === id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
-              {option.tierLabel}
+              {label}
             </button>
           ))}
         </div>
-      )}
+      </div>
 
-      <Card>
-        <CardContent className="pt-4 pb-4 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-muted-foreground uppercase tracking-wider border-b border-border">
-                <th className="text-left py-2 pr-3">SKU</th>
-                <th className="text-left py-2 pr-3">Description</th>
-                <th className="text-center py-2 px-3">Qty</th>
-                <th className="text-right py-2 px-3">Unit Cost</th>
-                <th className="text-right py-2 px-3">Line Cost</th>
-                <th className="text-right py-2 pl-3">Line Sell</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sections.map(([section, items]) => (
-                <SectionRows key={section} section={section} items={items} />
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-border font-semibold">
-                <td colSpan={4} className="py-2 pr-3 text-right">Totals</td>
-                <td className="py-2 px-3 text-right">{formatRands(totals.cost)}</td>
-                <td className="py-2 pl-3 text-right">{formatRands(totals.sell)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </CardContent>
-      </Card>
+      {view === 'pricing' ? (
+        <Card>
+          <CardContent className="pt-4 pb-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-muted-foreground uppercase tracking-wider border-b border-border">
+                  <th className="text-left py-2 pr-3">SKU</th>
+                  <th className="text-left py-2 pr-3">Description</th>
+                  <th className="text-center py-2 px-3">Qty</th>
+                  <th className="text-right py-2 px-3">Unit Cost</th>
+                  <th className="text-right py-2 px-3">Line Cost</th>
+                  <th className="text-right py-2 pl-3">Line Sell</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sections.map(([section, items]) => (
+                  <SectionRows key={section} section={section} items={items} />
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border font-semibold">
+                  <td colSpan={4} className="py-2 pr-3 text-right">Totals</td>
+                  <td className="py-2 px-3 text-right">{formatRands(totals.cost)}</td>
+                  <td className="py-2 pl-3 text-right">{formatRands(totals.sell)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-4 pb-4 flex flex-col gap-3 overflow-x-auto">
+            <div className="flex items-center gap-2 text-sm">
+              <ShoppingCart className="h-4 w-4 text-accent shrink-0" />
+              <p className="text-muted-foreground">
+                Needed quantities rounded up to whole packs — the <strong className="text-foreground">surplus</strong> column
+                is what you&apos;d over-buy. Set a pack size on any line (admin) to round it.
+              </p>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-muted-foreground uppercase tracking-wider border-b border-border">
+                  <th className="text-left py-2 pr-3">SKU</th>
+                  <th className="text-left py-2 pr-3">Description</th>
+                  <th className="text-center py-2 px-3">Needed</th>
+                  <th className="text-center py-2 px-3">Pack size</th>
+                  <th className="text-center py-2 px-3">Order</th>
+                  <th className="text-right py-2 pl-3">Surplus</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sections.map(([section, items]) => (
+                  <OrderSectionRows
+                    key={section}
+                    section={section}
+                    items={items}
+                    packSizes={packSizes}
+                    onSavePack={savePackSize}
+                  />
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border font-semibold">
+                  <td colSpan={5} className="py-2 pr-3 text-right">Surplus value (cost) across {orderTotals.linesWithPacks} pack-rounded line{orderTotals.linesWithPacks === 1 ? '' : 's'}</td>
+                  <td className="py-2 pl-3 text-right">{formatRands(orderTotals.surplusCost)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </CardContent>
+        </Card>
+      )}
 
       <p className="text-xs text-muted-foreground">
         <Badge variant="warning" className="mr-2">Internal</Badge>
@@ -293,6 +394,66 @@ function CompliancePanel({ checks, warnings }: { checks: ComplianceCheck[]; warn
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function OrderSectionRows({
+  section, items, packSizes, onSavePack,
+}: {
+  section: string
+  items: SupplierBomItem[]
+  packSizes: Map<string, PackInfo>
+  onSavePack: (sku: string, packSize: number, packUnit: string) => void
+}) {
+  return (
+    <>
+      <tr className="bg-muted/60">
+        <td colSpan={6} className="py-1.5 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {section}
+        </td>
+      </tr>
+      {items.map((item, i) => {
+        const pack = item.sku ? packSizes.get(item.sku) : undefined
+        const hasPack = !!pack && pack.pack_size > 1
+        const orderQty = hasPack ? Math.ceil(item.quantity / pack!.pack_size) * pack!.pack_size : item.quantity
+        const packs = hasPack ? Math.ceil(item.quantity / pack!.pack_size) : null
+        const surplus = orderQty - item.quantity
+        return (
+          <tr key={`${item.sku}-${i}`} className="border-b border-border last:border-0">
+            <td className="py-1.5 pr-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{item.sku || '—'}</td>
+            <td className="py-1.5 pr-3">{item.description}</td>
+            <td className="py-1.5 px-3 text-center font-medium">{item.quantity}</td>
+            <td className="py-1.5 px-3 text-center">
+              {item.sku ? (
+                <span className="inline-flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    defaultValue={pack?.pack_size ?? ''}
+                    placeholder="—"
+                    onBlur={(e) => {
+                      const value = Number(e.target.value) || 0
+                      if (value !== (pack?.pack_size ?? 0)) onSavePack(item.sku, value, pack?.pack_unit ?? 'pack')
+                    }}
+                    className="h-7 w-16 rounded border border-border bg-background px-1.5 text-xs text-center"
+                    title="Units per pack (0 clears) — saved for all quotes"
+                  />
+                  {pack?.pack_unit && <span className="text-[10px] text-muted-foreground">{pack.pack_unit}</span>}
+                </span>
+              ) : '—'}
+            </td>
+            <td className="py-1.5 px-3 text-center font-semibold">
+              {orderQty}
+              {packs != null && <span className="ml-1 text-[10px] font-normal text-muted-foreground">({packs}×{pack!.pack_size})</span>}
+            </td>
+            <td className={`py-1.5 pl-3 text-right tabular-nums ${surplus > 0 ? 'text-amber-700 font-medium' : 'text-muted-foreground'}`}>
+              {surplus > 0 ? `+${Math.round(surplus * 10) / 10}` : '0'}
+            </td>
+          </tr>
+        )
+      })}
+    </>
   )
 }
 

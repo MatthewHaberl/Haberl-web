@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BuildingInsights, CustomPanel, PanelPlacement } from '@/lib/solar/google-solar'
 import { offsetLatLng, geoDistanceM, geoBearing } from '@/lib/solar/google-solar'
+import { polylineLengthM, ROUTE_TYPE_META, type RoutePoint } from '@/lib/solar/cable-routes'
+import type { CableRouteType } from '@/types/database'
 
 declare global {
   interface Window { google: any } // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -65,6 +67,12 @@ function findNearestSegment(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+export interface MapRoute {
+  id: string
+  routeType: CableRouteType
+  points: RoutePoint[]
+}
+
 interface Props {
   buildingInsights: BuildingInsights
   enabledPanels: Set<number>
@@ -79,6 +87,12 @@ interface Props {
   onRemoveCustomPanel: (id: number) => void
   onSelectCustomPanel: (id: number | null) => void
   onExtendRow: (fromId: number, direction: 'left' | 'right') => void
+  // Cable routes — drawn polylines measured for the BOM
+  cableRoutes?: MapRoute[]
+  armedRouteType?: CableRouteType | null
+  onRouteComplete?: (points: RoutePoint[]) => void
+  onRouteCancel?: () => void
+  onRouteDelete?: (id: string) => void
 }
 
 export function SolarMap({
@@ -86,6 +100,7 @@ export function SolarMap({
   panelOrientations, selectedCustomPanelId,
   onTogglePanel, onToggleCustomPanel, onShiftClickPanel,
   onAddPanelRow, onRemoveCustomPanel, onSelectCustomPanel, onExtendRow,
+  cableRoutes, armedRouteType, onRouteComplete, onRouteCancel, onRouteDelete,
 }: Props) {
   const mapDivRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)           // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -93,13 +108,18 @@ export function SolarMap({
   const customPolygonsRef = useRef<Map<number, any>>(new Map()) // eslint-disable-line @typescript-eslint/no-explicit-any
   const extendGhostsRef = useRef<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any
   const dragGhostsRef = useRef<any[]>([])   // eslint-disable-line @typescript-eslint/no-explicit-any
+  const routePolylinesRef = useRef<Map<string, any>>(new Map()) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const drawPointsRef = useRef<RoutePoint[]>([])
+  const drawPolylineRef = useRef<any>(null)  // eslint-disable-line @typescript-eslint/no-explicit-any
+  const drawMarkersRef = useRef<any[]>([])   // eslint-disable-line @typescript-eslint/no-explicit-any
   const [mapsLoaded, setMapsLoaded] = useState(false)
   const [mode, setMode] = useState<'pan' | 'place'>('pan')
   const [dragCount, setDragCount] = useState(0) // display only
+  const [drawLengthM, setDrawLengthM] = useState(0) // display only
 
   // Keep all callbacks + mutable data in refs so event handlers never go stale
-  const cbRef = useRef({ onTogglePanel, onToggleCustomPanel, onShiftClickPanel, onAddPanelRow, onRemoveCustomPanel, onSelectCustomPanel, onExtendRow })
-  useEffect(() => { cbRef.current = { onTogglePanel, onToggleCustomPanel, onShiftClickPanel, onAddPanelRow, onRemoveCustomPanel, onSelectCustomPanel, onExtendRow } })
+  const cbRef = useRef({ onTogglePanel, onToggleCustomPanel, onShiftClickPanel, onAddPanelRow, onRemoveCustomPanel, onSelectCustomPanel, onExtendRow, onRouteComplete, onRouteCancel, onRouteDelete })
+  useEffect(() => { cbRef.current = { onTogglePanel, onToggleCustomPanel, onShiftClickPanel, onAddPanelRow, onRemoveCustomPanel, onSelectCustomPanel, onExtendRow, onRouteComplete, onRouteCancel, onRouteDelete } })
   const modeRef = useRef<'pan' | 'place'>('pan')
   // In place mode: disable drag panning but keep scroll zoom via gestureHandling:'greedy'
   useEffect(() => { modeRef.current = mode; if (mapRef.current) mapRef.current.setOptions({ draggable: mode === 'pan' }) }, [mode])
@@ -107,6 +127,33 @@ export function SolarMap({
   useEffect(() => { biRef.current = buildingInsights }, [buildingInsights])
   const selIdRef = useRef<number | null>(null)
   useEffect(() => { selIdRef.current = selectedCustomPanelId }, [selectedCustomPanelId])
+  const armedRef = useRef<CableRouteType | null>(null)
+
+  // Arming a route type switches the map into drawing: crosshair cursor,
+  // double-click zoom off, and panel polygons click-through so vertices can
+  // land anywhere — including on top of panels.
+  useEffect(() => {
+    armedRef.current = armedRouteType ?? null
+    const map = mapRef.current
+    if (!map) return
+    const drawing = !!armedRouteType
+    map.setOptions({
+      disableDoubleClickZoom: drawing,
+      draggableCursor: drawing ? 'crosshair' : undefined,
+      draggingCursor: drawing ? 'crosshair' : undefined,
+    })
+    apiPolygonsRef.current.forEach(p => p.setOptions({ clickable: !drawing }))
+    customPolygonsRef.current.forEach(p => p.setOptions({ clickable: !drawing }))
+    if (!drawing) {
+      // disarmed → clear any in-progress drawing
+      drawPointsRef.current = []
+      drawPolylineRef.current?.setMap(null)
+      drawPolylineRef.current = null
+      drawMarkersRef.current.forEach(m => m.setMap(null))
+      drawMarkersRef.current = []
+      setDrawLengthM(0)
+    }
+  }, [armedRouteType])
 
   // ── Load Google Maps JS API ───────────────────────────────────────────────
 
@@ -199,7 +246,7 @@ export function SolarMap({
 
     // ── mousedown ─────────────────────────────────────────────────────────
     const onMouseDown = (e: MouseEvent) => {
-      if (modeRef.current !== 'place' || e.button !== 0) return
+      if (modeRef.current !== 'place' || e.button !== 0 || armedRef.current) return
       e.preventDefault()
       dragStart = { x: e.clientX, y: e.clientY, ...pixelToLatLng(e.clientX, e.clientY) }
       hasDragged = false
@@ -236,7 +283,7 @@ export function SolarMap({
 
     // ── map click = single panel placement (empty area only, not polygons) ─
     map.addListener('click', (e: any) => {
-      if (modeRef.current !== 'place' || justDragged) return
+      if (modeRef.current !== 'place' || justDragged || armedRef.current) return
       const lat: number = e.latLng.lat()
       const lng: number = e.latLng.lng()
       const seg = findNearestSegment(biRef.current, lat, lng)
@@ -245,15 +292,100 @@ export function SolarMap({
 
     // ── map click deselects any selected custom panel ─────────────────────
     map.addListener('click', () => {
-      if (modeRef.current === 'pan' && selIdRef.current !== null) {
+      if (!armedRef.current && modeRef.current === 'pan' && selIdRef.current !== null) {
         cbRef.current.onSelectCustomPanel(null)
       }
     })
+
+    // ── Cable route drawing (active while a route type is armed) ──────────
+    function clearDraw() {
+      drawPointsRef.current = []
+      drawPolylineRef.current?.setMap(null)
+      drawPolylineRef.current = null
+      drawMarkersRef.current.forEach(m => m.setMap(null))
+      drawMarkersRef.current = []
+      setDrawLengthM(0)
+    }
+
+    function renderDraw() {
+      const armed = armedRef.current
+      if (!armed) return
+      const meta = ROUTE_TYPE_META[armed]
+      const points = drawPointsRef.current
+      if (!drawPolylineRef.current) {
+        drawPolylineRef.current = new window.google.maps.Polyline({
+          map,
+          path: points,
+          strokeColor: meta.color,
+          strokeWeight: 3,
+          strokeOpacity: meta.dashed ? 0 : 0.95,
+          zIndex: 60,
+          clickable: false,
+          ...(meta.dashed
+            ? { icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeWeight: 3, scale: 2 }, offset: '0', repeat: '10px' }] }
+            : {}),
+        })
+      } else {
+        drawPolylineRef.current.setPath(points)
+      }
+      const marker = new window.google.maps.Marker({
+        map,
+        position: points[points.length - 1],
+        clickable: false,
+        zIndex: 61,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 4.5,
+          fillColor: '#ffffff',
+          fillOpacity: 1,
+          strokeColor: meta.color,
+          strokeWeight: 2,
+        },
+      })
+      drawMarkersRef.current.push(marker)
+      setDrawLengthM(polylineLengthM(points))
+    }
+
+    function finishDraw() {
+      // dblclick fires two clicks first — drop near-duplicate tail vertices
+      const deduped: RoutePoint[] = []
+      for (const p of drawPointsRef.current) {
+        const prev = deduped[deduped.length - 1]
+        if (!prev || geoDistanceM(prev.lat, prev.lng, p.lat, p.lng) > 0.3) deduped.push(p)
+      }
+      if (deduped.length >= 2) cbRef.current.onRouteComplete?.(deduped)
+      else cbRef.current.onRouteCancel?.()
+      clearDraw()
+    }
+
+    map.addListener('click', (e: any) => {
+      if (!armedRef.current) return
+      drawPointsRef.current = [...drawPointsRef.current, { lat: e.latLng.lat(), lng: e.latLng.lng() }]
+      renderDraw()
+    })
+
+    map.addListener('dblclick', (e: any) => {
+      if (!armedRef.current) return
+      e.stop?.()
+      finishDraw()
+    })
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!armedRef.current) return
+      if (e.key === 'Escape') {
+        clearDraw()
+        cbRef.current.onRouteCancel?.()
+      } else if (e.key === 'Enter') {
+        finishDraw()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
 
     return () => {
       mapDiv.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
+      document.removeEventListener('keydown', onKeyDown)
     }
   }, [mapsLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -370,6 +502,36 @@ export function SolarMap({
     }
   }, [selectedCustomPanelId, customPanels, buildingInsights])
 
+  // ── Cable route polylines ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!mapRef.current) return
+
+    // Remove polylines for deleted routes
+    routePolylinesRef.current.forEach((polyline, id) => {
+      if (!cableRoutes?.find(r => r.id === id)) { polyline.setMap(null); routePolylinesRef.current.delete(id) }
+    })
+
+    cableRoutes?.forEach(route => {
+      if (routePolylinesRef.current.has(route.id)) return // points are immutable per id
+      const meta = ROUTE_TYPE_META[route.routeType]
+      const polyline = new window.google.maps.Polyline({
+        map: mapRef.current,
+        path: route.points,
+        strokeColor: meta.color,
+        strokeWeight: 3,
+        strokeOpacity: meta.dashed ? 0 : 0.85,
+        zIndex: 50,
+        clickable: true,
+        ...(meta.dashed
+          ? { icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.85, strokeWeight: 3, scale: 2 }, offset: '0', repeat: '10px' }] }
+          : {}),
+      })
+      polyline.addListener('rightclick', () => cbRef.current.onRouteDelete?.(route.id))
+      routePolylinesRef.current.set(route.id, polyline)
+    })
+  }, [cableRoutes, mapsLoaded])
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   function zoomBy(delta: number) {
@@ -407,7 +569,12 @@ export function SolarMap({
           ☀ Place Panels
         </button>
         <span className="text-xs text-muted-foreground">
-          {mode === 'place'
+          {armedRouteType ? (
+            <span className="font-medium" style={{ color: ROUTE_TYPE_META[armedRouteType].color }}>
+              Drawing {ROUTE_TYPE_META[armedRouteType].short}: click to add points · double-click or Enter to finish · Esc to cancel
+              {drawLengthM > 0 && ` · ${drawLengthM.toFixed(1)} m so far`}
+            </span>
+          ) : mode === 'place'
             ? dragCount > 0
               ? `${dragCount} panel${dragCount !== 1 ? 's' : ''} — release to place`
               : 'Click = 1 panel · Click & drag = row · direction auto from roof data'

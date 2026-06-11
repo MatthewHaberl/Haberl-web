@@ -6,6 +6,7 @@ import {
   type CalculatorInput,
   type EquipmentCatalogItem,
   type EquipmentCatalogPhase,
+  type MeasuredCableRoutes,
   type QuoteTier,
   type QuoteTierConfig,
 } from '@/lib/solar/quote-calculator'
@@ -68,6 +69,7 @@ export function buildCalculatorInput(
   options: {
     quoteNumber: string
     cableRouteM: number
+    cableRoutes?: MeasuredCableRoutes | null
     tariffRate?: number
     tier?: QuoteTier
     tierLabel?: string
@@ -99,6 +101,7 @@ export function buildCalculatorInput(
     essentialLoadKw: coerceNumber(request.essential_load, 0),
     tariffRate: options.tariffRate ?? getTariffRateForMunicipality(String(request.municipality ?? 'Eskom')),
     cableRouteMetres: options.cableRouteM,
+    cableRoutes: options.cableRoutes ?? null,
     lockedPanelCount: coerceNumber(request.design_panel_count, 0) || null,
     inverterQuantity: options.inverterQuantity ?? 1,
     batteryQuantityOverride: options.batteryQuantityOverride ?? null,
@@ -156,6 +159,29 @@ export async function fetchSurvey(
     .single()
 }
 
+/** Measured cable routes drawn on the roof designer — null when none saved. */
+export async function fetchMeasuredRoutes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  surveyId: string,
+): Promise<MeasuredCableRoutes | null> {
+  const { data } = await supabase
+    .from('cable_routes')
+    .select('route_type, final_m')
+    .eq('quote_request_id', surveyId)
+  if (!data?.length) return null
+
+  const finals = (type: string) =>
+    data.filter((row) => row.route_type === type).map((row) => Number(row.final_m) || 0)
+  const sum = (values: number[]) => Math.round(values.reduce((s, v) => s + v, 0) * 10) / 10
+
+  return {
+    dcRunsM: finals('dc_string'),
+    acM: sum(finals('ac_run')),
+    batteryM: sum(finals('battery')),
+    earthM: sum(finals('earth')),
+  }
+}
+
 export function serializeGeneratedQuote(input: unknown) {
   return JSON.stringify(input, null, 2)
 }
@@ -170,6 +196,7 @@ export function calculateOptionQuote(
   options: {
     quoteNumber: string
     cableRouteM: number
+    cableRoutes?: MeasuredCableRoutes | null
     tariffRate?: number
     tier: QuoteTier
     tierLabel: string

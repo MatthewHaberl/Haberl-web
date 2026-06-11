@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { calculateQuote, isBatteryCompatibleWithInverter, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import {
   buildCalculatorInput,
+  fetchMeasuredRoutes,
   fetchSurvey,
   requireAdmin,
 } from './helpers'
@@ -49,6 +50,8 @@ export async function POST(req: Request) {
     return new Response(`${battery.description} is not compatible with ${inverter.description}`, { status: 400 })
   }
 
+  const measuredRoutes = await fetchMeasuredRoutes(auth.supabase, surveyId)
+
   const quoteData = calculateQuote(
     buildCalculatorInput(
       survey,
@@ -56,6 +59,7 @@ export async function POST(req: Request) {
       {
         quoteNumber: String(body.quoteNumber ?? survey.quote_number ?? ''),
         cableRouteM: Number(body.cableRouteM ?? survey.cable_route_m ?? 15),
+        cableRoutes: measuredRoutes,
         tariffRate: body.tariffRate != null ? Number(body.tariffRate) : undefined,
         tier: body.tier ? String(body.tier) as 'premium' | 'recommended' | 'budget' : undefined,
         tierLabel: body.tierLabel ? String(body.tierLabel) : undefined,

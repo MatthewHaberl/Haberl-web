@@ -470,6 +470,11 @@ export interface QuoteRequest {
   design_segments: Array<{ azimuth: number; pitch: number; panelCount: number }> | null
   design_confirmed_at: string | null
 
+  // Design lock (migration 028)
+  design_locked_at: string | null
+  design_locked_by: string | null
+  bom_snapshot: unknown | null
+
   // Public share + online acceptance (migration 024)
   share_token: string
   expiry_date: string | null
@@ -485,6 +490,22 @@ export interface QuoteRequest {
 
   // Joined
   submitter?: { full_name: string }
+}
+
+export type CableRouteType = 'dc_string' | 'ac_run' | 'battery' | 'earth'
+
+export interface CableRoute {
+  id: string
+  quote_request_id: string
+  route_type: CableRouteType
+  label: string | null
+  points: Array<{ lat: number; lng: number }>
+  measured_m: number
+  vertical_m: number
+  slack_pct: number
+  final_m: number
+  sort_order: number
+  created_at: string
 }
 
 export type LeadStatus = 'new' | 'contacted' | 'converted' | 'discarded'

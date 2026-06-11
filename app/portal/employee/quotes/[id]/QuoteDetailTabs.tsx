@@ -148,6 +148,9 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   }
 
   async function handleSave() {
+    if (req.design_locked_at && !window.confirm(
+      'The design is locked for procurement. Survey changes can invalidate the locked BOM — continue anyway? (Re-lock in the Quote tab afterwards if sizing changed.)',
+    )) return
     setSaving(true)
     setEditErr('')
     try {
@@ -481,6 +484,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
             existingPanelCount={req.design_panel_count ?? null}
             existingKwp={req.design_kwp ?? null}
             existingConfirmedAt={req.design_confirmed_at ?? null}
+            storeys={req.storeys ?? null}
           />
         </div>
       )}

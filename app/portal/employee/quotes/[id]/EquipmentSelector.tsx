@@ -24,7 +24,7 @@ import {
   type QuoteTierConfig,
 } from '@/lib/solar/quote-calculator'
 import { DepositSelector } from './DepositSelector'
-import { AlertTriangle, Check, Download, Eye, EyeOff, Loader2, Save, WandSparkles } from 'lucide-react'
+import { AlertTriangle, Check, Download, Eye, EyeOff, Loader2, Lock, LockOpen, Save, WandSparkles } from 'lucide-react'
 
 type QuoteVersion = 'simplified' | 'detailed'
 
@@ -208,6 +208,35 @@ export function EquipmentSelector({
     existingDepositItems.length ? existingDepositItems : initialParsed.defaultDepositItems,
   )
   const [quoteNumber, setQuoteNumber] = useState(existingQuoteNumber ?? nextQuoteNumber)
+  // Measured cable routes from the Roof Design tab — when present the
+  // calculator uses them instead of the manual estimate below.
+  const [measuredRoutes, setMeasuredRoutes] = useState<{ dcM: number; dcMax: number; acM: number; earthM: number } | null>(null)
+  // Design lock — freezes the BOM snapshot that procurement buys against
+  const [lockedAt, setLockedAt] = useState<string | null>(toOptionalString(request.design_locked_at) || null)
+  const [locking, setLocking] = useState(false)
+  const [lockError, setLockError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    async function loadRoutes() {
+      const { data } = await supabase
+        .from('cable_routes')
+        .select('route_type, final_m')
+        .eq('quote_request_id', requestId)
+      if (!active || !data?.length) return
+      const finals = (type: string) => data.filter((r) => r.route_type === type).map((r) => Number(r.final_m) || 0)
+      const sum = (v: number[]) => Math.round(v.reduce((s, x) => s + x, 0) * 10) / 10
+      const dcRuns = finals('dc_string')
+      setMeasuredRoutes({
+        dcM: sum(dcRuns),
+        dcMax: dcRuns.length ? Math.max(...dcRuns) : 0,
+        acM: sum(finals('ac_run')),
+        earthM: sum(finals('earth')),
+      })
+    }
+    void loadRoutes()
+    return () => { active = false }
+  }, [requestId, supabase])
 
   const phase = getPhase(request.grid_supply)
   const lockedDesignKwp = coerceNumber(request.design_kwp, 0) || null
@@ -574,6 +603,39 @@ export function EquipmentSelector({
     }
   }
 
+  // Lock the design: snapshot the saved quote JSON so procurement buys
+  // against exactly this BOM, even if the quote is recalculated later.
+  async function handleLockToggle() {
+    setLockError('')
+    if (lockedAt) {
+      if (!window.confirm('Unlock the design? Procurement will follow the live quote again.')) return
+      setLocking(true)
+      const { error } = await supabase
+        .from('quote_requests')
+        .update({ design_locked_at: null, design_locked_by: null, bom_snapshot: null })
+        .eq('id', requestId)
+      if (error) setLockError(error.message)
+      else setLockedAt(null)
+      setLocking(false)
+      return
+    }
+    if (!quoteData || !saved) {
+      setLockError('Save the quote first — the lock freezes the saved version.')
+      return
+    }
+    if (!window.confirm('Lock the design for procurement? The current BOM is frozen — survey or quote changes after this will warn until you re-lock.')) return
+    setLocking(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('quote_requests')
+      .update({ design_locked_at: now, design_locked_by: user?.id ?? null, bom_snapshot: quoteData })
+      .eq('id', requestId)
+    if (error) setLockError(error.message)
+    else setLockedAt(now)
+    setLocking(false)
+  }
+
   function handleDownloadWorkbook() {
     if (!quoteData) return
 
@@ -843,12 +905,21 @@ export function EquipmentSelector({
               setCableRouteM(event.target.value)
               setSaved(false)
             }}
-            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
+            disabled={!!measuredRoutes}
+            className="h-11 rounded-md border border-border bg-background px-3 text-sm disabled:opacity-50"
           />
-          {defaultWarning && (
+          {measuredRoutes ? (
+            <span className="flex items-center gap-1 text-xs text-success">
+              <Check className="h-3.5 w-3.5 shrink-0" />
+              Using measured routes from Roof Design: DC {measuredRoutes.dcM.toFixed(1)}m
+              {measuredRoutes.dcMax > 0 && ` (longest run ${measuredRoutes.dcMax.toFixed(1)}m)`}
+              {measuredRoutes.acM > 0 && ` · AC ${measuredRoutes.acM.toFixed(1)}m`}
+              {measuredRoutes.earthM > 0 && ` · Earth ${measuredRoutes.earthM.toFixed(1)}m`}
+            </span>
+          ) : defaultWarning && (
             <span className="flex items-center gap-1 text-xs text-amber-700">
               <AlertTriangle className="h-3.5 w-3.5" />
-              Still on the default 15m route. Update if the site needs more.
+              Still on the default 15m estimate — draw the runs in the Roof Design tab for measured lengths.
             </span>
           )}
         </label>
@@ -1048,6 +1119,50 @@ export function EquipmentSelector({
             </div>
             {saveError && (
               <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{saveError}</p>
+            )}
+
+            {/* Design lock — order once against a frozen BOM */}
+            <div className={`flex items-center gap-3 flex-wrap rounded-md border px-3 py-2 ${
+              lockedAt ? 'border-success/40 bg-success/5' : 'border-border bg-muted/30'
+            }`}>
+              {lockedAt ? (
+                <span className="flex items-center gap-1.5 text-xs text-success font-medium">
+                  <Lock className="h-3.5 w-3.5" />
+                  Design locked {new Date(lockedAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })} — the job BOM uses this frozen snapshot
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Happy with the design? Lock it so procurement buys exactly this BOM.
+                </span>
+              )}
+              {lockedAt && !saved && (
+                <span className="flex items-center gap-1 text-xs text-amber-700">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Quote changed after locking — re-lock to update the snapshot
+                </span>
+              )}
+              <Button
+                variant={lockedAt ? 'ghost' : 'outline'}
+                size="sm"
+                type="button"
+                onClick={handleLockToggle}
+                disabled={locking || (!lockedAt && !saved)}
+                className="ml-auto"
+                title={!lockedAt && !saved ? 'Save the quote first' : undefined}
+              >
+                {locking
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : lockedAt
+                    ? <><LockOpen className="h-3.5 w-3.5" /> Unlock</>
+                    : <><Lock className="h-3.5 w-3.5" /> Lock design</>}
+              </Button>
+            </div>
+            {lockedAt && !saved && (
+              <p className="text-[11px] text-muted-foreground -mt-1">
+                Re-lock = unlock, save, lock again. Until then procurement still uses the old snapshot.
+              </p>
+            )}
+            {lockError && (
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{lockError}</p>
             )}
           </div>
         </>

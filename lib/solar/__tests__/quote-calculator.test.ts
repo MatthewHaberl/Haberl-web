@@ -143,6 +143,43 @@ test('string physics blocks over-voltage strings and EV BOM carries Type B prote
   assert.equal(swa?.status, 'pass', swa?.detail)
 })
 
+test('measured cable routes replace the scalar estimate in the BOM', () => {
+  const fixture: CalculatorInput = {
+    ...michelleFixture,
+    cableRouteMetres: 15, // manual estimate must be ignored
+    cableRoutes: {
+      dcRunsM: [22.5, 18], // two strings — total 40.5m, worst case 22.5m
+      acM: 9.5,
+      batteryM: 2,
+      earthM: 12,
+    },
+  }
+  const quote = calculateQuote(fixture)
+  const bom = quote.supplierBom!
+
+  const dcBlack = bom.find((item) => item.sku === 'CAB-PV-004-BK')
+  const dcRed = bom.find((item) => item.sku === 'CAB-PV-004-RD')
+  const ac = bom.find((item) => item.sku === 'FPW16.0BLACK')
+  const earth = bom.find((item) => item.sku === 'FPW6.0GRN-YELL')
+
+  // DC quantity = sum of runs (ceil), AC/earth from their own measured totals
+  assert.equal(dcBlack?.quantity, 41)
+  assert.equal(dcRed?.quantity, 41)
+  assert.equal(ac?.quantity, 10)
+  assert.equal(earth?.quantity, 12)
+  assert.ok(dcBlack?.description.includes('(measured)'))
+
+  // No "estimate" nudge when routes are measured
+  assert.ok(!quote.calculationWarnings?.some((w) => w.includes('estimates')),
+    `Unexpected estimate warning: ${quote.calculationWarnings?.join(' | ')}`)
+
+  // Unmeasured fallback keeps the legacy scalar behaviour + nudge warning
+  const fallback = calculateQuote(michelleFixture)
+  const fallbackDc = fallback.supplierBom!.find((item) => item.sku === 'CAB-PV-004-BK')
+  assert.equal(fallbackDc?.quantity, 15)
+  assert.ok(fallback.calculationWarnings?.some((w) => w.includes('estimates')))
+})
+
 test('battery voltage class mismatch is a blocker (RULE-INV-06)', () => {
   const fixture: CalculatorInput = {
     ...michelleFixture,

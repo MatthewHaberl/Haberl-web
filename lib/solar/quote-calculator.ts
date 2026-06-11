@@ -223,6 +223,10 @@ export interface CalculatorInput {
   essentialLoadKw: number
   tariffRate?: number
   cableRouteMetres: number
+  /** Measured routes from the map designer — when present they replace the
+   *  cableRouteMetres estimate for cable quantities, and the longest DC run
+   *  drives the voltage-drop check. */
+  cableRoutes?: MeasuredCableRoutes | null
   lockedPanelCount?: number | null
   inverterQuantity?: number | null
   batteryQuantityOverride?: number | null
@@ -235,6 +239,13 @@ export interface CalculatorInput {
     battery: EquipmentCatalogItem
     panel: EquipmentCatalogItem
   }
+}
+
+export interface MeasuredCableRoutes {
+  dcRunsM: number[]
+  acM: number
+  batteryM: number
+  earthM: number
 }
 
 type Breakdown = {
@@ -846,11 +857,29 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   const warnings: string[] = []
   const supplierBom: SupplierBomItem[] = []
   const tariffRate = input.tariffRate ?? getTariffRateForMunicipality(input.municipality)
-  const routeMetres = input.cableRouteMetres > 0 ? input.cableRouteMetres : 15
+  // Measured routes (map designer) beat the manual estimate. The longest DC
+  // run is the voltage-drop worst case; totals drive cable quantities.
+  const measured = input.cableRoutes &&
+    (input.cableRoutes.dcRunsM.length > 0 || input.cableRoutes.acM > 0 || input.cableRoutes.earthM > 0)
+    ? input.cableRoutes
+    : null
+  const routeMetres = measured?.dcRunsM.length
+    ? Math.max(...measured.dcRunsM)
+    : input.cableRouteMetres > 0 ? input.cableRouteMetres : 15
 
-  if (input.cableRouteMetres === 0) {
+  if (!measured && input.cableRouteMetres === 0) {
     warnings.push('Cable route was left at 0m, so the calculator used the 15m default.')
   }
+  if (!measured) {
+    warnings.push('Cable lengths are estimates — draw the runs in the Roof Design tab for measured quantities.')
+  }
+
+  const dcCableM = measured?.dcRunsM.length
+    ? Math.ceil(measured.dcRunsM.reduce((sum, m) => sum + m, 0))
+    : routeMetres
+  const acCableM = measured && measured.acM > 0 ? Math.ceil(measured.acM) : routeMetres
+  const earthCableM = measured && measured.earthM > 0 ? Math.ceil(measured.earthM) : routeMetres
+  const measuredTag = measured ? ' (measured)' : ''
 
   const panel = input.equipment.panel
   const inverter = input.equipment.inverter
@@ -907,15 +936,15 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   // RULE-MC4-01: pairs by string count (2 per string) + 10% spare — never visual estimates
   const mc4PairCount = Math.max(2, stringLayout.stringCount * 2 + Math.ceil(stringLayout.stringCount * 2 * 0.1))
   const cablesSellTotal = roundCurrency(
-    routeMetres * CABLE_4MM_SELL_PER_M * 2 +
-      routeMetres * EARTH_FLEX_SELL_PER_M +
-      routeMetres * FLEX_16MM_SELL_PER_M +
+    dcCableM * CABLE_4MM_SELL_PER_M * 2 +
+      earthCableM * EARTH_FLEX_SELL_PER_M +
+      acCableM * FLEX_16MM_SELL_PER_M +
       mc4PairCount * MC4_PAIR_SELL_RANDS,
   )
-  addBomItem(supplierBom, 'Cables & Connectors', 'CAB-PV-004-BK', '4mm solar cable black', routeMetres, CABLE_4MM_SELL_PER_M, 13.74)
-  addBomItem(supplierBom, 'Cables & Connectors', 'CAB-PV-004-RD', '4mm solar cable red', routeMetres, CABLE_4MM_SELL_PER_M, 13.74)
-  addBomItem(supplierBom, 'Cables & Connectors', 'FPW6.0GRN-YELL', 'Earth flex cable', routeMetres, EARTH_FLEX_SELL_PER_M, 20.18)
-  addBomItem(supplierBom, 'Cables & Connectors', 'FPW16.0BLACK', '16mm flex cable', routeMetres, FLEX_16MM_SELL_PER_M, 52.53)
+  addBomItem(supplierBom, 'Cables & Connectors', 'CAB-PV-004-BK', `4mm solar cable black${measuredTag}`, dcCableM, CABLE_4MM_SELL_PER_M, 13.74)
+  addBomItem(supplierBom, 'Cables & Connectors', 'CAB-PV-004-RD', `4mm solar cable red${measuredTag}`, dcCableM, CABLE_4MM_SELL_PER_M, 13.74)
+  addBomItem(supplierBom, 'Cables & Connectors', 'FPW6.0GRN-YELL', `Earth flex cable${measuredTag}`, earthCableM, EARTH_FLEX_SELL_PER_M, 20.18)
+  addBomItem(supplierBom, 'Cables & Connectors', 'FPW16.0BLACK', `16mm flex cable${measuredTag}`, acCableM, FLEX_16MM_SELL_PER_M, 52.53)
   addBomItem(supplierBom, 'Cables & Connectors', 'MC4-PAIR', 'MC4 connector pair', mc4PairCount, MC4_PAIR_SELL_RANDS, 17)
 
   const estimatedIsc = panel.isc_amps ?? roundCurrency(panelWatts / 40)
