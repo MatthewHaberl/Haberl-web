@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,6 +12,7 @@ import {
   Loader2,
   MapPinned,
   Play,
+  Radar,
   RotateCcw,
   Search,
   XCircle,
@@ -270,6 +272,13 @@ export function SolarCoverageTester() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/portal/employee/lead-finder/area-scan">
+              <Radar className="h-4 w-4" />
+              Area scanner
+            </Link>
+          </Button>
+
           <select
             value={requiredQuality}
             onChange={(event) => setRequiredQuality(event.target.value as ImageryQuality)}
