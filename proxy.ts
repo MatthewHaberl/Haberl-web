@@ -30,6 +30,9 @@ export async function proxy(request: NextRequest) {
 
   const isPortalRoute = request.nextUrl.pathname.startsWith('/portal')
   const isAuthRoute   = request.nextUrl.pathname.startsWith('/auth')
+  const isPasswordSetupRoute =
+    request.nextUrl.pathname.startsWith('/auth/set-password') ||
+    request.nextUrl.pathname.startsWith('/auth/reset-password')
 
   if (isPortalRoute && !user) {
     const redirectUrl = request.nextUrl.clone()
@@ -38,7 +41,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
-  if (isAuthRoute && user) {
+  if (isAuthRoute && user && !isPasswordSetupRoute) {
     return NextResponse.redirect(new URL('/portal', request.url))
   }
 

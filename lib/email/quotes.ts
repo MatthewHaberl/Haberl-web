@@ -103,6 +103,44 @@ export async function sendDepositReceiptEmail(quote: QuoteEmailFields): Promise<
 
 // ── Admin notifications ───────────────────────────────────────────────────────
 
+export async function sendCustomerPortalOnboardingEmail({
+  customerEmail,
+  customerName,
+  quoteNumber,
+  actionUrl,
+  isInvite,
+}: {
+  customerEmail: string
+  customerName: string
+  quoteNumber: string | null
+  actionUrl: string
+  isInvite: boolean
+}): Promise<SendResult> {
+  const title = isInvite ? 'Set up your customer portal' : 'Your customer portal is ready'
+  const cta = isInvite ? 'Set up portal access' : 'Open customer portal'
+  const intro = isInvite
+    ? 'Your quote has been accepted and your installation tracker is ready. Set a password to open your customer portal.'
+    : 'Your quote has been accepted and your installation tracker is ready in your customer portal.'
+
+  const html = emailLayout(
+    title,
+    `<p style="font-size:15px;line-height:1.6;">Hi ${customerName},</p>
+     <p style="font-size:15px;line-height:1.6;">${intro}</p>
+     ${quoteNumber ? `<p style="font-size:15px;line-height:1.6;">Quote reference: <strong>${quoteNumber}</strong></p>` : ''}
+     ${emailButton(actionUrl, cta)}
+     <p style="font-size:13px;color:#6b7280;">You can use the portal to follow installation progress and access handover documents as they become available.</p>`,
+  )
+  const text = `Hi ${customerName},\n\n${intro}\n\n${quoteNumber ? `Quote reference: ${quoteNumber}\n\n` : ''}${actionUrl}\n\nHaberl Electrical & Solar`
+
+  return sendEmail({
+    to: [customerEmail],
+    subject: `${title} - Haberl Solar`,
+    html,
+    text,
+    replyTo: 'info@haberl.co.za',
+  })
+}
+
 export async function sendAdminNotice(
   adminEmail: string | null,
   subject: string,

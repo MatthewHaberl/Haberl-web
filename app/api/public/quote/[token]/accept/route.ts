@@ -1,10 +1,28 @@
 import { NextResponse } from 'next/server'
+import { ensureCustomerPortalAccess } from '@/lib/auth/customer-onboarding'
 import { createJobFromQuote } from '@/lib/jobs/create-from-quote'
-import { sendAdminNotice } from '@/lib/email/quotes'
+import { sendAdminNotice, sendCustomerPortalOnboardingEmail } from '@/lib/email/quotes'
 import { formatCents, isQuoteExpired, parseTierOptions } from '@/lib/quotes/public'
 import { getBaseUrl, getClientIp, getCompanySettings, getQuoteByToken } from '@/lib/quotes/server'
 
 export const runtime = 'nodejs'
+
+async function sendPortalEmail(
+  portalAccess: Awaited<ReturnType<typeof ensureCustomerPortalAccess>>,
+  quote: Record<string, unknown>,
+): Promise<string | null> {
+  if (!portalAccess.ok || portalAccess.status === 'skipped') return null
+
+  const result = await sendCustomerPortalOnboardingEmail({
+    customerEmail: portalAccess.email,
+    customerName: portalAccess.customerName,
+    quoteNumber: typeof quote.quote_number === 'string' ? quote.quote_number : null,
+    actionUrl: portalAccess.actionUrl,
+    isInvite: portalAccess.status === 'invited',
+  })
+
+  return result.sent ? null : (result.error ?? 'Portal onboarding email was not sent')
+}
 
 /**
  * Public online acceptance. The unguessable share token is the credential;
@@ -18,12 +36,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   // Idempotent: a second tap on Accept is fine. If a previous attempt
   // recorded the acceptance but job creation failed, retry it now.
   if (quote.status === 'accepted') {
+    const baseUrl = getBaseUrl()
+    const portalAccess = await ensureCustomerPortalAccess(supabase, quote, baseUrl)
+    if (!portalAccess.ok) {
+      console.error('[public/accept] customer onboarding retry failed:', portalAccess.error)
+    }
+
     const actor = quote.generated_by ?? quote.submitted_by
     if (actor) {
       const retry = await createJobFromQuote(supabase, quote, actor)
       if (!retry.ok) {
         console.error('[public/accept] job retry failed:', retry.error)
         return new Response('Could not open the installation job - please contact us', { status: 500 })
+      }
+    }
+    if (portalAccess.ok && portalAccess.status === 'invited') {
+      try {
+        const emailWarning = await sendPortalEmail(portalAccess, quote)
+        if (emailWarning) console.error('[public/accept] onboarding retry email:', emailWarning)
+      } catch (err) {
+        console.error('[public/accept] onboarding retry email failed', err)
       }
     }
     return NextResponse.json({ ok: true })
@@ -74,11 +106,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 
   // Create the job (idempotent). Assigned to whoever generated the quote.
   const acceptedQuote = { ...quote, ...update }
+  const baseUrl = getBaseUrl()
+  const portalAccess = await ensureCustomerPortalAccess(supabase, acceptedQuote, baseUrl)
+  let onboardingWarning: string | null = null
+  if (!portalAccess.ok) {
+    onboardingWarning = portalAccess.error
+    console.error('[public/accept] customer onboarding:', portalAccess.error)
+  } else if (portalAccess.status === 'skipped') {
+    onboardingWarning = portalAccess.reason
+  }
+
   const actorId = quote.generated_by ?? quote.submitted_by
   let jobWarning: string | null = null
+  let jobWarnings: string[] = []
   if (actorId) {
     const result = await createJobFromQuote(supabase, acceptedQuote, actorId)
     if (!result.ok) jobWarning = result.error
+    else jobWarnings = result.warnings
   } else {
     jobWarning = 'No staff account linked to this quote — create the job manually.'
   }
@@ -102,6 +146,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   }
 
   // Notify admin — never block the customer on email problems
+  if (portalAccess.ok && portalAccess.status !== 'skipped') {
+    try {
+      const emailWarning = await sendPortalEmail(portalAccess, acceptedQuote)
+      if (emailWarning) {
+        onboardingWarning = emailWarning
+        console.error('[public/accept] onboarding email:', emailWarning)
+      }
+    } catch (err) {
+      onboardingWarning = 'Portal onboarding email failed'
+      console.error('[public/accept] onboarding email failed', err)
+    }
+  }
+
   try {
     const settings = await getCompanySettings(supabase)
     await sendAdminNotice(
@@ -110,6 +167,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       [
         `<strong>${quote.customer_name}</strong> accepted quote <strong>${quote.quote_number ?? ''}</strong>${chosen ? ` (${chosen.label} option)` : ''}.`,
         `Signed: ${name}`,
+        ...(onboardingWarning ? [`Portal onboarding: ${onboardingWarning}`] : []),
+        ...jobWarnings.map((warning) => `Job warning: ${warning}`),
         `Total: ${formatCents((update.total_amount as number) ?? quote.total_amount)} · Deposit: ${formatCents((update.deposit_amount as number) ?? quote.deposit_amount)}`,
         ...(jobWarning ? [`⚠ ${jobWarning}`] : []),
       ],

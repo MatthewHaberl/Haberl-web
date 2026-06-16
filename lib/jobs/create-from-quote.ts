@@ -28,6 +28,46 @@ interface BomLine {
   unitSellRands?: number
 }
 
+async function resolveCustomerSite(
+  supabase: SupabaseClient,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  quote: Record<string, any>,
+): Promise<string | null> {
+  if (!quote.customer_email) return null
+
+  const { data: customer } = await supabase
+    .from('user_profiles')
+    .select('id')
+    .ilike('email', quote.customer_email)
+    .eq('role', 'customer')
+    .maybeSingle()
+
+  if (!customer) return null
+
+  const { data: site } = await supabase
+    .from('sites')
+    .select('id')
+    .eq('customer_id', customer.id)
+    .ilike('address', quote.address ?? '')
+    .maybeSingle()
+
+  if (site) return site.id
+
+  const { data: newSite } = await supabase
+    .from('sites')
+    .insert({
+      customer_id: customer.id,
+      name: `${quote.customer_name} - Site ${quote.site_number ?? 1}`,
+      address: quote.address ?? '',
+      system_type: 'Solar PV',
+      status: 'pending',
+    })
+    .select('id')
+    .single()
+
+  return newSite?.id ?? null
+}
+
 // Pull the supplier BOM out of the saved quote JSON. Multi-option quotes use
 // the tier the customer accepted, falling back to recommended.
 function extractBom(generatedQuote: string, acceptedTier?: string | null): BomLine[] {
@@ -82,14 +122,34 @@ export async function createJobFromQuote(
 
   // Idempotent: one job per quote
   const { data: existing } = await supabase
-    .from('jobs').select('id').eq('quote_request_id', quote.id).maybeSingle()
+    .from('jobs').select('id, site_id').eq('quote_request_id', quote.id).maybeSingle()
   if (existing) {
-    return { ok: true, jobId: existing.id, created: false, materialsSeeded: 0, warnings: [] }
+    let linkedSiteId = existing.site_id as string | null
+    if (!linkedSiteId) {
+      linkedSiteId = await resolveCustomerSite(supabase, quote)
+      if (linkedSiteId) {
+        await supabase
+          .from('jobs')
+          .update({ site_id: linkedSiteId })
+          .eq('id', existing.id)
+          .is('site_id', null)
+      }
+    }
+
+    return {
+      ok: true,
+      jobId: existing.id,
+      created: false,
+      materialsSeeded: 0,
+      warnings: linkedSiteId
+        ? []
+        : ['No registered customer account matched this quote - job is not yet visible to the customer portal.'],
+    }
   }
 
   // Link to a customer site when the quote email matches a registered customer
-  let siteId: string | null = null
-  if (quote.customer_email) {
+  let siteId = await resolveCustomerSite(supabase, quote)
+  if (!siteId && quote.customer_email) {
     const { data: customer } = await supabase
       .from('user_profiles')
       .select('id')
