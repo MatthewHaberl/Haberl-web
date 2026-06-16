@@ -56,7 +56,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
 
   // Email the tokenized quote link to the customer (or stamp 'sent' for
   // manual WhatsApp/in-person sharing when manual=true).
-  async function sendToCustomer(manual = false) {
+  async function sendToCustomer(manual = false, resend = false) {
     setSaving(true)
     setError('')
     setMessage('')
@@ -64,12 +64,19 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
       const res = await fetch(`/api/quotes/${requestId}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manual }),
+        body: JSON.stringify({ manual, resend }),
       })
       const data = await res.json().catch(() => null)
       if (res.ok) {
-        setStatus('sent')
-        setMessage(manual ? 'Marked as sent — use Copy link to share it' : 'Emailed to customer ✓')
+        // A resend leaves an accepted/declined quote in its current state.
+        if (!resend) setStatus('sent')
+        setMessage(
+          manual
+            ? 'Marked as sent — use Copy link to share it'
+            : resend
+              ? 'Re-sent to customer ✓'
+              : 'Emailed to customer ✓',
+        )
       } else {
         setError(data?.error ?? 'Send failed')
       }
@@ -121,6 +128,20 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
   const copyButton = (
     <Button variant="outline" size="sm" onClick={copyLink}>
       <Copy className="h-3.5 w-3.5" /> Copy link
+    </Button>
+  )
+
+  // Re-email the quote without changing its status. Available in every state
+  // after the first send (sent / accepted / declined).
+  const resendButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => sendToCustomer(false, true)}
+      disabled={!customerEmail}
+      title={customerEmail ? `Re-send the quote email to ${customerEmail}` : 'No customer email on this quote — use Copy link instead'}
+    >
+      <Send className="h-3.5 w-3.5" /> Resend email
     </Button>
   )
 
@@ -182,33 +203,40 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
             >
               <X className="h-3.5 w-3.5" /> Declined
             </Button>
+            {resendButton}
             {copyButton}
           </>
         )}
 
         {!saving && status === 'accepted' && (
-          jobId ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/portal/employee/jobs/${jobId}`}>
-                <Briefcase className="h-3.5 w-3.5" /> Open Job <ArrowRight className="h-3 w-3" />
-              </Link>
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={acceptAndCreateJob}>
-              <Briefcase className="h-3.5 w-3.5" /> Create Job
-            </Button>
-          )
+          <>
+            {jobId ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/portal/employee/jobs/${jobId}`}>
+                  <Briefcase className="h-3.5 w-3.5" /> Open Job <ArrowRight className="h-3 w-3" />
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={acceptAndCreateJob}>
+                <Briefcase className="h-3.5 w-3.5" /> Create Job
+              </Button>
+            )}
+            {resendButton}
+          </>
         )}
 
         {!saving && status === 'declined' && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => updateStatus('sent', { declined_at: null, decline_reason: null })}
-            className="text-muted-foreground text-xs"
-          >
-            Reopen
-          </Button>
+          <>
+            {resendButton}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => updateStatus('sent', { declined_at: null, decline_reason: null })}
+              className="text-muted-foreground text-xs"
+            >
+              Reopen
+            </Button>
+          </>
         )}
       </div>
       {message && <p className="text-xs text-success">{message}</p>}

@@ -22,7 +22,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return new Response('Forbidden', { status: 403 })
   }
 
-  let body: { manual?: boolean } = {}
+  let body: { manual?: boolean; resend?: boolean } = {}
   try {
     body = await req.json()
   } catch { /* empty body is fine */ }
@@ -39,6 +39,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const expiryDays = settings?.quote_expiry_days ?? 30
   const expiryDate = new Date(Date.now() + expiryDays * 86_400_000).toISOString().slice(0, 10)
   const shareUrl = `${getBaseUrl()}/q/${quote.share_token}`
+
+  // Resend: re-email the existing quote as-is, without changing its status or
+  // expiry. Lets an already sent / accepted / declined quote be emailed again.
+  if (body.resend) {
+    if (!quote.customer_email) {
+      return NextResponse.json(
+        { error: 'No customer email on this quote — use Copy link to share it yourself.', shareUrl },
+        { status: 400 },
+      )
+    }
+    const resendResult = await sendQuoteEmail(quote, getBaseUrl())
+    if (!resendResult.sent) {
+      return NextResponse.json({ error: resendResult.error ?? 'Email failed', shareUrl }, { status: 502 })
+    }
+    await supabase
+      .from('quote_requests')
+      .update({ sent_at: new Date().toISOString() })
+      .eq('id', id)
+    return NextResponse.json({ ok: true, sent: true, resent: true, shareUrl })
+  }
 
   async function markSent() {
     return supabase
