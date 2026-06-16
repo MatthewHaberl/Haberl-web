@@ -6,6 +6,7 @@ import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
   BarChart2, Users, Zap, User, Menu, X, FileText, Settings, Activity,
   ClipboardList, PackageX,
+  type LucideIcon,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -31,11 +32,11 @@ const employeeLinks = [
   { label: 'Wastage',   href: '/portal/employee/reports/wastage',  icon: PackageX,  roles: ['manager', 'admin'] },
   { label: 'Profile',   href: '/portal/employee/profile',          icon: User,      roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Shop Mgmt', href: '/portal/employee/shop',             icon: ShoppingBag, roles: ['admin'] },
-  { label: 'Settings',  href: '/portal/employee/settings/company', icon: Settings,  roles: ['admin'] },
+{ label: 'Settings',  href: '/portal/employee/settings/company', icon: Settings,  roles: ['admin'] },
 ]
 
 interface SidebarContentProps {
-  links: { label: string; href: string; icon: React.ElementType }[]
+  links: { label: string; href: string; icon: LucideIcon }[]
   pathname: string
   name: string
   role: Role

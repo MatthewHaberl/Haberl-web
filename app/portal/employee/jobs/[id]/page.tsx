@@ -15,6 +15,8 @@ import { StagePipeline } from './StagePipeline'
 import { MaterialsPanel } from './MaterialsPanel'
 import { DepositPanel } from './DepositPanel'
 import { CreatePoDialog } from './CreatePoDialog'
+import { JobLayout3DPanel } from './JobLayout3DPanel'
+import type { CableRouteRow } from '@/lib/solar/job-layout-3d'
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -45,17 +47,45 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const stageMeta = STAGE_META[job.stage]
 
+  // 3D layout: design segments + cable routes from the linked quote
+  let quoteDesign: {
+    id: string
+    design_segments: Array<{ azimuth: number; pitch: number; panelCount: number }> | null
+    roof_type: string | null
+    storeys: number | null
+    design_panel_count: number | null
+    design_kwp: number | null
+  } | null = null
+  let cableRoutes: CableRouteRow[] = []
+  if (job.quote_request_id) {
+    const [{ data: qd }, { data: cr }] = await Promise.all([
+      supabase
+        .from('quote_requests')
+        .select('id, design_segments, roof_type, storeys, design_panel_count, design_kwp')
+        .eq('id', job.quote_request_id)
+        .maybeSingle(),
+      supabase
+        .from('cable_routes')
+        .select('id, route_type, label, points, measured_m, vertical_m, final_m, sort_order')
+        .eq('quote_request_id', job.quote_request_id)
+        .order('sort_order'),
+    ])
+    quoteDesign = qd ?? null
+    cableRoutes = (cr ?? []) as CableRouteRow[]
+  }
+
   // Deposit reconciliation: quote amount + a short-lived signed URL for the
   // proof file (private bucket — service role only)
   let depositCents: number | null = null
   let proofSignedUrl: string | null = null
   if (job.quote_request_id) {
-    const { data: quote } = await supabase
+    // deposit_amount not included in quoteDesign select; fetch it separately
+    const { data: qDeposit } = await supabase
       .from('quote_requests')
       .select('deposit_amount')
       .eq('id', job.quote_request_id)
       .maybeSingle()
-    depositCents = quote?.deposit_amount ?? null
+    depositCents = qDeposit?.deposit_amount ?? null
   }
   if (job.deposit_proof_url && isManager) {
     try {
@@ -172,6 +202,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       </div>
 
       <JobActions initialJob={job} initialTasks={tasks} />
+
+      <JobLayout3DPanel
+        quoteRequest={quoteDesign}
+        cableRoutes={cableRoutes}
+        jobId={job.id}
+      />
 
       {isManager && (
         <CreatePoDialog
