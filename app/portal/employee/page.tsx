@@ -13,6 +13,7 @@ import {
   FileText,
   Globe,
   Flag,
+  Landmark,
   MapPin,
   ShoppingCart,
   Target,
@@ -58,6 +59,9 @@ type RecentJobRow = {
   priority: JobPriority
   scheduled_date: string | null
   created_at: string
+  deposit_proof_url: string | null
+  deposit_proof_uploaded_at: string | null
+  deposit_confirmed_at: string | null
   site: Array<{ name: string }> | null
   assignee: Array<{ full_name: string }> | null
 }
@@ -69,6 +73,9 @@ type RecentJob = {
   priority: JobPriority
   scheduled_date: string | null
   created_at: string
+  deposit_proof_url: string | null
+  deposit_proof_uploaded_at: string | null
+  deposit_confirmed_at: string | null
   site?: { name: string } | null
   assignee?: { full_name: string } | null
 }
@@ -233,7 +240,9 @@ export default async function EmployeePortalRoot() {
   let jobsActiveCount = 0
   let jobsCompletedThisMonth = 0
   let urgentJobsCount = 0
+  let depositProofsCount = 0
   let recentJobs: RecentJob[] = []
+  let recentProofJobs: RecentJob[] = []
   let openQuotesCount = 0
   let pendingQuotesCount = 0
   let acceptedQuotesCount = 0
@@ -254,6 +263,8 @@ export default async function EmployeePortalRoot() {
     completedJobsResult,
     urgentJobsResult,
     recentJobsResult,
+    depositProofsResult,
+    recentProofJobsResult,
     openQuotesResult,
     pendingQuotesResult,
     acceptedQuotesResult,
@@ -272,14 +283,42 @@ export default async function EmployeePortalRoot() {
     isManager
       ? supabase
           .from('jobs')
-          .select('id, title, status, priority, scheduled_date, created_at, site:sites(name), assignee:user_profiles(full_name)')
+          .select('id, title, status, priority, scheduled_date, created_at, deposit_proof_url, deposit_proof_uploaded_at, deposit_confirmed_at, site:sites(name), assignee:user_profiles!jobs_assigned_to_fkey(full_name)')
           .order('created_at', { ascending: false })
           .limit(5)
       : supabase
           .from('jobs')
-          .select('id, title, status, priority, scheduled_date, created_at, site:sites(name), assignee:user_profiles(full_name)')
+          .select('id, title, status, priority, scheduled_date, created_at, deposit_proof_url, deposit_proof_uploaded_at, deposit_confirmed_at, site:sites(name), assignee:user_profiles!jobs_assigned_to_fkey(full_name)')
           .eq('assigned_to', user.id)
           .order('created_at', { ascending: false })
+          .limit(5),
+    isManager
+      ? supabase
+          .from('jobs')
+          .select('id', { count: 'exact', head: true })
+          .not('deposit_proof_url', 'is', null)
+          .is('deposit_confirmed_at', null)
+      : supabase
+          .from('jobs')
+          .select('id', { count: 'exact', head: true })
+          .eq('assigned_to', user.id)
+          .not('deposit_proof_url', 'is', null)
+          .is('deposit_confirmed_at', null),
+    isManager
+      ? supabase
+          .from('jobs')
+          .select('id, title, status, priority, scheduled_date, created_at, deposit_proof_url, deposit_proof_uploaded_at, deposit_confirmed_at, site:sites(name), assignee:user_profiles!jobs_assigned_to_fkey(full_name)')
+          .not('deposit_proof_url', 'is', null)
+          .is('deposit_confirmed_at', null)
+          .order('deposit_proof_uploaded_at', { ascending: false })
+          .limit(5)
+      : supabase
+          .from('jobs')
+          .select('id, title, status, priority, scheduled_date, created_at, deposit_proof_url, deposit_proof_uploaded_at, deposit_confirmed_at, site:sites(name), assignee:user_profiles!jobs_assigned_to_fkey(full_name)')
+          .eq('assigned_to', user.id)
+          .not('deposit_proof_url', 'is', null)
+          .is('deposit_confirmed_at', null)
+          .order('deposit_proof_uploaded_at', { ascending: false })
           .limit(5),
     isManager
       ? supabase.from('quote_requests').select('id', { count: 'exact', head: true }).in('status', ['pending', 'generated', 'sent'])
@@ -315,7 +354,9 @@ export default async function EmployeePortalRoot() {
   jobsActiveCount = activeJobsResult.count ?? 0
   jobsCompletedThisMonth = completedJobsResult.count ?? 0
   urgentJobsCount = urgentJobsResult.count ?? 0
+  depositProofsCount = depositProofsResult.count ?? 0
   recentJobs = normalizeRecentJobs((recentJobsResult.data ?? []) as RecentJobRow[])
+  recentProofJobs = normalizeRecentJobs((recentProofJobsResult.data ?? []) as RecentJobRow[])
   openQuotesCount = openQuotesResult.count ?? 0
   pendingQuotesCount = pendingQuotesResult.count ?? 0
   acceptedQuotesCount = acceptedQuotesResult.count ?? 0
@@ -410,6 +451,12 @@ export default async function EmployeePortalRoot() {
           icon: Briefcase,
         },
         {
+          label: 'Proofs to confirm',
+          value: String(depositProofsCount),
+          sub: 'uploaded POPs awaiting reconciliation',
+          icon: Landmark,
+        },
+        {
           label: 'Customer accounts',
           value: String(activeCustomersCount),
           sub: `${newCustomersThisMonth} added this month`,
@@ -443,6 +490,12 @@ export default async function EmployeePortalRoot() {
           icon: FileText,
         },
         {
+          label: 'Uploaded proofs',
+          value: String(depositProofsCount),
+          sub: 'POPs waiting on deposit confirmation',
+          icon: Landmark,
+        },
+        {
           label: 'Accepted quotes',
           value: String(acceptedQuotesCount),
           sub: 'quotes you submitted that converted',
@@ -453,6 +506,7 @@ export default async function EmployeePortalRoot() {
   const currentPulse = [
     `${pendingQuotesCount} ${isManager ? 'quote requests' : 'your quote requests'} waiting for review or next action.`,
     `${jobsActiveCount} ${isManager ? 'jobs are' : 'jobs are'} active in the portal right now, with ${urgentJobsCount} marked urgent.`,
+    `${depositProofsCount} proof${depositProofsCount === 1 ? '' : 's'} of payment ${depositProofsCount === 1 ? 'is' : 'are'} uploaded and waiting for confirmation.`,
     isManager
       ? `${paidOrdersThisMonth} paid store orders have landed this month for ${formatCurrency(revenueThisMonth)} in revenue.`
       : 'Company-wide sales, customer, and site visibility unlocks automatically on manager and admin accounts.',
@@ -629,6 +683,26 @@ export default async function EmployeePortalRoot() {
                 <p className="text-muted-foreground">{item}</p>
               </div>
             ))}
+            {recentProofJobs.length > 0 && (
+              <div className="space-y-2 rounded-xl border border-accent/30 bg-accent/5 p-3">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Landmark className="h-4 w-4 text-accent" />
+                  POPs needing confirmation
+                </div>
+                {recentProofJobs.map((job) => (
+                  <Link
+                    key={job.id}
+                    href={`/portal/employee/jobs/${job.id}`}
+                    className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2 text-sm transition-colors hover:border-accent"
+                  >
+                    <span className="min-w-0 truncate">{job.title}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {job.deposit_proof_uploaded_at ? timeAgo(job.deposit_proof_uploaded_at) : 'uploaded'}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -779,6 +853,9 @@ export default async function EmployeePortalRoot() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-medium">{job.title}</p>
                     <div className="flex items-center gap-2">
+                      {job.deposit_proof_url && !job.deposit_confirmed_at && (
+                        <Badge variant="accent">POP uploaded</Badge>
+                      )}
                       <Badge variant={priorityVariant[job.priority]}>{job.priority}</Badge>
                       <Badge variant={jobStatusVariant[job.status]}>{job.status.replace('_', ' ')}</Badge>
                     </div>

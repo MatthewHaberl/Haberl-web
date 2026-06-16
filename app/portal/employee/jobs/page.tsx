@@ -1,8 +1,9 @@
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { Briefcase, ChevronRight, Calendar, User } from 'lucide-react'
+import { Briefcase, ChevronRight, Calendar, Landmark, Plus, User } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { PIPELINE_STAGES, STAGE_META, stageIndex } from '@/lib/jobs/stages'
 import type { JobStage, JobPriority } from '@/types/database'
@@ -37,12 +38,12 @@ export default async function JobsPage() {
   // Managers see all jobs; field workers see only theirs
   const query = supabase
     .from('jobs')
-    .select('*, site:sites(name, address), assignee:user_profiles(full_name)')
+    .select('*, site:sites(name, address), assignee:user_profiles!jobs_assigned_to_fkey(full_name)')
     .order('scheduled_date', { ascending: true })
 
   if (!isManager) query.eq('assigned_to', user!.id)
 
-  const { data: jobs } = await query
+  const { data: jobs, error: jobsError } = await query
 
   const active  = (jobs?.filter((j) => j.stage !== 'completed' && j.stage !== 'cancelled') ?? [])
     .sort((a, b) => stageIndex(a.stage as JobStage) - stageIndex(b.stage as JobStage))
@@ -63,6 +64,12 @@ export default async function JobsPage() {
             <div className="flex items-start justify-between gap-2 mb-2">
               <p className="font-semibold text-sm leading-snug min-w-0 truncate">{job.title}</p>
               <div className="flex items-center gap-1.5 shrink-0">
+                {job.deposit_proof_url && !job.deposit_confirmed_at && (
+                  <Badge variant="accent" className="gap-1">
+                    <Landmark className="h-3 w-3" />
+                    POP
+                  </Badge>
+                )}
                 <Badge variant={priorityVariant[job.priority as JobPriority]}>{job.priority}</Badge>
                 <Badge variant={stageVariant(job.stage as JobStage)}>
                   {STAGE_META[job.stage as JobStage]?.label ?? job.stage}
@@ -97,14 +104,32 @@ export default async function JobsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">
-          {isManager ? 'All Jobs' : 'My Jobs'}
-        </h1>
-        <p className="text-muted-foreground mt-1">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-primary">
+            {isManager ? 'All Jobs' : 'My Jobs'}
+          </h1>
+          <p className="text-muted-foreground mt-1">
           {active.length} active · {done.length} completed
-        </p>
+          </p>
+        </div>
+        {isManager && (
+          <Button asChild variant="accent" size="sm">
+            <Link href="/portal/employee/jobs/new">
+              <Plus className="h-3.5 w-3.5" />
+              New job
+            </Link>
+          </Button>
+        )}
       </div>
+
+      {jobsError && (
+        <Card className="border-destructive/40">
+          <CardContent className="py-4 text-sm text-destructive">
+            Jobs could not load: {jobsError.message}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Pipeline overview */}
       {active.length > 0 && (

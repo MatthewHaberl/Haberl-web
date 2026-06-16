@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,7 @@ interface Props {
 }
 
 export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, viewedAt }: Props) {
+  const router = useRouter()
   const [status, setStatus] = useState<QuoteRequestStatus>(initialStatus)
   const [saving, setSaving] = useState(false)
   const [jobId, setJobId] = useState<string | null>(initialJobId ?? null)
@@ -115,11 +117,20 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
         body: JSON.stringify({ quoteRequestId: requestId }),
       })
       if (!response.ok) {
-        setError(await response.text() || `Job creation failed (HTTP ${response.status})`)
+        const detail = await response.text()
+        setError(detail || `Job creation failed (HTTP ${response.status})`)
         return
       }
       const payload = await response.json()
-      setJobId(payload.jobId ?? null)
+      if (!payload.jobId) {
+        setError('Job was created but no job ID came back. Refresh and try Open Job again.')
+        return
+      }
+      setJobId(payload.jobId)
+      router.push(`/portal/employee/jobs/${payload.jobId}`)
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Job creation failed')
     } finally {
       setSaving(false)
     }

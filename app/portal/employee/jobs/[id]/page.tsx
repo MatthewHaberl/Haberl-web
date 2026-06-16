@@ -25,14 +25,17 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const supabase = await createClient()
 
-  const [{ data: jobData }, { data: taskData }, { data: materialData }, { data: historyData }, { data: profile }] = await Promise.all([
-    supabase.from('jobs').select('*, site:sites(name, address), assignee:user_profiles(full_name)').eq('id', id).single(),
+  const [{ data: jobData, error: jobError }, { data: taskData }, { data: materialData }, { data: historyData }, { data: profile }] = await Promise.all([
+    supabase.from('jobs').select('*, site:sites(name, address), assignee:user_profiles!jobs_assigned_to_fkey(full_name)').eq('id', id).single(),
     supabase.from('job_tasks').select('*').eq('job_id', id).order('id'),
     supabase.from('job_materials').select('*').eq('job_id', id).order('sort_order'),
     supabase.from('job_status_history').select('*, changer:user_profiles!changed_by(full_name)').eq('job_id', id).order('created_at'),
     supabase.from('user_profiles').select('role').eq('id', user.id).single(),
   ])
 
+  if (jobError) {
+    console.error('[jobs/detail] load failed', { id, code: jobError.code, message: jobError.message, details: jobError.details })
+  }
   if (!jobData) notFound()
 
   const job = jobData as Job

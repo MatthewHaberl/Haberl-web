@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createJobFromQuote } from '@/lib/jobs/create-from-quote'
 
 export const runtime = 'nodejs'
@@ -19,13 +20,14 @@ export async function POST(req: Request) {
   const quoteRequestId = String(body.quoteRequestId ?? '')
   if (!quoteRequestId) return new Response('Missing quoteRequestId', { status: 400 })
 
-  const { data: quote, error: quoteError } = await supabase
+  const admin = createAdminClient()
+  const { data: quote, error: quoteError } = await admin
     .from('quote_requests').select('*').eq('id', quoteRequestId).single()
   if (quoteError || !quote) {
     return new Response(quoteError?.message ?? 'Quote request not found', { status: 404 })
   }
 
-  const result = await createJobFromQuote(supabase, quote, user.id)
+  const result = await createJobFromQuote(admin, quote, user.id)
   if (!result.ok) return new Response(result.error, { status: result.status })
 
   return NextResponse.json({
