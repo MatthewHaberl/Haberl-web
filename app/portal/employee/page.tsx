@@ -540,9 +540,6 @@ export default async function EmployeePortalRoot() {
               {isAdmin && (
                 <Badge variant="outline" className="border-white/20 text-white/90">Admin access</Badge>
               )}
-              <Badge variant="outline" className="border-white/20 text-white/90">
-                {planUpdated ? `Plan synced ${formatDate(planUpdated)}` : 'Plan not yet synced'}
-              </Badge>
             </div>
 
             <div>
@@ -623,10 +620,17 @@ export default async function EmployeePortalRoot() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Flag className="h-5 w-5 text-accent" />
-              What&apos;s next
-            </CardTitle>
+            <div className="flex items-start justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Flag className="h-5 w-5 text-accent" />
+                What&apos;s next
+              </CardTitle>
+              {planUpdated && (
+                <Badge variant="outline" className="shrink-0 whitespace-nowrap">
+                  Synced {formatDate(planUpdated)}
+                </Badge>
+              )}
+            </div>
             <CardDescription>
               Top priorities pulled live from the second brain. Update the plan and re-sync to change this.
             </CardDescription>
