@@ -38,7 +38,7 @@ const H = (color: string, extra?: React.CSSProperties): React.CSSProperties => (
 // ── Base card ─────────────────────────────────────────────────────────────────
 interface CardProps {
   color: string
-  Icon: React.ElementType
+  Icon: React.ComponentType<{ size?: number; className?: string }>
   title: string
   children: React.ReactNode
   selected?: boolean

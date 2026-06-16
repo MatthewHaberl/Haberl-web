@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import type { ElementType } from 'react'
+import type { ComponentType } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -161,7 +161,7 @@ function DashboardMetric({
   label: string
   value: string
   sub: string
-  icon: ElementType
+  icon: ComponentType<{ className?: string }>
   accent?: boolean
 }) {
   return (

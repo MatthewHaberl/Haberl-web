@@ -200,7 +200,7 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
     }
   }
 
-  const tabs: { id: TabId; label: string; icon: React.ElementType; count?: number }[] = [
+  const tabs: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }>; count?: number }[] = [
     { id: 'survey',      label: 'Survey',      icon: ClipboardList },
     { id: 'quote',       label: 'Quote',       icon: FileText },
     { id: 'roof-design', label: 'Roof Design', icon: Sun },

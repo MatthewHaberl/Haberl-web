@@ -37,7 +37,7 @@ const DOC_TYPE_LABELS: Record<ProductDocType, string> = {
   other:              'Other',
 }
 
-const DOC_TYPE_ICONS: Record<ProductDocType, React.ElementType> = {
+const DOC_TYPE_ICONS: Record<ProductDocType, React.ComponentType<{ className?: string }>> = {
   datasheet:          FileText,
   manual:             BookOpen,
   installation_guide: Wrench,

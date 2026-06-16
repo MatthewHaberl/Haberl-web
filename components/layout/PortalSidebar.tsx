@@ -35,8 +35,10 @@ const employeeLinks = [
 { label: 'Settings',  href: '/portal/employee/settings/company', icon: Settings,  roles: ['admin'] },
 ]
 
+type NavIcon = React.ComponentType<{ className?: string }>
+
 interface SidebarContentProps {
-  links: { label: string; href: string; icon: LucideIcon }[]
+  links: { label: string; href: string; icon: NavIcon; roles?: string[] }[]
   pathname: string
   name: string
   role: Role

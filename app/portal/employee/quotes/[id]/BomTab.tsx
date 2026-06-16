@@ -325,7 +325,7 @@ export function BomTab({ quoteData, quoteNumber, customerName, siteAddress, onGo
   )
 }
 
-const COMPLIANCE_STYLE: Record<ComplianceStatus, { icon: React.ElementType; className: string; label: string }> = {
+const COMPLIANCE_STYLE: Record<ComplianceStatus, { icon: React.ComponentType<{ className?: string }>; className: string; label: string }> = {
   pass:    { icon: CheckCircle2,  className: 'text-success',          label: 'Pass' },
   info:    { icon: Info,          className: 'text-muted-foreground', label: 'Site check' },
   warning: { icon: AlertTriangle, className: 'text-warning',          label: 'Warning' },

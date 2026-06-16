@@ -7,7 +7,7 @@ interface GaugeProps {
   value: number | null
   unit: string
   max: number
-  icon: React.ElementType
+  icon: React.ComponentType<{ className?: string }>
   color: string
   positive?: string   // label when value > 0
   negative?: string   // label when value < 0
