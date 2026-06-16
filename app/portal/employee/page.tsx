@@ -30,6 +30,9 @@ import type {
   JobPriority,
   JobStatus,
   OrderStatus,
+  PlanItem,
+  PlanItemPriority,
+  PlanItemStatus,
   QuoteRequestStatus,
   Role,
 } from '@/types/database'
@@ -115,6 +118,33 @@ const priorityVariant: Record<JobPriority, BadgeVariant> = {
   high: 'warning',
   urgent: 'destructive',
 }
+
+type PlanRow = Pick<
+  PlanItem,
+  'code' | 'track' | 'title' | 'priority' | 'priority_rank' | 'status' | 'synced_at'
+>
+
+const planPriorityVariant: Record<PlanItemPriority, BadgeVariant> = {
+  urgent: 'destructive',
+  highest: 'warning',
+  high: 'accent',
+  medium: 'default',
+  low: 'outline',
+}
+
+const planStatusVariant: Record<PlanItemStatus, BadgeVariant> = {
+  pending: 'outline',
+  in_progress: 'warning',
+  done: 'success',
+}
+
+const planStatusLabel: Record<PlanItemStatus, string> = {
+  pending: 'to do',
+  in_progress: 'in progress',
+  done: 'done',
+}
+
+const PLAN_LIMIT = 8
 
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -228,6 +258,7 @@ export default async function EmployeePortalRoot() {
     pendingQuotesResult,
     acceptedQuotesResult,
     recentQuotesResult,
+    planItemsResult,
   ] = await Promise.all([
     isManager
       ? supabase.from('jobs').select('id', { count: 'exact', head: true }).in('status', ['pending', 'in_progress'])
@@ -271,6 +302,14 @@ export default async function EmployeePortalRoot() {
           .eq('submitted_by', user.id)
           .order('created_at', { ascending: false })
           .limit(5),
+    supabase
+      .from('plan_items')
+      .select('code, track, title, priority, priority_rank, status, synced_at')
+      .eq('is_published', true)
+      .in('status', ['pending', 'in_progress'])
+      .order('priority_rank', { ascending: true })
+      .order('track', { ascending: true })
+      .order('code', { ascending: true }),
   ])
 
   jobsActiveCount = activeJobsResult.count ?? 0
@@ -281,6 +320,7 @@ export default async function EmployeePortalRoot() {
   pendingQuotesCount = pendingQuotesResult.count ?? 0
   acceptedQuotesCount = acceptedQuotesResult.count ?? 0
   recentQuotes = (recentQuotesResult.data ?? []) as RecentQuote[]
+  const planItems = (planItemsResult.data ?? []) as PlanRow[]
 
   if (isManager) {
     const [
@@ -334,7 +374,13 @@ export default async function EmployeePortalRoot() {
   const latestQuote = recentQuotes[0]
   const latestCustomer = recentCustomers[0]
   const latestOrder = recentOrders[0]
-  const { companyGoals, leadershipFocus, milestones, lastUpdated } = dashboardContent
+  const { companyGoals } = dashboardContent
+  const planUpdated = planItems[0]?.synced_at ?? null
+  const topPlan = planItems.slice(0, PLAN_LIMIT)
+  const planByTrack = planItems.reduce<Record<string, number>>((acc, item) => {
+    acc[item.track] = (acc[item.track] ?? 0) + 1
+    return acc
+  }, {})
 
   const dashboardMetrics = isManager
     ? [
@@ -441,7 +487,7 @@ export default async function EmployeePortalRoot() {
                 <Badge variant="outline" className="border-white/20 text-white/90">Admin access</Badge>
               )}
               <Badge variant="outline" className="border-white/20 text-white/90">
-                Updated {lastUpdated}
+                {planUpdated ? `Plan synced ${formatDate(planUpdated)}` : 'Plan not yet synced'}
               </Badge>
             </div>
 
@@ -524,57 +570,48 @@ export default async function EmployeePortalRoot() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <UserRound className="h-5 w-5 text-accent" />
-              Matthew and Byron
+              <Flag className="h-5 w-5 text-accent" />
+              What&apos;s next
             </CardTitle>
-            <CardDescription>Immediate work blocks based on the current operating plan.</CardDescription>
+            <CardDescription>
+              Top priorities pulled live from the second brain. Update the plan and re-sync to change this.
+            </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
-            {leadershipFocus.map((person) => (
-              <div key={person.owner} className="rounded-xl border border-border p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold">{person.owner}</p>
-                  <Badge variant="outline">{person.role}</Badge>
-                </div>
-                <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                  {person.items.map((item) => (
-                    <li key={item} className="flex gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
+            {topPlan.length ? (
+              <>
+                {topPlan.map((item) => (
+                  <div key={item.code} className="rounded-xl border border-border bg-muted/30 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={planPriorityVariant[item.priority]}>{item.priority}</Badge>
+                        <Badge variant="outline">{item.track}</Badge>
+                      </div>
+                      <Badge variant={planStatusVariant[item.status]}>{planStatusLabel[item.status]}</Badge>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-sm text-foreground" title={item.title}>
+                      {item.title}
+                    </p>
+                  </div>
+                ))}
+                {planItems.length > PLAN_LIMIT && (
+                  <p className="text-xs text-muted-foreground">
+                    +{planItems.length - PLAN_LIMIT} more open ·{' '}
+                    {Object.entries(planByTrack)
+                      .map(([track, count]) => `${track} ${count}`)
+                      .join(' · ')}
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                No plan items synced yet. Run <code>npm run sync-plan</code> (or double-click sync-plan.bat) to
+                pull your latest to-dos from the vault.
               </div>
-            ))}
+            )}
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Flag className="h-5 w-5 text-accent" />
-            Milestones
-          </CardTitle>
-          <CardDescription>
-            Structured business milestones from the dashboard content source. Update one file and this section stays current.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-2">
-          {milestones.map((milestone) => (
-            <div key={milestone.title} className="rounded-xl border border-border p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-semibold">{milestone.title}</p>
-                <Badge variant={milestone.variant}>{milestone.status}</Badge>
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">{milestone.detail}</p>
-              <p className="mt-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Target: {milestone.target}
-              </p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Card>

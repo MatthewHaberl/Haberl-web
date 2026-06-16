@@ -1,0 +1,29 @@
+/* Scoped theme for the Key Electric demo storefront.
+   These vars live only under .ke-root so they never affect the Haberl site. */
+.ke-root {
+  --ke-yellow: #fbb812;
+  --ke-yellow-dark: #e7a911;
+  --ke-slate: #333e48;
+  --ke-ink: #1f242a;
+  --ke-muted: #6b7280;
+  --ke-line: #e8eaed;
+  --ke-soft: #f6f7f8;
+
+  font-family: var(--font-ke), Inter, system-ui, -apple-system, sans-serif;
+  color: var(--ke-ink);
+  background: #ffffff;
+}
+
+.ke-root a { color: inherit; }
+
+/* Infinite brand marquee */
+@keyframes ke-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.ke-marquee {
+  display: flex;
+  width: max-content;
+  animation: ke-marquee 32s linear infinite;
+}
+.ke-marquee:hover { animation-play-state: paused; }

@@ -591,3 +591,23 @@ export interface CompanyMetrics {
   active_sites: number
   open_quotes: number
 }
+
+export type PlanItemStatus = 'pending' | 'in_progress' | 'done'
+export type PlanItemPriority = 'urgent' | 'highest' | 'high' | 'medium' | 'low'
+
+// Operating-plan items synced on-demand from the claude-obsidian vault (recommendations.md).
+// Allowlisted Haberl sections only — never BMG / trading / personal data. See scripts/sync-plan.mjs.
+export interface PlanItem {
+  id: string
+  code: string
+  track: string
+  title: string
+  priority: PlanItemPriority
+  priority_rank: number
+  status: PlanItemStatus
+  source_session: string | null
+  is_published: boolean
+  synced_at: string
+  created_at: string
+  updated_at: string
+}
