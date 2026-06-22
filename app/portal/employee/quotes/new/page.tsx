@@ -6,13 +6,13 @@ import type { EquipmentBrand } from '@/types/database'
 export default async function NewQuotePage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; lead?: string }>
+  searchParams: Promise<{ from?: string; lead?: string; newSite?: string }>
 }) {
   const user = await getUser()
   if (!user) redirect('/auth/login')
 
   const supabase = await createClient()
-  const { from, lead } = await searchParams
+  const { from, lead, newSite } = await searchParams
 
   const [{ data: brands }, prefillResult, leadResult] = await Promise.all([
     supabase
@@ -44,10 +44,16 @@ export default async function NewQuotePage({
       }
     : null
 
+  // "Add site" → keep the customer, start a fresh location (blank address, next site number)
+  const prefill =
+    newSite && prefillResult.data
+      ? { ...prefillResult.data, address: null, site_number: (prefillResult.data.site_number ?? 1) + 1 }
+      : prefillResult.data ?? leadPrefill
+
   return (
     <QuoteForm
       brands={(brands ?? []) as EquipmentBrand[]}
-      prefill={prefillResult.data ?? leadPrefill}
+      prefill={prefill}
       leadId={leadResult.data?.id ?? null}
     />
   )
