@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Zap, Sun, Shield, Phone, ChevronRight, Star, CheckCircle } from 'lucide-react'
 import { getUser } from '@/lib/supabase/server'
+import { WhatsAppInlineButton } from '@/components/layout/WhatsAppButton'
 
 const services = [
   { icon: Zap,    title: 'Electrical Installations',  desc: 'Residential and commercial wiring, DB boards, COC compliance.' },
@@ -146,6 +147,7 @@ export default async function HomePage() {
               <Button variant="accent" size="lg" asChild>
                 <a href="/quote-request">Request a callback</a>
               </Button>
+              <WhatsAppInlineButton message="Hi Haberl, I'd like a quote for electrical/solar work." />
               <Button size="lg" asChild>
                 <a href="tel:+27615193016"><Phone className="h-4 w-4" /> Call us</a>
               </Button>
