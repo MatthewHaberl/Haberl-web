@@ -168,7 +168,76 @@ const DESIGN_WORKSPACE_V2 = `<svg viewBox="0 0 960 600" xmlns="http://www.w3.org
 <text x="916" y="535" text-anchor="end" font-size="12.5" font-weight="700" fill="var(--color-text-primary)">R 142 800</text>
 </svg>`
 
+const OVERVIEW = `<svg viewBox="0 0 960 210" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-sans), system-ui, sans-serif" role="img">
+<title>Quotes v2 — end-to-end journey</title>
+<desc>From the quotes list, through a new request and the option detail, to send, acceptance and a job.</desc>
+<defs><marker id="o1" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6.5,3 L0,6 z" fill="var(--color-text-secondary)"/></marker></defs>
+<text x="24" y="32" font-size="20" font-weight="700" fill="var(--color-text-primary)">Quotes v2 — the journey, end to end</text>
+<text x="24" y="53" font-size="12.5" fill="var(--color-text-secondary)">From the list to a paid job. Customer → Site → Option underpins the whole flow.</text>
+<line x1="24" y1="68" x2="936" y2="68" stroke="var(--color-border-tertiary)"/>
+<g font-size="12.5" font-weight="600">
+<rect x="24" y="100" width="138" height="48" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="93" y="122" text-anchor="middle" fill="var(--color-text-primary)">Quotes list</text><text x="93" y="138" text-anchor="middle" font-size="10" font-weight="400" fill="var(--color-text-secondary)">all customers</text>
+<rect x="173" y="100" width="138" height="48" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="242" y="122" text-anchor="middle" fill="var(--color-text-primary)">New request</text><text x="242" y="138" text-anchor="middle" font-size="10" font-weight="400" fill="var(--color-text-secondary)">capture survey</text>
+<rect x="322" y="100" width="138" height="48" rx="8" fill="var(--color-background-primary)" stroke="#1e3a5f" stroke-width="1.5"/><text x="391" y="122" text-anchor="middle" fill="var(--color-text-primary)">Option detail</text><text x="391" y="138" text-anchor="middle" font-size="10" font-weight="400" fill="var(--color-text-secondary)">design + price</text>
+<rect x="471" y="100" width="138" height="48" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="540" y="122" text-anchor="middle" fill="var(--color-text-primary)">Send to client</text><text x="540" y="138" text-anchor="middle" font-size="10" font-weight="400" fill="var(--color-text-secondary)">email link</text>
+<rect x="620" y="100" width="138" height="48" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="689" y="122" text-anchor="middle" fill="var(--color-text-primary)">Accepted</text><text x="689" y="138" text-anchor="middle" font-size="10" font-weight="400" fill="var(--color-text-secondary)">deposit paid</text>
+<rect x="769" y="100" width="138" height="48" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="838" y="122" text-anchor="middle" fill="var(--color-text-primary)">Becomes a job</text><text x="838" y="138" text-anchor="middle" font-size="10" font-weight="400" fill="var(--color-text-secondary)">handover</text>
+</g>
+<g stroke="var(--color-text-secondary)" stroke-width="1.4" marker-end="url(#o1)">
+<line x1="162" y1="124" x2="172" y2="124"/><line x1="311" y1="124" x2="321" y2="124"/><line x1="460" y1="124" x2="470" y2="124"/><line x1="609" y1="124" x2="619" y2="124"/><line x1="758" y1="124" x2="768" y2="124"/>
+</g>
+<text x="24" y="188" font-size="11.5" fill="var(--color-text-secondary)">Nothing here touches the calculator or the old Quotes tab — it all lives on the new tab.</text>
+</svg>`
+
+const EXISTING_RULES = `<svg viewBox="0 0 960 500" xmlns="http://www.w3.org/2000/svg" font-family="var(--font-sans), system-ui, sans-serif" role="img">
+<title>Existing system — assessment and rules check</title>
+<desc>Capture what exists across strings, MPPTs, inverter, battery, earthing and protection; the rules engine validates and flags issues to fix.</desc>
+<defs><marker id="e1" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6.5,3 L0,6 z" fill="var(--color-text-secondary)"/></marker></defs>
+<text x="24" y="28" font-size="20" font-weight="700" fill="var(--color-text-primary)">Existing system — what's there vs what must change</text>
+<text x="24" y="48" font-size="12.5" fill="var(--color-text-secondary)">Capture the existing install; the rules engine validates live and flags issues before a quote goes out.</text>
+<line x1="24" y1="62" x2="936" y2="62" stroke="var(--color-border-tertiary)"/>
+<text x="24" y="84" font-size="11" font-weight="700" letter-spacing="0.5" fill="var(--color-text-secondary)">STEP 1 — CAPTURE WHAT EXISTS</text>
+<g>
+<rect x="24" y="96" width="144" height="56" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="96" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="var(--color-text-primary)">Strings</text><text x="96" y="137" text-anchor="middle" font-size="9.5" fill="var(--color-text-secondary)">count · watt · facing</text>
+<rect x="178" y="96" width="144" height="56" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="250" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="var(--color-text-primary)">MPPT / parallel</text><text x="250" y="137" text-anchor="middle" font-size="9.5" fill="var(--color-text-secondary)">grouping</text>
+<rect x="332" y="96" width="144" height="56" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="404" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="var(--color-text-primary)">Inverter</text><text x="404" y="137" text-anchor="middle" font-size="9.5" fill="var(--color-text-secondary)">size &amp; type</text>
+<rect x="486" y="96" width="144" height="56" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="558" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="var(--color-text-primary)">Battery</text><text x="558" y="137" text-anchor="middle" font-size="9.5" fill="var(--color-text-secondary)">kWh · BMS</text>
+<rect x="640" y="96" width="144" height="56" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="712" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="var(--color-text-primary)">Earthing</text><text x="712" y="137" text-anchor="middle" font-size="9.5" fill="var(--color-text-secondary)">bonding</text>
+<rect x="794" y="96" width="142" height="56" rx="8" fill="var(--color-background-primary)" stroke="var(--color-border-tertiary)"/><text x="865" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="var(--color-text-primary)">Protection</text><text x="865" y="137" text-anchor="middle" font-size="9.5" fill="var(--color-text-secondary)">breakers · SPD</text>
+</g>
+<rect x="405" y="186" width="150" height="46" rx="9" fill="var(--color-background-primary)" stroke="#1e3a5f" stroke-width="2"/><text x="480" y="208" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--color-text-primary)">Rules engine</text><text x="480" y="223" text-anchor="middle" font-size="9.5" fill="var(--color-text-secondary)">validates live</text>
+<g stroke="var(--color-text-secondary)" stroke-width="1.4" fill="none" marker-end="url(#e1)">
+<line x1="480" y1="152" x2="480" y2="185"/>
+<path d="M480,232 V250 H174 V262"/>
+<path d="M480,232 V250 H648 V262"/>
+</g>
+<rect x="24" y="264" width="300" height="60" rx="9" fill="var(--color-background-primary)" stroke="#1D9E75" stroke-width="1.5"/><text x="40" y="290" font-size="13" font-weight="700" fill="#1D9E75">✓ Configuration OK</text><text x="40" y="309" font-size="11" fill="var(--color-text-secondary)">nothing to fix — carry on to the design</text>
+<rect x="360" y="264" width="576" height="160" rx="9" fill="var(--color-background-primary)" stroke="#D85A30" stroke-width="1.5"/>
+<text x="376" y="288" font-size="13" font-weight="700" fill="#D85A30">⚠ Issues to fix (examples)</text>
+<g font-size="12" fill="var(--color-text-primary)">
+<text x="376" y="314">• East + West panels on one MPPT <tspan fill="var(--color-text-secondary)">— ARR-01</tspan></text>
+<text x="376" y="340">• 25 A feed too small for a 15 kW inverter <tspan fill="var(--color-text-secondary)">— PRO-01</tspan></text>
+<text x="376" y="366">• Battery BMS not on the inverter's list <tspan fill="var(--color-text-secondary)">— BAT-04</tspan></text>
+<text x="376" y="392">• Unequal parallel strings (4 + 6) <tspan fill="var(--color-text-secondary)">— ARR-02</tspan></text>
+</g>
+<text x="24" y="356" font-size="11" fill="var(--color-text-secondary)">Each flag becomes a</text>
+<text x="24" y="372" font-size="11" fill="var(--color-text-secondary)">fix line in the quote,</text>
+<text x="24" y="388" font-size="11" fill="var(--color-text-secondary)">or a catch-point you</text>
+<text x="24" y="404" font-size="11" fill="var(--color-text-secondary)">flag for the rules list.</text>
+<g font-size="11" font-weight="600">
+<circle cx="384" cy="446" r="5" fill="#D85A30"/><text x="394" y="450" fill="var(--color-text-secondary)">BLOCK — must fix</text>
+<circle cx="520" cy="446" r="5" fill="#f59e0b"/><text x="530" y="450" fill="var(--color-text-secondary)">WARN — flag, allow override</text>
+<circle cx="724" cy="446" r="5" fill="#1e3a5f"/><text x="734" y="450" fill="var(--color-text-secondary)">INFO — advisory</text>
+</g>
+</svg>`
+
 export const WORKFLOW_DIAGRAMS: WorkflowDiagram[] = [
+  {
+    id: 'overview',
+    label: 'End-to-end journey',
+    description: 'The whole flow at a glance: from the quotes list to a paid job. Customer → Site → Option underpins everything.',
+    svg: OVERVIEW,
+  },
   {
     id: 'intake',
     label: 'Intake — customer, site & usage',
@@ -180,5 +249,11 @@ export const WORKFLOW_DIAGRAMS: WorkflowDiagram[] = [
     label: 'Design & Quote workspace',
     description: 'The inverter-centric SLD canvas: four-sided inverter, component palette, toggleable layers, earthing layer, and the pop-up bill of materials.',
     svg: DESIGN_WORKSPACE_V2,
+  },
+  {
+    id: 'existing-rules',
+    label: 'Existing system & rules',
+    description: 'For amendments: capture the existing install across strings, MPPTs, inverter, battery, earthing and protection — the rules engine flags what must change.',
+    svg: EXISTING_RULES,
   },
 ]
