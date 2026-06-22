@@ -278,7 +278,7 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
                                 ) : (
                                   <>
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <Link href={`/portal/employee/quotes/${option.id}`} className="text-sm font-medium hover:text-accent">
+                                      <Link href={`/portal/employee/quotes-v2/${option.id}`} className="text-sm font-medium hover:text-accent">
                                         {optionDisplay(option, i)}
                                       </Link>
                                       <button
@@ -306,7 +306,7 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
                               {editingOption !== option.id && (
                                 <div className="flex items-center gap-2 shrink-0">
                                   <Badge variant={statusVariant[option.status]}>{option.status}</Badge>
-                                  <Link href={`/portal/employee/quotes/${option.id}`} title="Open">
+                                  <Link href={`/portal/employee/quotes-v2/${option.id}`} title="Open">
                                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                   </Link>
                                 </div>
