@@ -142,17 +142,19 @@ export async function sendCustomerPortalOnboardingEmail({
 }
 
 export async function sendAdminNotice(
-  adminEmail: string | null,
+  adminEmail: string | string[] | null,
   subject: string,
   lines: string[],
   actionUrl?: string,
   actionLabel?: string,
 ): Promise<SendResult> {
-  if (!adminEmail) return { sent: false, error: 'No admin email configured' }
+  const to = (Array.isArray(adminEmail) ? adminEmail : [adminEmail])
+    .filter((e): e is string => !!e && e.includes('@'))
+  if (!to.length) return { sent: false, error: 'No admin email configured' }
   const html = emailLayout(
     subject,
     `${lines.map((l) => `<p style="font-size:15px;line-height:1.6;margin:6px 0;">${l}</p>`).join('')}
      ${actionUrl ? emailButton(actionUrl, actionLabel ?? 'Open') : ''}`,
   )
-  return sendEmail({ to: [adminEmail], subject, html, text: lines.join('\n') })
+  return sendEmail({ to, subject, html, text: lines.join('\n') })
 }

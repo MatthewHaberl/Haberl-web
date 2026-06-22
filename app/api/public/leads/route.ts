@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendAdminNotice } from '@/lib/email/quotes'
 import { getBaseUrl, getClientIp, getCompanySettings } from '@/lib/quotes/server'
+import { parseBriefingRecipients } from '@/lib/quotes/daily-briefing'
 
 export const runtime = 'nodejs'
 
@@ -81,16 +82,17 @@ export async function POST(req: Request) {
     const safeNote = note ? escapeHtml(note) : null
 
     await sendAdminNotice(
-      settings?.contact_email ?? null,
+      parseBriefingRecipients(settings?.briefing_emails, settings?.contact_email),
       `New website lead - ${name.replace(/[\r\n]/g, ' ')}`,
       [
         `<strong>${safeName}</strong> requested a callback.`,
         `Phone: <a href="tel:${phoneDigits}">${safePhone}</a>`,
         ...(safeSuburb ? [`Suburb: ${safeSuburb}`] : []),
         ...(safeNote ? [`Note: ${safeNote}`] : []),
+        `<span style="color:#6b7280;">Calling back within ~5 minutes dramatically improves your odds of reaching them.</span>`,
       ],
-      `${getBaseUrl()}/portal/employee/quotes`,
-      'Open quotes & leads',
+      `${getBaseUrl()}/portal/employee/leads`,
+      'Open leads — call now',
     )
   } catch (err) {
     console.error('[public/leads] admin notice failed', err)

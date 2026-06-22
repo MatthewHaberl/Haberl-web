@@ -27,6 +27,7 @@ export default async function BriefingPage() {
     { key: 'awaiting', icon: Eye,      title: 'Viewed — waiting on their reply', items: b.awaitingResponse },
     { key: 'deposits', icon: Wallet,   title: 'Deposits to confirm',             items: b.depositsToConfirm },
     { key: 'leads',    icon: Sprout,   title: 'New leads to call',               items: b.newLeads },
+    { key: 'followup', icon: PhoneCall, title: 'Follow up — called, not yet quoted', items: b.followupLeads },
     { key: 'pos',      icon: PackageX, title: 'Overdue purchase orders',         items: b.overduePOs },
   ].filter((g) => g.items.length > 0)
 

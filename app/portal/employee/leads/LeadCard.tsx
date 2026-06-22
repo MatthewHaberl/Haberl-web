@@ -18,6 +18,10 @@ function timeAgo(iso: string) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  whatsapp: 'WhatsApp', phone: 'Phone', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other',
+}
+
 export function LeadCard({ lead }: { lead: Lead }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -44,6 +48,9 @@ export function LeadCard({ lead }: { lead: Lead }) {
               {lead.status === 'new' ? 'New lead' : 'Contacted'}
             </Badge>
             <span className="text-xs text-muted-foreground">{timeAgo(lead.created_at)}</span>
+            {lead.source && lead.source !== 'website' && (
+              <span className="text-xs text-muted-foreground">· via {SOURCE_LABELS[lead.source] ?? lead.source}</span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             <a href={`tel:${lead.phone.replace(/\D/g, '')}`} className="text-accent underline">{lead.phone}</a>

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
   BarChart2, Users, Zap, User, Menu, X, FileText, Settings, Activity,
-  ClipboardList, PackageX, Search, Sunrise,
+  ClipboardList, PackageX, Search, Sunrise, PhoneIncoming,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -23,6 +23,7 @@ const customerLinks = [
 const employeeLinks = [
   { label: 'Dashboard', href: '/portal/employee',                  icon: Home,      roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Today',     href: '/portal/employee/briefing',         icon: Sunrise,   roles: ['manager', 'admin'] },
+  { label: 'Leads',     href: '/portal/employee/leads',            icon: PhoneIncoming, roles: ['manager', 'admin'] },
   { label: 'Jobs',      href: '/portal/employee/jobs',             icon: Briefcase, roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Quotes',    href: '/portal/employee/quotes',            icon: FileText,  roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Procurement', href: '/portal/employee/procurement',    icon: ClipboardList, roles: ['manager', 'admin'] },
