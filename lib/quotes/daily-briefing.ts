@@ -73,6 +73,11 @@ export interface BriefingQuoteRef {
   customerName: string
   detail: string
   href: string
+  // How many whole days this has been waiting, and whether that crossed the
+  // "taking too long" threshold. Optional — the email/Today views ignore them;
+  // the dashboard command center uses them for the red/amber aging chips.
+  ageDays?: number
+  urgent?: boolean
 }
 
 export interface BriefingItem {
@@ -80,6 +85,9 @@ export interface BriefingItem {
   label: string
   sub?: string
   href: string
+  phone?: string
+  ageDays?: number
+  urgent?: boolean
 }
 
 export interface DailyBriefing {
@@ -90,6 +98,7 @@ export interface DailyBriefing {
   awaitingResponse: BriefingItem[]
   depositsToConfirm: BriefingItem[]
   newLeads: BriefingItem[]
+  followupLeads: BriefingItem[]
   overduePOs: BriefingItem[]
   totalAuto: number
   totalAttention: number
@@ -105,6 +114,12 @@ function shortDate(value: string | null): string {
   return new Date(value).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })
 }
 
+/** Whole days between `value` and now (never negative). undefined if no date. */
+function daysSince(value: string | null | undefined, now: number): number | undefined {
+  if (!value) return undefined
+  return Math.max(0, Math.floor((now - new Date(value).getTime()) / 86_400_000))
+}
+
 /** Gather everything the operator should see this morning. */
 export async function buildDailyBriefing(
   supabase: SupabaseClient,
@@ -115,7 +130,7 @@ export async function buildDailyBriefing(
     weekday: 'long', day: 'numeric', month: 'long',
   })
 
-  const [sentRes, draftRes, viewedRes, depositRes, leadRes, poRes] = await Promise.all([
+  const [sentRes, draftRes, viewedRes, depositRes, leadRes, contactedLeadRes, poRes] = await Promise.all([
     supabase
       .from('quote_requests')
       .select('id, customer_name, quote_number, expiry_date, sent_at, reminder_count')
@@ -126,7 +141,7 @@ export async function buildDailyBriefing(
       .eq('status', 'generated').order('created_at', { ascending: true }),
     supabase
       .from('quote_requests')
-      .select('id, customer_name, quote_number, viewed_at')
+      .select('id, customer_name, quote_number, viewed_at, sent_at')
       .eq('status', 'sent').not('viewed_at', 'is', null).order('viewed_at', { ascending: true }),
     supabase
       .from('jobs')
@@ -135,8 +150,12 @@ export async function buildDailyBriefing(
       .order('deposit_proof_uploaded_at', { ascending: true }),
     supabase
       .from('leads')
-      .select('id, name, suburb, created_at')
+      .select('id, name, phone, suburb, created_at')
       .eq('status', 'new').order('created_at', { ascending: true }),
+    supabase
+      .from('leads')
+      .select('id, name, phone, suburb, created_at, contacted_at')
+      .eq('status', 'contacted').order('contacted_at', { ascending: true }),
     supabase
       .from('purchase_orders')
       .select('id, po_number, expected_date, supplier:suppliers(name)')
@@ -153,57 +172,106 @@ export async function buildDailyBriefing(
     const ref: BriefingQuoteRef = {
       id: q.id, quoteNumber: q.quote_number, customerName: q.customer_name,
       detail: describeAction(action), href: `/portal/employee/quotes/${q.id}`,
+      ageDays: daysSince(q.sent_at, now),
+      // Personal follow-ups are the escalations (no reply after 2 nudges, or expired)
+      // — they always need attention.
+      urgent: !isCustomerAction(action),
     }
     if (isCustomerAction(action)) customerSends.push(ref)
     else personalFollowups.push(ref)
   }
 
-  const drafts: BriefingItem[] = ((draftRes.data ?? []) as Array<{ id: string; customer_name: string; quote_number: string | null; total_amount: number | null }>)
-    .map((q) => ({
-      id: q.id,
-      label: `${q.customer_name}${q.quote_number ? ` · ${q.quote_number}` : ''}`,
-      sub: rands(q.total_amount) || undefined,
-      href: `/portal/employee/quotes/${q.id}`,
-    }))
+  const drafts: BriefingItem[] = ((draftRes.data ?? []) as Array<{ id: string; customer_name: string; quote_number: string | null; total_amount: number | null; created_at: string | null }>)
+    .map((q) => {
+      const ageDays = daysSince(q.created_at, now)
+      return {
+        id: q.id,
+        label: `${q.customer_name}${q.quote_number ? ` · ${q.quote_number}` : ''}`,
+        sub: rands(q.total_amount) || undefined,
+        href: `/portal/employee/quotes/${q.id}`,
+        ageDays,
+        urgent: ageDays != null && ageDays >= 3,
+      }
+    })
 
-  const awaitingResponse: BriefingItem[] = ((viewedRes.data ?? []) as Array<{ id: string; customer_name: string; quote_number: string | null; viewed_at: string | null }>)
-    .map((q) => ({
-      id: q.id,
-      label: `${q.customer_name}${q.quote_number ? ` · ${q.quote_number}` : ''}`,
-      sub: q.viewed_at ? `opened ${shortDate(q.viewed_at)}` : undefined,
-      href: `/portal/employee/quotes/${q.id}`,
-    }))
+  const awaitingResponse: BriefingItem[] = ((viewedRes.data ?? []) as Array<{ id: string; customer_name: string; quote_number: string | null; viewed_at: string | null; sent_at: string | null }>)
+    .map((q) => {
+      const ageDays = daysSince(q.sent_at ?? q.viewed_at, now)
+      return {
+        id: q.id,
+        label: `${q.customer_name}${q.quote_number ? ` · ${q.quote_number}` : ''}`,
+        sub: q.viewed_at ? `opened ${shortDate(q.viewed_at)}` : undefined,
+        href: `/portal/employee/quotes/${q.id}`,
+        ageDays,
+        urgent: ageDays != null && ageDays >= 7,
+      }
+    })
 
   const depositsToConfirm: BriefingItem[] = ((depositRes.data ?? []) as Array<{ id: string; title: string; deposit_proof_uploaded_at: string | null }>)
-    .map((j) => ({
-      id: j.id,
-      label: j.title,
-      sub: j.deposit_proof_uploaded_at ? `proof uploaded ${shortDate(j.deposit_proof_uploaded_at)}` : 'proof uploaded',
-      href: `/portal/employee/jobs/${j.id}`,
-    }))
+    .map((j) => {
+      const ageDays = daysSince(j.deposit_proof_uploaded_at, now)
+      return {
+        id: j.id,
+        label: j.title,
+        sub: j.deposit_proof_uploaded_at ? `proof uploaded ${shortDate(j.deposit_proof_uploaded_at)}` : 'proof uploaded',
+        href: `/portal/employee/jobs/${j.id}`,
+        ageDays,
+        urgent: ageDays != null && ageDays >= 2,
+      }
+    })
 
-  const newLeads: BriefingItem[] = ((leadRes.data ?? []) as Array<{ id: string; name: string; suburb: string | null }>)
-    .map((l) => ({
-      id: l.id,
-      label: l.name,
-      sub: l.suburb ?? undefined,
-      href: '/portal/employee/quotes',
-    }))
+  const newLeads: BriefingItem[] = ((leadRes.data ?? []) as Array<{ id: string; name: string; phone: string; suburb: string | null; created_at: string | null }>)
+    .map((l) => {
+      const ageDays = daysSince(l.created_at, now)
+      return {
+        id: l.id,
+        label: l.name,
+        sub: l.suburb ?? undefined,
+        href: '/portal/employee/leads',
+        phone: l.phone,
+        ageDays,
+        // A lead not called within a day is already too slow.
+        urgent: ageDays != null && ageDays >= 1,
+      }
+    })
+
+  // Leads you've called but not yet turned into a quote. Shown every single day
+  // until converted or discarded — no waiting period — so nothing dies after one
+  // call (it takes ~8 touches to close). Oldest-contacted first.
+  const followupLeads: BriefingItem[] = ((contactedLeadRes.data ?? []) as Array<{ id: string; name: string; phone: string; suburb: string | null; created_at: string | null; contacted_at: string | null }>)
+    .map((l) => {
+      const ageDays = daysSince(l.contacted_at ?? l.created_at, now)
+      return {
+        id: l.id,
+        label: l.name,
+        sub: [l.suburb, ageDays != null ? `called ${ageDays === 0 ? 'today' : `${ageDays}d ago`}` : null]
+          .filter(Boolean).join(' · ') || undefined,
+        href: '/portal/employee/leads',
+        phone: l.phone,
+        ageDays,
+        // Called 3+ days ago and still not quoted — chase it now.
+        urgent: ageDays != null && ageDays >= 3,
+      }
+    })
 
   const overduePOs: BriefingItem[] = ((poRes.data ?? []) as Array<{ id: string; po_number: string; expected_date: string | null; supplier: { name: string } | { name: string }[] | null }>)
     .map((po) => {
       const supplier = Array.isArray(po.supplier) ? po.supplier[0] : po.supplier
+      // expected_date is in the past (query filters `< today`), so this is days overdue.
+      const overdue = daysSince(po.expected_date, now)
       return {
         id: po.id,
         label: po.po_number,
         sub: `${supplier?.name ?? 'supplier'} · due ${shortDate(po.expected_date)}`,
         href: `/portal/employee/procurement/${po.id}`,
+        ageDays: overdue,
+        urgent: true,
       }
     })
 
   const totalAttention =
     personalFollowups.length + drafts.length + awaitingResponse.length +
-    depositsToConfirm.length + newLeads.length + overduePOs.length
+    depositsToConfirm.length + newLeads.length + followupLeads.length + overduePOs.length
 
   return {
     dateLabel,
@@ -213,6 +281,7 @@ export async function buildDailyBriefing(
     awaitingResponse,
     depositsToConfirm,
     newLeads,
+    followupLeads,
     overduePOs,
     totalAuto: customerSends.length,
     totalAttention,
@@ -235,6 +304,22 @@ function emailList(
     <ul style="margin:0;padding-left:18px;">${rows}</ul>`
 }
 
+/** Leads get a tap-to-call number so you can phone straight from the email. */
+function emailLeadsList(title: string, items: BriefingItem[], baseUrl: string): string {
+  if (!items.length) return ''
+  const rows = items.map((i) => {
+    const tel = i.phone ? i.phone.replace(/[^\d+]/g, '') : ''
+    const call = i.phone
+      ? ` — <a href="tel:${tel}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">📞 ${i.phone}</a>`
+      : ''
+    return `<li style="margin:5px 0;font-size:14px;line-height:1.5;">
+       <a href="${baseUrl}${i.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${i.label}</a>${i.sub ? ` <span style="color:#6b7280;font-weight:normal;">(${i.sub})</span>` : ''}${call}
+     </li>`
+  }).join('')
+  return `<p style="margin:16px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;">${title}</p>
+    <ul style="margin:0;padding-left:18px;">${rows}</ul>`
+}
+
 export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
   const autoBlock = b.customerSends.length
     ? `<ul style="margin:0;padding-left:18px;">${b.customerSends.map((q) =>
@@ -250,7 +335,8 @@ export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
       : '',
     emailList('👀 Viewed — waiting on their reply', b.awaitingResponse, baseUrl),
     emailList('💰 Deposits to confirm', b.depositsToConfirm, baseUrl),
-    emailList('🌱 New leads to call', b.newLeads, baseUrl),
+    emailLeadsList('🌱 New leads to call', b.newLeads, baseUrl),
+    emailLeadsList('📞 Follow up — called, not yet quoted', b.followupLeads, baseUrl),
     emailList('📦 Overdue purchase orders', b.overduePOs, baseUrl),
   ].join('')
 
@@ -283,7 +369,12 @@ export function renderBriefingText(b: DailyBriefing, baseUrl: string): string {
   for (const q of b.personalFollowups) lines.push(`  - [call] ${q.customerName}${q.quoteNumber ? ` (${q.quoteNumber})` : ''} — ${q.detail}`)
   push('chase', b.awaitingResponse)
   push('deposit', b.depositsToConfirm)
-  push('lead', b.newLeads)
+  for (const l of b.newLeads) {
+    lines.push(`  - [lead] ${l.label}${l.sub ? ` (${l.sub})` : ''}${l.phone ? ` — call ${l.phone}` : ''}`)
+  }
+  for (const l of b.followupLeads) {
+    lines.push(`  - [follow up] ${l.label}${l.sub ? ` (${l.sub})` : ''}${l.phone ? ` — call ${l.phone}` : ''}`)
+  }
   push('PO overdue', b.overduePOs)
   if (!b.totalAttention) lines.push('  - All clear')
   lines.push('', `Full briefing: ${baseUrl}/portal/employee/briefing`)

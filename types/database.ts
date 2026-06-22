@@ -594,6 +594,9 @@ export interface CompanyMetrics {
 
 export type PlanItemStatus = 'pending' | 'in_progress' | 'done'
 export type PlanItemPriority = 'urgent' | 'highest' | 'high' | 'medium' | 'low'
+// The operator's own status for a plan item, set from the dashboard. Kept separate
+// from `status` (which is owned by the vault and overwritten on every sync).
+export type PlanItemUserStatus = 'todo' | 'doing' | 'done' | 'parked'
 
 // Operating-plan items synced on-demand from the claude-obsidian vault (recommendations.md).
 // Allowlisted Haberl sections only — never BMG / trading / personal data. See scripts/sync-plan.mjs.
@@ -610,4 +613,9 @@ export interface PlanItem {
   synced_at: string
   created_at: string
   updated_at: string
+  // Operator response round-trip (preserved across vault re-syncs). See migration 033.
+  response: string | null
+  user_status: PlanItemUserStatus | null
+  responded_at: string | null
+  response_handled: boolean
 }
