@@ -165,7 +165,7 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
             </Link>
           </Button>
           <Button asChild variant="accent" size="sm">
-            <Link href="/portal/employee/quotes/new">
+            <Link href="/portal/employee/quotes-v2/new">
               <Plus className="h-4 w-4" />
               New request
             </Link>
@@ -180,7 +180,7 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
             <p className="font-medium">No quote requests yet</p>
             <p className="text-muted-foreground text-sm mt-1">Submit a site survey to get started.</p>
             <Button asChild variant="accent" size="sm" className="mt-4">
-              <Link href="/portal/employee/quotes/new">New request</Link>
+              <Link href="/portal/employee/quotes-v2/new">New request</Link>
             </Button>
           </CardContent>
         </Card>
@@ -200,7 +200,7 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
                       </Badge>
                       {firstOptionId && (
                         <Link
-                          href={`/portal/employee/quotes/new?from=${firstOptionId}&newSite=1`}
+                          href={`/portal/employee/quotes-v2/new?from=${firstOptionId}&newSite=1`}
                           className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors whitespace-nowrap"
                           title="Add a new site for this customer"
                         >
@@ -244,7 +244,7 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
                               <Pencil className="h-3 w-3" />
                             </button>
                             <Link
-                              href={`/portal/employee/quotes/new?from=${site.options[0].id}`}
+                              href={`/portal/employee/quotes-v2/new?from=${site.options[0].id}`}
                               className="ml-auto flex items-center gap-1 text-muted-foreground/70 hover:text-foreground"
                               title="Add another option to this site"
                             >
@@ -313,7 +313,7 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
                               )}
                             </div>
                             <Link
-                              href={`/portal/employee/quotes/new?from=${option.id}`}
+                              href={`/portal/employee/quotes-v2/new?from=${option.id}`}
                               className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors whitespace-nowrap"
                               title="Duplicate this option"
                             >
