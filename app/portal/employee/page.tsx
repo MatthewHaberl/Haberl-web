@@ -165,9 +165,9 @@ export default async function EmployeePortalRoot() {
     proofs = proofsRes.count ?? 0
     revenueThisMonth = (revenueRes.data ?? []).reduce((sum, r) => sum + (r.total ?? 0), 0)
 
-    // The Leads page (/portal/employee/leads) is not in production yet, so lead
-    // shortcuts are gated off to avoid dead links. Flip to true once that page ships.
-    const LEADS_PAGE_LIVE: boolean = false
+    // The Leads page (/portal/employee/leads) is live, so lead shortcuts surface
+    // here on the command center too — new leads to call + follow-ups due.
+    const LEADS_PAGE_LIVE: boolean = true
     const leadRows: NeedRow[] = LEADS_PAGE_LIVE
       ? [
           ...briefing.newLeads.map((l) => ({
