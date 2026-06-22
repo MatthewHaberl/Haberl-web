@@ -6,8 +6,25 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Check, Copy, Send, X, Loader2, Briefcase, ArrowRight, Eye } from 'lucide-react'
+import { Check, Copy, Send, X, Loader2, Briefcase, ArrowRight, Eye, MessageCircle } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
+
+/**
+ * Build a wa.me click-to-chat link. Normalises SA numbers to international
+ * format (0XX… → 27XX…, strips spaces/punctuation). With no number it returns a
+ * contact-picker link so the quote can still be shared to any WhatsApp chat.
+ */
+function waLink(phone: string | null, message: string): string {
+  const digits = (phone ?? '').replace(/\D/g, '')
+  let number = ''
+  if (digits) {
+    if (digits.startsWith('00')) number = digits.slice(2)
+    else if (digits.startsWith('27')) number = digits
+    else if (digits.startsWith('0')) number = `27${digits.slice(1)}`
+    else number = digits
+  }
+  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`
+}
 
 const STATUS_LABELS: Record<QuoteRequestStatus, string> = {
   pending:   'Pending',
@@ -31,10 +48,13 @@ interface Props {
   initialJobId?: string | null
   shareToken: string
   customerEmail: string | null
+  customerPhone: string | null
+  customerName: string
+  quoteNumber: string | null
   viewedAt: string | null
 }
 
-export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, viewedAt }: Props) {
+export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState<QuoteRequestStatus>(initialStatus)
   const [saving, setSaving] = useState(false)
@@ -97,6 +117,22 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
     }
   }
 
+  // Share the quote link over WhatsApp — SA customers reply on WhatsApp far more
+  // than email. The chat opens with a pre-filled message; from the 'generated'
+  // state sharing also stamps the quote 'sent' (markSent) so it enters the
+  // follow-up pipeline, exactly like "Mark as sent". Re-shares leave status alone.
+  async function shareWhatsApp(markSent: boolean) {
+    setError('')
+    const url = `${window.location.origin}/q/${shareToken}`
+    const greeting = customerName ? `Hi ${customerName.trim().split(' ')[0]}` : 'Hi'
+    const ref = quoteNumber ? ` (${quoteNumber})` : ''
+    const message = `${greeting}, here's your Haberl Solar quote${ref}. You can view it, accept it, or ask me anything here: ${url}`
+    // Open synchronously inside the click so the browser doesn't block the tab.
+    window.open(waLink(customerPhone, message), '_blank', 'noopener')
+    if (markSent) await sendToCustomer(true)
+    else setMessage('Opened WhatsApp ✓')
+  }
+
   // Accepting a quote opens a job: pipeline stages, install checklist, and the
   // BOM copied into job materials so loading/usage can be tracked on site.
   async function acceptAndCreateJob() {
@@ -142,6 +178,19 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
     </Button>
   )
 
+  // markSent=true on first share (acts as a send); false for a re-share.
+  const whatsappButton = (markSent: boolean) => (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => shareWhatsApp(markSent)}
+      className="text-success border-success/40 hover:bg-success/10"
+      title={customerPhone ? `Share on WhatsApp with ${customerPhone}` : 'Open WhatsApp and pick a contact to share the quote link'}
+    >
+      <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+    </Button>
+  )
+
   // Re-email the quote without changing its status. Available in every state
   // after the first send (sent / accepted / declined).
   const resendButton = (
@@ -183,13 +232,14 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
             >
               <Send className="h-3.5 w-3.5" /> Email to customer
             </Button>
+            {whatsappButton(true)}
             {copyButton}
             <Button
               variant="ghost"
               size="sm"
               onClick={() => sendToCustomer(true)}
               className="text-muted-foreground text-xs"
-              title="Stamp as sent without emailing — for WhatsApp or in-person sharing"
+              title="Stamp as sent without emailing — for in-person sharing"
             >
               Mark as sent
             </Button>
@@ -214,6 +264,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
             >
               <X className="h-3.5 w-3.5" /> Declined
             </Button>
+            {whatsappButton(false)}
             {resendButton}
             {copyButton}
           </>
@@ -232,6 +283,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
                 <Briefcase className="h-3.5 w-3.5" /> Create Job
               </Button>
             )}
+            {whatsappButton(false)}
             {resendButton}
           </>
         )}

@@ -74,7 +74,7 @@ export function emailLayout(title: string, bodyHtml: string): string {
         </tr>
         <tr>
           <td style="padding:16px 28px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;">
-            Haberl Electrical &amp; Solar · SANS 10142 Compliant<br/>
+            Haberl Electrical &amp; Solar · Designed to SANS 10142-1<br/>
             info@haberl.co.za · +27 61 519 3016
           </td>
         </tr>

@@ -149,7 +149,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
         <QuoteFrame html={quote.quote_html} />
 
         <footer className="pb-8 pt-2 text-center text-xs text-muted-foreground">
-          Haberl Electrical &amp; Solar · SANS 10142 Compliant · info@haberl.co.za
+          Haberl Electrical &amp; Solar · Designed to SANS 10142-1 · info@haberl.co.za
         </footer>
       </main>
     </div>

@@ -109,6 +109,9 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             initialJobId={linkedJob?.id ?? null}
             shareToken={req.share_token}
             customerEmail={req.customer_email ?? null}
+            customerPhone={req.customer_phone ?? null}
+            customerName={req.customer_name}
+            quoteNumber={req.quote_number ?? null}
             viewedAt={req.viewed_at ?? null}
           />
         ) : (
