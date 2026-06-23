@@ -11,6 +11,7 @@ import { getTariffRateForMunicipality } from '@/lib/solar/quote-calculator'
 import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { FileText, Loader2, CheckCircle2, Upload, X, Image as ImageIcon } from 'lucide-react'
 import type { EquipmentBrand } from '@/types/database'
+import { ExistingArrayBuilder, type ArrayString } from './ExistingArrayBuilder'
 
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'] as const
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -144,6 +145,7 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
   const [existingBatteries, setExistingBatteries] = useState('')
   const [existingPanels, setExistingPanels]       = useState('')
   const [amendmentScope, setAmendmentScope]       = useState('')
+  const [existingArray, setExistingArray]         = useState<ArrayString[]>([])
 
   // Photos + notes
   const [photoUrls, setPhotoUrls] = useState<string[]>([])
@@ -246,6 +248,7 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
         existing_inverter:  isAmendment ? existingInverter || null : null,
         existing_batteries: isAmendment ? existingBatteries || null : null,
         existing_panels:    isAmendment ? existingPanels || null : null,
+        existing_array:     isAmendment && existingArray.length ? existingArray : null,
         amendment_scope:    isAmendment ? amendmentScope || null : null,
         // Photos + notes
         photo_urls: photoUrls,
@@ -391,6 +394,7 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
                 <textarea value={amendmentScope} onChange={(e) => setAmendmentScope(e.target.value)} rows={3}
                   className="flex w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" />
               </Field>
+              <ExistingArrayBuilder value={existingArray} onChange={setExistingArray} />
             </CardContent>
           </Card>
         )}
