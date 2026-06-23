@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils'
 import {
   FileText, Plus, ChevronRight, Clock, Sparkles, Map as MapIcon,
-  MapPin, Copy, Pencil, Check, X, Loader2,
+  MapPin, Copy, Pencil, Check, X, Loader2, Trash2,
 } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
 
@@ -104,7 +104,7 @@ function buildGroups(rows: QuoteRow[]): CustomerGroup[] {
     .sort((a, b) => b.latest - a.latest)
 }
 
-export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager: boolean }) {
+export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows: QuoteRow[]; isManager: boolean; isAdmin: boolean; deletedCount: number }) {
   const router = useRouter()
   const groups = buildGroups(rows)
 
@@ -137,6 +137,26 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
     }
   }
 
+  // Soft-delete: archive + shrink the row (strip the regenerable heavy fields).
+  // generated_quote is kept so an admin can restore it from the Deleted view.
+  async function deleteOption(id: string, label: string) {
+    if (!window.confirm(`Delete "${label}"?\n\nIt's archived (shrunk to the essentials) and only an admin can restore it.`)) return
+    setSaving(true)
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('quote_requests').update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: user?.id ?? null,
+        quote_html: null,
+        bom_snapshot: null,
+      }).eq('id', id)
+      router.refresh()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start gap-3 rounded-lg border border-accent/40 bg-accent/5 px-4 py-3">
@@ -158,6 +178,14 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && deletedCount > 0 && (
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/portal/employee/quotes-v2/deleted">
+                <Trash2 className="h-4 w-4" />
+                Deleted ({deletedCount})
+              </Link>
+            </Button>
+          )}
           <Button asChild variant="outline" size="sm">
             <Link href="/portal/employee/quotes-v2/workflow">
               <MapIcon className="h-4 w-4" />
@@ -321,6 +349,17 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
                             >
                               <Copy className="h-3 w-3" /> Duplicate
                             </Link>
+                            {isManager && (
+                              <button
+                                type="button"
+                                disabled={saving}
+                                onClick={() => deleteOption(option.id, optionDisplay(option, i))}
+                                className="shrink-0 flex items-center justify-center px-2.5 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
+                                title="Delete this quote (archived; admin can restore)"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>

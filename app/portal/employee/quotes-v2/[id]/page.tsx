@@ -33,6 +33,7 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
     .single()
 
   if (!req) notFound()
+  if (req.deleted_at) redirect(isAdmin ? '/portal/employee/quotes-v2/deleted' : '/portal/employee/quotes-v2')
   if (!isManager && req.submitted_by !== user!.id) redirect('/portal/employee/quotes-v2')
 
   const photoUrls    = (req.photo_urls ?? []) as string[]

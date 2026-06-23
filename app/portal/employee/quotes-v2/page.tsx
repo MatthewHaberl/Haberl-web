@@ -18,16 +18,32 @@ export default async function QuotesV2Page() {
     .eq('id', user!.id)
     .single()
 
-  const isManager = profile?.role === 'manager' || profile?.role === 'admin'
+  const isAdmin = profile?.role === 'admin'
+  const isManager = profile?.role === 'manager' || isAdmin
 
   const query = supabase
     .from('quote_requests')
     .select('*, submitter:user_profiles!submitted_by(full_name)')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
   if (!isManager) query.eq('submitted_by', user!.id)
 
   const { data: requests } = await query
 
-  return <QuotesV2List rows={(requests ?? []) as QuoteRow[]} isManager={isManager} />
+  const { count: deletedCount } = isAdmin
+    ? await supabase
+        .from('quote_requests')
+        .select('id', { count: 'exact', head: true })
+        .not('deleted_at', 'is', null)
+    : { count: 0 }
+
+  return (
+    <QuotesV2List
+      rows={(requests ?? []) as QuoteRow[]}
+      isManager={isManager}
+      isAdmin={isAdmin}
+      deletedCount={deletedCount ?? 0}
+    />
+  )
 }

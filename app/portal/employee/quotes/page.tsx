@@ -221,6 +221,7 @@ export default async function QuotesPage() {
   const query = supabase
     .from('quote_requests')
     .select('*, submitter:user_profiles!submitted_by(full_name)')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
   if (!isManager) query.eq('submitted_by', user!.id)
