@@ -474,6 +474,9 @@ export interface QuoteRequest {
   design_locked_by: string | null
   bom_snapshot: unknown | null
 
+  // Energy-first design canvas — single source of truth (migration 039)
+  system_design: unknown | null
+
   // Public share + online acceptance (migration 024)
   share_token: string
   expiry_date: string | null
