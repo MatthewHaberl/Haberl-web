@@ -12,6 +12,7 @@ import { EquipmentSelector } from './EquipmentSelector'
 import { BomTab } from './BomTab'
 import { FileText, Workflow, Image, ClipboardList, Pencil, Save, X, PackageCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { MUNICIPALITIES } from '@/lib/solar/municipalities'
 
 const SLDDiagram = dynamic(
@@ -76,6 +77,7 @@ interface Props {
 
 export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQuoteNum }: Props) {
   const router = useRouter()
+  const confirm = useConfirm()
   const [activeTab, setActiveTab] = useState<TabId>('survey')
 
   // Live quoteData — set by the calculator or AI override when quote JSON changes
@@ -136,9 +138,12 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   }
 
   async function handleSave() {
-    if (req.design_locked_at && !window.confirm(
-      'The design is locked for procurement. Survey changes can invalidate the locked BOM — continue anyway? (Re-lock in the Quote tab afterwards if sizing changed.)',
-    )) return
+    if (req.design_locked_at && !(await confirm({
+      title: 'The design is locked for procurement.',
+      body: 'Survey changes can invalidate the locked BOM. Re-lock in the Quote tab afterwards if sizing changed.',
+      confirmText: 'Save anyway',
+      destructive: true,
+    }))) return
     setSaving(true)
     setEditErr('')
     try {

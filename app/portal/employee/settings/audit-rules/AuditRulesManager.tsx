@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Plus, Pencil, Trash2, Check, X, Loader2 } from 'lucide-react'
 
 type Severity = 'block' | 'warn' | 'info'
@@ -37,6 +38,7 @@ function SeverityPill({ severity }: { severity: Severity }) {
 }
 
 export function AuditRulesManager({ initialRules }: { initialRules: AuditRule[] }) {
+  const confirm = useConfirm()
   const [rules, setRules] = useState<AuditRule[]>(initialRules)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Partial<AuditRule>>({})
@@ -79,7 +81,7 @@ export function AuditRulesManager({ initialRules }: { initialRules: AuditRule[] 
   }
 
   async function deleteRule(id: string) {
-    if (!window.confirm('Delete this rule?')) return
+    if (!(await confirm({ title: 'Delete this rule?', confirmText: 'Delete', destructive: true }))) return
     const supabase = createClient()
     setRules((rs) => rs.filter((r) => r.id !== id))
     await supabase.from('audit_rules').delete().eq('id', id)

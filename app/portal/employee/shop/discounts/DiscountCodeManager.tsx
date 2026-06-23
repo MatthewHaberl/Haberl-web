@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 
 interface DiscountCode {
   id: string
@@ -33,6 +34,7 @@ const emptyForm = {
 
 export function DiscountCodeManager({ codes: initial }: Props) {
   const supabase = createClient()
+  const confirm = useConfirm()
   const [codes, setCodes] = useState(initial)
   const [creating, setCreating] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -70,7 +72,12 @@ export function DiscountCodeManager({ codes: initial }: Props) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Deactivate this code? It will no longer be accepted at checkout.')) return
+    if (!(await confirm({
+      title: 'Deactivate this code?',
+      body: 'It will no longer be accepted at checkout.',
+      confirmText: 'Deactivate',
+      destructive: true,
+    }))) return
     await supabase.from('discount_codes').update({ active: false }).eq('id', id)
     setCodes(prev => prev.map(c => c.id === id ? { ...c, active: false } : c))
   }

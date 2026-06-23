@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Plus, Users, Trash2, ChevronDown, ChevronUp, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useRouter } from 'next/navigation'
 
 interface Customer {
@@ -47,6 +48,7 @@ function calcPrice(cost: number, markup: number, discount: number) {
 export function PriceListEditor({ priceLists: initial, customers }: Props) {
   const router = useRouter()
   const supabase = createClient()
+  const confirm = useConfirm()
 
   const [lists, setLists] = useState(initial)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -80,7 +82,12 @@ export function PriceListEditor({ priceLists: initial, customers }: Props) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this price list? Customers assigned to it will lose their discount.')) return
+    if (!(await confirm({
+      title: 'Delete this price list?',
+      body: 'Customers assigned to it will lose their discount.',
+      confirmText: 'Delete',
+      destructive: true,
+    }))) return
     await supabase.from('price_lists').delete().eq('id', id)
     setLists(prev => prev.filter(l => l.id !== id))
   }

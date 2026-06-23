@@ -10,6 +10,7 @@ import {
   CheckCircle, XCircle, Trash2, Plus, Search, X,
   Image as ImageIcon, Loader2, AlertTriangle, ExternalLink,
 } from 'lucide-react'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { ProductImage, ProductImageStatus } from '@/types/database'
 
 const STATUS_TABS: { value: ProductImageStatus | 'all'; label: string }[] = [
@@ -31,6 +32,7 @@ interface Props {
 
 export function ProductImageManager({ initialImages, products }: Props) {
   const supabase = createClient()
+  const confirm = useConfirm()
 
   const [images, setImages]               = useState(initialImages)
   const [statusFilter, setStatusFilter]   = useState<ProductImageStatus | 'all'>('pending_review')
@@ -143,7 +145,12 @@ export function ProductImageManager({ initialImages, products }: Props) {
   }
 
   async function handleDelete(img: ProductImage) {
-    if (!confirm('Delete this image entry? This cannot be undone.')) return
+    if (!(await confirm({
+      title: 'Delete this image entry?',
+      body: 'This cannot be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    }))) return
     if (img.status === 'published') {
       await supabase.rpc('remove_product_image', { p_url: img.url })
     }

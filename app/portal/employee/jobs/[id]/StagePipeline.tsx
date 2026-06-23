@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { PIPELINE_STAGES, STAGE_META, nextStage, stageIndex } from '@/lib/jobs/stages'
 import type { Job, JobStage, JobStatusHistory } from '@/types/database'
 import {
@@ -21,6 +22,7 @@ interface Props {
 
 export function StagePipeline({ job, history, canAdvance }: Props) {
   const router = useRouter()
+  const confirm = useConfirm()
   const supabase = createClient()
 
   const [busy, setBusy] = useState(false)
@@ -161,8 +163,14 @@ export function StagePipeline({ job, history, canAdvance }: Props) {
                   variant="ghost"
                   size="sm"
                   className="text-destructive"
-                  onClick={() => {
-                    if (window.confirm('Cancel this job? The customer timeline will show it as cancelled.')) {
+                  onClick={async () => {
+                    if (await confirm({
+                      title: 'Cancel this job?',
+                      body: 'The customer timeline will show it as cancelled.',
+                      confirmText: 'Cancel job',
+                      cancelText: 'Keep job',
+                      destructive: true,
+                    })) {
                       setStage('cancelled')
                     }
                   }}

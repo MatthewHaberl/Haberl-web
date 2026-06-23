@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Check, ExternalLink, Landmark, Loader2 } from 'lucide-react'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { formatCents } from '@/lib/quotes/public'
 
 interface Props {
@@ -18,11 +19,16 @@ interface Props {
 
 export function DepositPanel({ jobId, depositCents, proofSignedUrl, proofUploadedAt, confirmedAt, canConfirm }: Props) {
   const router = useRouter()
+  const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   async function confirmDeposit() {
-    if (!window.confirm('Confirm the deposit has been received and reconciled? The job advances to Procurement and the customer gets a receipt email.')) return
+    if (!(await confirm({
+      title: 'Confirm the deposit has been received and reconciled?',
+      body: 'The job advances to Procurement and the customer gets a receipt email.',
+      confirmText: 'Confirm deposit',
+    }))) return
     setBusy(true)
     setError('')
     try {

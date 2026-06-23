@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Plus, Trash2, ToggleLeft, ToggleRight, ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 
 const RELATIONSHIP_TYPES = [
   { value: 'lugs_for_inverter',    label: 'Lugs for inverter' },
@@ -50,6 +51,7 @@ function getOne<T>(val: T | T[] | null): T | null {
 
 export function RelationshipManager({ relationships: initial, products }: Props) {
   const supabase = createClient()
+  const confirm = useConfirm()
   const [rels, setRels] = useState(initial)
   const [creating, setCreating] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -95,7 +97,7 @@ export function RelationshipManager({ relationships: initial, products }: Props)
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this relationship?')) return
+    if (!(await confirm({ title: 'Delete this relationship?', confirmText: 'Delete', destructive: true }))) return
     await supabase.from('product_relationships').delete().eq('id', id)
     setRels(prev => prev.filter(r => r.id !== id))
   }

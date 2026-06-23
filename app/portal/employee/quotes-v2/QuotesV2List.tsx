@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils'
 import {
@@ -106,6 +107,7 @@ function buildGroups(rows: QuoteRow[]): CustomerGroup[] {
 
 export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows: QuoteRow[]; isManager: boolean; isAdmin: boolean; deletedCount: number }) {
   const router = useRouter()
+  const confirm = useConfirm()
   const groups = buildGroups(rows)
 
   const [editingSite, setEditingSite] = useState<string | null>(null)
@@ -140,7 +142,12 @@ export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows:
   // Soft-delete: archive + shrink the row (strip the regenerable heavy fields).
   // generated_quote is kept so an admin can restore it from the Deleted view.
   async function deleteOption(id: string, label: string) {
-    if (!window.confirm(`Delete "${label}"?\n\nIt's archived (shrunk to the essentials) and only an admin can restore it.`)) return
+    if (!(await confirm({
+      title: `Delete "${label}"?`,
+      body: "It's archived (shrunk to the essentials) and only an admin can restore it.",
+      confirmText: 'Delete',
+      destructive: true,
+    }))) return
     setSaving(true)
     try {
       const supabase = createClient()

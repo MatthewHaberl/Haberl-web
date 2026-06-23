@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { buildPoWorkbook } from '@/lib/procurement/po-workbook'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { PurchaseOrder, PurchaseOrderLine, PurchaseOrderStatus, Supplier } from '@/types/database'
 import {
   AlertTriangle, Briefcase, Check, ChevronLeft, Download, Loader2, Mail, PackageCheck, Send, XCircle,
@@ -34,6 +35,7 @@ interface Props {
 
 export function PoDetail({ po, supplier, job, initialLines }: Props) {
   const router = useRouter()
+  const confirm = useConfirm()
   const [status, setStatus] = useState<PurchaseOrderStatus>(po.status)
   const [lines, setLines] = useState<PurchaseOrderLine[]>(initialLines)
   const [received, setReceived] = useState<Record<string, string>>(
@@ -200,8 +202,13 @@ export function PoDetail({ po, supplier, job, initialLines }: Props) {
             size="sm"
             className="text-destructive"
             disabled={busy}
-            onClick={() => {
-              if (window.confirm('Cancel this purchase order?')) void setPoStatus('cancelled')
+            onClick={async () => {
+              if (await confirm({
+                title: 'Cancel this purchase order?',
+                confirmText: 'Cancel PO',
+                cancelText: 'Keep PO',
+                destructive: true,
+              })) void setPoStatus('cancelled')
             }}
           >
             <XCircle className="h-3.5 w-3.5" /> Cancel PO

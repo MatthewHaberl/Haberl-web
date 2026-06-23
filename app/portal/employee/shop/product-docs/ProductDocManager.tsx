@@ -11,6 +11,7 @@ import {
   CheckCircle, XCircle, Trash2, Plus, ExternalLink, Search, X,
   Eye, Loader2, AlertTriangle,
 } from 'lucide-react'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { ProductDocument, ProductDocType, ProductDocStatus } from '@/types/database'
 
 const DOC_TYPE_LABELS: Record<ProductDocType, string> = {
@@ -69,6 +70,7 @@ interface Props {
 
 export function ProductDocManager({ initialDocs, products }: Props) {
   const supabase = createClient()
+  const confirm = useConfirm()
 
   // List state
   const [docs, setDocs] = useState(initialDocs)
@@ -142,7 +144,12 @@ export function ProductDocManager({ initialDocs, products }: Props) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this document entry? This cannot be undone.')) return
+    if (!(await confirm({
+      title: 'Delete this document entry?',
+      body: 'This cannot be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    }))) return
     await supabase.from('product_documents').delete().eq('id', id)
     setDocs(prev => prev.filter(d => d.id !== id))
     if (previewDoc?.id === id) closePreview()

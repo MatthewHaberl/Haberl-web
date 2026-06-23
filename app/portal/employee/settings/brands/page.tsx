@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Plus, Trash2, Loader2, Eye, EyeOff } from 'lucide-react'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { BrandCategory, EquipmentBrand } from '@/types/database'
 
 const CATEGORIES: { key: BrandCategory; label: string; colour: string }[] = [
@@ -27,6 +28,7 @@ export default function BrandsPage() {
   const [error, setError] = useState('')
 
   const supabase = createClient()
+  const confirm = useConfirm()
 
   async function fetchBrands() {
     const { data } = await supabase
@@ -63,7 +65,12 @@ export default function BrandsPage() {
   }
 
   async function deleteBrand(id: string) {
-    if (!confirm('Delete this brand? It will no longer appear in the form.')) return
+    if (!(await confirm({
+      title: 'Delete this brand?',
+      body: 'It will no longer appear in the form.',
+      confirmText: 'Delete',
+      destructive: true,
+    }))) return
     await supabase.from('equipment_brands').delete().eq('id', id)
     setBrands((prev) => prev.filter((b) => b.id !== id))
   }

@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ClipboardList, Loader2, Phone, Trash2 } from 'lucide-react'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { Lead } from '@/types/database'
 
 function timeAgo(iso: string) {
@@ -24,10 +25,15 @@ const SOURCE_LABELS: Record<string, string> = {
 
 export function LeadCard({ lead }: { lead: Lead }) {
   const router = useRouter()
+  const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
 
   async function setStatus(status: 'contacted' | 'discarded') {
-    if (status === 'discarded' && !window.confirm(`Discard the lead from ${lead.name}?`)) return
+    if (status === 'discarded' && !(await confirm({
+      title: `Discard the lead from ${lead.name}?`,
+      confirmText: 'Discard',
+      destructive: true,
+    }))) return
     setBusy(true)
     const supabase = createClient()
     await supabase
