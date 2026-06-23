@@ -39,7 +39,6 @@ const michelleFixture: CalculatorInput = {
   batteryHours: 4,
   essentialLoadKw: 2.5,
   tariffRate: 2.92,
-  cableRouteMetres: 15,
   lockedPanelCount: 14,
   equipment: {
     inverter: {
@@ -169,7 +168,6 @@ test('string physics blocks over-voltage strings and EV BOM carries Type B prote
 test('measured cable routes replace the scalar estimate in the BOM', () => {
   const fixture: CalculatorInput = {
     ...michelleFixture,
-    cableRouteMetres: 15, // manual estimate must be ignored
     cableRoutes: {
       dcRunsM: [22.5, 18], // two strings — total 40.5m, worst case 22.5m
       acM: 9.5,
@@ -196,7 +194,7 @@ test('measured cable routes replace the scalar estimate in the BOM', () => {
   assert.ok(!quote.calculationWarnings?.some((w) => w.includes('estimates')),
     `Unexpected estimate warning: ${quote.calculationWarnings?.join(' | ')}`)
 
-  // Unmeasured fallback keeps the legacy scalar behaviour + nudge warning
+  // Unmeasured fallback uses the 15m default + nudge warning
   const fallback = calculateQuote(michelleFixture)
   const fallbackDc = fallback.supplierBom!.find((item) => item.sku === 'CAB-PV-004-BK')
   assert.equal(fallbackDc?.quantity, 15)

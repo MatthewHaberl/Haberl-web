@@ -461,7 +461,6 @@ export interface QuoteRequest {
   selected_panel_id: string | null
   selected_battery_qty: number | null
   selected_panel_qty: number | null
-  cable_route_m: number | null
   storeys_premium_rands: number | null
 
   // Roof design (added migration 004)

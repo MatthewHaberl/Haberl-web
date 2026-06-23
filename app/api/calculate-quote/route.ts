@@ -62,7 +62,6 @@ export async function POST(req: Request) {
       { inverter, battery, panel },
       {
         quoteNumber: String(body.quoteNumber ?? survey.quote_number ?? ''),
-        cableRouteM: Number(body.cableRouteM ?? survey.cable_route_m ?? 15),
         cableRoutes: measuredRoutes,
         pricing,
         tariffRate: body.tariffRate != null ? Number(body.tariffRate) : undefined,

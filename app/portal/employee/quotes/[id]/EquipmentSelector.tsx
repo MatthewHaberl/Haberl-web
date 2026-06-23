@@ -30,6 +30,7 @@ import {
 } from '@/lib/solar/quote-calculator'
 import { DepositSelector } from './DepositSelector'
 import { CompatSelect } from '@/components/ui/CompatSelect'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { AlertTriangle, Check, Download, Eye, EyeOff, Loader2, Lock, LockOpen, Save, WandSparkles } from 'lucide-react'
 
 type QuoteVersion = 'simplified' | 'detailed'
@@ -176,6 +177,7 @@ export function EquipmentSelector({
   const initialSingleQuote = getSingleQuoteData(initialParsed.quoteData)
   const initialSizingInputs = initialSingleQuote?.sizingInputs
   const supabase = createClient()
+  const confirm = useConfirm()
 
   const [catalog, setCatalog] = useState<EquipmentCatalogItem[]>([])
   const [tierConfigs, setTierConfigs] = useState<QuoteTierConfig[]>([])
@@ -184,9 +186,6 @@ export function EquipmentSelector({
   const [inverterId, setInverterId] = useState<string>(toOptionalString(request.selected_inverter_id))
   const [batteryId, setBatteryId] = useState<string>(toOptionalString(request.selected_battery_id))
   const [panelId, setPanelId] = useState<string>(toOptionalString(request.selected_panel_id))
-  // DC cable run input removed from the UI; value still flows from the saved request
-  // (default 15m) into the §5.3.2 voltage-drop check, DC-cable BOM quantity, and save.
-  const cableRouteM = String(request.cable_route_m ?? 15)
   const [tariffRate, setTariffRate] = useState<string>(
     request.tariff_rate != null
       ? String(request.tariff_rate)
@@ -437,7 +436,6 @@ export function EquipmentSelector({
           panelCountOverride: targetPanelCountOverride || null,
           targetInverterKwOverride: targetKw,
           minimumBatteryKwhOverride: minimumBatteryKwhValue,
-          cableRouteM: Number(cableRouteM || 0),
           tariffRate: Number(tariffRate || 0),
           quoteNumber,
           tier: 'recommended',
@@ -480,7 +478,6 @@ export function EquipmentSelector({
           panelCountOverride: targetPanelCountOverride || null,
           targetInverterKwOverride: targetKw,
           minimumBatteryKwhOverride: minimumBatteryKwhValue,
-          cableRouteM: Number(cableRouteM || 0),
           tariffRate: Number(tariffRate || 0),
           quoteNumber,
         }),
@@ -555,7 +552,6 @@ export function EquipmentSelector({
           selected_panel_id: selectedPanel?.id ?? null,
           selected_battery_qty: depositQuote ? Number(isMultiOption(quoteData) ? getDepositSource(quoteData)?.batteryQty ?? null : (quoteData as QuoteData).batteryQty) : null,
           selected_panel_qty: depositQuote ? Number(isMultiOption(quoteData) ? getDepositSource(quoteData)?.panelCount ?? null : (quoteData as QuoteData).panelCount) : null,
-          cable_route_m: Number(cableRouteM || 0),
           tariff_rate: tariffRate ? Number(tariffRate) : null,
           storeys_premium_rands: getStoreysPremium(String(request.storeys ?? ''), pricing.storeyPremium2, pricing.storeyPremium3),
         })
@@ -585,7 +581,11 @@ export function EquipmentSelector({
   async function handleLockToggle() {
     setLockError('')
     if (lockedAt) {
-      if (!window.confirm('Unlock the design? Procurement will follow the live quote again.')) return
+      if (!(await confirm({
+        title: 'Unlock the design?',
+        body: 'Procurement will follow the live quote again.',
+        confirmText: 'Unlock',
+      }))) return
       setLocking(true)
       const { error } = await supabase
         .from('quote_requests')
@@ -600,7 +600,11 @@ export function EquipmentSelector({
       setLockError('Save the quote first — the lock freezes the saved version.')
       return
     }
-    if (!window.confirm('Lock the design for procurement? The current BOM is frozen — survey or quote changes after this will warn until you re-lock.')) return
+    if (!(await confirm({
+      title: 'Lock the design for procurement?',
+      body: 'The current BOM is frozen — survey or quote changes after this will warn until you re-lock.',
+      confirmText: 'Lock',
+    }))) return
     setLocking(true)
     const { data: { user } } = await supabase.auth.getUser()
     const now = new Date().toISOString()

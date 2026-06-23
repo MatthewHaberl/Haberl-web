@@ -70,7 +70,6 @@ export function buildCalculatorInput(
   },
   options: {
     quoteNumber: string
-    cableRouteM: number
     cableRoutes?: MeasuredCableRoutes | null
     pricing?: PricingSettings | null
     tariffRate?: number
@@ -106,7 +105,6 @@ export function buildCalculatorInput(
       String(request.municipality ?? 'Eskom'),
       options.pricing?.tariffs,
     ),
-    cableRouteMetres: options.cableRouteM,
     cableRoutes: options.cableRoutes ?? null,
     pricing: options.pricing ?? null,
     lockedPanelCount: coerceNumber(request.design_panel_count, 0) || null,
@@ -214,7 +212,6 @@ export function calculateOptionQuote(
   },
   options: {
     quoteNumber: string
-    cableRouteM: number
     cableRoutes?: MeasuredCableRoutes | null
     pricing?: PricingSettings | null
     tariffRate?: number

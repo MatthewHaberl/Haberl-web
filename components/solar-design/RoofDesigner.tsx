@@ -16,7 +16,6 @@ import {
   defaultVerticalM,
   nextRouteLabel,
   polylineLengthM,
-  routeTotals,
   type RouteDraft,
   type RoutePoint,
 } from '@/lib/solar/cable-routes'
@@ -315,13 +314,6 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
       if (rows.length) {
         const { error: insError } = await supabase.from('cable_routes').insert(rows)
         if (insError) throw insError
-      }
-      // Keep the legacy scalar roughly in sync for display — best effort only
-      // (the calculator reads cable_routes directly; this update is admin-RLS'd)
-      const totals = routeTotals(cableRoutes)
-      if (totals.dcM > 0) {
-        await supabase.from('quote_requests')
-          .update({ cable_route_m: totals.dcM }).eq('id', quoteRequestId)
       }
       setRoutesSaved(true)
     } catch (e) {

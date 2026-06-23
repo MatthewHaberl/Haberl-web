@@ -297,10 +297,9 @@ export interface CalculatorInput {
   batteryHours: number
   essentialLoadKw: number
   tariffRate?: number
-  cableRouteMetres: number
-  /** Measured routes from the map designer — when present they replace the
-   *  cableRouteMetres estimate for cable quantities, and the longest DC run
-   *  drives the voltage-drop check. */
+  /** Measured routes from the map designer (Roof Design tab). Route totals drive
+   *  cable quantities and the longest DC run drives the voltage-drop check. With
+   *  no measured routes the calculator falls back to a conservative 15m default. */
   cableRoutes?: MeasuredCableRoutes | null
   /** Company pricing policy (migration 031). Missing fields → DEFAULT_PRICING,
    *  which reproduces the historical hardcoded behaviour exactly. */
@@ -914,7 +913,6 @@ export function buildSizingSnapshot(input: {
         monthlyKwh: input.monthlyKwh,
         batteryHours: input.batteryHours ?? 4,
         essentialLoadKw: input.essentialLoadKw,
-        cableRouteMetres: 15,
         lockedPanelCount: input.lockedPanelCount,
         inverterQuantity,
         batteryQuantityOverride: input.batteryQuantityOverride ?? null,
@@ -1177,19 +1175,17 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
     unitSellRands: number, unitCostRands: number = unitSellRands / pricing.markup,
   ) => addBomItem(supplierBom, section, sku, description, quantity, unitSellRands, unitCostRands)
   const tariffRate = input.tariffRate ?? getTariffRateForMunicipality(input.municipality, pricing.tariffs)
-  // Measured routes (map designer) beat the manual estimate. The longest DC
-  // run is the voltage-drop worst case; totals drive cable quantities.
+  // Cable lengths come from the measured routes drawn in the Roof Design tab.
+  // The longest DC run is the voltage-drop worst case; totals drive quantities.
+  // With no measured routes we fall back to a conservative 15m default.
   const measured = input.cableRoutes &&
     (input.cableRoutes.dcRunsM.length > 0 || input.cableRoutes.acM > 0 || input.cableRoutes.earthM > 0)
     ? input.cableRoutes
     : null
   const routeMetres = measured?.dcRunsM.length
     ? Math.max(...measured.dcRunsM)
-    : input.cableRouteMetres > 0 ? input.cableRouteMetres : 15
+    : 15
 
-  if (!measured && input.cableRouteMetres === 0) {
-    warnings.push('Cable route was left at 0m, so the calculator used the 15m default.')
-  }
   if (!measured) {
     warnings.push('Cable lengths are estimates — draw the runs in the Roof Design tab for measured quantities.')
   }
