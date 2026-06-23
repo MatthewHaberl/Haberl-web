@@ -22,6 +22,11 @@ const sections = [
     title: 'Design Rules',
     description: 'Every SANS 10142-1 and field rule the calculator enforces, plus a live string designer using real catalog specs.',
   },
+  {
+    href: '/portal/employee/settings/audit-rules',
+    title: 'Audit Rules',
+    description: 'Editable soft rules for assessing existing systems (E/W on one MPPT, breaker re-sizing, BMS compatibility…). Add or switch them off live.',
+  },
 ]
 
 export default function SettingsRoot() {
