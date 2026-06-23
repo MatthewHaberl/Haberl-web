@@ -10,21 +10,9 @@ import { Input } from '@/components/ui/input'
 import { extractQuoteJson, type AnyQuoteData } from '@/lib/solar/render-quote'
 import { EquipmentSelector } from './EquipmentSelector'
 import { BomTab } from './BomTab'
-import { FileText, Workflow, Image, ClipboardList, Sun, Pencil, Save, X, PackageCheck } from 'lucide-react'
+import { FileText, Workflow, Image, ClipboardList, Pencil, Save, X, PackageCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { MUNICIPALITIES } from '@/lib/solar/municipalities'
-
-const RoofDesigner = dynamic(
-  () => import('@/components/solar-design/RoofDesigner').then((m) => m.RoofDesigner),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center h-64 rounded-lg border border-border bg-muted text-sm text-muted-foreground">
-        Loading roof designer…
-      </div>
-    ),
-  },
-)
 
 const SLDDiagram = dynamic(
   () => import('@/components/sld/SLDDiagram').then((m) => m.SLDDiagram),
@@ -43,7 +31,7 @@ const SLDDiagram = dynamic(
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'] as const
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-type TabId = 'survey' | 'quote' | 'roof-design' | 'diagram' | 'bom' | 'photos'
+type TabId = 'survey' | 'quote' | 'diagram' | 'bom' | 'photos'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -113,8 +101,8 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   const [eRoofType,     setERoofType]     = useState<string>(req.roof_type      ?? '')
   const [eStoreys,      setEStoreys]      = useState<string>(req.storeys        ?? '')
   const [eMonthlyKwh,   setEMonthlyKwh]   = useState<string>(String(req.monthly_kwh ?? ''))
-  const [eSystemType,   setESystemType]   = useState<string>(req.system_type === 'AI will determine' ? 'Auto — sized from usage' : (req.system_type ?? ''))
-  const [eBatteryHours, setEBatteryHours] = useState<string>(req.battery_hours === 'AI will determine' ? 'Auto — sized from usage' : (req.battery_hours ?? ''))
+  const [eSystemType,   setESystemType]   = useState<string>(req.system_type ?? '')
+  const [eBatteryHours, setEBatteryHours] = useState<string>(req.battery_hours ?? '')
   const [eEssentialLoad,setEEssentialLoad]= useState<string>(String(req.essential_load ?? ''))
   const [eTargetOffgrid,setETargetOffgrid]= useState<string>(req.target_offgrid_pct != null ? String(req.target_offgrid_pct) : '')
   const [eEvCharger,    setEEvCharger]    = useState<string>(req.ev_charger     ?? '')
@@ -203,7 +191,6 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
   const tabs: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }>; count?: number }[] = [
     { id: 'survey',      label: 'Survey',      icon: ClipboardList },
     { id: 'quote',       label: 'Quote',       icon: FileText },
-    { id: 'roof-design', label: 'Roof Design', icon: Sun },
     { id: 'diagram',     label: 'Diagram',     icon: Workflow },
     ...(isAdmin ? [{ id: 'bom' as TabId, label: 'BOM', icon: PackageCheck }] : []),
     ...(photoUrls.length > 0
@@ -466,26 +453,6 @@ export function QuoteDetailTabs({ req, isAdmin, canEditSurvey, photoUrls, nextQu
           {editErr && (
             <p className="text-sm text-destructive bg-destructive/10 rounded-md px-4 py-2">{editErr}</p>
           )}
-        </div>
-      )}
-
-      {/* ── Roof Design tab ───────────────────────────────────────────────────── */}
-      {activeTab === 'roof-design' && (
-        <div className="flex flex-col gap-4 pt-6">
-          <div>
-            <h2 className="text-lg font-semibold text-primary">Roof Design</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Load the roof from Google&apos;s satellite data. Toggle panels on/off, then click <strong>Use This Design</strong> — the panel count and kWp will lock into the quote.
-            </p>
-          </div>
-          <RoofDesigner
-            address={req.address ?? null}
-            quoteRequestId={req.id}
-            existingPanelCount={req.design_panel_count ?? null}
-            existingKwp={req.design_kwp ?? null}
-            existingConfirmedAt={req.design_confirmed_at ?? null}
-            storeys={req.storeys ?? null}
-          />
         </div>
       )}
 

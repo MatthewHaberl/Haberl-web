@@ -234,7 +234,6 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
                         ) : (
                           <>
                             <span className="uppercase tracking-wider">{site.label}</span>
-                            <span className="text-muted-foreground/70">· {site.options.length} {site.options.length === 1 ? 'option' : 'options'}</span>
                             <button
                               type="button"
                               onClick={() => { setEditingSite(site.key); setEditingOption(null); setDraft(site.options.find((o) => o.site_label)?.site_label ?? '') }}
@@ -257,7 +256,10 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
                       <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
                         {site.options.map((option, i) => (
                           <div key={option.id} className="flex items-center">
-                            <div className="flex-1 flex items-center justify-between gap-3 px-4 py-3 min-w-0">
+                            <div
+                              className="flex-1 flex items-center justify-between gap-3 px-4 py-3 min-w-0 cursor-pointer hover:bg-muted/40 transition-colors"
+                              onClick={() => { if (editingOption !== option.id) router.push(`/portal/employee/quotes-v2/${option.id}`) }}
+                            >
                               <div className="min-w-0">
                                 {editingOption === option.id ? (
                                   <span className="flex items-center gap-1.5">
@@ -283,7 +285,7 @@ export function QuotesV2List({ rows, isManager }: { rows: QuoteRow[]; isManager:
                                       </Link>
                                       <button
                                         type="button"
-                                        onClick={() => { setEditingOption(option.id); setEditingSite(null); setDraft(option.option_label ?? '') }}
+                                        onClick={(e) => { e.stopPropagation(); setEditingOption(option.id); setEditingSite(null); setDraft(option.option_label ?? '') }}
                                         className="text-muted-foreground/60 hover:text-foreground"
                                         title="Rename option"
                                       >

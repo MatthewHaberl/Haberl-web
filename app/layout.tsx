@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist } from 'next/font/google'
 import './globals.css'
-import { WhatsAppFab } from '@/components/layout/WhatsAppButton'
+import { WhatsAppFabGate } from '@/components/layout/WhatsAppFabGate'
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-sans', display: 'swap' })
 
@@ -21,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${geist.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         {children}
-        <WhatsAppFab />
+        <WhatsAppFabGate />
       </body>
     </html>
   )

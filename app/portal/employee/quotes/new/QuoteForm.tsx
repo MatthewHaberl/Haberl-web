@@ -21,9 +21,8 @@ type MonthKey = typeof MONTHS[number]
 const AUTO_SIZE = 'Auto — sized from usage'
 const NO_PREFERENCE = 'No preference'
 
-// Older quote requests stored AI-era labels — normalize so prefilled selects still match
 function normalizeAuto(value: string | null | undefined) {
-  if (!value || value === 'AI will determine') return AUTO_SIZE
+  if (!value) return AUTO_SIZE
   return value
 }
 function normalizePreference(value: string | null | undefined) {

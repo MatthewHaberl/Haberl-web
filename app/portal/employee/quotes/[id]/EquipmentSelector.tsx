@@ -14,19 +14,22 @@ import {
   type QuoteData,
 } from '@/lib/solar/render-quote'
 import {
-  buildSizingSnapshot,
   DEFAULT_PRICING,
   estimateTargetInverterKw,
+  evaluateBatteryForInverter,
+  getMaxPanelCountForInverter,
   getStoreysPremium,
   getTariffRateForMunicipality,
   isBatteryCompatibleWithInverter,
   mapSettingsToPricing,
+  verifyPanelString,
   type EquipmentCatalogItem,
   type EquipmentCatalogPhase,
   type PricingSettings,
   type QuoteTierConfig,
 } from '@/lib/solar/quote-calculator'
 import { DepositSelector } from './DepositSelector'
+import { CompatSelect } from '@/components/ui/CompatSelect'
 import { AlertTriangle, Check, Download, Eye, EyeOff, Loader2, Lock, LockOpen, Save, WandSparkles } from 'lucide-react'
 
 type QuoteVersion = 'simplified' | 'detailed'
@@ -45,10 +48,6 @@ interface Props {
 
 function formatRands(value: number) {
   return `R${value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function formatNumber(value: number, digits = 1) {
-  return value.toLocaleString('en-ZA', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 }
 
 function isSpecificBrand(value: unknown) {
@@ -133,7 +132,7 @@ function openHtmlPreview(html: string) {
 
 function formatCatalogError(message: string) {
   if (message.includes('public.equipment_catalog')) {
-    return 'Quote calculator setup is incomplete: Supabase table public.equipment_catalog is missing. Run migrations 006-008 and seed the catalog, then refresh. You can still use AI Override below.'
+    return 'Quote calculator setup is incomplete: Supabase table public.equipment_catalog is missing. Run migrations 006-008 and seed the catalog, then refresh.'
   }
 
   if (message.includes('public.quote_tier_configs')) {
@@ -187,7 +186,9 @@ export function EquipmentSelector({
   const [panelId, setPanelId] = useState<string>(toOptionalString(request.selected_panel_id))
   const [cableRouteM, setCableRouteM] = useState<string>(String(request.cable_route_m ?? 15))
   const [tariffRate, setTariffRate] = useState<string>(
-    request.municipality ? String(getTariffRateForMunicipality(String(request.municipality))) : '2.65',
+    request.tariff_rate != null
+      ? String(request.tariff_rate)
+      : request.municipality ? String(getTariffRateForMunicipality(String(request.municipality))) : '2.65',
   )
   const [calculating, setCalculating] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -203,9 +204,6 @@ export function EquipmentSelector({
     existingDepositItems.length ? existingDepositItems : initialParsed.defaultDepositItems,
   )
   const [quoteNumber, setQuoteNumber] = useState(existingQuoteNumber ?? nextQuoteNumber)
-  // Measured cable routes from the Roof Design tab — when present the
-  // calculator uses them instead of the manual estimate below.
-  const [measuredRoutes, setMeasuredRoutes] = useState<{ dcM: number; dcMax: number; acM: number; earthM: number } | null>(null)
   // Design lock — freezes the BOM snapshot that procurement buys against
   const [lockedAt, setLockedAt] = useState<string | null>(toOptionalString(request.design_locked_at) || null)
   const [locking, setLocking] = useState(false)
@@ -227,33 +225,10 @@ export function EquipmentSelector({
     return () => { active = false }
   }, [supabase])
 
-  useEffect(() => {
-    let active = true
-    async function loadRoutes() {
-      const { data } = await supabase
-        .from('cable_routes')
-        .select('route_type, final_m')
-        .eq('quote_request_id', requestId)
-      if (!active || !data?.length) return
-      const finals = (type: string) => data.filter((r) => r.route_type === type).map((r) => Number(r.final_m) || 0)
-      const sum = (v: number[]) => Math.round(v.reduce((s, x) => s + x, 0) * 10) / 10
-      const dcRuns = finals('dc_string')
-      setMeasuredRoutes({
-        dcM: sum(dcRuns),
-        dcMax: dcRuns.length ? Math.max(...dcRuns) : 0,
-        acM: sum(finals('ac_run')),
-        earthM: sum(finals('earth')),
-      })
-    }
-    void loadRoutes()
-    return () => { active = false }
-  }, [requestId, supabase])
-
   const phase = getPhase(request.grid_supply)
   const lockedDesignKwp = coerceNumber(request.design_kwp, 0) || null
   const monthlyKwh = coerceNumber(request.monthly_kwh, 0)
   const essentialLoadKw = coerceNumber(request.essential_load, 0)
-  const batteryHours = coerceNumber(request.battery_hours, 4)
   const lockedPanelCount = coerceNumber(request.design_panel_count, 0) || null
   const autoTargetKw = estimateTargetInverterKw(
     monthlyKwh,
@@ -262,8 +237,8 @@ export function EquipmentSelector({
   )
   const [inverterQuantity, setInverterQuantity] = useState<string>(String(Math.min(2, Math.max(1, coerceNumber(initialSizingInputs?.inverterQty, 1) || 1))))
   const [batteryQuantity, setBatteryQuantity] = useState<string>(String(Math.min(2, Math.max(1, coerceNumber(initialSizingInputs?.batteryQty ?? request.selected_battery_qty, 1) || 1))))
-  const [targetInverterKwInput, setTargetInverterKwInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.targetInverterKw, autoTargetKw)))
-  const [minimumBatteryKwhInput, setMinimumBatteryKwhInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.minimumBatteryKwh, autoTargetKw * 2)))
+  const [targetInverterKwInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.targetInverterKw, autoTargetKw)))
+  const [minimumBatteryKwhInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.minimumBatteryKwh, autoTargetKw * 2)))
   const initialPanelTarget = Math.max(
     0,
     Math.round(readSavedSizingValue(initialSizingInputs?.targetPanelCount ?? initialSingleQuote?.panelCount, lockedPanelCount ?? 0)),
@@ -414,45 +389,26 @@ export function EquipmentSelector({
     ? inverterId
     : (fallbackInverter?.id ?? inverterOptions[0]?.id ?? '')
   const selectedInverter = inverterOptions.find((item) => item.id === effectiveInverterId) ?? catalog.find((item) => item.id === effectiveInverterId) ?? null
-  const batteryOptions = useMemo(() => {
-    const filtered = catalog.filter((item) =>
-      item.category === 'battery' &&
-      item.active &&
-      brandMatchesPreference(item.brand, preferredBatteryBrand) &&
-      (!selectedInverter || isBatteryCompatibleWithInverter(selectedInverter, item)),
-    )
-    if (filtered.length > 0) return filtered
-    // Brand not in catalog — show all compatible batteries
-    return catalog.filter((item) =>
-      item.category === 'battery' &&
-      item.active &&
-      (!selectedInverter || isBatteryCompatibleWithInverter(selectedInverter, item)),
-    )
+  // All phase/brand-appropriate batteries, each with a compatibility verdict.
+  // Incompatible ones stay VISIBLE (shown disabled/struck in the picker), not hidden.
+  const batteryCandidates = useMemo(() => {
+    const all = catalog.filter((item) => item.category === 'battery' && item.active)
+    const branded = preferredBatteryBrand
+      ? all.filter((item) => brandMatchesPreference(item.brand, preferredBatteryBrand))
+      : all
+    const list = branded.length > 0 ? branded : all
+    return list.map((item) => ({ item, compat: evaluateBatteryForInverter(selectedInverter, item) }))
   }, [catalog, preferredBatteryBrand, selectedInverter])
-  const effectiveBatteryId = batteryOptions.some((item) => item.id === batteryId) ? batteryId : (batteryOptions[0]?.id ?? '')
+  const selectableBatteries = batteryCandidates.filter((c) => c.compat.level !== 'block')
+  const effectiveBatteryId = selectableBatteries.some((c) => c.item.id === batteryId)
+    ? batteryId
+    : (selectableBatteries[0]?.item.id ?? '')
   const effectivePanelId = panelOptions.some((item) => item.id === panelId) ? panelId : (panelOptions[0]?.id ?? '')
-  const selectedBattery = batteryOptions.find((item) => item.id === effectiveBatteryId) ?? catalog.find((item) => item.id === effectiveBatteryId) ?? null
+  const selectedBattery = batteryCandidates.find((c) => c.item.id === effectiveBatteryId)?.item ?? null
   const selectedPanel = panelOptions.find((item) => item.id === effectivePanelId) ?? catalog.find((item) => item.id === effectivePanelId) ?? null
-  const sizingSnapshot = useMemo(
-    () => buildSizingSnapshot({
-      monthlyKwh,
-      essentialLoadKw,
-      batteryHours,
-      lockedPanelCount,
-      inverterQuantity: inverterQuantityValue,
-      batteryQuantityOverride: batteryQuantityValue,
-      panelCountOverride: targetPanelCountOverride || null,
-      targetInverterKwOverride: targetKw,
-      minimumBatteryKwhOverride: minimumBatteryKwhValue,
-      inverter: selectedInverter,
-      battery: selectedBattery,
-      panel: selectedPanel,
-    }),
-    [batteryHours, batteryQuantityValue, essentialLoadKw, inverterQuantityValue, lockedPanelCount, minimumBatteryKwhValue, monthlyKwh, selectedBattery, selectedInverter, selectedPanel, targetKw, targetPanelCountOverride],
-  )
+  const stringVerdict = verifyPanelString(selectedInverter, selectedPanel, targetPanelCountOverride)
   const previewHtml = quoteVersion === 'detailed' ? detailedHtml : customerHtml
   const depositSource = getDepositSource(quoteData)
-  const defaultWarning = Number(cableRouteM || 0) === 15
   const hasRecommendedMulti = tierConfigs.some((config) => config.tier === 'recommended' && (config.phase === phase || config.phase === 'any'))
 
   async function calculateSingle() {
@@ -598,6 +554,7 @@ export function EquipmentSelector({
           selected_battery_qty: depositQuote ? Number(isMultiOption(quoteData) ? getDepositSource(quoteData)?.batteryQty ?? null : (quoteData as QuoteData).batteryQty) : null,
           selected_panel_qty: depositQuote ? Number(isMultiOption(quoteData) ? getDepositSource(quoteData)?.panelCount ?? null : (quoteData as QuoteData).panelCount) : null,
           cable_route_m: Number(cableRouteM || 0),
+          tariff_rate: tariffRate ? Number(tariffRate) : null,
           storeys_premium_rands: getStoreysPremium(String(request.storeys ?? ''), pricing.storeyPremium2, pricing.storeyPremium3),
         })
         .eq('id', requestId)
@@ -729,18 +686,17 @@ export function EquipmentSelector({
 
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-foreground">Battery</span>
-          <select
+          <CompatSelect
             value={effectiveBatteryId}
-            onChange={(event) => {
-              setBatteryId(event.target.value)
-              setSaved(false)
-            }}
-            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
-          >
-            {batteryOptions.map((item) => (
-              <option key={item.id} value={item.id}>{optionLabel(item)}</option>
-            ))}
-          </select>
+            onChange={(id) => { setBatteryId(id); setSaved(false) }}
+            options={batteryCandidates.map((c) => ({
+              id: c.item.id,
+              label: optionLabel(c.item),
+              level: c.compat.level,
+              reason: c.compat.reason || undefined,
+            }))}
+            placeholder="Select a battery"
+          />
           {preferredBatteryBrand && (
             <span className={`text-xs ${batteryBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
               {batteryBrandInCatalog ? `Filtered to ${preferredBatteryBrand}` : `${preferredBatteryBrand} not in catalog — showing all`}
@@ -748,7 +704,7 @@ export function EquipmentSelector({
           )}
           {!preferredBatteryBrand && selectedInverter && (
             <span className="text-xs text-muted-foreground">
-              Showing batteries that work with {selectedInverter.brand}.
+              Incompatible batteries are shown greyed-out with the reason.
             </span>
           )}
         </label>
@@ -807,114 +763,55 @@ export function EquipmentSelector({
         </label>
       </div>
 
+      {/* String design — choose the panel count and verify the array against the inverter */}
       <div className="rounded-lg border border-border bg-muted/30 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-foreground">Sizing logic</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Built from usage, inverter capacity, panel size, and the minimum 2:1 battery-to-inverter rule.
-            </p>
-          </div>
-          <div className="text-right text-xs text-muted-foreground">
-            <div>{formatNumber(sizingSnapshot.dailyUsageKwh, 1)} kWh/day average</div>
-            <div>{formatNumber(sizingSnapshot.targetSolarKwp, 2)} kWp solar target</div>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-md border border-border bg-background p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Inverter target</p>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={targetInverterKwInput}
-              onChange={(event) => {
-                setTargetInverterKwInput(event.target.value)
-                setSaved(false)
-              }}
-              className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              {selectedInverter ? `Selected: ${selectedInverter.description} x ${inverterQuantityValue}` : 'Select an inverter to continue'}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">Auto target from usage: {autoTargetKw}kW</p>
-          </div>
-
-          <div className="rounded-md border border-border bg-background p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Battery floor</p>
-            <input
-              type="number"
-              min="0"
-              step="0.5"
-              value={minimumBatteryKwhInput}
-              onChange={(event) => {
-                setMinimumBatteryKwhInput(event.target.value)
-                setSaved(false)
-              }}
-              className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              {sizingSnapshot.selectedBatteryBankKwh != null && sizingSnapshot.selectedBatteryCount != null
-                ? `${sizingSnapshot.selectedBatteryCount} x ${selectedBattery?.description ?? 'battery'} = ${formatNumber(sizingSnapshot.selectedBatteryBankKwh, 2)} kWh`
-                : 'Pick a battery to see the bank size'}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">Auto floor at 2:1: {formatNumber(targetKw * inverterQuantityValue * 2, 1)} kWh</p>
-          </div>
-
-          <div className="rounded-md border border-border bg-background p-3">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Panel target</p>
+        <p className="text-sm font-medium text-foreground">String design</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Set how many panels and we verify the string layout against the inverter.
+        </p>
+        <div className="mt-3 grid gap-4 md:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Panel count</span>
             <input
               type="number"
               min="0"
               step="1"
               value={targetPanelCountInput}
-              placeholder={String(sizingSnapshot.targetPanelCount || '')}
+              placeholder={selectedInverter && selectedPanel ? String(getMaxPanelCountForInverter(selectedInverter, selectedPanel) ?? '') : ''}
               onChange={(event) => {
                 setTargetPanelCountInput(event.target.value)
                 setSaved(false)
               }}
-              className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground"
+              className="h-11 rounded-md border border-border bg-background px-3 text-sm"
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              {selectedPanel?.watts_dc
-                ? `${sizingSnapshot.targetPanelCount} panels (${sizingSnapshot.maxPanelCountOnSelectedInverter ?? 'n/a'} max) · ${formatNumber((sizingSnapshot.targetPanelCount * selectedPanel.watts_dc) / 1000, 2)} kWp`
-                : 'Panel wattage drives the final panel count'}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {sizingSnapshot.targetDailySolarOutputKwh != null
-                ? `About ${formatNumber(sizingSnapshot.targetDailySolarOutputKwh, 1)} kWh/day at 5.3 sun hours`
-                : 'Select a panel to estimate daily production'}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {sizingSnapshot.maxPvKwpOnSelectedInverter != null
-                ? `Inverter PV limit: ${formatNumber(sizingSnapshot.maxPvKwpOnSelectedInverter, 2)} kWp total`
-                : 'Add inverter PV notes for an exact limit'}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">Auto target from usage: {sizingSnapshot.targetPanelCount}</p>
-          </div>
-        </div>
-
-        {(sizingSnapshot.stringSummary || selectedInverter?.notes) && (
-          <div className="mt-4">
-            <div className="rounded-md border border-border bg-background p-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">String layout</p>
-              <p className="mt-1 text-sm text-foreground">
-                {sizingSnapshot.stringSummary ?? 'Add lines like "Max PV kWp: 10.4" and "String example: 4 strings total, 2 parallel per MPPT, 8 in series" in the inverter notes.'}
+            <span className="text-xs text-muted-foreground">Leave blank to auto-size from usage.</span>
+          </label>
+          {stringVerdict ? (
+            <div className={`rounded-md border p-3 text-sm ${
+              stringVerdict.level === 'block'
+                ? 'border-destructive/40 bg-destructive/5 text-destructive'
+                : stringVerdict.level === 'warn'
+                  ? 'border-amber-300 bg-amber-50 text-amber-800'
+                  : 'border-success/40 bg-success/5 text-success'
+            }`}>
+              <p className="font-medium">
+                {stringVerdict.level === 'block' ? '⛔' : stringVerdict.level === 'warn' ? '⚠' : '✓'} {stringVerdict.summary}
               </p>
-              {selectedInverter?.notes && (
-                <p className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap">
-                  {selectedInverter.notes}
-                </p>
-              )}
+              <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                {stringVerdict.notes.map((note, i) => <li key={i}>{note}</li>)}
+              </ul>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="flex items-center text-xs text-muted-foreground">
+              Enter a panel count (with an inverter + panel selected) to verify the string.
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Cable route (m)</span>
+          <span className="text-sm font-medium text-foreground">DC cable run (array → inverter), m</span>
           <input
             type="number"
             min="0"
@@ -924,42 +821,39 @@ export function EquipmentSelector({
               setCableRouteM(event.target.value)
               setSaved(false)
             }}
-            disabled={!!measuredRoutes}
-            className="h-11 rounded-md border border-border bg-background px-3 text-sm disabled:opacity-50"
-          />
-          {measuredRoutes ? (
-            <span className="flex items-center gap-1 text-xs text-success">
-              <Check className="h-3.5 w-3.5 shrink-0" />
-              Using measured routes from Roof Design: DC {measuredRoutes.dcM.toFixed(1)}m
-              {measuredRoutes.dcMax > 0 && ` (longest run ${measuredRoutes.dcMax.toFixed(1)}m)`}
-              {measuredRoutes.acM > 0 && ` · AC ${measuredRoutes.acM.toFixed(1)}m`}
-              {measuredRoutes.earthM > 0 && ` · Earth ${measuredRoutes.earthM.toFixed(1)}m`}
-            </span>
-          ) : defaultWarning && (
-            <span className="flex items-center gap-1 text-xs text-amber-700">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              Still on the default 15m estimate — draw the runs in the Roof Design tab for measured lengths.
-            </span>
-          )}
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Tariff rate (R/kWh)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={tariffRate}
-            onChange={(event) => {
-              setTariffRate(event.target.value)
-              setSaved(false)
-            }}
             className="h-11 rounded-md border border-border bg-background px-3 text-sm"
           />
           <span className="text-xs text-muted-foreground">
-            Defaulted from {String(request.municipality ?? 'Eskom')}.
+            PV-string run — drives the §5.3.2 voltage-drop check and DC-cable quantity.
           </span>
         </label>
+      </div>
+
+      {/* Energy — tariff is specific to this job and can be adjusted any time */}
+      <div className="rounded-lg border border-border bg-muted/30 p-4">
+        <p className="text-sm font-medium text-foreground">Energy</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Tariff used for the savings calculation — specific to this job, adjust any time.
+        </p>
+        <div className="mt-3 grid gap-4 md:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Tariff rate (R/kWh)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={tariffRate}
+              onChange={(event) => {
+                setTariffRate(event.target.value)
+                setSaved(false)
+              }}
+              className="h-11 rounded-md border border-border bg-background px-3 text-sm"
+            />
+            <span className="text-xs text-muted-foreground">
+              Defaulted from {String(request.municipality ?? 'Eskom')}.
+            </span>
+          </label>
+        </div>
       </div>
 
       {(() => {

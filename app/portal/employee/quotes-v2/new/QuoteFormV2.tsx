@@ -19,6 +19,7 @@ type MonthKey = typeof MONTHS[number]
 
 const AUTO = 'Auto — sized from usage'
 const NO_PREF = 'No preference'
+const DAYS_PER_MONTH = 30.4 // 365 ÷ 12 — derive monthly usage from a daily figure
 
 const LOAD_PROFILES = [
   { id: '',             label: 'Not sure / skip' },
@@ -129,6 +130,7 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
   const [usageMode, setUsageMode]   = useState<'monthly' | 'advanced'>('monthly')
   const [monthlyKwh, setMonthlyKwh] = useState(prefill?.monthly_kwh ?? '')
   const [monthlyBill, setMonthlyBill] = useState('')
+  const [dailyKwh, setDailyKwh] = useState('')
   const [monthlyBreakdown, setMonthlyBreakdown] = useState<Record<MonthKey, string>>(
     Object.fromEntries(MONTHS.map((m) => [m, ''])) as Record<MonthKey, string>,
   )
@@ -168,8 +170,16 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
   }
   function handleBillChange(value: string) {
     setMonthlyBill(value)
+    setDailyKwh('')
     const bill = parseFloat(value)
     if (Number.isFinite(bill) && bill > 0 && tariffRate > 0) setMonthlyKwh(String(Math.round(bill / tariffRate)))
+    else if (!value) setMonthlyKwh('')
+  }
+  function handleDailyChange(value: string) {
+    setDailyKwh(value)
+    setMonthlyBill('')
+    const daily = parseFloat(value)
+    if (Number.isFinite(daily) && daily > 0) setMonthlyKwh(String(Math.round(daily * DAYS_PER_MONTH)))
     else if (!value) setMonthlyKwh('')
   }
   function avgKwh(): string {
@@ -412,9 +422,12 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
               </div>
             </div>
             {usageMode === 'monthly' ? (
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid sm:grid-cols-3 gap-4">
                 <Field label="Average monthly usage (kWh)">
-                  <Input value={monthlyKwh} onChange={(e) => { setMonthlyKwh(e.target.value); setMonthlyBill('') }} type="number" min="0" placeholder="e.g. 850" />
+                  <Input value={monthlyKwh} onChange={(e) => { setMonthlyKwh(e.target.value); setMonthlyBill(''); setDailyKwh('') }} type="number" min="0" placeholder="e.g. 850" />
+                </Field>
+                <Field label="…or average daily usage (kWh)">
+                  <Input value={dailyKwh} onChange={(e) => handleDailyChange(e.target.value)} type="number" min="0" placeholder="e.g. 28" />
                 </Field>
                 <Field label="…or average monthly bill (R)">
                   <Input value={monthlyBill} onChange={(e) => handleBillChange(e.target.value)} type="number" min="0" placeholder="e.g. 2 400" />

@@ -9,6 +9,7 @@ import type {
 } from './render-quote'
 import {
   computeStringLayout,
+  parseBatteryClass,
   runComplianceChecks,
   type ComplianceCheck,
   type StringLayout,
@@ -619,6 +620,78 @@ export function describeCompatibleBatteryBrands(inverter: EquipmentCatalogItem) 
   return restrictedBrands.map((brand) => brand.charAt(0).toUpperCase() + brand.slice(1)).join(', ')
 }
 
+export type CompatLevel = 'ok' | 'warn' | 'block'
+export interface CompatResult { level: CompatLevel; reason: string }
+
+function parseNotesObject(notes: string | null | undefined): Record<string, unknown> | null {
+  if (!notes) return null
+  try {
+    const parsed = JSON.parse(notes)
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function parseDeviceProtocols(notes: string | null | undefined): string[] {
+  const obj = parseNotesObject(notes)
+  const p = obj?.protocols
+  if (Array.isArray(p)) return p.map((x) => String(x).toLowerCase())
+  if (typeof p === 'string') return [p.toLowerCase()]
+  return []
+}
+
+/**
+ * Full battery ↔ inverter compatibility verdict for the equipment selector.
+ *   block = cannot be used (hard) · warn = usable but flagged (soft danger mark) · ok
+ * Factors: grid-tie/no-battery inverter, brand/proprietary lock (Sigenergy),
+ * LV/HV voltage class, and comms/BMS protocol (warn). The last two are hooks that
+ * activate automatically once grid-tie inverters / `protocols` notes exist.
+ */
+export function evaluateBatteryForInverter(
+  inverter: EquipmentCatalogItem | null,
+  battery: EquipmentCatalogItem,
+): CompatResult {
+  if (!inverter) return { level: 'ok', reason: '' }
+
+  // BLOCK — inverter doesn't take batteries at all (grid-tie / pure string inverter)
+  const inverterNotes = parseNotesObject(inverter.notes)
+  const noBatterySupport =
+    inverterNotes?.battery_support === false ||
+    /grid[\s-]?tie/i.test(`${inverter.description} ${inverter.sku}`)
+  if (noBatterySupport) {
+    return { level: 'block', reason: `${inverter.description} is grid-tie / PV-only — it can't take batteries.` }
+  }
+
+  // BLOCK — brand / proprietary restriction (e.g. Sigenergy only pairs with Sigenergy)
+  if (!isBatteryCompatibleWithInverter(inverter, battery)) {
+    return { level: 'block', reason: `${inverter.brand} only works with ${describeCompatibleBatteryBrands(inverter)} batteries.` }
+  }
+
+  // BLOCK — LV/HV voltage-class mismatch (never mix)
+  const inverterClass = parseInverterSizingSpec(inverter.notes)?.batteryClass ?? null
+  const batteryClass = parseBatteryClass(battery)
+  if (
+    inverterClass && batteryClass &&
+    inverterClass !== 'PROPRIETARY' && batteryClass !== 'PROPRIETARY' &&
+    inverterClass !== batteryClass
+  ) {
+    return { level: 'block', reason: `${batteryClass} battery can't pair with an ${inverterClass}-battery inverter — never mix voltage classes.` }
+  }
+
+  // WARN — comms / BMS protocol mismatch (still selectable, flagged with a danger mark)
+  const inverterProtocols = parseDeviceProtocols(inverter.notes)
+  const batteryProtocols = parseDeviceProtocols(battery.notes)
+  if (
+    inverterProtocols.length && batteryProtocols.length &&
+    !inverterProtocols.some((p) => batteryProtocols.includes(p))
+  ) {
+    return { level: 'warn', reason: `Comms mismatch: ${battery.brand} uses ${batteryProtocols.join('/')}, ${inverter.brand} expects ${inverterProtocols.join('/')} — verify BMS compatibility before install.` }
+  }
+
+  return { level: 'ok', reason: '' }
+}
+
 export function getInverterMaxPvKwp(inverter: EquipmentCatalogItem) {
   const spec = parseInverterSizingSpec(inverter.notes)
   if (spec?.maxPvKwp) return spec.maxPvKwp
@@ -637,6 +710,74 @@ export function getMaxPanelCountForInverter(inverter: EquipmentCatalogItem, pane
   if (!maxPvKwp) return null
 
   return Math.max(1, Math.floor((maxPvKwp * 1000) / panelWatts))
+}
+
+export interface StringVerdict {
+  level: 'pass' | 'warn' | 'block'
+  summary: string
+  notes: string[]
+}
+
+/**
+ * Verify a chosen panel + count against the selected inverter's string limits:
+ * cold-Voc vs max DC input, PV oversizing (max panel count), and Isc per MPPT.
+ * Returns the recommended series×parallel layout + a pass/warn/block verdict.
+ * Reuses the same physics as the Settings → Rules String Designer.
+ */
+export function verifyPanelString(
+  inverter: EquipmentCatalogItem | null,
+  panel: EquipmentCatalogItem | null,
+  panelCount: number,
+): StringVerdict | null {
+  if (!inverter || !panel || panelCount <= 0) return null
+
+  const spec = parseInverterSizingSpec(inverter.notes)
+  const layout = computeStringLayout({ panelCount, panel, spec })
+  const notes: string[] = []
+  let level: 'pass' | 'warn' | 'block' = 'pass'
+
+  const summary =
+    `${layout.stringCount} string${layout.stringCount > 1 ? 's' : ''} × ${layout.panelsPerString} in series` +
+    (layout.parallelStringsPerMppt > 1 ? ` · ${layout.parallelStringsPerMppt} parallel per MPPT` : '')
+
+  // Cold-weather string Voc vs inverter max DC input
+  if (layout.stringVocColdV != null && spec?.maxDcVoltage) {
+    if (layout.stringVocColdV > spec.maxDcVoltage) {
+      level = 'block'
+      notes.push(`Cold string Voc ≈ ${layout.stringVocColdV}V exceeds the inverter's ${spec.maxDcVoltage}V max DC input — shorten the string.`)
+    } else {
+      notes.push(`Cold string Voc ≈ ${layout.stringVocColdV}V — within the ${spec.maxDcVoltage}V limit.`)
+    }
+  } else {
+    notes.push(`Add "max_dc_voltage" to ${inverter.brand}'s notes for full string-voltage validation.`)
+  }
+
+  // PV oversizing — max panel count for this inverter
+  const maxPanels = getMaxPanelCountForInverter(inverter, panel)
+  if (maxPanels != null) {
+    if (panelCount > maxPanels) {
+      level = 'block'
+      notes.push(`${panelCount} panels exceeds this inverter's max of ${maxPanels} (PV limit).`)
+    } else {
+      notes.push(`${panelCount} of max ${maxPanels} panels for this inverter.`)
+    }
+  }
+
+  // Short-circuit current per MPPT
+  if (panel.isc_amps && spec?.maxIscPerMpptA) {
+    const perStringIsc = panel.isc_amps * layout.parallelStringsPerMppt
+    if (perStringIsc > spec.maxIscPerMpptA) {
+      if (level !== 'block') level = 'warn'
+      notes.push(`≈ ${perStringIsc.toFixed(1)}A into one MPPT exceeds its ${spec.maxIscPerMpptA}A rating — reduce parallel strings.`)
+    }
+  }
+
+  if (layout.assumed && level === 'pass') {
+    level = 'warn'
+    notes.push('Inverter string spec not in catalog — layout is an estimate, verify on site.')
+  }
+
+  return { level, summary, notes }
 }
 
 export function buildSizingSnapshot(input: {
