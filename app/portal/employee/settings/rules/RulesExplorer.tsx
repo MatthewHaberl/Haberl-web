@@ -198,12 +198,12 @@ function StringDesigner({ inverters, panels, batteries }: Props) {
 
     const verdicts: { label: string; status: 'pass' | 'warn' | 'fail' | 'info'; detail: string }[] = []
 
-    if (layout.stringVocColdV != null && spec?.maxDcVoltage) {
-      const ok = layout.stringVocColdV <= spec.maxDcVoltage
+    if (layout.stringVocDesignV != null && spec?.maxDcVoltage) {
+      const ok = layout.stringVocDesignV <= spec.maxDcVoltage
       verdicts.push({
-        label: 'Cold-weather string voltage',
+        label: 'Cold-weather string voltage (+ edge-of-cloud)',
         status: ok ? 'pass' : 'fail',
-        detail: `${layout.panelsPerString} × ${panel.voc_volts}V × ${VOC_COLD_FACTOR} ≈ ${layout.stringVocColdV}V vs ${spec.maxDcVoltage}V max input`,
+        detail: `${layout.panelsPerString} × ${panel.voc_volts}V × ${VOC_COLD_FACTOR} ≈ ${layout.stringVocColdV}V → ≈ ${layout.stringVocDesignV}V with edge-of-cloud margin vs ${spec.maxDcVoltage}V max input${layout.maxSeriesAllowed != null ? ` (max ${layout.maxSeriesAllowed}/string)` : ''}`,
       })
     } else {
       verdicts.push({

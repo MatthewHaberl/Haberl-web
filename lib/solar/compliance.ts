@@ -19,6 +19,12 @@ import type { EquipmentCatalogItem, InverterSizingSpec } from './quote-calculato
 // Voc rises as temperature falls. Gauteng design minimum ≈ -10 °C; typical
 // crystalline βVoc ≈ -0.28 %/°C → (25 - (-10)) × 0.28 % ≈ +10 %.
 export const VOC_COLD_FACTOR = 1.10
+// Edge-of-cloud (cloud-edge irradiance overshoot): reflected light off the edge
+// of a passing cloud briefly drives irradiance — and string Voc — above STC.
+// Haberl design rule: the cold-weather string Voc, lifted a further 20 % for
+// this transient, must still sit under the inverter's max DC input. So a string
+// is only "safe" when  panels × Voc × VOC_COLD_FACTOR × EDGE_OF_CLOUD_FACTOR ≤ Vmax.
+export const EDGE_OF_CLOUD_FACTOR = 1.20
 // Vmp ≈ 0.82 × Voc for crystalline modules; at ~65 °C cell temperature Vmp
 // derates a further ~14 %. Used for the MPPT minimum-voltage check.
 export const VMP_FROM_VOC = 0.82
@@ -44,10 +50,21 @@ export interface ComplianceCheck {
 
 export interface StringLayout {
   stringCount: number
+  /** Longest string — drives the cold-Voc (max-voltage) check. */
   panelsPerString: number
+  /** Shortest string — drives the MPPT-minimum (low-voltage) check. Equals
+   *  panelsPerString when the panels divide evenly across the strings. */
+  panelsPerStringMin: number
+  /** false when panelCount can't split into equal-length strings. */
+  evenStrings: boolean
   parallelStringsPerMppt: number
   maxSeriesAllowed: number | null
+  /** Cold-weather Voc of the longest string (display value). */
   stringVocColdV: number | null
+  /** Cold Voc lifted by the edge-of-cloud margin — the value checked against
+   *  the inverter's max DC input. */
+  stringVocDesignV: number | null
+  /** Hot-weather Vmp of the shortest string — checked against the MPPT minimum. */
   stringVmpHotV: number | null
   /** true when derived from defaults because the inverter notes lack voltage specs */
   assumed: boolean
@@ -63,10 +80,12 @@ export function computeStringLayout(opts: {
   const { panelCount, panel, spec } = opts
   const voc = panel.voc_volts ?? null
 
-  // Max panels in series limited by inverter max DC voltage at coldest Voc
+  // Max panels in series limited by inverter max DC voltage at the coldest Voc,
+  // INCLUDING the edge-of-cloud overshoot margin — that combined headroom is the
+  // real ceiling, not just the −10 °C cold rise.
   let maxSeriesAllowed: number | null = null
   if (spec?.maxDcVoltage && voc) {
-    maxSeriesAllowed = Math.max(1, Math.floor(spec.maxDcVoltage / (voc * VOC_COLD_FACTOR)))
+    maxSeriesAllowed = Math.max(1, Math.floor(spec.maxDcVoltage / (voc * VOC_COLD_FACTOR * EDGE_OF_CLOUD_FACTOR)))
   }
   if (spec?.seriesPanelsPerString) {
     maxSeriesAllowed = Math.floor(spec.seriesPanelsPerString)
@@ -79,12 +98,19 @@ export function computeStringLayout(opts: {
   const assumed = maxSeriesAllowed == null
   const seriesCap = maxSeriesAllowed ?? DEFAULT_MAX_SERIES_PANELS
 
-  const stringCount = spec?.maxStrings
+  const stringCount = Math.max(1, spec?.maxStrings
     ? Math.min(Math.ceil(panelCount / seriesCap), Math.floor(spec.maxStrings))
       || Math.ceil(panelCount / seriesCap)
-    : Math.max(1, Math.ceil(panelCount / seriesCap))
+    : Math.ceil(panelCount / seriesCap))
 
-  const panelsPerString = Math.ceil(panelCount / Math.max(stringCount, 1))
+  // Distribute the panels as evenly as the count allows. When they don't divide
+  // evenly, `remainder` strings carry one extra panel: the longest string sets
+  // the cold-Voc ceiling, the shortest sets the MPPT-minimum floor.
+  const base = Math.floor(panelCount / stringCount)
+  const remainder = panelCount % stringCount
+  const panelsPerString = Math.max(1, remainder > 0 ? base + 1 : base)
+  const panelsPerStringMin = Math.max(1, base)
+  const evenStrings = remainder === 0
 
   const mpptCount = spec?.mpptCount ?? null
   const parallelStringsPerMppt = spec?.parallelStringsPerMppt
@@ -93,13 +119,18 @@ export function computeStringLayout(opts: {
       ? Math.max(1, Math.ceil(stringCount / mpptCount))
       : 1
 
+  const stringVocColdV = voc ? Math.round(panelsPerString * voc * VOC_COLD_FACTOR * 10) / 10 : null
+
   return {
-    stringCount: Math.max(1, stringCount),
-    panelsPerString: Math.max(1, panelsPerString),
+    stringCount,
+    panelsPerString,
+    panelsPerStringMin,
+    evenStrings,
     parallelStringsPerMppt: Math.max(1, parallelStringsPerMppt),
     maxSeriesAllowed,
-    stringVocColdV: voc ? Math.round(panelsPerString * voc * VOC_COLD_FACTOR * 10) / 10 : null,
-    stringVmpHotV: voc ? Math.round(panelsPerString * voc * VMP_FROM_VOC * VMP_HOT_DERATE * 10) / 10 : null,
+    stringVocColdV,
+    stringVocDesignV: stringVocColdV != null ? Math.round(stringVocColdV * EDGE_OF_CLOUD_FACTOR * 10) / 10 : null,
+    stringVmpHotV: voc ? Math.round(panelsPerStringMin * voc * VMP_FROM_VOC * VMP_HOT_DERATE * 10) / 10 : null,
     assumed,
   }
 }
@@ -209,13 +240,13 @@ export function runComplianceChecks(ctx: ComplianceContext): ComplianceCheck[] {
   }
 
   // ── String voltage physics ──────────────────────────────────────────────────
-  if (layout.stringVocColdV != null && spec?.maxDcVoltage) {
-    if (layout.stringVocColdV > spec.maxDcVoltage) {
+  if (layout.stringVocDesignV != null && layout.stringVocColdV != null && spec?.maxDcVoltage) {
+    if (layout.stringVocDesignV > spec.maxDcVoltage) {
       add('string-voc', 'String voltage vs inverter max DC input', 'Physics / RULE-STR-02', 'blocker',
-        `Cold-weather string Voc ≈ ${layout.stringVocColdV}V (${layout.panelsPerString} × ${panel.voc_volts}V × ${VOC_COLD_FACTOR}) exceeds the inverter's ${spec.maxDcVoltage}V max input. Shorten the string.`)
+        `Cold-weather string Voc ≈ ${layout.stringVocColdV}V (${layout.panelsPerString} × ${panel.voc_volts}V × ${VOC_COLD_FACTOR}) rises to ≈ ${layout.stringVocDesignV}V with the ×${EDGE_OF_CLOUD_FACTOR} edge-of-cloud margin — over the inverter's ${spec.maxDcVoltage}V max input. Shorten the string.`)
     } else {
       add('string-voc', 'String voltage vs inverter max DC input', 'Physics / RULE-STR-02', 'pass',
-        `Cold-weather string Voc ≈ ${layout.stringVocColdV}V is within the inverter's ${spec.maxDcVoltage}V limit.`)
+        `Cold-weather string Voc ≈ ${layout.stringVocColdV}V (≈ ${layout.stringVocDesignV}V with the edge-of-cloud margin) is within the inverter's ${spec.maxDcVoltage}V limit.`)
     }
   } else {
     add('string-voc', 'String voltage vs inverter max DC input', 'RULE-STR-02', 'info',
@@ -225,12 +256,13 @@ export function runComplianceChecks(ctx: ComplianceContext): ComplianceCheck[] {
   }
 
   if (layout.stringVmpHotV != null && spec?.mpptMinVoltage) {
+    const shortest = layout.evenStrings ? '' : ` (shortest string, ${layout.panelsPerStringMin} panels)`
     if (layout.stringVmpHotV < spec.mpptMinVoltage) {
       add('mppt-min', 'String voltage vs MPPT minimum', 'Physics / RULE-STR-02', 'warning',
-        `Hot-weather string Vmp ≈ ${layout.stringVmpHotV}V falls below the MPPT minimum of ${spec.mpptMinVoltage}V — the inverter may stop tracking on hot days. Lengthen the string.`)
+        `Hot-weather string Vmp ≈ ${layout.stringVmpHotV}V${shortest} falls below the MPPT minimum of ${spec.mpptMinVoltage}V — the inverter may stop tracking on hot days. Lengthen the string.`)
     } else {
       add('mppt-min', 'String voltage vs MPPT minimum', 'Physics / RULE-STR-02', 'pass',
-        `Hot-weather string Vmp ≈ ${layout.stringVmpHotV}V stays above the ${spec.mpptMinVoltage}V MPPT minimum.`)
+        `Hot-weather string Vmp ≈ ${layout.stringVmpHotV}V${shortest} stays above the ${spec.mpptMinVoltage}V MPPT minimum.`)
     }
   }
 

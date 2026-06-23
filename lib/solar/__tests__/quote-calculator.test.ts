@@ -1,7 +1,30 @@
 // Run with: npx tsx --test lib/solar/__tests__/quote-calculator.test.ts
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { calculateQuote, getTariffRateForMunicipality, type CalculatorInput } from '../quote-calculator'
+import {
+  calculateQuote,
+  getTariffRateForMunicipality,
+  verifyPanelString,
+  type CalculatorInput,
+  type EquipmentCatalogItem,
+} from '../quote-calculator'
+
+// Real catalog reference: Sunsynk 16kW 1P (500V max, 150V MPPT min, 3 MPPT, 6
+// strings) + Aiko Neostar 500W (Voc 45.02V) — the combination Matthew reviewed.
+const sunsynk16k = (extra: Record<string, unknown> = {}): EquipmentCatalogItem => ({
+  id: 'inv', category: 'inverter', brand: 'Sunsynk', sku: 'SS-1P-16K-H-LV',
+  description: 'Sunsynk 16kW 1P Hybrid', watts_ac: 16000, watts_dc: null, kwh: null,
+  phase: 'single', cost_rands: 0, isc_amps: null, voc_volts: null, active: true, sort_order: 0,
+  notes: JSON.stringify({
+    max_dc_voltage: 500, mppt_min_voltage: 150, mppt_count: 3, max_strings: 6,
+    max_isc_per_mppt_a: 44, max_pv_kwp: 20.8, ...extra,
+  }),
+})
+const aiko500 = (): EquipmentCatalogItem => ({
+  id: 'pan', category: 'panel', brand: 'Aiko', sku: 'AIKO-C-A500-MAH60MB',
+  description: 'Aiko Neostar 2S60 500W', watts_ac: null, watts_dc: 500, kwh: null,
+  phase: 'any', cost_rands: 0, isc_amps: 13.5, voc_volts: 45.02, active: true, sort_order: 0, notes: null,
+})
 
 const michelleFixture: CalculatorInput = {
   quoteNumber: 'QUO-2026-027',
@@ -250,4 +273,33 @@ test('battery voltage class mismatch is a blocker (RULE-INV-06)', () => {
   const quote = calculateQuote(fixture)
   const check = (quote.complianceChecks ?? []).find((c) => c.id === 'battery-class')
   assert.equal(check?.status, 'blocker', check?.detail)
+})
+
+test('string verdict: edge-of-cloud caps the Aiko 500W string at 8 panels, splits 41 honestly', () => {
+  const verdict = verifyPanelString(sunsynk16k(), aiko500(), 41)
+  assert.ok(verdict)
+  // 500V ÷ (45.02 × 1.10 cold × 1.20 edge-of-cloud) → max 8 panels per string
+  assert.ok(verdict!.notes.some((n) => /Max 8 panels per string/.test(n)), verdict!.notes.join(' | '))
+  // 41 doesn't divide into equal strings — surfaced honestly, not "6 × 7 = 42"
+  assert.match(verdict!.summary, /6 strings × 6–7 in series · 2 parallel per MPPT/)
+  assert.ok(verdict!.notes.some((n) => /5×7 \+ 1×6/.test(n)), verdict!.notes.join(' | '))
+  assert.equal(verdict!.level, 'warn') // uneven split, but inside both voltage limits
+})
+
+test('string verdict: 9 in series trips the edge-of-cloud ceiling (blocker)', () => {
+  // Force a single 9-panel string; cold Voc 445.7V × 1.20 = 534.8V > 500V
+  const verdict = verifyPanelString(sunsynk16k({ max_strings: 1 }), aiko500(), 9)
+  assert.ok(verdict)
+  assert.equal(verdict!.level, 'block')
+  assert.ok(verdict!.notes.some((n) => /edge-of-cloud margin .* over the inverter's 500V/.test(n)),
+    verdict!.notes.join(' | '))
+})
+
+test('string verdict: a single panel is blocked by the MPPT-minimum (lower) limit', () => {
+  // The bug Matthew flagged: 1 panel sits well under 500V but the inverter can't
+  // track a string below its 150V MPPT floor — must NOT read as a green pass.
+  const verdict = verifyPanelString(sunsynk16k(), aiko500(), 1)
+  assert.ok(verdict)
+  assert.equal(verdict!.level, 'block')
+  assert.ok(verdict!.notes.some((n) => /below the 150V MPPT minimum/.test(n)), verdict!.notes.join(' | '))
 })

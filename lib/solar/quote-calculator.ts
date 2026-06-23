@@ -11,6 +11,7 @@ import {
   computeStringLayout,
   parseBatteryClass,
   runComplianceChecks,
+  EDGE_OF_CLOUD_FACTOR,
   type ComplianceCheck,
   type StringLayout,
 } from './compliance'
@@ -788,20 +789,57 @@ export function verifyPanelString(
   const notes: string[] = []
   let level: 'pass' | 'warn' | 'block' = 'pass'
 
+  // Honest summary: only equal-length strings can be written as "N × M". When the
+  // count doesn't divide evenly, spell out the real split rather than a product
+  // that overstates the panel total (e.g. "5×9" for 41 panels).
+  const seriesLabel = layout.evenStrings
+    ? `${layout.panelsPerString} in series`
+    : `${layout.panelsPerStringMin}–${layout.panelsPerString} in series`
   const summary =
-    `${layout.stringCount} string${layout.stringCount > 1 ? 's' : ''} × ${layout.panelsPerString} in series` +
+    `${layout.stringCount} string${layout.stringCount > 1 ? 's' : ''} × ${seriesLabel}` +
     (layout.parallelStringsPerMppt > 1 ? ` · ${layout.parallelStringsPerMppt} parallel per MPPT` : '')
 
-  // Cold-weather string Voc vs inverter max DC input
-  if (layout.stringVocColdV != null && spec?.maxDcVoltage) {
-    if (layout.stringVocColdV > spec.maxDcVoltage) {
+  // Uneven strings: equal-length strings per MPPT are preferred, so flag the real
+  // distribution. longStrings carry one extra panel each.
+  if (!layout.evenStrings) {
+    if (level === 'pass') level = 'warn'
+    const longStrings = panelCount - layout.panelsPerStringMin * layout.stringCount
+    const shortStrings = layout.stringCount - longStrings
+    const split = [
+      longStrings > 0 ? `${longStrings}×${layout.panelsPerString}` : null,
+      shortStrings > 0 ? `${shortStrings}×${layout.panelsPerStringMin}` : null,
+    ].filter(Boolean).join(' + ')
+    notes.push(`${panelCount} panels don't split into equal strings — ${split}. Equal-length strings per MPPT track better; adjust the count or rebalance across MPPTs.`)
+  }
+
+  // Upper limit — cold Voc + edge-of-cloud overshoot vs inverter max DC input
+  if (layout.stringVocDesignV != null && spec?.maxDcVoltage) {
+    if (layout.stringVocDesignV > spec.maxDcVoltage) {
       level = 'block'
-      notes.push(`Cold string Voc ≈ ${layout.stringVocColdV}V exceeds the inverter's ${spec.maxDcVoltage}V max DC input — shorten the string.`)
+      notes.push(`Cold string Voc ≈ ${layout.stringVocColdV}V rises to ≈ ${layout.stringVocDesignV}V with the edge-of-cloud margin — over the inverter's ${spec.maxDcVoltage}V max DC input. Shorten the string.`)
     } else {
-      notes.push(`Cold string Voc ≈ ${layout.stringVocColdV}V — within the ${spec.maxDcVoltage}V limit.`)
+      notes.push(`Cold string Voc ≈ ${layout.stringVocColdV}V (≈ ${layout.stringVocDesignV}V with edge-of-cloud margin) — within the ${spec.maxDcVoltage}V limit.`)
+    }
+    if (layout.maxSeriesAllowed != null) {
+      notes.push(`Max ${layout.maxSeriesAllowed} panels per string before the ${spec.maxDcVoltage}V limit (cold Voc ×${EDGE_OF_CLOUD_FACTOR} edge-of-cloud).`)
     }
   } else {
     notes.push(`Add "max_dc_voltage" to ${inverter.brand}'s notes for full string-voltage validation.`)
+  }
+
+  // Lower limit — hot Vmp of the shortest string vs the inverter's MPPT minimum.
+  // A string below the MPPT window can't be tracked (a single-panel string is the
+  // classic trap: well inside the 500 V ceiling, but far below the floor).
+  if (spec?.mpptMinVoltage && layout.stringVmpHotV != null) {
+    if (layout.stringVmpHotV < spec.mpptMinVoltage) {
+      level = 'block'
+      const which = layout.evenStrings ? '' : ` (shortest string, ${layout.panelsPerStringMin} panel${layout.panelsPerStringMin > 1 ? 's' : ''})`
+      notes.push(`Hot string Vmp ≈ ${layout.stringVmpHotV}V${which} is below the ${spec.mpptMinVoltage}V MPPT minimum — the inverter won't track this string. Add more panels in series.`)
+    } else {
+      notes.push(`Hot string Vmp ≈ ${layout.stringVmpHotV}V — above the ${spec.mpptMinVoltage}V MPPT minimum.`)
+    }
+  } else if (!spec?.mpptMinVoltage) {
+    notes.push(`Add "mppt_min_voltage" to ${inverter.brand}'s notes to validate the lower (MPPT-minimum) limit.`)
   }
 
   // PV oversizing — max panel count for this inverter
