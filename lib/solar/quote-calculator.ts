@@ -583,6 +583,16 @@ function getRestrictedCompatibleBatteryBrands(inverter: EquipmentCatalogItem) {
   const spec = parseInverterSizingSpec(inverter.notes)
   if (spec?.batteryBrands?.length) return spec.batteryBrands.map(normalizeBrand)
 
+  if (inverterBrandKey(inverter) === 'sigenergy') return ['sigenergy']
+
+  return null
+}
+
+/**
+ * The brand ecosystem an inverter belongs to, normalised. Sigenergy / SigenStor
+ * units collapse to a single 'sigenergy' key no matter how the row spells them.
+ */
+function inverterBrandKey(inverter: EquipmentCatalogItem) {
   const inverterBrand = normalizeBrand(inverter.brand)
   const inverterSku = normalizeBrand(inverter.sku)
   const inverterDescription = normalizeBrand(inverter.description)
@@ -593,13 +603,45 @@ function getRestrictedCompatibleBatteryBrands(inverter: EquipmentCatalogItem) {
     inverterDescription.includes('sigenstor') ||
     inverterDescription.includes('sigenergy')
   ) {
-    return ['sigenergy']
+    return 'sigenergy'
+  }
+
+  return inverterBrand
+}
+
+/**
+ * Batteries locked to one inverter ecosystem (proprietary stack architecture,
+ * not a generic 48V LV pack). A proprietary battery may ONLY pair with an inverter
+ * of the same brand — SigenStor / SigenStack batteries need a Sigenergy inverter.
+ * Returns the required inverter brand key, or null for open batteries.
+ */
+function getBatteryProprietaryBrand(battery: EquipmentCatalogItem) {
+  const batteryBrand = normalizeBrand(battery.brand)
+  const batteryDescription = normalizeBrand(battery.description)
+  const batterySku = normalizeBrand(battery.sku)
+
+  if (
+    batteryBrand.includes('sigenergy') ||
+    batteryDescription.includes('sigenstor') ||
+    batteryDescription.includes('sigenstack') ||
+    batterySku.includes('sig-bat')
+  ) {
+    return 'sigenergy'
   }
 
   return null
 }
 
 export function isBatteryCompatibleWithInverter(inverter: EquipmentCatalogItem, battery: EquipmentCatalogItem) {
+  // Reciprocal lock: a proprietary battery (SigenStor / SigenStack) only pairs
+  // with an inverter of its own brand. This must hold no matter which side
+  // declares the restriction — a Sigenergy battery on a non-Sigenergy inverter
+  // is just as invalid as the other-brand battery on a Sigenergy inverter.
+  const batteryProprietaryBrand = getBatteryProprietaryBrand(battery)
+  if (batteryProprietaryBrand && inverterBrandKey(inverter) !== batteryProprietaryBrand) {
+    return false
+  }
+
   const restrictedBrands = getRestrictedCompatibleBatteryBrands(inverter)
   if (!restrictedBrands) return true
 
@@ -661,6 +703,16 @@ export function evaluateBatteryForInverter(
     /grid[\s-]?tie/i.test(`${inverter.description} ${inverter.sku}`)
   if (noBatterySupport) {
     return { level: 'block', reason: `${inverter.description} is grid-tie / PV-only — it can't take batteries.` }
+  }
+
+  // BLOCK — proprietary battery locked to its own inverter ecosystem.
+  // (SigenStor / SigenStack batteries only pair with a Sigenergy inverter — this
+  // is the reciprocal of the inverter-side rule below, and is phrased from the
+  // battery's side so the reason makes sense under a non-Sigenergy inverter.)
+  const batteryProprietaryBrand = getBatteryProprietaryBrand(battery)
+  if (batteryProprietaryBrand && inverterBrandKey(inverter) !== batteryProprietaryBrand) {
+    const brandLabel = batteryProprietaryBrand.charAt(0).toUpperCase() + batteryProprietaryBrand.slice(1)
+    return { level: 'block', reason: `${battery.brand} batteries only pair with a ${brandLabel} inverter — not ${inverter.brand}.` }
   }
 
   // BLOCK — brand / proprietary restriction (e.g. Sigenergy only pairs with Sigenergy)
