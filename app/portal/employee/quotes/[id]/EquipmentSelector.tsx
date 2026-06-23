@@ -184,7 +184,9 @@ export function EquipmentSelector({
   const [inverterId, setInverterId] = useState<string>(toOptionalString(request.selected_inverter_id))
   const [batteryId, setBatteryId] = useState<string>(toOptionalString(request.selected_battery_id))
   const [panelId, setPanelId] = useState<string>(toOptionalString(request.selected_panel_id))
-  const [cableRouteM, setCableRouteM] = useState<string>(String(request.cable_route_m ?? 15))
+  // DC cable run input removed from the UI; value still flows from the saved request
+  // (default 15m) into the §5.3.2 voltage-drop check, DC-cable BOM quantity, and save.
+  const cableRouteM = String(request.cable_route_m ?? 15)
   const [tariffRate, setTariffRate] = useState<string>(
     request.tariff_rate != null
       ? String(request.tariff_rate)
@@ -235,8 +237,8 @@ export function EquipmentSelector({
     essentialLoadKw,
     lockedDesignKwp,
   )
-  const [inverterQuantity, setInverterQuantity] = useState<string>(String(Math.min(2, Math.max(1, coerceNumber(initialSizingInputs?.inverterQty, 1) || 1))))
-  const [batteryQuantity, setBatteryQuantity] = useState<string>(String(Math.min(2, Math.max(1, coerceNumber(initialSizingInputs?.batteryQty ?? request.selected_battery_qty, 1) || 1))))
+  const [inverterQuantity, setInverterQuantity] = useState<string>(String(Math.max(1, coerceNumber(initialSizingInputs?.inverterQty, 1) || 1)))
+  const [batteryQuantity, setBatteryQuantity] = useState<string>(String(Math.max(1, coerceNumber(initialSizingInputs?.batteryQty ?? request.selected_battery_qty, 1) || 1)))
   const [targetInverterKwInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.targetInverterKw, autoTargetKw)))
   const [minimumBatteryKwhInput] = useState<string>(String(readSavedSizingValue(initialSizingInputs?.minimumBatteryKwh, autoTargetKw * 2)))
   const initialPanelTarget = Math.max(
@@ -247,8 +249,8 @@ export function EquipmentSelector({
     initialPanelTarget > 0 ? String(initialPanelTarget) : '',
   )
   const targetKw = Math.max(1, Math.round(coerceNumber(targetInverterKwInput, autoTargetKw) || autoTargetKw))
-  const inverterQuantityValue = Math.min(2, Math.max(1, Math.round(coerceNumber(inverterQuantity, 1) || 1)))
-  const batteryQuantityValue = Math.min(2, Math.max(1, Math.round(coerceNumber(batteryQuantity, 1) || 1)))
+  const inverterQuantityValue = Math.max(1, Math.round(coerceNumber(inverterQuantity, 1) || 1))
+  const batteryQuantityValue = Math.max(1, Math.round(coerceNumber(batteryQuantity, 1) || 1))
   const minimumBatteryKwhValue = Math.max(0, coerceNumber(minimumBatteryKwhInput, targetKw * 2) || targetKw * 2)
   const targetPanelCountOverride = Math.max(0, Math.round(coerceNumber(targetPanelCountInput, lockedPanelCount ?? 0) || 0))
   const hasSpecificPreferences = isSpecificBrand(request.inverter_brand) || isSpecificBrand(request.battery_brand) || isSpecificBrand(request.panel_brand)
@@ -663,115 +665,112 @@ export function EquipmentSelector({
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Inverter</span>
-          <select
-            value={effectiveInverterId}
-            onChange={(event) => {
-              setInverterId(event.target.value)
-              setSaved(false)
-            }}
-            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
-          >
-            {inverterOptions.map((item) => (
-              <option key={item.id} value={item.id}>{optionLabel(item)}</option>
-            ))}
-          </select>
-          {preferredInverterBrand && (
-            <span className={`text-xs ${inverterBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
-              {inverterBrandInCatalog ? `Filtered to ${preferredInverterBrand}` : `${preferredInverterBrand} not in catalog — showing all`}
-            </span>
-          )}
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Battery</span>
-          <CompatSelect
-            value={effectiveBatteryId}
-            onChange={(id) => { setBatteryId(id); setSaved(false) }}
-            options={batteryCandidates.map((c) => ({
-              id: c.item.id,
-              label: optionLabel(c.item),
-              level: c.compat.level,
-              reason: c.compat.reason || undefined,
-            }))}
-            placeholder="Select a battery"
-          />
-          {preferredBatteryBrand && (
-            <span className={`text-xs ${batteryBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
-              {batteryBrandInCatalog ? `Filtered to ${preferredBatteryBrand}` : `${preferredBatteryBrand} not in catalog — showing all`}
-            </span>
-          )}
-          {!preferredBatteryBrand && selectedInverter && (
-            <span className="text-xs text-muted-foreground">
-              Incompatible batteries are shown greyed-out with the reason.
-            </span>
-          )}
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Panel</span>
-          <select
-            value={effectivePanelId}
-            onChange={(event) => {
-              setPanelId(event.target.value)
-              setSaved(false)
-            }}
-            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
-          >
-            {panelOptions.map((item) => (
-              <option key={item.id} value={item.id}>{optionLabel(item)}</option>
-            ))}
-          </select>
-          {preferredPanelBrand && (
-            <span className={`text-xs ${panelBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
-              {panelBrandInCatalog ? `Filtered to ${preferredPanelBrand}` : `${preferredPanelBrand} not in catalog — showing all`}
-            </span>
-          )}
-        </label>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Inverter quantity</span>
-          <select
-            value={String(inverterQuantityValue)}
-            onChange={(event) => {
-              setInverterQuantity(event.target.value)
-              setSaved(false)
-            }}
-            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
-          >
-            <option value="1">1</option>
-            <option value="2">2</option>
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Battery quantity</span>
-          <select
-            value={String(batteryQuantityValue)}
-            onChange={(event) => {
-              setBatteryQuantity(event.target.value)
-              setSaved(false)
-            }}
-            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
-          >
-            <option value="1">1</option>
-            <option value="2">2</option>
-          </select>
-        </label>
-      </div>
-
-      {/* String design — choose the panel count and verify the array against the inverter */}
-      <div className="rounded-lg border border-border bg-muted/30 p-4">
-        <p className="text-sm font-medium text-foreground">String design</p>
-        <p className="text-xs text-muted-foreground mt-1">
-          Set how many panels and we verify the string layout against the inverter.
-        </p>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
+        {/* Inverter — selection + quantity together */}
+        <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-foreground">Panel count</span>
+            <span className="text-sm font-medium text-foreground">Inverter</span>
+            <select
+              value={effectiveInverterId}
+              onChange={(event) => {
+                setInverterId(event.target.value)
+                setSaved(false)
+              }}
+              className="h-11 rounded-md border border-border bg-background px-3 text-sm"
+            >
+              {inverterOptions.map((item) => (
+                <option key={item.id} value={item.id}>{optionLabel(item)}</option>
+              ))}
+            </select>
+            {preferredInverterBrand && (
+              <span className={`text-xs ${inverterBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
+                {inverterBrandInCatalog ? `Filtered to ${preferredInverterBrand}` : `${preferredInverterBrand} not in catalog — showing all`}
+              </span>
+            )}
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Quantity</span>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={inverterQuantity}
+              onChange={(event) => {
+                setInverterQuantity(event.target.value)
+                setSaved(false)
+              }}
+              className="h-11 rounded-md border border-border bg-background px-3 text-sm"
+            />
+            <span className="text-xs text-muted-foreground">Parallel inverters — set 1 or more.</span>
+          </label>
+        </div>
+
+        {/* Battery — selection + quantity together */}
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Battery</span>
+            <CompatSelect
+              value={effectiveBatteryId}
+              onChange={(id) => { setBatteryId(id); setSaved(false) }}
+              options={batteryCandidates.map((c) => ({
+                id: c.item.id,
+                label: optionLabel(c.item),
+                level: c.compat.level,
+                reason: c.compat.reason || undefined,
+              }))}
+              placeholder="Select a battery"
+            />
+            {preferredBatteryBrand && (
+              <span className={`text-xs ${batteryBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
+                {batteryBrandInCatalog ? `Filtered to ${preferredBatteryBrand}` : `${preferredBatteryBrand} not in catalog — showing all`}
+              </span>
+            )}
+            {!preferredBatteryBrand && selectedInverter && (
+              <span className="text-xs text-muted-foreground">
+                Incompatible batteries are shown greyed-out with the reason.
+              </span>
+            )}
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Quantity</span>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={batteryQuantity}
+              onChange={(event) => {
+                setBatteryQuantity(event.target.value)
+                setSaved(false)
+              }}
+              className="h-11 rounded-md border border-border bg-background px-3 text-sm"
+            />
+            <span className="text-xs text-muted-foreground">Battery modules — set 1 or more.</span>
+          </label>
+        </div>
+
+        {/* Panel — selection + panel count together */}
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Panel</span>
+            <select
+              value={effectivePanelId}
+              onChange={(event) => {
+                setPanelId(event.target.value)
+                setSaved(false)
+              }}
+              className="h-11 rounded-md border border-border bg-background px-3 text-sm"
+            >
+              {panelOptions.map((item) => (
+                <option key={item.id} value={item.id}>{optionLabel(item)}</option>
+              ))}
+            </select>
+            {preferredPanelBrand && (
+              <span className={`text-xs ${panelBrandInCatalog ? 'text-muted-foreground' : 'text-amber-600'}`}>
+                {panelBrandInCatalog ? `Filtered to ${preferredPanelBrand}` : `${preferredPanelBrand} not in catalog — showing all`}
+              </span>
+            )}
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Panel count</span>
             <input
               type="number"
               min="0"
@@ -786,6 +785,16 @@ export function EquipmentSelector({
             />
             <span className="text-xs text-muted-foreground">Leave blank to auto-size from usage.</span>
           </label>
+        </div>
+      </div>
+
+      {/* String design — verifies the panel count (set next to the panel above) against the inverter */}
+      <div className="rounded-lg border border-border bg-muted/30 p-4">
+        <p className="text-sm font-medium text-foreground">String design</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          The panel count set next to the panel above is verified against the inverter&apos;s string limits.
+        </p>
+        <div className="mt-3">
           {stringVerdict ? (
             <div className={`rounded-md border p-3 text-sm ${
               stringVerdict.level === 'block'
@@ -803,30 +812,10 @@ export function EquipmentSelector({
             </div>
           ) : (
             <div className="flex items-center text-xs text-muted-foreground">
-              Enter a panel count (with an inverter + panel selected) to verify the string.
+              Enter a panel count above (with an inverter + panel selected) to verify the string.
             </div>
           )}
         </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">DC cable run (array → inverter), m</span>
-          <input
-            type="number"
-            min="0"
-            step="0.5"
-            value={cableRouteM}
-            onChange={(event) => {
-              setCableRouteM(event.target.value)
-              setSaved(false)
-            }}
-            className="h-11 rounded-md border border-border bg-background px-3 text-sm"
-          />
-          <span className="text-xs text-muted-foreground">
-            PV-string run — drives the §5.3.2 voltage-drop check and DC-cable quantity.
-          </span>
-        </label>
       </div>
 
       {/* Energy — tariff is specific to this job and can be adjusted any time */}
