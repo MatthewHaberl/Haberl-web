@@ -14,7 +14,7 @@ import {
   type Edge,
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Trash2, X, PencilLine } from 'lucide-react'
+import { Trash2, X, PencilLine, Layers } from 'lucide-react'
 import { nodeTypes } from '@/components/sld/sld-nodes'
 import { edgeTypes } from '@/components/sld/sld-edges'
 import {
@@ -26,6 +26,14 @@ const NODE_COLORS: Record<string, string> = {
   solarArray: '#f97316', combiner: '#f97316', inverter: '#1e3a5f',
   battery: '#16a34a', grid: '#7c3aed', dbBoard: '#2563eb', earthing: '#65a30d',
 }
+
+// Toggleable circuit layers — filter the diagram to one type of cable at a time.
+const CIRCUIT_LAYERS: Array<{ key: string; label: string; color: string }> = [
+  { key: 'dc', label: 'DC / PV', color: '#f97316' },
+  { key: 'battery', label: 'Battery', color: '#16a34a' },
+  { key: 'ac', label: 'AC', color: '#2563eb' },
+  { key: 'earth', label: 'Earth', color: '#65a30d' },
+]
 
 // Only structural fields force a diagram rebuild — positions live in layout and
 // are applied by designToFlow, so dragging never fights the rebuild.
@@ -180,6 +188,13 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [layers, setLayers] = useState<Record<string, boolean>>({ dc: true, battery: true, ac: true, earth: true })
+
+  // Filter edges by circuit layer so you can work with one cable type at a time.
+  const shownEdges = useMemo(
+    () => edges.filter((e) => layers[(e.data as { circuitType?: string } | undefined)?.circuitType ?? ''] ?? true),
+    [edges, layers],
+  )
 
   const sig = useMemo(() => structureSig(design, gridSupply), [design, gridSupply])
 
@@ -215,6 +230,29 @@ function CanvasInner({ height = 560 }: { height?: number }) {
     <div className="rounded-lg border border-border overflow-hidden" style={{ height }}>
       <div className="flex h-full">
         <div className="flex-1 relative min-w-0">
+          <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2 py-1 backdrop-blur">
+            <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+            {CIRCUIT_LAYERS.map((l) => {
+              const on = layers[l.key]
+              return (
+                <button
+                  key={l.key}
+                  type="button"
+                  onClick={() => setLayers((s) => ({ ...s, [l.key]: !s[l.key] }))}
+                  title={`${on ? 'Hide' : 'Show'} ${l.label} cables`}
+                  className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                  style={{
+                    background: on ? l.color + '22' : 'transparent',
+                    color: on ? l.color : '#9ca3af',
+                    border: `1px solid ${on ? l.color : '#e5e7eb'}`,
+                  }}
+                >
+                  <span className="w-2 h-2 rounded-sm" style={{ background: on ? l.color : '#d1d5db' }} />
+                  {l.label}
+                </button>
+              )
+            })}
+          </div>
           {isEmpty && (
             <div className="absolute inset-0 z-10 flex items-center justify-center text-center text-sm text-muted-foreground pointer-events-none">
               Add panels or an inverter and the diagram builds itself here.
@@ -222,7 +260,7 @@ function CanvasInner({ height = 560 }: { height?: number }) {
           )}
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={shownEdges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}

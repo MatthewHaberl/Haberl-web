@@ -5,7 +5,9 @@ import { EnergySection } from './EnergySection'
 import { PanelsSection } from './PanelsSection'
 import { InverterSection } from './InverterSection'
 import { BatterySection } from './BatterySection'
-import { DcCombinerSection, AcCombinerSection, EarthingSection, ExtrasSection } from './StubSections'
+import { DcCombinerSection } from './DcCombinerSection'
+import { EarthingSection } from './EarthingSection'
+import { AcCombinerSection, ExtrasSection } from './StubSections'
 
 // Index-aligned with BUILD_STEPS in ../BuildRail.
 const SECTIONS = [

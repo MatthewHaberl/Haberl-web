@@ -29,7 +29,12 @@ const DAYS_PER_MONTH = 30.4
 
 export type CurvePreset = 'home_all_day' | 'business_9_5' | 'evening_peak' | 'custom'
 
+/** Which single granularity the user is entering. Only this field is read. */
+export type EnergyMode = 'daily' | 'weekly' | 'monthly' | 'annual'
+
 export interface EnergyProfile {
+  /** The one active granularity. Others are ignored until selected. */
+  mode: EnergyMode
   /** Load-shape preset; shapes the hourly curve when only totals are known. */
   curvePreset: CurvePreset | null
   /** 24 hourly kWh values (index 0 = 00:00). null = not entered by hand. */
@@ -50,10 +55,30 @@ export interface PanelGroup {
   panelWatts: number
   panelModel: string
   catalogId: string | null
-  /** Optional roof orientation — when both set, the hourly solar model is used. */
+  /** Roof orientation in degrees (0 = N, 90 = E …). Set via the direction picker. */
   azimuth: number | null
+  /** Roof tilt in degrees. When azimuth + pitch are both set, the hourly solar model is used. */
   pitch: number | null
+  /** Mounting surface — Tile / IBR / Klip-lok / Concrete flat … (free metadata for now). */
+  roofType: string
 }
+
+// 8-way compass → azimuth degrees (0 = North), matching generation-calculator.
+export const DIRECTIONS: Array<{ label: string; azimuth: number }> = [
+  { label: 'North', azimuth: 0 },
+  { label: 'North-East', azimuth: 45 },
+  { label: 'East', azimuth: 90 },
+  { label: 'South-East', azimuth: 135 },
+  { label: 'South', azimuth: 180 },
+  { label: 'South-West', azimuth: 225 },
+  { label: 'West', azimuth: 270 },
+  { label: 'North-West', azimuth: 315 },
+]
+
+export const ROOF_TYPES = [
+  'Tile', 'IBR / corrugated steel', 'Klip-lok / standing seam',
+  'Concrete (flat)', 'Slate', 'Fibre-cement', 'Ground mount', 'Other',
+]
 
 export interface InverterUnit {
   id: string
@@ -73,10 +98,129 @@ export interface BatteryUnit {
   qty: number
 }
 
+export type BatteryTopology = 'parallel-busbar' | 'series-string' | 'series-parallel' | 'multi-inverter'
+
+/** How the battery units are wired into a bank — drives the protection BOM + cost. */
+export interface BatteryBank {
+  topology: BatteryTopology
+  voltageClass: 'LV' | 'HV'
+  nominalVoltage: number
+  /** Each battery gets its own breaker/disconnect onto the busbar. */
+  perBatteryDisconnect: boolean
+  disconnectRating: string
+  busbar: boolean
+  mainDisconnect: boolean
+  /** Separate disconnect + cable run to each inverter. */
+  inverterFeeds: number
+  cableSizeMm2: number
+}
+
+export const BATTERY_TOPOLOGIES: Array<{ value: BatteryTopology; label: string; hint: string }> = [
+  { value: 'parallel-busbar', label: 'Parallel — busbar', hint: 'each battery → disconnect → busbar → main' },
+  { value: 'series-string', label: 'Series string (HV)', hint: 'batteries in series for a HV inverter' },
+  { value: 'series-parallel', label: 'Series-parallel', hint: 'series strings paralleled on a busbar' },
+  { value: 'multi-inverter', label: 'Multi-inverter', hint: 'busbar feeds 2+ inverters' },
+]
+
+export function defaultBank(): BatteryBank {
+  return {
+    topology: 'parallel-busbar', voltageClass: 'LV', nominalVoltage: 51.2,
+    perBatteryDisconnect: true, disconnectRating: '250A DC',
+    busbar: true, mainDisconnect: true, inverterFeeds: 1, cableSizeMm2: 25,
+  }
+}
+
+export type EnclosureMaterial = 'plastic' | 'steel' | 'poly' | 'fibreglass'
+export type EnclosureMount = 'surface' | 'flush' | 'weatherproof'
+
+/** One combined DC output of a combiner (which strings tie together onto it). */
+export interface CombinerOutput {
+  id: string
+  label: string
+  stringIds: string[]
+}
+
 export interface DcCombiner {
   id: string
   label: string
-  stringCount: number
+  // Enclosure
+  material: EnclosureMaterial
+  mount: EnclosureMount
+  /** DIN modules per row. */
+  ways: number
+  rows: number
+  ipRating: string
+  /** Auto-generated descriptive code; user can override (locks it). */
+  productCode: string
+  productCodeLocked: boolean
+  // Inputs (strings) and outputs (to inverter MPPTs)
+  inputStringIds: string[]
+  outputs: CombinerOutput[]
+  // What's inside
+  stringFuses: boolean
+  fuseRating: string
+  hasSpd: boolean
+  spdType: string
+  hasIsolator: boolean
+  isolatorRating: string
+  mainBreaker: string
+}
+
+export const ENCLOSURE_MATERIALS: Array<{ value: EnclosureMaterial; label: string }> = [
+  { value: 'plastic', label: 'Plastic' },
+  { value: 'steel', label: 'Steel (metal)' },
+  { value: 'poly', label: 'Poly / PVC (weatherproof)' },
+  { value: 'fibreglass', label: 'Fibreglass' },
+]
+
+export const ENCLOSURE_MOUNTS: Array<{ value: EnclosureMount; label: string }> = [
+  { value: 'surface', label: 'Surface' },
+  { value: 'flush', label: 'Flush' },
+  { value: 'weatherproof', label: 'Weatherproof (IP65/66)' },
+]
+
+export const ENCLOSURE_WAYS = [4, 6, 8, 12, 18, 24, 36]
+
+const MATERIAL_CODE: Record<EnclosureMaterial, string> = { plastic: 'PL', steel: 'STL', poly: 'POLY', fibreglass: 'FG' }
+const MOUNT_CODE: Record<EnclosureMount, string> = { surface: 'S', flush: 'F', weatherproof: 'WP' }
+
+/** Descriptive code from the enclosure config, e.g. CHINT-DB-2x12-S-STL. */
+export function enclosureCode(c: Pick<DcCombiner, 'material' | 'mount' | 'ways' | 'rows'>): string {
+  const size = c.rows > 1 ? `${c.rows}x${c.ways}` : `${c.ways}W`
+  return `CHINT-DB-${size}-${MOUNT_CODE[c.mount]}-${MATERIAL_CODE[c.material]}`
+}
+
+/** Short "N-in M-out · 2×12" summary for the diagram + cards. */
+export function combinerConfigLabel(c: DcCombiner): string {
+  const size = c.rows > 1 ? `${c.rows}×${c.ways}` : `${c.ways}-way`
+  return `${c.inputStringIds.length}-in ${c.outputs.length}-out · ${size}`
+}
+
+/** A new combiner pre-wired to the given strings, with rule-based protection defaults. */
+export function defaultCombiner(panelIds: string[]): DcCombiner {
+  const inputs = panelIds.slice()
+  const c: DcCombiner = {
+    id: mkId('comb'),
+    label: 'DC Combiner',
+    material: 'poly',
+    mount: 'weatherproof',
+    ways: 6,
+    rows: 1,
+    ipRating: 'IP65',
+    productCode: '',
+    productCodeLocked: false,
+    inputStringIds: inputs,
+    outputs: [{ id: mkId('out'), label: 'Output 1', stringIds: inputs.slice() }],
+    stringFuses: inputs.length >= 3, // 3-string rule
+    fuseRating: '15A gPV',
+    hasSpd: true,
+    spdType: 'Type 2',
+    hasIsolator: true,
+    isolatorRating: '1000V DC 25A',
+    mainBreaker: '',
+  }
+  c.productCode = enclosureCode(c)
+  return c
 }
 
 export interface AcCombiner {
@@ -85,10 +229,30 @@ export interface AcCombiner {
   mainBreakerA: number
 }
 
+export type EarthKind = 'earthing' | 'bonding'
+
+/** Driven earth rods / spike array (a fault-current electrode). */
+export interface EarthElectrode { id: string; label: string; spikeCount: number }
+/** A collection busbar/bar that earth conductors land on. */
+export interface EarthBar { id: string; label: string }
+/** One sized earth run between two points, tagged earthing (to electrode) or bonding. */
+export interface EarthConductor {
+  id: string
+  fromId: string
+  toId: string
+  sizeMm2: number
+  kind: EarthKind
+}
+
 export interface EarthingConfig {
   spikeCount: number | null
   spec: string
+  electrodes: EarthElectrode[]
+  bars: EarthBar[]
+  conductors: EarthConductor[]
 }
+
+export const EARTH_SIZES = [2.5, 4, 6, 10, 16, 25, 35]
 
 export interface ExtraComponent {
   id: string
@@ -114,6 +278,7 @@ export interface SystemDesign {
   dcCombiners: DcCombiner[]
   inverters: InverterUnit[]
   batteries: BatteryUnit[]
+  bank: BatteryBank
   acCombiners: AcCombiner[]
   earthing: EarthingConfig
   extras: ExtraComponent[]
@@ -130,6 +295,7 @@ export function mkId(prefix: string): string {
 
 export function emptyEnergy(): EnergyProfile {
   return {
+    mode: 'monthly',
     curvePreset: null,
     hourly: null,
     dailyKwh: null,
@@ -148,8 +314,9 @@ export function emptyDesign(): SystemDesign {
     dcCombiners: [],
     inverters: [],
     batteries: [],
+    bank: defaultBank(),
     acCombiners: [],
-    earthing: { spikeCount: null, spec: 'CU GY 10mm²' },
+    earthing: { spikeCount: null, spec: 'CU GY 10mm²', electrodes: [], bars: [], conductors: [] },
     extras: [],
     layout: { nodes: {} },
   }
@@ -189,6 +356,7 @@ export function quoteDataToDesign(q: Partial<QuoteData> | null | undefined): Sys
       catalogId: null,
       azimuth: null,
       pitch: null,
+      roofType: '',
     })
   }
 
@@ -229,10 +397,13 @@ export function parseDesign(raw: unknown): SystemDesign | null {
   if (typeof obj !== 'object' || obj === null) return null
   const base = emptyDesign()
   const src = obj as Partial<SystemDesign>
+  const energy = { ...base.energy, ...(src.energy ?? {}) }
+  if (!src.energy?.mode) energy.mode = inferEnergyMode(energy)
   return {
     ...base,
     ...src,
-    energy: { ...base.energy, ...(src.energy ?? {}) },
+    energy,
+    bank: { ...base.bank, ...(src.bank ?? {}) },
     earthing: { ...base.earthing, ...(src.earthing ?? {}) },
     layout: { nodes: { ...(src.layout?.nodes ?? {}) } },
     panels: src.panels ?? [],
@@ -290,38 +461,79 @@ export interface ResolvedEnergy {
  * the survey's monthly_kwh. A curve only shapes the hourly array; it never
  * invents a magnitude.
  */
+/** When a stored design predates `mode`, infer it from whichever total is set. */
+export function inferEnergyMode(
+  e: Pick<EnergyProfile, 'hourly' | 'dailyKwh' | 'weeklyKwh' | 'monthlyKwh' | 'annualKwh'>,
+): EnergyMode {
+  if ((e.hourly && e.hourly.some((v) => v > 0)) || (e.dailyKwh ?? 0) > 0) return 'daily'
+  if ((e.weeklyKwh ?? 0) > 0) return 'weekly'
+  if ((e.annualKwh ?? 0) > 0) return 'annual'
+  return 'monthly'
+}
+
+/**
+ * Collapse the energy profile into a single daily kWh + optional hourly shape.
+ * Only the ACTIVE mode's field is read — the tabs guarantee one granularity at a
+ * time. An empty field falls back to the survey's monthly_kwh. The hourly shape
+ * (entered or curve-derived) only applies in daily mode.
+ */
 export function resolveEnergy(
   e: EnergyProfile,
   record?: { monthly_kwh?: string | number | null } | null,
 ): ResolvedEnergy {
-  const hasHourly = !!e.hourly && e.hourly.some((v) => v > 0)
+  const fallback = record?.monthly_kwh != null && num(record.monthly_kwh) > 0
+    ? num(record.monthly_kwh) / DAYS_PER_MONTH
+    : null
   let dailyKwh: number | null = null
   let hourly: number[] | null = null
   let source: EnergySource = 'none'
 
-  if (hasHourly) {
-    hourly = e.hourly!.slice(0, 24)
-    dailyKwh = hourly.reduce((a, b) => a + (b || 0), 0)
-    source = 'hourly'
-  } else if (e.dailyKwh != null && e.dailyKwh > 0) {
-    dailyKwh = e.dailyKwh; source = 'daily'
-  } else if (e.weeklyKwh != null && e.weeklyKwh > 0) {
-    dailyKwh = e.weeklyKwh / 7; source = 'weekly'
-  } else if (e.monthlyKwh != null && e.monthlyKwh > 0) {
-    dailyKwh = e.monthlyKwh / DAYS_PER_MONTH; source = 'monthly'
-  } else if (e.annualKwh != null && e.annualKwh > 0) {
-    dailyKwh = e.annualKwh / 365; source = 'annual'
-  } else if (record?.monthly_kwh != null && num(record.monthly_kwh) > 0) {
-    dailyKwh = num(record.monthly_kwh) / DAYS_PER_MONTH; source = 'record'
-  }
-
-  // Derive an hourly shape from the chosen curve when one isn't hand-entered.
-  if (!hasHourly && dailyKwh != null && e.curvePreset && e.curvePreset !== 'custom') {
-    const curve = LOAD_CURVES[e.curvePreset]
-    if (curve) hourly = normalizeCurve(curve).map((f) => +(f * dailyKwh!).toFixed(3))
+  switch (e.mode) {
+    case 'daily': {
+      const hasHourly = !!e.hourly && e.hourly.some((v) => v > 0)
+      if (hasHourly) {
+        hourly = e.hourly!.slice(0, 24)
+        dailyKwh = hourly.reduce((a, b) => a + (b || 0), 0)
+        source = 'hourly'
+      } else if (e.dailyKwh != null && e.dailyKwh > 0) {
+        dailyKwh = e.dailyKwh; source = 'daily'
+      } else if (fallback != null) {
+        dailyKwh = fallback; source = 'record'
+      }
+      if (!hasHourly && dailyKwh != null && e.curvePreset && e.curvePreset !== 'custom') {
+        const curve = LOAD_CURVES[e.curvePreset]
+        if (curve) hourly = normalizeCurve(curve).map((f) => +(f * dailyKwh!).toFixed(3))
+      }
+      break
+    }
+    case 'weekly':
+      if (e.weeklyKwh != null && e.weeklyKwh > 0) { dailyKwh = e.weeklyKwh / 7; source = 'weekly' }
+      else if (fallback != null) { dailyKwh = fallback; source = 'record' }
+      break
+    case 'annual':
+      if (e.annualKwh != null && e.annualKwh > 0) { dailyKwh = e.annualKwh / 365; source = 'annual' }
+      else if (fallback != null) { dailyKwh = fallback; source = 'record' }
+      break
+    case 'monthly':
+    default:
+      if (e.monthlyKwh != null && e.monthlyKwh > 0) { dailyKwh = e.monthlyKwh / DAYS_PER_MONTH; source = 'monthly' }
+      else if (fallback != null) { dailyKwh = fallback; source = 'record' }
+      break
   }
 
   return { dailyKwh, hourly, source }
+}
+
+// ── Seasonal monthly spread (SA) ────────────────────────────────────────────────
+
+export const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// SA residential seasonal usage shape — winter-heavy — normalised to average 1.0.
+export const MONTHLY_USAGE_FACTORS = [0.82, 0.82, 0.88, 0.98, 1.12, 1.30, 1.34, 1.22, 1.02, 0.92, 0.82, 0.76]
+
+/** Spread a representative monthly figure across the year by the seasonal shape. */
+export function seasonalMonthly(avgMonthlyKwh: number): number[] {
+  return MONTHLY_USAGE_FACTORS.map((f) => Math.round(avgMonthlyKwh * f))
 }
 
 export const ENERGY_SOURCE_LABEL: Record<EnergySource, string> = {
@@ -449,6 +661,9 @@ export function computeBalance(
     if (batteryKwh < minKwh) {
       verdicts.push({ id: 'bat-min', level: 'info', label: `Battery ${batteryKwh.toFixed(1)}kWh below ${minKwh.toFixed(0)}kWh guide for ${inverterKw}kW` })
     }
+    const cr = batteryCRate(inverterKw, batteryKwh)
+    if (cr.level === 'block') verdicts.push({ id: 'bat-crate', level: 'block', label: `Battery ${cr.label}` })
+    else if (cr.level === 'warn') verdicts.push({ id: 'bat-crate', level: 'warn', label: `Battery C-rate ${cr.cRate?.toFixed(2)}C — above 0.5C` })
   }
 
   return {
@@ -463,6 +678,49 @@ export function computeBalance(
     coveragePct,
     verdicts,
   }
+}
+
+// ── Battery electrical (C-rate + DC cable) ──────────────────────────────────────
+// LV LiFePO4 nominal; HV stacks differ — see the battery-config reference doc.
+export const DEFAULT_BATTERY_VOLTAGE = 51.2
+
+// Conservative single-core copper DC ampacity (A) by mm² (free-air, ~75°C).
+export const DC_CABLE_AMPACITY: Record<number, number> = {
+  6: 50, 10: 70, 16: 100, 25: 125, 35: 160, 50: 200, 70: 255, 95: 315,
+}
+
+export type CRateLevel = 'ideal' | 'good' | 'warn' | 'block'
+
+export interface CRateResult {
+  cRate: number | null
+  level: CRateLevel | null
+  label: string
+}
+
+/**
+ * Continuous C-rate proxy = inverter kW ÷ battery kWh. Thresholds per Matthew:
+ * >1C damages the pack (block), 0.5–1C is hard on it (warn), ≤0.5C realistic
+ * (good), ≤0.2C ideal for longevity.
+ */
+export function batteryCRate(inverterKw: number, batteryKwh: number): CRateResult {
+  if (inverterKw <= 0 || batteryKwh <= 0) return { cRate: null, level: null, label: '' }
+  const c = inverterKw / batteryKwh
+  if (c > 1) return { cRate: c, level: 'block', label: `${c.toFixed(2)}C — over 1C: battery damaged at full inverter draw` }
+  if (c > 0.5) return { cRate: c, level: 'warn', label: `${c.toFixed(2)}C — above 0.5C, hard on the pack` }
+  if (c > 0.2) return { cRate: c, level: 'good', label: `${c.toFixed(2)}C — realistic (under 0.5C)` }
+  return { cRate: c, level: 'ideal', label: `${c.toFixed(2)}C — ideal for longevity (≤0.2C)` }
+}
+
+/** Approx battery DC current (A) at full inverter draw. */
+export function batteryDcCurrent(inverterKw: number, voltage = DEFAULT_BATTERY_VOLTAGE): number {
+  return voltage > 0 ? (inverterKw * 1000) / voltage : 0
+}
+
+/** How many parallel runs of a given cable size are needed at 125% of the current. */
+export function cableRunsNeeded(currentA: number, sizeMm2: number): number {
+  const amp = DC_CABLE_AMPACITY[sizeMm2] ?? 0
+  if (amp <= 0 || currentA <= 0) return 1
+  return Math.max(1, Math.ceil((currentA * 1.25) / amp))
 }
 
 // ── Diagram projection (design → React-Flow) ────────────────────────────────────
@@ -513,6 +771,11 @@ function cableData(circuitType: CableEdgeData['circuitType'], spec: string, leng
   }
 }
 
+/** AC cable whose conductor label reflects the phase (L/N/E vs L1/L2/L3/N/E). */
+function acCableData(spec: string, lengthM: number, phase: number): CableEdgeData {
+  return { ...cableData('ac', spec, lengthM), conductors: { l1: phase >= 3 } }
+}
+
 export interface FlowGraph { nodes: Node[]; edges: Edge[] }
 
 /** Build the diagram from the design. Positions come from saved layout when present. */
@@ -521,13 +784,17 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
   const edges: Edge[] = []
   const pos = (id: string, fallback: NodePosition): NodePosition => d.layout.nodes[id] ?? fallback
 
-  const is3Phase =
-    opts.gridSupply?.toLowerCase().includes('three') ||
-    opts.gridSupply?.toLowerCase().includes('3 phase') ||
-    designInverterKw(d) >= 10
+  // Phase comes from real equipment, never a kW heuristic. The grid follows the
+  // site supply; the inverter (and the AC it feeds) follows its own spec — so a
+  // single-phase 10kW inverter is shown single-phase, not forced to three.
+  const gridPhase: 1 | 3 =
+    opts.gridSupply?.toLowerCase().includes('three') || opts.gridSupply?.toLowerCase().includes('3 phase') ? 3 : 1
+  const inverterPhase: 1 | 3 = d.inverters[0]?.phases ?? gridPhase
 
   const groupCount = d.panels.length
   const useCombiner = groupCount > 1 || d.dcCombiners.length > 0
+  const e = d.earthing
+  const hasEarthMap = e.electrodes.length > 0 || e.bars.length > 0 || e.conductors.length > 0
 
   // Layout anchors (mirror the established SLD layout).
   const CX = 500
@@ -562,15 +829,17 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
   // DC combiner
   if (useCombiner && groupCount > 0) {
     const id = NODE.combiner
+    const explicit = d.dcCombiners[0]
     nodes.push({
       id,
       type: 'combiner',
       position: pos(id, { x: CX - 110, y: Y_COMB }),
       data: {
-        label: 'DC Combiner Box',
-        stringCount: groupCount,
-        hasSpd: true,
-        config: `${groupCount}-string`,
+        label: explicit?.label || 'DC Combiner Box',
+        stringCount: explicit ? (explicit.inputStringIds.length || groupCount) : groupCount,
+        hasSpd: explicit?.hasSpd ?? true,
+        fuseRating: explicit?.stringFuses ? explicit.fuseRating : undefined,
+        config: explicit ? combinerConfigLabel(explicit) : `${groupCount}-string`,
       },
     })
     d.panels.forEach((_, i) => {
@@ -601,7 +870,7 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
         label: totalQty > 1 ? `Inverter ×${totalQty}` : 'Inverter',
         model: inv0?.model ?? '',
         kw: invKw,
-        phases: is3Phase ? 3 : 1,
+        phases: inverterPhase,
         hasBattery: d.batteries.length > 0,
         outputCount: 1,
       },
@@ -644,11 +913,14 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       },
     })
     if (invKw > 0 || inv0) {
+      // Battery cable reflects the DC current: a 10kW inverter ≈ 195A needs 2× 25mm².
+      const batBase = cableData('battery', 'CU 25mm²', 3)
+      const batRuns = cableRunsNeeded(batteryDcCurrent(invKw), 25)
       edges.push({
         id: 'e-bat-inv', source: id, target: NODE.inverter,
         sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable',
-        data: cableData('battery', 'CU 25mm²', 3),
-        label: buildEdgeLabel(cableData('battery', 'CU 25mm²', 3)),
+        data: { ...batBase, runs: batRuns },
+        label: `${batRuns > 1 ? `${batRuns}× ` : ''}${buildEdgeLabel(batBase)}`,
       })
     }
   }
@@ -659,36 +931,67 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
     nodes.push({
       id: gridId, type: 'grid',
       position: pos(gridId, { x: GRID_X, y: Y_INV + 20 }),
-      data: { label: 'Grid Supply', utility: 'Eskom', voltage: is3Phase ? 400 : 230, phases: is3Phase ? 3 : 1, breakerA: 63 },
+      data: { label: 'Grid Supply', utility: 'Eskom', voltage: gridPhase === 3 ? 400 : 230, phases: gridPhase, breakerA: 63 },
     })
     edges.push({
       id: 'e-grid-inv', source: gridId, target: NODE.inverter,
       sourceHandle: 'ac-out', targetHandle: 'grid-in', type: 'cable',
-      data: cableData('ac', 'CU 6mm²', 5), label: buildEdgeLabel(cableData('ac', 'CU 6mm²', 5)),
+      data: acCableData('CU 6mm²', 5, gridPhase), label: buildEdgeLabel(acCableData('CU 6mm²', 5, gridPhase)),
     })
 
     const dbId = NODE.db
     nodes.push({
       id: dbId, type: 'dbBoard',
       position: pos(dbId, { x: DB_X, y: Y_INV }),
-      data: { label: 'Distribution Board', mainBreakerA: is3Phase ? 63 : 40, rccbA: 30, phases: is3Phase ? 3 : 1 },
+      data: { label: 'Distribution Board', mainBreakerA: inverterPhase === 3 ? 63 : 40, rccbA: 30, phases: inverterPhase },
     })
     edges.push({
       id: 'e-inv-db', source: NODE.inverter, target: dbId,
       sourceHandle: 'ac-out', targetHandle: 'ac-in', type: 'cable',
-      data: cableData('ac', 'CU 6mm²', 8), label: buildEdgeLabel(cableData('ac', 'CU 6mm²', 8)),
+      data: acCableData('CU 6mm²', 8, inverterPhase), label: buildEdgeLabel(acCableData('CU 6mm²', 8, inverterPhase)),
     })
 
-    const earthId = NODE.earth
-    nodes.push({
-      id: earthId, type: 'earthing',
-      position: pos(earthId, { x: DB_X, y: Y_INV + 260 }),
-      data: { label: 'Earthing System', spikeCount: d.earthing.spikeCount ?? 2, spec: d.earthing.spec },
+    // Default single earth node — only until a detailed earth map is drawn.
+    if (!hasEarthMap) {
+      const earthId = NODE.earth
+      nodes.push({
+        id: earthId, type: 'earthing',
+        position: pos(earthId, { x: DB_X, y: Y_INV + 260 }),
+        data: { label: 'Earthing System', spikeCount: d.earthing.spikeCount ?? 2, spec: d.earthing.spec },
+      })
+      edges.push({
+        id: 'e-db-earth', source: dbId, target: earthId,
+        sourceHandle: 'earth-out', targetHandle: 'earth-in', type: 'cable',
+        data: { ...cableData('earth', 'CU GY 10mm²', 5), circuitLayer: 'earth' }, label: 'CU GY 10mm² · E',
+      })
+    }
+  }
+
+  // ── Earth/bonding overlay (toggled by the Earth layer pill) ──────────────────
+  if (hasEarthMap) {
+    const earthY = Y_INV + 320
+    e.bars.forEach((b, i) => {
+      const id = `earthbar-${b.id}`
+      nodes.push({ id, type: 'earthing', position: pos(id, { x: GRID_X + i * 240, y: earthY }), data: { label: b.label, spec: 'Earth bar' } })
     })
-    edges.push({
-      id: 'e-db-earth', source: dbId, target: earthId,
-      sourceHandle: 'earth-out', targetHandle: 'earth-in', type: 'cable',
-      data: { ...cableData('earth', 'CU GY 10mm²', 5), circuitLayer: 'earth' }, label: 'CU GY 10mm² · E',
+    e.electrodes.forEach((el, i) => {
+      const id = `electrode-${el.id}`
+      nodes.push({ id, type: 'earthing', position: pos(id, { x: DB_X + i * 240, y: earthY }), data: { label: el.label, spikeCount: el.spikeCount, spec: e.spec } })
+    })
+    const resolveEarthId = (pointId: string): string => {
+      if (e.bars.some((b) => b.id === pointId)) return `earthbar-${pointId}`
+      if (e.electrodes.some((el) => el.id === pointId)) return `electrode-${pointId}`
+      return pointId
+    }
+    e.conductors.forEach((c) => {
+      const src = resolveEarthId(c.fromId)
+      const tgt = resolveEarthId(c.toId)
+      if (!nodes.some((n) => n.id === src) || !nodes.some((n) => n.id === tgt)) return
+      edges.push({
+        id: `earth-${c.id}`, source: src, target: tgt, type: 'cable',
+        data: { ...cableData('earth', `CU ${c.sizeMm2}mm²`, 5), circuitLayer: 'earth' },
+        label: `CU ${c.sizeMm2}mm² · ${c.kind === 'bonding' ? 'BOND' : 'E'}`,
+      })
     })
   }
 

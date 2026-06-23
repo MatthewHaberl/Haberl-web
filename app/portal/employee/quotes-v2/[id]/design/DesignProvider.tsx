@@ -8,14 +8,18 @@ import {
   emptyDesign,
   nodeIdToRef,
   mkId,
+  defaultCombiner,
+  enclosureCode,
   type SystemDesign,
   type EnergyProfile,
   type PanelGroup,
   type InverterUnit,
   type BatteryUnit,
   type EarthingConfig,
+  type DcCombiner,
   type NodePosition,
 } from '@/lib/solar/system-design'
+import type { BatteryBank } from '@/lib/solar/system-design'
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +38,10 @@ export type DesignAction =
   | { type: 'updateBattery'; patch: Partial<BatteryUnit> }
   | { type: 'removeBattery' }
   | { type: 'setEarthing'; patch: Partial<EarthingConfig> }
+  | { type: 'addCombiner' }
+  | { type: 'updateCombiner'; id: string; patch: Partial<DcCombiner> }
+  | { type: 'removeCombiner'; id: string }
+  | { type: 'setBank'; patch: Partial<BatteryBank> }
   // Diagram-origin — both forms and the canvas dispatch the same reducer.
   | { type: 'moveNode'; id: string; position: NodePosition }
   | { type: 'applyNodePatch'; id: string; patch: Record<string, unknown> }
@@ -63,6 +71,7 @@ function newPanelGroup(group?: Partial<PanelGroup>): PanelGroup {
     catalogId: group?.catalogId ?? null,
     azimuth: group?.azimuth ?? null,
     pitch: group?.pitch ?? null,
+    roofType: group?.roofType ?? '',
   }
 }
 
@@ -193,6 +202,28 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
 
     case 'setEarthing':
       return { ...d, earthing: { ...d.earthing, ...action.patch } }
+
+    case 'addCombiner':
+      return { ...d, dcCombiners: [...d.dcCombiners, defaultCombiner(d.panels.map((p) => p.id))] }
+
+    case 'updateCombiner':
+      return {
+        ...d,
+        dcCombiners: d.dcCombiners.map((c) => {
+          if (c.id !== action.id) return c
+          const next = { ...c, ...action.patch }
+          // Keep the product code in step with the enclosure unless the user locked it.
+          const enclosureTouched = 'material' in action.patch || 'mount' in action.patch || 'ways' in action.patch || 'rows' in action.patch
+          if (!next.productCodeLocked && enclosureTouched) next.productCode = enclosureCode(next)
+          return next
+        }),
+      }
+
+    case 'removeCombiner':
+      return { ...d, dcCombiners: d.dcCombiners.filter((c) => c.id !== action.id) }
+
+    case 'setBank':
+      return { ...d, bank: { ...d.bank, ...action.patch } }
 
     case 'moveNode':
       return { ...d, layout: { nodes: { ...d.layout.nodes, [action.id]: action.position } } }

@@ -2,7 +2,7 @@
 
 import { Plus, Trash2, Sun } from 'lucide-react'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY } from '@/lib/solar/quote-calculator'
-import { panelGroupKwp } from '@/lib/solar/system-design'
+import { panelGroupKwp, DIRECTIONS, ROOF_TYPES } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
 import { SectionCard, EmptyHint } from '../section-ui'
@@ -104,31 +104,49 @@ export function PanelsSection() {
                       className="h-9 rounded-md border border-border bg-background px-2 text-sm"
                     />
                   </label>
+
+                  <label className="flex flex-col gap-1 md:col-span-2">
+                    <span className="text-xs font-medium text-muted-foreground">Direction</span>
+                    <select
+                      value={g.azimuth ?? ''}
+                      onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { azimuth: ev.target.value === '' ? null : Number(ev.target.value) } })}
+                      className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                    >
+                      <option value="">— not set —</option>
+                      {DIRECTIONS.map((d) => (
+                        <option key={d.label} value={d.azimuth}>{d.label}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span><strong className="text-foreground">{kwp.toFixed(2)}</strong> kWp</span>
                   <span>≈ <strong className="text-foreground">{dailyKwh.toFixed(1)}</strong> kWh/day</span>
                   <details className="ml-auto">
-                    <summary className="cursor-pointer hover:text-foreground">Roof (optional)</summary>
+                    <summary className="cursor-pointer hover:text-foreground">More (optional)</summary>
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <label className="flex flex-col gap-0.5">
-                        <span className="text-[11px]">Azimuth°</span>
-                        <input
-                          type="number" placeholder="e.g. 0 = N"
-                          value={g.azimuth ?? ''}
-                          onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { azimuth: ev.target.value === '' ? null : Number(ev.target.value) } })}
-                          className="h-8 w-24 rounded border border-border bg-background px-1.5 text-xs"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-0.5">
-                        <span className="text-[11px]">Pitch°</span>
+                        <span className="text-[11px]">Tilt°</span>
                         <input
                           type="number" placeholder="e.g. 15"
                           value={g.pitch ?? ''}
                           onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { pitch: ev.target.value === '' ? null : Number(ev.target.value) } })}
-                          className="h-8 w-24 rounded border border-border bg-background px-1.5 text-xs"
+                          className="h-8 w-28 rounded border border-border bg-background px-1.5 text-xs"
                         />
+                      </label>
+                      <label className="flex flex-col gap-0.5">
+                        <span className="text-[11px]">Roof type</span>
+                        <select
+                          value={g.roofType}
+                          onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { roofType: ev.target.value } })}
+                          className="h-8 w-44 rounded border border-border bg-background px-1.5 text-xs"
+                        >
+                          <option value="">— not set —</option>
+                          {ROOF_TYPES.map((rt) => (
+                            <option key={rt} value={rt}>{rt}</option>
+                          ))}
+                        </select>
                       </label>
                     </div>
                   </details>

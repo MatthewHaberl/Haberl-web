@@ -321,7 +321,7 @@ export function DBBoardNode({ data, selected }: NodeProps) {
       <Handle type="target" id="ac-in"     position={Position.Left}   style={H(CLR.ac)}                      title="AC input from Inverter" />
       {/* Earth goes DOWN to earthing system */}
       <Handle type="source" id="earth-out" position={Position.Bottom} style={H(CLR.earth, { left: '70%' })} title="Earth → Earthing system" />
-      {d.mainBreakerA > 0 && <Row label="Main CB" value={`${d.mainBreakerA}A DP`} />}
+      {d.mainBreakerA > 0 && <Row label="Main CB" value={`${d.mainBreakerA}A ${d.phases >= 3 ? 'TP' : 'DP'}`} />}
       {d.rccbA > 0 && <Row label="RCCB" value={`${d.rccbA} mA`} />}
       <Row label="Phase" value={`${d.phases}Ø`} />
     </NodeCard>
