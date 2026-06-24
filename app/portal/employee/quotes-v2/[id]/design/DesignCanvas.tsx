@@ -47,22 +47,24 @@ const NODE_COLORS: Record<string, string> = {
   battery: '#16a34a', grid: '#7c3aed', dbBoard: '#2563eb', earthing: '#65a30d',
 }
 
-// Toggleable layers — hiding one removes BOTH its components and its cables.
+// Each layer hides its components and its cables independently — so you can drop
+// the PV/DC cabling to read the earthing while the panels & combiner stay put.
+type LayerVis = { components: boolean; cables: boolean }
 const CIRCUIT_LAYERS: Array<{ key: string; label: string; color: string }> = [
-  { key: 'pv', label: 'PV', color: '#f59e0b' },
-  { key: 'dc', label: 'DC', color: '#f97316' },
+  { key: 'pv', label: 'PV / DC', color: '#f97316' },
   { key: 'battery', label: 'Battery', color: '#16a34a' },
   { key: 'ac', label: 'AC', color: '#2563eb' },
   { key: 'earth', label: 'Earth', color: '#65a30d' },
   { key: 'data', label: 'Data', color: '#a855f7' },
 ]
-const ALL_LAYERS_ON: Record<string, boolean> = { pv: true, dc: true, battery: true, ac: true, earth: true, data: true }
+const ALL_LAYERS_ON: Record<string, LayerVis> = Object.fromEntries(
+  CIRCUIT_LAYERS.map((l) => [l.key, { components: true, cables: true }]),
+)
 
-// Which layer a node belongs to (drives node visibility when a layer is hidden).
+// Which layer a node belongs to (drives component visibility per layer).
 function nodeLayer(node: Node): string {
   switch (node.type) {
-    case 'solarArray': return 'pv'
-    case 'combiner': case 'dcIsolator': return 'dc'
+    case 'solarArray': case 'combiner': case 'dcIsolator': return 'pv'
     case 'battery': case 'busblock': return 'battery'
     case 'inverter': case 'grid': case 'dbBoard': case 'acIsolator':
     case 'meter': case 'changeover': case 'spd': case 'evCharger': case 'generator': return 'ac'
@@ -106,7 +108,7 @@ function edgeLayer(edge: Edge): string {
   const ct = (edge.data as { circuitType?: string } | undefined)?.circuitType
   switch (ct) {
     case 'communication': return 'data'
-    case 'dc': return 'dc'
+    case 'dc': return 'pv'
     case 'ac': return 'ac'
     case 'battery': return 'battery'
     case 'earth': return 'earth'
@@ -431,23 +433,35 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selected, setSelected] = useState<{ kind: 'node' | 'edge'; id: string } | null>(null)
-  const [layers, setLayers] = useState<Record<string, boolean>>(ALL_LAYERS_ON)
+  const [layers, setLayers] = useState<Record<string, LayerVis>>(ALL_LAYERS_ON)
   const [snap, setSnap] = useState(false)
   const [allowOverlap, setAllowOverlap] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const nodesRef = useRef<Node[]>([])
   nodesRef.current = nodes
 
-  // Hiding a layer drops its components first, then any cable left dangling.
+  // Hiding a layer's components drops its nodes; hiding its cables drops the edges.
+  // A cable also disappears once either end is hidden, so nothing dangles.
   const shownNodes = useMemo(
-    () => nodes.filter((n) => layers[nodeLayer(n)] ?? true),
+    () => nodes.filter((n) => layers[nodeLayer(n)]?.components ?? true),
     [nodes, layers],
   )
   const shownIds = useMemo(() => new Set(shownNodes.map((n) => n.id)), [shownNodes])
   const shownEdges = useMemo(
-    () => edges.filter((e) => (layers[edgeLayer(e)] ?? true) && shownIds.has(e.source) && shownIds.has(e.target)),
+    () => edges.filter((e) =>
+      (layers[edgeLayer(e)]?.cables ?? true) && shownIds.has(e.source) && shownIds.has(e.target),
+    ),
     [edges, layers, shownIds],
   )
+
+  // Only offer a sub-toggle when that layer actually has components / cables present.
+  const layerPresence = useMemo(() => {
+    const comp: Record<string, boolean> = {}
+    const cab: Record<string, boolean> = {}
+    for (const n of nodes) { const k = nodeLayer(n); if (k !== 'always') comp[k] = true }
+    for (const e of edges) { const k = edgeLayer(e); if (k !== 'always') cab[k] = true }
+    return { comp, cab }
+  }, [nodes, edges])
 
   const sig = useMemo(() => structureSig(design, gridSupply), [design, gridSupply])
 
@@ -485,26 +499,61 @@ function CanvasInner({ height = 560 }: { height?: number }) {
 
   const flow = (
     <div className="flex-1 relative min-w-0">
-      <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2 py-1 backdrop-blur">
-        <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+      <div className="absolute top-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2 py-1 backdrop-blur">
+        <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         {CIRCUIT_LAYERS.map((l) => {
-          const on = layers[l.key]
+          const vis = layers[l.key] ?? { components: true, cables: true }
+          const hasC = layerPresence.comp[l.key]
+          const hasE = layerPresence.cab[l.key]
+          if (!hasC && !hasE) return null
+          const anyOn = (hasC && vis.components) || (hasE && vis.cables)
+          const setSub = (sub: 'components' | 'cables') =>
+            setLayers((s) => ({ ...s, [l.key]: { ...vis, [sub]: !vis[sub] } }))
+          const toggleAll = () => {
+            const next = !anyOn
+            setLayers((s) => ({ ...s, [l.key]: {
+              components: hasC ? next : vis.components,
+              cables: hasE ? next : vis.cables,
+            } }))
+          }
           return (
-            <button
+            <div
               key={l.key}
-              type="button"
-              onClick={() => setLayers((s) => ({ ...s, [l.key]: !s[l.key] }))}
-              title={`${on ? 'Hide' : 'Show'} ${l.label}`}
-              className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
-              style={{
-                background: on ? l.color + '22' : 'transparent',
-                color: on ? l.color : '#9ca3af',
-                border: `1px solid ${on ? l.color : '#e5e7eb'}`,
-              }}
+              className="flex items-center gap-1 rounded-md border px-1.5 py-0.5"
+              style={{ borderColor: anyOn ? l.color : '#e5e7eb', background: anyOn ? l.color + '18' : 'transparent' }}
             >
-              <span className="w-2 h-2 rounded-sm" style={{ background: on ? l.color : '#d1d5db' }} />
-              {l.label}
-            </button>
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="text-[11px] font-medium leading-none"
+                style={{ color: anyOn ? l.color : '#9ca3af' }}
+                title={`${anyOn ? 'Hide' : 'Show'} all ${l.label}`}
+              >
+                {l.label}
+              </button>
+              {hasC && (
+                <button
+                  type="button"
+                  onClick={() => setSub('components')}
+                  className="flex items-center leading-none"
+                  style={{ color: vis.components ? l.color : '#cbd5e1' }}
+                  title={`${vis.components ? 'Hide' : 'Show'} ${l.label} components`}
+                >
+                  <Boxes className="h-3 w-3" />
+                </button>
+              )}
+              {hasE && (
+                <button
+                  type="button"
+                  onClick={() => setSub('cables')}
+                  className="flex items-center leading-none"
+                  style={{ color: vis.cables ? l.color : '#cbd5e1' }}
+                  title={`${vis.cables ? 'Hide' : 'Show'} ${l.label} cables`}
+                >
+                  <Cable className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           )
         })}
       </div>

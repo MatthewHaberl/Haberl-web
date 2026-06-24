@@ -64,6 +64,13 @@ function niceCeil(x: number): number {
   return step * pow
 }
 
+/** Compact kW label for the tiny per-bar readout: 1, 0.5 → ".5", 2.45 → "2.5". */
+function fmtKw(v: number): string {
+  if (v >= 10) return Math.round(v).toString()
+  const s = (Math.round(v * 10) / 10).toString() // one decimal at most
+  return s.startsWith('0.') ? s.slice(1) : s      // ".5" reads cleaner than "0.5"
+}
+
 /** Draggable 24-hour bar chart. Drag a bar up/down to set that hour's kW. */
 function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: number, value: number) => void }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -105,7 +112,16 @@ function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: num
         {values.map((v, h) => {
           const frac = Math.min(1, v / maxScale)
           return (
-            <div key={h} className="flex h-full flex-1 items-end" title={`${String(h).padStart(2, '0')}:00 — ${v.toFixed(2)} kW`}>
+            <div
+              key={h}
+              className="flex h-full flex-1 flex-col items-center justify-end"
+              title={`${String(h).padStart(2, '0')}:00 — ${v.toFixed(2)} kW`}
+            >
+              {v > 0 && (
+                <span className="pointer-events-none mb-0.5 font-mono text-[7px] leading-none tabular-nums text-muted-foreground">
+                  {fmtKw(v)}
+                </span>
+              )}
               <div
                 className="w-full rounded-t bg-primary/70 transition-[height] hover:bg-primary"
                 style={{ height: `${frac * 100}%`, minHeight: v > 0 ? 2 : 0 }}
@@ -251,20 +267,20 @@ export function EnergySection() {
           <HourlyBarChart values={gridValues} onSet={setCell} />
 
           {/* Numeric grid: 00:00–11:00 left, 12:00–23:00 right */}
-          <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-1">
+          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-1">
             {[0, 1].map((col) => (
               <div key={col} className="flex flex-col gap-1">
                 {gridValues.slice(col * 12, col * 12 + 12).map((v: number, idx: number) => {
                   const h = col * 12 + idx
                   return (
-                    <label key={h} className="flex items-center gap-2">
-                      <span className="w-12 shrink-0 font-mono text-[10px] text-muted-foreground">{String(h).padStart(2, '0')}:00</span>
+                    <label key={h} className="flex items-center gap-1.5">
+                      <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground">{String(h).padStart(2, '0')}:00</span>
                       <input
                         type="number" min={0} step="any"
                         value={v ? +v.toFixed(2) : ''}
                         placeholder="0"
                         onChange={(ev) => setCell(h, ev.target.value === '' ? 0 : Number(ev.target.value))}
-                        className="h-7 w-full rounded border border-border bg-background px-1.5 text-xs text-right focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                        className="h-7 w-full rounded border border-border bg-background px-1.5 text-xs text-right tabular-nums focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                       />
                       <span className="shrink-0 text-[10px] text-muted-foreground">kW</span>
                     </label>

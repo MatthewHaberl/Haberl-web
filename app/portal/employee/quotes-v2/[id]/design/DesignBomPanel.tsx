@@ -113,14 +113,20 @@ export function DesignBomPanel() {
                       <span className="font-medium text-foreground">{rands(s.sellR)}</span>
                     </span>
                   </div>
-                  <table className="w-full text-xs">
+                  <table className="w-full table-fixed text-xs">
+                    <colgroup>
+                      <col className="w-[4.5rem]" />
+                      <col />
+                      <col className="w-8" />
+                      <col className="w-[5.25rem]" />
+                    </colgroup>
                     <tbody>
                       {s.lines.map((l, i) => (
                         <tr key={`${l.catalogId}-${i}`} className={l.priced ? 'text-muted-foreground' : 'text-amber-700'}>
-                          <td className="py-0.5 pr-2 font-mono text-[10px]">{l.sku}</td>
-                          <td className="py-0.5 pr-2">{l.description}{l.approx && <span className="text-amber-600" title="estimated quantity"> ~</span>}</td>
-                          <td className="py-0.5 pr-2 text-right whitespace-nowrap">{l.qty} ×</td>
-                          <td className="py-0.5 text-right whitespace-nowrap">
+                          <td className="truncate py-0.5 pr-2 align-top font-mono text-[10px]" title={l.sku}>{l.sku}</td>
+                          <td className="py-0.5 pr-2 align-top">{l.description}{l.approx && <span className="text-amber-600" title="estimated quantity"> ~</span>}</td>
+                          <td className="py-0.5 pr-1 text-right align-top tabular-nums whitespace-nowrap text-muted-foreground">{l.qty}×</td>
+                          <td className="py-0.5 text-right align-top tabular-nums whitespace-nowrap">
                             {l.priced ? (
                               <span className="text-foreground">{rands(l.lineSellR)}</span>
                             ) : (
