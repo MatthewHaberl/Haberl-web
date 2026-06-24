@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo } from 'react'
-import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,19 +16,7 @@ import { BalanceHeader } from './design/BalanceHeader'
 import { BuildRail } from './design/BuildRail'
 import { ActiveSection } from './design/sections/ActiveSection'
 import { DesignBomPanel } from './design/DesignBomPanel'
-
-// ReactFlow needs the DOM — load the canvas client-only (matches the old SLD diagram).
-const DesignCanvas = dynamic(
-  () => import('./design/DesignCanvas').then((m) => m.DesignCanvas),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center h-64 rounded-lg border border-border bg-muted text-sm text-muted-foreground">
-        Loading diagram…
-      </div>
-    ),
-  },
-)
+import { DesignCanvasPanel } from './design/DesignCanvasPanel'
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -104,7 +91,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
           <BalanceHeader />
           <BuildRail />
           <ActiveSection />
-          <DesignCanvas height={580} />
+          <DesignCanvasPanel />
           <DesignBomPanel />
         </DesignProvider>
       ) : (

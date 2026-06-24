@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   resolveEnergy, ENERGY_SOURCE_LABEL, seasonalMonthly, MONTH_LABELS,
   type CurvePreset, type EnergyMode,
@@ -51,6 +51,72 @@ function SeasonalGraph({ avgMonthly }: { avgMonthly: number | null }) {
         Estimated annual <strong className="text-foreground">{annual.toLocaleString('en-ZA')}</strong> kWh ·
         winter-heavy SA pattern (illustrative)
       </p>
+    </div>
+  )
+}
+
+/** Round a peak value up to a clean axis maximum (0.5, 1, 2, 5, 10…). */
+function niceCeil(x: number): number {
+  if (x <= 0) return 0.5
+  const pow = Math.pow(10, Math.floor(Math.log10(x)))
+  const n = x / pow
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10
+  return step * pow
+}
+
+/** Draggable 24-hour bar chart. Drag a bar up/down to set that hour's kW. */
+function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: number, value: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const maxScale = useMemo(() => niceCeil(Math.max(...values, 0.5)), [values])
+
+  const apply = useCallback((clientX: number, clientY: number) => {
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const frac = Math.min(1, Math.max(0, (r.bottom - clientY) / r.height))
+    const hour = Math.min(23, Math.max(0, Math.floor(((clientX - r.left) / r.width) * 24)))
+    onSet(hour, +(frac * maxScale).toFixed(2))
+  }, [maxScale, onSet])
+
+  useEffect(() => {
+    if (!dragging) return
+    const move = (ev: PointerEvent) => apply(ev.clientX, ev.clientY)
+    const up = () => setDragging(false)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+  }, [dragging, apply])
+
+  return (
+    <div className="select-none">
+      <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
+        <span className="font-mono">{maxScale.toFixed(maxScale < 1 ? 2 : 1)} kW</span>
+        <span>Drag the bars to shape the day</span>
+      </div>
+      <div
+        ref={ref}
+        onPointerDown={(ev) => { ev.preventDefault(); setDragging(true); apply(ev.clientX, ev.clientY) }}
+        className="relative flex touch-none items-end gap-px rounded-md border border-border bg-muted/30 px-1 py-1 cursor-ns-resize"
+        style={{ height: 150 }}
+      >
+        {/* midline guide */}
+        <div className="pointer-events-none absolute inset-x-1 top-1/2 border-t border-dashed border-border/70" />
+        {values.map((v, h) => {
+          const frac = Math.min(1, v / maxScale)
+          return (
+            <div key={h} className="flex h-full flex-1 items-end" title={`${String(h).padStart(2, '0')}:00 — ${v.toFixed(2)} kW`}>
+              <div
+                className="w-full rounded-t bg-primary/70 transition-[height] hover:bg-primary"
+                style={{ height: `${frac * 100}%`, minHeight: v > 0 ? 2 : 0 }}
+              />
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-0.5 flex justify-between font-mono text-[9px] text-muted-foreground">
+        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span>
+      </div>
     </div>
   )
 }
@@ -181,18 +247,30 @@ export function EnergySection() {
             )}
           </div>
 
-          <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
-            {gridValues.map((v: number, h: number) => (
-              <label key={h} className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-mono text-muted-foreground">{String(h).padStart(2, '0')}:00</span>
-                <input
-                  type="number" min={0} step="any"
-                  value={v ? +v.toFixed(2) : ''}
-                  placeholder="0"
-                  onChange={(ev) => setCell(h, ev.target.value === '' ? 0 : Number(ev.target.value))}
-                  className="h-8 w-full rounded border border-border bg-background px-1.5 text-xs text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                />
-              </label>
+          {/* Drag-to-edit bar chart — values stay bound to the inputs below */}
+          <HourlyBarChart values={gridValues} onSet={setCell} />
+
+          {/* Numeric grid: 00:00–11:00 left, 12:00–23:00 right */}
+          <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-1">
+            {[0, 1].map((col) => (
+              <div key={col} className="flex flex-col gap-1">
+                {gridValues.slice(col * 12, col * 12 + 12).map((v: number, idx: number) => {
+                  const h = col * 12 + idx
+                  return (
+                    <label key={h} className="flex items-center gap-2">
+                      <span className="w-12 shrink-0 font-mono text-[10px] text-muted-foreground">{String(h).padStart(2, '0')}:00</span>
+                      <input
+                        type="number" min={0} step="any"
+                        value={v ? +v.toFixed(2) : ''}
+                        placeholder="0"
+                        onChange={(ev) => setCell(h, ev.target.value === '' ? 0 : Number(ev.target.value))}
+                        className="h-7 w-full rounded border border-border bg-background px-1.5 text-xs text-right focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                      />
+                      <span className="shrink-0 text-[10px] text-muted-foreground">kW</span>
+                    </label>
+                  )
+                })}
+              </div>
             ))}
           </div>
         </SectionCard>
