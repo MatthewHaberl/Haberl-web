@@ -16,6 +16,7 @@ import { DesignProvider } from './design/DesignProvider'
 import { BalanceHeader } from './design/BalanceHeader'
 import { BuildRail } from './design/BuildRail'
 import { ActiveSection } from './design/sections/ActiveSection'
+import { DesignBomPanel } from './design/DesignBomPanel'
 
 // ReactFlow needs the DOM — load the canvas client-only (matches the old SLD diagram).
 const DesignCanvas = dynamic(
@@ -104,6 +105,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
           <BuildRail />
           <ActiveSection />
           <DesignCanvas height={580} />
+          <DesignBomPanel />
         </DesignProvider>
       ) : (
         <div className="rounded-xl border border-border bg-card p-4">

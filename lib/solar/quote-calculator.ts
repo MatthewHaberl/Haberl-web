@@ -246,7 +246,7 @@ export interface SizingSnapshot {
 
 export type EquipmentCatalogCategory =
   | 'inverter' | 'battery' | 'panel' | 'connector' | 'cable' | 'isolator' | 'mounting'
-  | 'enclosure' | 'breaker' | 'fuse' | 'fuseholder' | 'spd' | 'disconnect' | 'other'
+  | 'enclosure' | 'breaker' | 'fuse' | 'fuseholder' | 'spd' | 'disconnect' | 'rccb' | 'other'
 export type EquipmentCatalogPhase = 'single' | 'three' | 'any'
 export type QuoteTier = 'premium' | 'recommended' | 'budget'
 

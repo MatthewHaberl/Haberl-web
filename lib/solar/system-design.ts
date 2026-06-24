@@ -19,6 +19,7 @@ import {
   SYSTEM_EFFICIENCY,
   MAX_RECOMMENDED_DC_AC_RATIO,
   MIN_BATTERY_KWH_PER_INVERTER_KW,
+  type EquipmentCatalogCategory,
 } from './quote-calculator'
 
 export const DESIGN_VERSION = 1
@@ -270,10 +271,32 @@ export function defaultCombiner(panelIds: string[]): DcCombiner {
   return c
 }
 
+/** AC distribution board — reuses the Chint DB enclosures + AC protection products. */
 export interface AcCombiner {
   id: string
   label: string
-  mainBreakerA: number
+  enclosureCatalogId: string | null
+  material: EnclosureMaterial
+  mount: EnclosureMount
+  ways: number
+  rows: number
+  ipRating: string
+  productCode: string
+  productCodeLocked: boolean
+  mainBreakerId: string | null
+  rccbId: string | null
+  spdId: string | null
+}
+
+export function defaultAcCombiner(): AcCombiner {
+  const c: AcCombiner = {
+    id: mkId('db'), label: 'Distribution Board',
+    enclosureCatalogId: null, material: 'plastic', mount: 'surface',
+    ways: 12, rows: 1, ipRating: 'IP4X', productCode: '', productCodeLocked: false,
+    mainBreakerId: null, rccbId: null, spdId: null,
+  }
+  c.productCode = enclosureCode(c)
+  return c
 }
 
 export type EarthKind = 'earthing' | 'bonding'
@@ -327,7 +350,24 @@ export interface ExtraComponent {
   id: string
   type: string
   label: string
+  productId: string | null
   data: Record<string, unknown>
+}
+
+// Palette of standalone extras (rendered on the diagram via SimpleBlock node types).
+export const EXTRA_TYPES: Array<{ value: string; label: string; category?: EquipmentCatalogCategory }> = [
+  { value: 'dcIsolator', label: 'DC isolator', category: 'isolator' },
+  { value: 'acIsolator', label: 'AC isolator', category: 'isolator' },
+  { value: 'spd', label: 'SPD', category: 'spd' },
+  { value: 'changeover', label: 'Changeover switch' },
+  { value: 'meter', label: 'Energy meter' },
+  { value: 'evCharger', label: 'EV charger' },
+  { value: 'generator', label: 'Generator' },
+  { value: 'custom', label: 'Custom block' },
+]
+
+export function defaultExtra(type: string, label: string): ExtraComponent {
+  return { id: mkId('extra'), type, label, productId: null, data: {} }
 }
 
 export interface NodePosition {
@@ -490,7 +530,7 @@ export function parseDesign(raw: unknown): SystemDesign | null {
     inverters: src.inverters ?? [],
     batteries: src.batteries ?? [],
     acCombiners: src.acCombiners ?? [],
-    extras: src.extras ?? [],
+    extras: (src.extras ?? []).map((x) => ({ ...x, productId: x.productId ?? null, data: x.data ?? {} })),
     version: DESIGN_VERSION,
   }
 }
@@ -1102,6 +1142,16 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       })
     })
   }
+
+  // ── Extras (standalone palette components — user-positioned, not auto-wired) ──
+  d.extras.forEach((x, i) => {
+    nodes.push({
+      id: x.id,
+      type: x.type,
+      position: pos(x.id, { x: GRID_X - 250, y: 40 + i * 130 }),
+      data: { label: x.label },
+    })
+  })
 
   return { nodes, edges }
 }

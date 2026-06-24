@@ -19,7 +19,8 @@ import {
   type DcCombiner,
   type NodePosition,
 } from '@/lib/solar/system-design'
-import type { BatteryBank } from '@/lib/solar/system-design'
+import type { BatteryBank, AcCombiner, ExtraComponent } from '@/lib/solar/system-design'
+import { defaultAcCombiner, defaultExtra } from '@/lib/solar/system-design'
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,12 @@ export type DesignAction =
   | { type: 'updateCombiner'; id: string; patch: Partial<DcCombiner> }
   | { type: 'removeCombiner'; id: string }
   | { type: 'setBank'; patch: Partial<BatteryBank> }
+  | { type: 'addAcCombiner' }
+  | { type: 'updateAcCombiner'; id: string; patch: Partial<AcCombiner> }
+  | { type: 'removeAcCombiner'; id: string }
+  | { type: 'addExtra'; extraType: string; label: string }
+  | { type: 'updateExtra'; id: string; patch: Partial<ExtraComponent> }
+  | { type: 'removeExtra'; id: string }
   // Diagram-origin — both forms and the canvas dispatch the same reducer.
   | { type: 'moveNode'; id: string; position: NodePosition }
   | { type: 'applyNodePatch'; id: string; patch: Record<string, unknown> }
@@ -224,6 +231,33 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
 
     case 'setBank':
       return { ...d, bank: { ...d.bank, ...action.patch } }
+
+    case 'addAcCombiner':
+      return { ...d, acCombiners: [...d.acCombiners, defaultAcCombiner()] }
+
+    case 'updateAcCombiner':
+      return {
+        ...d,
+        acCombiners: d.acCombiners.map((c) => {
+          if (c.id !== action.id) return c
+          const next = { ...c, ...action.patch }
+          const enclosureTouched = 'material' in action.patch || 'mount' in action.patch || 'ways' in action.patch || 'rows' in action.patch
+          if (!next.productCodeLocked && enclosureTouched) next.productCode = enclosureCode(next)
+          return next
+        }),
+      }
+
+    case 'removeAcCombiner':
+      return { ...d, acCombiners: d.acCombiners.filter((c) => c.id !== action.id) }
+
+    case 'addExtra':
+      return { ...d, extras: [...d.extras, defaultExtra(action.extraType, action.label)] }
+
+    case 'updateExtra':
+      return { ...d, extras: d.extras.map((x) => x.id === action.id ? { ...x, ...action.patch } : x) }
+
+    case 'removeExtra':
+      return { ...d, extras: d.extras.filter((x) => x.id !== action.id) }
 
     case 'moveNode':
       return { ...d, layout: { nodes: { ...d.layout.nodes, [action.id]: action.position } } }
