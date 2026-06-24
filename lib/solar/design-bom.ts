@@ -121,12 +121,18 @@ export function designToBom(
     if (bank.mainDisconnect) add('Batteries', bank.mainDisconnectId, 1, { label: 'Main DC disconnect' })
   }
 
-  // AC board(s)
+  // AC board(s) — enclosure + every device on the inside, in wiring order.
   for (const c of design.acCombiners) {
     add('AC board', c.enclosureCatalogId, 1, { label: 'AC board enclosure' })
-    add('AC board', c.mainBreakerId, 1, { label: 'AC main breaker' })
-    add('AC board', c.rccbId, 1, { label: 'RCCB / earth leakage' })
-    add('AC board', c.spdId, 1, { label: 'AC SPD' })
+    const components = c.components ?? []
+    if (components.length > 0) {
+      for (const comp of components) add('AC board', comp.productId, Math.max(1, comp.qty || 1), { label: comp.label })
+    } else {
+      // Legacy boards saved before the component list (defensive — parseDesign normalizes).
+      add('AC board', c.mainBreakerId, 1, { label: 'AC main breaker' })
+      add('AC board', c.rccbId, 1, { label: 'RCCB / earth leakage' })
+      add('AC board', c.spdId, 1, { label: 'AC SPD' })
+    }
   }
 
   // Extras

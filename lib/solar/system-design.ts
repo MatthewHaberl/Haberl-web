@@ -271,6 +271,73 @@ export function defaultCombiner(panelIds: string[]): DcCombiner {
   return c
 }
 
+// ── DB internals ─────────────────────────────────────────────────────────────
+// The "inside" of an AC board is a list of devices wired from upstream source(s),
+// modelling the board as a small single-line diagram. Each device records what it
+// is fed from (the incoming supply, or another device on the board); "feeds to" is
+// derived from those links so the two can never drift apart.
+
+export type DbComponentKind =
+  | 'mainSwitch' | 'breaker' | 'rcbo' | 'rccb' | 'spd' | 'changeover'
+  | 'isolator' | 'contactor' | 'timer' | 'meter' | 'indicator' | 'busbar' | 'custom'
+
+export interface DbComponent {
+  id: string
+  kind: DbComponentKind
+  /** Editable display name, e.g. "Main breaker", "Geyser", "Changeover". */
+  label: string
+  /** Catalog product id (null = spec'd but no product picked → goes to quote). */
+  productId: string | null
+  qty: number
+  /** Upstream source ids feeding this device — other component ids, or the SUPPLY
+   *  token (incoming feed / previous DB). Changeovers carry two sources. */
+  fedFrom: string[]
+}
+
+/** Virtual upstream node: the board's incoming feed (grid / previous DB / inverter). */
+export const DB_SUPPLY_ID = 'supply'
+export const DB_SUPPLY_LABEL = 'Incoming feed / previous DB'
+
+/** Palette of devices that go inside a DB. `inputs` = how many sources feed it
+ *  (changeovers take two); `category` = which catalog category the picker shows. */
+export const DB_COMPONENT_KINDS: Array<{ value: DbComponentKind; label: string; category: EquipmentCatalogCategory; inputs: number }> = [
+  { value: 'mainSwitch', label: 'Main switch / isolator', category: 'isolator', inputs: 1 },
+  { value: 'breaker', label: 'Circuit breaker (MCB)', category: 'breaker', inputs: 1 },
+  { value: 'rcbo', label: 'RCBO (breaker + earth leakage)', category: 'breaker', inputs: 1 },
+  { value: 'rccb', label: 'Earth leakage (RCCB)', category: 'rccb', inputs: 1 },
+  { value: 'spd', label: 'Surge protection (SPD)', category: 'spd', inputs: 1 },
+  { value: 'changeover', label: 'Changeover switch', category: 'isolator', inputs: 2 },
+  { value: 'isolator', label: 'Isolator / switch-disconnector', category: 'isolator', inputs: 1 },
+  { value: 'contactor', label: 'Contactor', category: 'other', inputs: 1 },
+  { value: 'timer', label: 'Timer / time switch', category: 'other', inputs: 1 },
+  { value: 'meter', label: 'Energy / kWh meter', category: 'other', inputs: 1 },
+  { value: 'indicator', label: 'Indicator light', category: 'other', inputs: 1 },
+  { value: 'busbar', label: 'Busbar / neutral-earth bar', category: 'other', inputs: 1 },
+  { value: 'custom', label: 'Custom component', category: 'other', inputs: 1 },
+]
+
+export function dbComponentKind(kind: DbComponentKind) {
+  return DB_COMPONENT_KINDS.find((k) => k.value === kind) ?? DB_COMPONENT_KINDS[DB_COMPONENT_KINDS.length - 1]
+}
+
+export function defaultDbComponent(kind: DbComponentKind, fedFrom: string[] = []): DbComponent {
+  const def = dbComponentKind(kind)
+  return { id: mkId('dbc'), kind, label: def.label, productId: null, qty: 1, fedFrom }
+}
+
+/** How cables enter the board, top and bottom. */
+export type DbConnection = 'glands' | 'glandPlate' | 'trunking' | 'conduit' | 'busbar' | 'direct' | 'none'
+
+export const DB_CONNECTIONS: Array<{ value: DbConnection; label: string }> = [
+  { value: 'glands', label: 'Cable glands' },
+  { value: 'glandPlate', label: 'Gland plate' },
+  { value: 'trunking', label: 'Trunking / cable tray' },
+  { value: 'conduit', label: 'Conduit' },
+  { value: 'busbar', label: 'Busbar / bus-trunking' },
+  { value: 'direct', label: 'Direct entry' },
+  { value: 'none', label: 'None' },
+]
+
 /** AC distribution board — reuses the Chint DB enclosures + AC protection products. */
 export interface AcCombiner {
   id: string
@@ -283,20 +350,48 @@ export interface AcCombiner {
   ipRating: string
   productCode: string
   productCodeLocked: boolean
-  mainBreakerId: string | null
-  rccbId: string | null
-  spdId: string | null
+  /** Devices mounted inside the board, in wiring order. */
+  components: DbComponent[]
+  /** Cable entry on the top / bottom of the enclosure. */
+  topConnection: DbConnection
+  bottomConnection: DbConnection
+  /** @deprecated migrated into `components` by parseDesign — kept for old saved data. */
+  mainBreakerId?: string | null
+  rccbId?: string | null
+  spdId?: string | null
 }
 
 export function defaultAcCombiner(): AcCombiner {
+  const main = defaultDbComponent('breaker', [DB_SUPPLY_ID]); main.label = 'Main breaker'
+  const rccb = defaultDbComponent('rccb', [main.id]); rccb.label = 'Earth leakage (RCCB)'
+  const spd = defaultDbComponent('spd', [main.id]); spd.label = 'AC SPD'
   const c: AcCombiner = {
     id: mkId('db'), label: 'Distribution Board',
     enclosureCatalogId: null, material: 'plastic', mount: 'surface',
     ways: 12, rows: 1, ipRating: 'IP4X', productCode: '', productCodeLocked: false,
-    mainBreakerId: null, rccbId: null, spdId: null,
+    components: [main, rccb, spd],
+    topConnection: 'glands', bottomConnection: 'glands',
   }
   c.productCode = enclosureCode(c)
   return c
+}
+
+/** Backfill a saved AC board: migrate the legacy fixed main/RCCB/SPD trio into the
+ *  component list, and default the cable-entry fields. Idempotent. */
+export function normalizeAcCombiner(c: AcCombiner): AcCombiner {
+  let components = c.components
+  if (!Array.isArray(components)) {
+    const main = defaultDbComponent('breaker', [DB_SUPPLY_ID]); main.label = 'Main breaker'; main.productId = c.mainBreakerId ?? null
+    const rccb = defaultDbComponent('rccb', [main.id]); rccb.label = 'Earth leakage (RCCB)'; rccb.productId = c.rccbId ?? null
+    const spd = defaultDbComponent('spd', [main.id]); spd.label = 'AC SPD'; spd.productId = c.spdId ?? null
+    components = [main, rccb, spd]
+  }
+  return {
+    ...c,
+    components: components.map((x) => ({ ...x, qty: x.qty || 1, fedFrom: Array.isArray(x.fedFrom) ? x.fedFrom : [] })),
+    topConnection: c.topConnection ?? 'glands',
+    bottomConnection: c.bottomConnection ?? 'glands',
+  }
 }
 
 export type EarthKind = 'earthing' | 'bonding'
@@ -537,7 +632,7 @@ export function parseDesign(raw: unknown): SystemDesign | null {
     })),
     inverters: src.inverters ?? [],
     batteries: src.batteries ?? [],
-    acCombiners: src.acCombiners ?? [],
+    acCombiners: (src.acCombiners ?? []).map(normalizeAcCombiner),
     extras: (src.extras ?? []).map((x) => ({ ...x, productId: x.productId ?? null, data: x.data ?? {} })),
     version: DESIGN_VERSION,
   }
