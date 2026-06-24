@@ -320,6 +320,8 @@ export interface EquipmentCatalogItem {
   primary_image_url?: string | null
   datasheet_url?: string | null
   model_3d_url?: string | null
+  // "To-add" queue placeholder created from the design canvas (migration 049). Ignored by the calculator.
+  pending?: boolean
 }
 
 export interface QuoteTierConfig {

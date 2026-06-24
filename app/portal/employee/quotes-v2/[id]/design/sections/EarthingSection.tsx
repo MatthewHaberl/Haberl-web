@@ -7,7 +7,7 @@ import {
 } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
-import { SectionCard, NumberField } from '../section-ui'
+import { SectionCard } from '../section-ui'
 
 // ≤3kW → 2, 4–5kW → 4, 6kW+ → 6 (confirmed on site by soil-resistivity test).
 function suggestedSpikes(kw: number): number {
@@ -46,14 +46,7 @@ export function EarthingSection() {
         title="Earthing & bonding"
         subtitle="Almost everything with a metal casing must be earthed. Build the earth map below — it shows as the Earth layer on the diagram (toggle it with the layer pills)."
       >
-        <div className="grid grid-cols-2 gap-3 max-w-md">
-          <NumberField label="Default spikes" value={e.spikeCount} placeholder={String(suggestedSpikes(kw))} onChange={(v) => dispatch({ type: 'setEarthing', patch: { spikeCount: v } })} />
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">Default conductor</span>
-            <input value={e.spec} onChange={(ev) => dispatch({ type: 'setEarthing', patch: { spec: ev.target.value } })} className="h-9 rounded-md border border-border bg-background px-2 text-sm" />
-          </label>
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">Suggested {suggestedSpikes(kw)} spikes for a {kw.toFixed(1)}kW system — final count confirmed on site.</p>
+        <p className="text-xs text-muted-foreground">Suggested {suggestedSpikes(kw)} spikes for a {kw.toFixed(1)}kW system — final count confirmed on site. Build the electrodes, bars and conductors below.</p>
 
         <div className="mt-3 grid grid-cols-2 gap-3 max-w-md">
           <label className="flex flex-col gap-1">

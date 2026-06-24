@@ -1,10 +1,12 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, MapPin } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { CanvasThemeProvider, type CanvasColorOverrides } from '@/lib/solar/canvas-theme'
 import { extractQuoteJson, isMultiOption, type QuoteData } from '@/lib/solar/render-quote'
 import {
   parseDesign, quoteDataToDesign, emptyDesign, type SystemDesign,
@@ -30,6 +32,19 @@ interface Props {
 export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
   const siteLabel = req.site_label?.trim() || req.address?.trim() || `Site ${req.site_number ?? 1}`
   const optionLabel = req.option_label?.trim() || req.quote_number || 'Option'
+
+  // Company-wide canvas colour overrides for the diagram. Same client fetch pattern
+  // as DesignBomPanel's markup read; null/missing degrades to the brand defaults.
+  const [canvasColors, setCanvasColors] = useState<CanvasColorOverrides | null>(null)
+  useEffect(() => {
+    let active = true
+    createClient()
+      .from('company_settings').select('canvas_colors').eq('id', true).maybeSingle()
+      .then(({ data }) => {
+        if (active && data?.canvas_colors) setCanvasColors(data.canvas_colors as CanvasColorOverrides)
+      })
+    return () => { active = false }
+  }, [])
 
   // Resolve the canvas's starting design: saved system_design → else hydrate from
   // a legacy generated_quote → else a blank design.
@@ -81,19 +96,21 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
       </div>
 
       {isAdmin ? (
-        <DesignProvider
-          requestId={req.id}
-          initialDesign={initialDesign}
-          gridSupply={req.grid_supply as string | undefined}
-          record={{ monthly_kwh: req.monthly_kwh ?? null }}
-          canSave
-        >
-          <BalanceHeader />
-          <BuildRail />
-          <ActiveSection />
-          <DesignCanvasPanel />
-          <DesignBomPanel />
-        </DesignProvider>
+        <CanvasThemeProvider value={canvasColors}>
+          <DesignProvider
+            requestId={req.id}
+            initialDesign={initialDesign}
+            gridSupply={req.grid_supply as string | undefined}
+            record={{ monthly_kwh: req.monthly_kwh ?? null }}
+            canSave
+          >
+            <BalanceHeader />
+            <BuildRail />
+            <ActiveSection />
+            <DesignCanvasPanel />
+            <DesignBomPanel />
+          </DesignProvider>
+        </CanvasThemeProvider>
       ) : (
         <div className="rounded-xl border border-border bg-card p-4">
           {req.quote_html ? (

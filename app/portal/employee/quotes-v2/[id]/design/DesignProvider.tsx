@@ -19,8 +19,14 @@ import {
   type DcCombiner,
   type NodePosition,
 } from '@/lib/solar/system-design'
-import type { BatteryBank, AcCombiner, ExtraComponent } from '@/lib/solar/system-design'
-import { defaultAcCombiner, defaultExtra } from '@/lib/solar/system-design'
+import type {
+  BatteryBank, AcCombiner, ExtraComponent, ExtraSubComponent,
+  BankCable, MonitoringDevice, DataLink,
+} from '@/lib/solar/system-design'
+import {
+  defaultAcCombiner, defaultExtra, defaultExtraSubComponent,
+  defaultBankCable, defaultMonitoring, defaultDataLink,
+} from '@/lib/solar/system-design'
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 
@@ -50,6 +56,30 @@ export type DesignAction =
   | { type: 'addExtra'; extraType: string; label: string }
   | { type: 'updateExtra'; id: string; patch: Partial<ExtraComponent> }
   | { type: 'removeExtra'; id: string }
+  // Extra sub-components (item 31)
+  | { type: 'addExtraComponent'; extraId: string; kind?: string; label?: string }
+  | { type: 'updateExtraComponent'; extraId: string; componentId: string; patch: Partial<ExtraSubComponent> }
+  | { type: 'removeExtraComponent'; extraId: string; componentId: string }
+  // Inter-bank cables (item 28)
+  | { type: 'addBankCable'; cable?: Partial<BankCable> }
+  | { type: 'updateBankCable'; id: string; patch: Partial<BankCable> }
+  | { type: 'removeBankCable'; id: string }
+  // Monitoring (item 26)
+  | { type: 'addMonitoring'; role?: 'bundled' | 'additional'; label?: string }
+  | { type: 'updateMonitoring'; id: string; patch: Partial<MonitoringDevice> }
+  | { type: 'removeMonitoring'; id: string }
+  // Data links (item 30)
+  | { type: 'addDataLink'; link?: Partial<DataLink> }
+  | { type: 'updateDataLink'; id: string; patch: Partial<DataLink> }
+  | { type: 'removeDataLink'; id: string }
+  // Reorder user-built lists (item 25)
+  | { type: 'reorderExtra'; from: number; to: number }
+  | { type: 'reorderExtraComponent'; extraId: string; from: number; to: number }
+  | { type: 'reorderBankCable'; from: number; to: number }
+  | { type: 'reorderMonitoring'; from: number; to: number }
+  | { type: 'reorderDataLink'; from: number; to: number }
+  | { type: 'reorderCombinerComponent'; combinerId: string; list: 'inputStringIds' | 'outputs'; from: number; to: number }
+  | { type: 'reorderAcComponent'; combinerId: string; from: number; to: number }
   // Diagram-origin — both forms and the canvas dispatch the same reducer.
   | { type: 'moveNode'; id: string; position: NodePosition }
   | { type: 'applyNodePatch'; id: string; patch: Record<string, unknown> }
@@ -63,6 +93,15 @@ export type DesignAction =
 function n(value: unknown): number {
   const x = typeof value === 'string' ? parseFloat(value) : (value as number)
   return Number.isFinite(x) ? x : 0
+}
+
+/** Move an item from one index to another, returning a new array (item 25). */
+function reorder<T>(list: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return list
+  const next = list.slice()
+  const [moved] = next.splice(from, 1)
+  next.splice(to, 0, moved)
+  return next
 }
 
 // Strip panel-* position overrides so reindexed groups don't inherit stale spots.
@@ -267,6 +306,101 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
 
     case 'removeExtra':
       return { ...d, extras: d.extras.filter((x) => x.id !== action.id) }
+
+    // ── Extra sub-components (item 31) ──────────────────────────────────────────
+    case 'addExtraComponent':
+      return {
+        ...d,
+        extras: d.extras.map((x) => x.id === action.extraId
+          ? { ...x, components: [...(x.components ?? []), defaultExtraSubComponent(action.kind, action.label ?? '')] }
+          : x),
+      }
+
+    case 'updateExtraComponent':
+      return {
+        ...d,
+        extras: d.extras.map((x) => x.id === action.extraId
+          ? { ...x, components: (x.components ?? []).map((c) => c.id === action.componentId ? { ...c, ...action.patch } : c) }
+          : x),
+      }
+
+    case 'removeExtraComponent':
+      return {
+        ...d,
+        extras: d.extras.map((x) => x.id === action.extraId
+          ? { ...x, components: (x.components ?? []).filter((c) => c.id !== action.componentId) }
+          : x),
+      }
+
+    // ── Inter-bank cables (item 28) ─────────────────────────────────────────────
+    case 'addBankCable':
+      return { ...d, bank: { ...d.bank, cables: [...(d.bank.cables ?? []), { ...defaultBankCable(), ...action.cable }] } }
+
+    case 'updateBankCable':
+      return {
+        ...d,
+        bank: { ...d.bank, cables: (d.bank.cables ?? []).map((c) => c.id === action.id ? { ...c, ...action.patch } : c) },
+      }
+
+    case 'removeBankCable':
+      return { ...d, bank: { ...d.bank, cables: (d.bank.cables ?? []).filter((c) => c.id !== action.id) } }
+
+    // ── Monitoring (item 26) ────────────────────────────────────────────────────
+    case 'addMonitoring':
+      return { ...d, monitoring: [...(d.monitoring ?? []), defaultMonitoring(action.role, action.label)] }
+
+    case 'updateMonitoring':
+      return { ...d, monitoring: (d.monitoring ?? []).map((m) => m.id === action.id ? { ...m, ...action.patch } : m) }
+
+    case 'removeMonitoring':
+      return { ...d, monitoring: (d.monitoring ?? []).filter((m) => m.id !== action.id) }
+
+    // ── Data links (item 30) ────────────────────────────────────────────────────
+    case 'addDataLink':
+      return { ...d, data: { links: [...(d.data?.links ?? []), { ...defaultDataLink(), ...action.link }] } }
+
+    case 'updateDataLink':
+      return { ...d, data: { links: (d.data?.links ?? []).map((l) => l.id === action.id ? { ...l, ...action.patch } : l) } }
+
+    case 'removeDataLink':
+      return { ...d, data: { links: (d.data?.links ?? []).filter((l) => l.id !== action.id) } }
+
+    // ── Reorder user-built lists (item 25) ──────────────────────────────────────
+    case 'reorderExtra':
+      return { ...d, extras: reorder(d.extras, action.from, action.to) }
+
+    case 'reorderExtraComponent':
+      return {
+        ...d,
+        extras: d.extras.map((x) => x.id === action.extraId
+          ? { ...x, components: reorder(x.components ?? [], action.from, action.to) }
+          : x),
+      }
+
+    case 'reorderBankCable':
+      return { ...d, bank: { ...d.bank, cables: reorder(d.bank.cables ?? [], action.from, action.to) } }
+
+    case 'reorderMonitoring':
+      return { ...d, monitoring: reorder(d.monitoring ?? [], action.from, action.to) }
+
+    case 'reorderDataLink':
+      return { ...d, data: { links: reorder(d.data?.links ?? [], action.from, action.to) } }
+
+    case 'reorderCombinerComponent':
+      return {
+        ...d,
+        dcCombiners: d.dcCombiners.map((c) => c.id === action.combinerId
+          ? { ...c, [action.list]: reorder(c[action.list] as unknown[], action.from, action.to) }
+          : c),
+      }
+
+    case 'reorderAcComponent':
+      return {
+        ...d,
+        acCombiners: d.acCombiners.map((c) => c.id === action.combinerId
+          ? { ...c, components: reorder(c.components, action.from, action.to) }
+          : c),
+      }
 
     case 'moveNode':
       return { ...d, layout: { ...d.layout, nodes: { ...d.layout.nodes, [action.id]: action.position } } }

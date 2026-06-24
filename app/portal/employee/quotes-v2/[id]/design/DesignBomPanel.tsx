@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { PackageCheck, ChevronDown, ChevronRight, AlertTriangle, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
-import { designToBom } from '@/lib/solar/design-bom'
+import { consolidateBom, designToBom } from '@/lib/solar/design-bom'
 import { useDesign } from './DesignProvider'
 import { useCatalog } from './useCatalog'
 
@@ -24,6 +24,9 @@ export function DesignBomPanel() {
   const { items, loading } = useCatalog()
   const [pricing, setPricing] = useState(DEFAULT_PRICING)
   const [open, setOpen] = useState(true)
+  // Consolidated SUMs identical items across the whole design (cleanest to read);
+  // Itemised lists every occurrence per location. A click apart, like BomTab's view.
+  const [view, setView] = useState<'consolidated' | 'itemised'>('consolidated')
   const markup = pricing.markup
 
   useEffect(() => {
@@ -40,15 +43,18 @@ export function DesignBomPanel() {
     return m
   }, [items])
 
-  const bom = useMemo(() => designToBom(design, catalog, markup, { gridSupply, pricing }), [design, catalog, markup, gridSupply, pricing])
+  const itemised = useMemo(() => designToBom(design, catalog, markup, { gridSupply, pricing }), [design, catalog, markup, gridSupply, pricing])
+  const consolidated = useMemo(() => consolidateBom(itemised), [itemised])
+  const bom = view === 'consolidated' ? consolidated : itemised
 
   // Export just the unpriced lines as a CSV to send to a supplier for quoting.
+  // Always uses the consolidated lines so each item to quote appears once.
   function exportQuoteCsv() {
     const reason: Record<string, string> = {
       'no-product': 'No product chosen', 'product-missing': 'Product not in catalog', 'no-cost': 'No cost captured', 'ok': '',
     }
     const rows: string[][] = [['Section', 'Item', 'Ref', 'Qty', 'Reason']]
-    for (const s of bom.sections) for (const l of s.lines) {
+    for (const s of consolidated.sections) for (const l of s.lines) {
       if (!l.priced) rows.push([s.name, l.description, l.sku, String(l.qty), reason[l.status] ?? ''])
     }
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n')
@@ -81,17 +87,34 @@ export function DesignBomPanel() {
 
       {open && (
         <div className="px-4 pb-4">
-          <div className="mb-3 flex items-center justify-between border-b border-border pb-2">
-            <span className="text-[11px] font-medium text-muted-foreground">Install access</span>
-            <select
-              value={design.storeys ?? 1}
-              onChange={(e) => dispatch({ type: 'setStoreys', storeys: Number(e.target.value) })}
-              className="h-7 rounded-md border border-border bg-background px-2 text-xs"
-            >
-              <option value={1}>Single storey</option>
-              <option value={2}>Double storey (+premium)</option>
-              <option value={3}>Triple storey (+premium)</option>
-            </select>
+          <div className="mb-3 flex items-center justify-between gap-2 border-b border-border pb-2">
+            <div className="flex gap-0.5 rounded-md border border-border p-0.5">
+              {([['consolidated', 'Consolidated'], ['itemised', 'Itemised']] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setView(id)}
+                  className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    view === id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={id === 'consolidated' ? 'Identical items summed across the whole design' : 'Every occurrence listed per location'}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-medium text-muted-foreground">Install access</span>
+              <select
+                value={design.storeys ?? 1}
+                onChange={(e) => dispatch({ type: 'setStoreys', storeys: Number(e.target.value) })}
+                className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+              >
+                <option value={1}>Single storey</option>
+                <option value={2}>Double storey (+premium)</option>
+                <option value={3}>Triple storey (+premium)</option>
+              </select>
+            </div>
           </div>
           {loading ? (
             <p className="text-xs text-muted-foreground py-4 text-center">Loading catalog…</p>

@@ -14,12 +14,13 @@ import {
   type Edge,
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes } from 'lucide-react'
+import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes, GitMerge } from 'lucide-react'
 import { nodeTypes } from '@/components/sld/sld-nodes'
 import { edgeTypes } from '@/components/sld/sld-edges'
 import {
   designToFlow, nodeIdToRef, panelGroupKwp, type SystemDesign,
 } from '@/lib/solar/system-design'
+import { useCircuitTheme, type CircuitLayer } from '@/lib/solar/canvas-theme'
 import type { CableEdgeData } from '@/lib/solar/sld-builder'
 import { useDesign } from './DesignProvider'
 
@@ -44,23 +45,14 @@ function conductorSummary(circuitType: string, threePhase: boolean): string {
   return threePhase ? 'L1 / L2 / L3 / N / E' : 'L / N / E'
 }
 
-const NODE_COLORS: Record<string, string> = {
-  solarArray: '#f97316', combiner: '#f97316', inverter: '#1e3a5f',
-  battery: '#16a34a', grid: '#7c3aed', dbBoard: '#2563eb', earthing: '#65a30d',
-}
-
 // Each layer hides its components and its cables independently — so you can drop
 // the PV/DC cabling to read the earthing while the panels & combiner stay put.
+// Labels + colours come from the (resolved) circuit theme so the canvas, nodes and
+// edges agree — a settings override flows through via useCircuitTheme().
 type LayerVis = { components: boolean; cables: boolean }
-const CIRCUIT_LAYERS: Array<{ key: string; label: string; color: string }> = [
-  { key: 'pv', label: 'PV / DC', color: '#f97316' },
-  { key: 'battery', label: 'Battery', color: '#16a34a' },
-  { key: 'ac', label: 'AC', color: '#2563eb' },
-  { key: 'earth', label: 'Earth', color: '#65a30d' },
-  { key: 'data', label: 'Data', color: '#a855f7' },
-]
+const CIRCUIT_LAYER_KEYS: CircuitLayer[] = ['pv', 'battery', 'ac', 'earth', 'data']
 const ALL_LAYERS_ON: Record<string, LayerVis> = Object.fromEntries(
-  CIRCUIT_LAYERS.map((l) => [l.key, { components: true, cables: true }]),
+  CIRCUIT_LAYER_KEYS.map((key) => [key, { components: true, cables: true }]),
 )
 
 // Which layer a node belongs to (drives component visibility per layer).
@@ -71,7 +63,7 @@ function nodeLayer(node: Node): string {
     case 'inverter': case 'grid': case 'dbBoard': case 'acIsolator':
     case 'meter': case 'changeover': case 'spd': case 'evCharger': case 'generator': return 'ac'
     case 'earthing': return 'earth'
-    case 'comms': case 'meterComms': return 'data'
+    case 'comms': case 'meterComms': case 'monitoring': return 'data'
     default: return 'always' // textNote, connector, custom — never hidden by a layer
   }
 }
@@ -81,26 +73,55 @@ function nodeSize(n: Node): { w: number; h: number } {
   return { w: a.measured?.width ?? a.width ?? 170, h: a.measured?.height ?? a.height ?? 90 }
 }
 
-// Nudge a dropped node out of any overlap with the others (simple separation pass).
+const OVERLAP_MARGIN = 14
+
+// Does the moved box (at pos) overlap node `o`, allowing for the separation margin?
+function boxesOverlap(pos: { x: number; y: number }, size: { w: number; h: number }, o: Node): { ox: number; oy: number } | null {
+  const os = nodeSize(o)
+  const ax2 = pos.x + size.w, ay2 = pos.y + size.h
+  const bx2 = o.position.x + os.w, by2 = o.position.y + os.h
+  const ox = Math.min(ax2, bx2) - Math.max(pos.x, o.position.x) + OVERLAP_MARGIN
+  const oy = Math.min(ay2, by2) - Math.max(pos.y, o.position.y) + OVERLAP_MARGIN
+  return ox > 0 && oy > 0 ? { ox, oy } : null
+}
+
+// Knock a dropped node out of every overlap and GUARANTEE a clear spot. We iterate
+// to convergence: each pass re-scans ALL others and bumps along the smallest axis of
+// the first collision, so a chain of stacked siblings (Battery 5 over 6 over 7…) keeps
+// separating until a full clean pass finds zero overlaps. A high cap + clean-pass exit
+// means we never leave two boxes stacked; if the cap is somehow hit we fall back to the
+// nearest scan-found gap so the result is still non-overlapping.
 function resolveOverlap(nodes: Node[], movedId: string, start: { x: number; y: number }, size: { w: number; h: number }): { x: number; y: number } {
-  const margin = 14
+  const others = nodes.filter((o) => o.id !== movedId)
+  const isClear = (pos: { x: number; y: number }) => others.every((o) => !boxesOverlap(pos, size, o))
+
   const pos = { ...start }
-  for (let iter = 0; iter < 8; iter++) {
+  const MAX_ITERS = 200
+  for (let iter = 0; iter < MAX_ITERS; iter++) {
     let bumped = false
-    for (const o of nodes) {
-      if (o.id === movedId) continue
+    for (const o of others) {
+      const hit = boxesOverlap(pos, size, o)
+      if (!hit) continue
       const os = nodeSize(o)
-      const ax2 = pos.x + size.w, ay2 = pos.y + size.h
-      const bx2 = o.position.x + os.w, by2 = o.position.y + os.h
-      const ox = Math.min(ax2, bx2) - Math.max(pos.x, o.position.x)
-      const oy = Math.min(ay2, by2) - Math.max(pos.y, o.position.y)
-      if (ox > 0 && oy > 0) {
-        if (ox < oy) pos.x += (pos.x + ax2 < o.position.x + bx2 ? -(ox + margin) : (ox + margin))
-        else pos.y += (pos.y + ay2 < o.position.y + by2 ? -(oy + margin) : (oy + margin))
-        bumped = true
+      // Push along the axis of least penetration, away from the other node's centre.
+      if (hit.ox < hit.oy) pos.x += (pos.x + size.w / 2 < o.position.x + os.w / 2 ? -hit.ox : hit.ox)
+      else pos.y += (pos.y + size.h / 2 < o.position.y + os.h / 2 ? -hit.oy : hit.oy)
+      bumped = true
+    }
+    if (!bumped) return pos // a full clean pass — guaranteed no overlap
+  }
+
+  // Fallback (cap hit): spiral outward from the drop point to the nearest clear cell.
+  if (isClear(pos)) return pos
+  const step = Math.max(size.w, size.h) / 2 + OVERLAP_MARGIN
+  for (let ring = 1; ring <= 40; ring++) {
+    for (let dx = -ring; dx <= ring; dx++) {
+      for (let dy = -ring; dy <= ring; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue // ring perimeter only
+        const cand = { x: start.x + dx * step, y: start.y + dy * step }
+        if (isClear(cand)) return cand
       }
     }
-    if (!bumped) break
   }
   return pos
 }
@@ -128,6 +149,15 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
     i: d.inverters.map((u) => [u.catalogId, u.kw, u.model, u.qty, u.phases]),
     b: d.batteries.map((b) => [b.catalogId, b.kwh, b.qty, b.model]),
     bk: [d.bank.perBatteryDisconnect, d.bank.busbar, d.bank.mainDisconnect, d.bank.cableSizeMm2, d.bank.cutoffVoltage],
+    // New bank wiring (items 23/27/28): disconnect product/type, busbar spec, itemised cables.
+    bkd: JSON.stringify([d.bank.perBatteryDisconnectChoice ?? null, d.bank.mainDisconnectChoice ?? null, d.bank.busbarSpec ?? null]),
+    bkc: JSON.stringify(d.bank.cables ?? []),
+    // Monitoring (26) + data links (30) emit nodes/edges; extras' sub-components drive ports.
+    mon: JSON.stringify(d.monitoring ?? []),
+    dl: JSON.stringify(d.data?.links ?? []),
+    xc: JSON.stringify(d.extras.map((x) => [x.id, x.components?.length ?? 0])),
+    // AC board device feeds drive the DB outgoing-way (outputCount) count (item 22).
+    ac: JSON.stringify(d.acCombiners.map((c) => c.components.map((k) => [k.id, k.fedFrom]))),
     e: [d.earthing.spikeCount, d.earthing.spec],
     em: [
       ...d.earthing.conductors.map((c) => `${c.fromId}>${c.toId}:${c.sizeMm2}:${c.kind}`),
@@ -258,7 +288,7 @@ function NodeInspector({ nodeId, onClose }: { nodeId: string; onClose: () => voi
             className="h-9 rounded-md border border-border bg-background px-2 text-sm"
           />
         </label>
-        <GoTo step={6} label="Open Earthing section" />
+        <GoTo step={7} label="Open Earthing section" />
       </div>
     )
   }
@@ -423,9 +453,12 @@ function CableInspector({ edge, fromLabel, toLabel, onClose }: { edge: Edge; fro
 }
 
 // Click a busbar / disconnect → edit ports + rating (persisted as a node override).
+// For a disconnect the product/type chosen in the Battery section flows onto
+// node.data (designToFlow item 23); we surface it read-only and let a manual
+// override take over only once the user edits the field here.
 function ComponentInspector({ node, onClose }: { node: Node; onClose: () => void }) {
   const { dispatch } = useDesign()
-  const d = (node.data ?? {}) as { kind?: string; label?: string; product?: string; connections?: number }
+  const d = (node.data ?? {}) as { kind?: string; label?: string; product?: string | null; connections?: number; disconnectType?: string }
   const isBus = d.kind === 'busbar'
   const set = (patch: Record<string, unknown>) => dispatch({ type: 'setNodeOverride', id: node.id, patch })
   const lbl = 'text-xs text-muted-foreground'
@@ -444,6 +477,9 @@ function ComponentInspector({ node, onClose }: { node: Node; onClose: () => void
               onChange={(e) => set({ connections: Math.max(1, Math.min(24, Math.round(Number(e.target.value) || 1))) })} />
             <span className="text-[11px] text-muted-foreground">Each port gives a top + bottom tap for a battery or feed.</span>
           </label>
+        )}
+        {!isBus && d.disconnectType && (
+          <p className="text-[11px] text-muted-foreground">From the Batteries section: <span className="font-medium text-foreground capitalize">{d.disconnectType.replace(/-/g, ' ')}</span>. Override below to set it manually.</p>
         )}
         <label className="flex flex-col gap-1">
           <span className={lbl}>Product / rating</span>
@@ -469,12 +505,21 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   const designRef = useRef(design)
   designRef.current = design
 
+  // Resolved (settings-overridable) circuit colours; defaults outside a provider.
+  const { theme, nodeColor } = useCircuitTheme()
+  // Minimap node colours come from the resolved theme; unmapped auxiliary types fall
+  // back to the caller's neutral grey.
+  const nodeStroke = (type: string) => nodeColor[type] ?? '#aaa'
+  const CIRCUIT_LAYERS: Array<{ key: CircuitLayer; label: string; color: string }> =
+    CIRCUIT_LAYER_KEYS.map((key) => ({ key, label: theme[key].label, color: theme[key].stroke }))
+
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selected, setSelected] = useState<{ kind: 'node' | 'edge'; id: string } | null>(null)
   const [layers, setLayers] = useState<Record<string, LayerVis>>(ALL_LAYERS_ON)
-  const [snap, setSnap] = useState(false)
+  const [snap, setSnap] = useState(true) // default ON so dropped rows line up (item 17)
   const [allowOverlap, setAllowOverlap] = useState(false)
+  const [showTerminations, setShowTerminations] = useState(false) // off by default to reduce clutter (item 21)
   const [fullscreen, setFullscreen] = useState(false)
   const nodesRef = useRef<Node[]>([])
   nodesRef.current = nodes
@@ -487,10 +532,16 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   )
   const shownIds = useMemo(() => new Set(shownNodes.map((n) => n.id)), [shownNodes])
   const shownEdges = useMemo(
-    () => edges.filter((e) =>
-      (layers[edgeLayer(e)]?.cables ?? true) && shownIds.has(e.source) && shownIds.has(e.target),
-    ),
-    [edges, layers, shownIds],
+    () => edges
+      .filter((e) =>
+        (layers[edgeLayer(e)]?.cables ?? true) && shownIds.has(e.source) && shownIds.has(e.target),
+      )
+      // Item 21: flag termination-label rendering on each edge for the edge renderer.
+      // Default off (showTerminations=false) keeps the diagram uncluttered.
+      .map((e) => (((e.data as { showTerminations?: boolean } | undefined)?.showTerminations ?? false) === showTerminations
+        ? e
+        : { ...e, data: { ...(e.data ?? {}), showTerminations } })),
+    [edges, layers, shownIds, showTerminations],
   )
 
   // Only offer a sub-toggle when that layer actually has components / cables present.
@@ -618,6 +669,15 @@ function CanvasInner({ height = 560 }: { height?: number }) {
         </button>
         <button
           type="button"
+          onClick={() => setShowTerminations((v) => !v)}
+          title={showTerminations ? 'Termination labels shown on cables' : 'Show termination labels on cables'}
+          className="flex items-center gap-1 rounded-lg border bg-card/90 px-2 py-1 text-[11px] font-medium backdrop-blur"
+          style={{ borderColor: showTerminations ? '#16a34a' : '#e5e7eb', color: showTerminations ? '#16a34a' : '#6b7280' }}
+        >
+          <GitMerge className="h-3.5 w-3.5" /> Terminations
+        </button>
+        <button
+          type="button"
           onClick={() => setFullscreen((v) => !v)}
           title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
           className="flex items-center gap-1 rounded-lg border border-border bg-card/90 px-2 py-1 text-[11px] font-medium text-muted-foreground backdrop-blur hover:text-foreground"
@@ -657,8 +717,8 @@ function CanvasInner({ height = 560 }: { height?: number }) {
         <MiniMap
           position="bottom-left"
           style={{ border: '1px solid #e5e7eb', borderRadius: 6 }}
-          nodeStrokeColor={(n) => NODE_COLORS[n.type ?? ''] ?? '#aaa'}
-          nodeColor={(n) => (NODE_COLORS[n.type ?? ''] ?? '#aaa') + '30'}
+          nodeStrokeColor={(n) => nodeStroke(n.type ?? '')}
+          nodeColor={(n) => nodeStroke(n.type ?? '') + '30'}
           maskColor="rgba(248,250,252,0.75)"
         />
       </ReactFlow>

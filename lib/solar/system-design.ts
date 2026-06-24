@@ -101,6 +101,43 @@ export interface BatteryUnit {
 
 export type BatteryTopology = 'parallel-busbar' | 'series-string' | 'series-parallel' | 'multi-inverter'
 
+/** A chosen disconnect/switchgear product on a battery section (per-battery or main). */
+export type DisconnectKind = 'fuse-disconnect' | 'isolator' | 'breaker' | 'dc-switch' | 'dc-switchgear' | 'none'
+
+export interface DisconnectChoice {
+  type: DisconnectKind
+  /** catalogId, or a free-text custom label when no catalog product fits. */
+  product: string | null
+}
+
+export function defaultDisconnectChoice(type: DisconnectKind = 'isolator'): DisconnectChoice {
+  return { type, product: null }
+}
+
+/** Itemised inter-bank / battery-to-busbar cable run (item 28). */
+export interface BankCable {
+  id: string
+  /** Endpoint refs — battery node id (e.g. 'battery', 'batt-3'), 'bat-busbar', 'bat-main', or a battery group id. */
+  fromRef: string
+  toRef: string
+  label: string
+  sizeMm2: string
+  material: string
+  runs: number
+}
+
+export function defaultBankCable(fromRef = '', toRef = ''): BankCable {
+  return { id: mkId('bcab'), fromRef, toRef, label: '', sizeMm2: '', material: 'CU', runs: 1 }
+}
+
+/** Optional busbar fabrication spec for the battery bank (item 27). */
+export interface BatteryBusbarSpec {
+  product: string | null
+  material: 'copper' | 'aluminium' | null
+  lengthMm: number | null
+  widthMm: number | null
+}
+
 /** How the battery units are wired into a bank — drives the protection BOM + cost. */
 export interface BatteryBank {
   topology: BatteryTopology
@@ -120,6 +157,14 @@ export interface BatteryBank {
   cableProductId: string | null
   perBatteryDisconnectId: string | null
   mainDisconnectId: string | null
+  /** Chosen per-battery disconnect product + type (item 23; null = use legacy id). */
+  perBatteryDisconnectChoice?: DisconnectChoice | null
+  /** Chosen main (inverter↔busbar) disconnect product + type (item 23). */
+  mainDisconnectChoice?: DisconnectChoice | null
+  /** Busbar fabrication spec when a non-default bar is specified (item 27). */
+  busbarSpec?: BatteryBusbarSpec | null
+  /** Per-cable inter-bank runs; cableSizeMm2 is the fallback default (item 28). */
+  cables?: BankCable[]
 }
 
 export const BATTERY_TOPOLOGIES: Array<{ value: BatteryTopology; label: string; hint: string }> = [
@@ -135,6 +180,10 @@ export function defaultBank(): BatteryBank {
     perBatteryDisconnect: true, disconnectRating: '250A DC',
     busbar: true, mainDisconnect: true, inverterFeeds: 1, cableSizeMm2: 25,
     cableProductId: null, perBatteryDisconnectId: null, mainDisconnectId: null,
+    perBatteryDisconnectChoice: defaultDisconnectChoice('breaker'),
+    mainDisconnectChoice: defaultDisconnectChoice('isolator'),
+    busbarSpec: null,
+    cables: [],
   }
 }
 
@@ -444,12 +493,27 @@ export interface EarthingConfig {
 
 export const EARTH_SIZES = [2.5, 4, 6, 10, 16, 25, 35]
 
+/** A sub-component nested inside an extra (item 31) — e.g. an EV charger's cable + breaker. */
+export interface ExtraSubComponent {
+  id: string
+  kind: string
+  label: string
+  product: string | null
+  qty: number
+}
+
+export function defaultExtraSubComponent(kind = 'custom', label = ''): ExtraSubComponent {
+  return { id: mkId('exsub'), kind, label, product: null, qty: 1 }
+}
+
 export interface ExtraComponent {
   id: string
   type: string
   label: string
   productId: string | null
   data: Record<string, unknown>
+  /** Nested sub-components priced under this extra (item 31). */
+  components?: ExtraSubComponent[]
 }
 
 // Palette of standalone extras (rendered on the diagram via SimpleBlock node types).
@@ -465,7 +529,54 @@ export const EXTRA_TYPES: Array<{ value: string; label: string; category?: Equip
 ]
 
 export function defaultExtra(type: string, label: string): ExtraComponent {
-  return { id: mkId('extra'), type, label, productId: null, data: {} }
+  return { id: mkId('extra'), type, label, productId: null, data: {}, components: [] }
+}
+
+// ── Monitoring (item 26) ─────────────────────────────────────────────────────
+// Inverter monitoring/comms hardware. Brand logic (Sunsynk ships bundled, Victron
+// needs an added dongle + data-comms) lives in the section UI — this just holds it.
+
+export interface MonitoringDevice {
+  id: string
+  /** Whether it ships with the inverter ('bundled') or is added on top ('additional'). */
+  role: 'bundled' | 'additional'
+  catalogId: string | null
+  label: string
+  /** Which inverter this hangs off (null = the representative inverter). */
+  inverterId: string | null
+  /** Comms medium — 'wifi' | 'lan' | 'gsm' | 'rs485' | 'can' … (free metadata). */
+  commsType: string
+}
+
+export function defaultMonitoring(role: 'bundled' | 'additional' = 'additional', label = 'Monitoring'): MonitoringDevice {
+  return { id: mkId('mon'), role, catalogId: null, label, inverterId: null, commsType: 'wifi' }
+}
+
+// ── Data links (item 30) — comms wiring, modelled like earthing.conductors ─────
+
+export type DataCableType = 'Cat5e' | 'Cat6' | 'Cat7'
+export type DataTermination = 'crimp' | 'loose'
+
+export interface DataLink {
+  id: string
+  fromId: string
+  toId: string
+  cableType: DataCableType
+  termination: DataTermination
+  protocol: string
+  note: string
+}
+
+export interface DataConfig {
+  links: DataLink[]
+}
+
+export function defaultDataConfig(): DataConfig {
+  return { links: [] }
+}
+
+export function defaultDataLink(fromId = '', toId = ''): DataLink {
+  return { id: mkId('dlink'), fromId, toId, cableType: 'Cat6', termination: 'crimp', protocol: '', note: '' }
 }
 
 export interface NodePosition {
@@ -493,6 +604,10 @@ export interface SystemDesign {
   acCombiners: AcCombiner[]
   earthing: EarthingConfig
   extras: ExtraComponent[]
+  /** Inverter monitoring/comms hardware (item 26). */
+  monitoring?: MonitoringDevice[]
+  /** Comms/data cabling links (item 30). */
+  data?: DataConfig
   /** Building storeys for the install (drives the access/storey labour premium). */
   storeys?: number
   layout: DesignLayout
@@ -531,6 +646,8 @@ export function emptyDesign(): SystemDesign {
     acCombiners: [],
     earthing: { spikeCount: null, spec: 'CU GY 10mm²', electrodes: [], bars: [], conductors: [] },
     extras: [],
+    monitoring: [],
+    data: defaultDataConfig(),
     layout: { nodes: {} },
   }
 }
@@ -616,7 +733,23 @@ export function parseDesign(raw: unknown): SystemDesign | null {
     ...base,
     ...src,
     energy,
-    bank: { ...base.bank, ...(src.bank ?? {}) },
+    bank: {
+      ...base.bank,
+      ...(src.bank ?? {}),
+      // Backfill the disconnect product choices (item 23) from legacy ids when absent.
+      perBatteryDisconnectChoice: src.bank?.perBatteryDisconnectChoice
+        ?? (src.bank?.perBatteryDisconnectId ? { type: 'breaker', product: src.bank.perBatteryDisconnectId } : base.bank.perBatteryDisconnectChoice),
+      mainDisconnectChoice: src.bank?.mainDisconnectChoice
+        ?? (src.bank?.mainDisconnectId ? { type: 'isolator', product: src.bank.mainDisconnectId } : base.bank.mainDisconnectChoice),
+      busbarSpec: src.bank?.busbarSpec ?? null,
+      cables: (src.bank?.cables ?? []).map((c) => ({
+        ...c,
+        runs: c.runs || 1,
+        material: c.material ?? 'CU',
+        sizeMm2: c.sizeMm2 ?? '',
+        label: c.label ?? '',
+      })),
+    },
     earthing: {
       ...base.earthing,
       ...(src.earthing ?? {}),
@@ -638,7 +771,21 @@ export function parseDesign(raw: unknown): SystemDesign | null {
     inverters: src.inverters ?? [],
     batteries: src.batteries ?? [],
     acCombiners: (src.acCombiners ?? []).map(normalizeAcCombiner),
-    extras: (src.extras ?? []).map((x) => ({ ...x, productId: x.productId ?? null, data: x.data ?? {} })),
+    extras: (src.extras ?? []).map((x) => ({
+      ...x,
+      productId: x.productId ?? null,
+      data: x.data ?? {},
+      components: (x.components ?? []).map((sc) => ({ ...sc, product: sc.product ?? null, qty: sc.qty || 1 })),
+    })),
+    monitoring: (src.monitoring ?? []).map((m) => ({
+      ...m,
+      catalogId: m.catalogId ?? null,
+      inverterId: m.inverterId ?? null,
+      role: m.role ?? 'additional',
+      commsType: m.commsType ?? 'wifi',
+      label: m.label ?? 'Monitoring',
+    })),
+    data: { links: (src.data?.links ?? []).map((l) => ({ ...l, protocol: l.protocol ?? '', note: l.note ?? '', termination: l.termination ?? 'crimp', cableType: l.cableType ?? 'Cat6' })) },
     version: DESIGN_VERSION,
   }
 }
@@ -1066,6 +1213,9 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
         stringCount: explicit ? (explicit.inputStringIds.length || groupCount) : groupCount,
         hasSpd: explicit ? explicit.outputs.some((o) => !!o.spdId) : true,
         config: explicit ? combinerConfigLabel(explicit) : `${groupCount}-string`,
+        // Ports (item 22): inputs = wired strings, outputs = combined feeds.
+        inputCount: explicit ? (explicit.inputStringIds.length || groupCount) : groupCount,
+        outputCount: explicit ? Math.max(1, explicit.outputs.length) : 1,
       },
     })
     d.panels.forEach((_, i) => {
@@ -1128,12 +1278,22 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
     const batSize = bank.cableSizeMm2
     // Thick feed sized to worst-case full current; per-battery cables stay single.
     const mainRuns = cableRunsNeeded(batteryDcCurrent(invKw, bank.cutoffVoltage), batSize)
-    const cable = (id: string, source: string, target: string, sourceHandle: string, targetHandle: string, runs = 1) =>
+    // Item 28: an itemised bank cable matching this from/to pair overrides the default.
+    const bankCables = bank.cables ?? []
+    const findBankCable = (from: string, to: string): BankCable | undefined =>
+      bankCables.find((c) => (c.fromRef === from && c.toRef === to) || (c.fromRef === to && c.toRef === from))
+    const cable = (id: string, source: string, target: string, sourceHandle: string, targetHandle: string, runs = 1) => {
+      const match = findBankCable(source, target)
+      const material = match?.material || 'CU'
+      const size = match?.sizeMm2 || `${batSize}`
+      const finalRuns = match ? Math.max(1, Math.round(Number(match.runs) || 1)) : runs
+      const spec = `${material} ${size}mm²`
       edges.push({
         id, source, target, sourceHandle, targetHandle, type: 'cable',
-        data: { ...cableData('battery', `CU ${batSize}mm²`, 2), runs },
-        label: `${runs > 1 ? `${runs}× ` : ''}CU ${batSize}mm²`,
+        data: { ...cableData('battery', spec, 2), runs: finalRuns },
+        label: `${finalRuns > 1 ? `${finalRuns}× ` : ''}${spec}`,
       })
+    }
 
     // One node per physical battery (capped so the row stays readable).
     const units: Array<{ model: string; kwh: number }> = []
@@ -1153,12 +1313,24 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
     const overrideConn = Math.round(Number((d.layout.nodeOverrides?.['bat-busbar'] as { connections?: number } | undefined)?.connections) || 0)
     const busConn = overrideConn > 0 ? overrideConn : N
 
+    // Item 23: the main + per-battery disconnect product/type chosen in the section.
+    const mainChoice = bank.mainDisconnectChoice
+    const perBatChoice = bank.perBatteryDisconnectChoice
     if (hasMain) {
-      nodes.push({ id: 'bat-main', type: 'busblock', position: pos('bat-main', { x: INV_X + 10, y: Y_MAIN }), data: { kind: 'disconnect', label: 'Main disconnect' } })
+      nodes.push({
+        id: 'bat-main', type: 'busblock', position: pos('bat-main', { x: INV_X + 10, y: Y_MAIN }),
+        data: {
+          kind: 'disconnect',
+          label: mainChoice?.product || 'Main disconnect',
+          product: mainChoice?.product ?? bank.mainDisconnectId ?? null,
+          disconnectType: mainChoice?.type ?? 'isolator',
+          inputCount: 1, outputCount: 1,
+        },
+      })
       cable('e-main-inv', 'bat-main', NODE.inverter, 'up', 'bat-in', mainRuns)
     }
     if (hasBus) {
-      nodes.push({ id: 'bat-busbar', type: 'busblock', position: pos('bat-busbar', { x: INV_X - 30, y: Y_BUS }), data: { kind: 'busbar', label: 'DC busbar', connections: busConn } })
+      nodes.push({ id: 'bat-busbar', type: 'busblock', position: pos('bat-busbar', { x: INV_X - 30, y: Y_BUS }), data: { kind: 'busbar', label: 'DC busbar', connections: busConn, inputCount: busConn, outputCount: 1 } })
       if (hasMain) cable('e-bus-main', 'bat-busbar', 'bat-main', 'out-0', 'down', mainRuns)
       else cable('e-bus-inv', 'bat-busbar', NODE.inverter, 'out-0', 'bat-in', mainRuns)
     }
@@ -1177,7 +1349,16 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       nodes.push({ id: bid, type: 'battery', position: pos(bid, { x: bx, y: Y_BATT }), data: { label: `Battery ${i + 1}`, model: u.model, qty: 1, totalKwh: +u.kwh.toFixed(1), chemistry: 'LiFePO4' } })
       if (hasDisc) {
         const did = `bat-disc-${i}`
-        nodes.push({ id: did, type: 'busblock', position: pos(did, { x: bx, y: Y_DISC }), data: { kind: 'disconnect', label: 'Disc' } })
+        nodes.push({
+          id: did, type: 'busblock', position: pos(did, { x: bx, y: Y_DISC }),
+          data: {
+            kind: 'disconnect',
+            label: perBatChoice?.product || 'Disc',
+            product: perBatChoice?.product ?? bank.perBatteryDisconnectId ?? null,
+            disconnectType: perBatChoice?.type ?? 'breaker',
+            inputCount: 1, outputCount: 1,
+          },
+        })
         cable(`e-bat${i}-disc`, bid, did, 'bat-out', 'down')
         cable(`e-disc${i}`, did, mergeId, 'up', into, directFull)
       } else {
@@ -1210,10 +1391,16 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
     })
 
     const dbId = NODE.db
+    // Item 22: the board's outgoing ways = the count of devices fed from the supply
+    // (its outgoing circuits); default 1 when no explicit AC board is configured.
+    const acBoard = d.acCombiners[0]
+    const dbOutputCount = acBoard
+      ? Math.max(1, acBoard.components.filter((c) => c.fedFrom.includes(DB_SUPPLY_ID)).length)
+      : 1
     nodes.push({
       id: dbId, type: 'dbBoard',
       position: pos(dbId, { x: DB_X, y: Y_INV }),
-      data: { label: 'Distribution Board', mainBreakerA: inverterPhase === 3 ? 63 : 40, rccbA: 30, phases: inverterPhase },
+      data: { label: 'Distribution Board', mainBreakerA: inverterPhase === 3 ? 63 : 40, rccbA: 30, phases: inverterPhase, inputCount: 1, outputCount: dbOutputCount },
     })
     edges.push({
       id: 'e-inv-db', source: NODE.inverter, target: dbId,
@@ -1272,7 +1459,37 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       id: x.id,
       type: x.type,
       position: pos(x.id, { x: GRID_X - 250, y: 40 + i * 130 }),
-      data: { label: x.label },
+      data: { label: x.label, subComponentCount: x.components?.length ?? 0 },
+    })
+  })
+
+  // ── Monitoring (item 26) — comms hardware hanging off the inverter on the DATA layer ──
+  const hasInv = !!(inv0 || invKw > 0)
+  ;(d.monitoring ?? []).forEach((m, i) => {
+    const id = `monitor-${m.id}`
+    nodes.push({
+      id, type: 'monitoring',
+      position: pos(id, { x: INV_X + 220 + i * 170, y: Y_INV - 160 }),
+      data: { label: m.label || 'Monitoring', role: m.role, commsType: m.commsType, product: m.catalogId },
+    })
+    if (hasInv) {
+      edges.push({
+        id: `e-monitor-${m.id}`, source: NODE.inverter, target: id,
+        sourceHandle: 'ac-out', targetHandle: 'data-in', type: 'cable',
+        data: { ...cableData('communication', m.commsType || 'comms', 2), circuitLayer: 'communication', routingType: 'bezier' },
+        label: `${m.role === 'bundled' ? 'Bundled' : 'Monitoring'} · ${m.commsType || 'comms'}`,
+      })
+    }
+  })
+
+  // ── Data links (item 30) — explicit comms cabling, DATA layer ────────────────
+  ;(d.data?.links ?? []).forEach((l) => {
+    if (!nodes.some((n) => n.id === l.fromId) || !nodes.some((n) => n.id === l.toId)) return
+    edges.push({
+      id: `data-${l.id}`, source: l.fromId, target: l.toId, type: 'cable',
+      sourceHandle: 'data-out', targetHandle: 'data-in',
+      data: { ...cableData('communication', l.cableType, 3), circuitLayer: 'communication', routingType: 'bezier', sourceProtocol: l.protocol ? [l.protocol] : undefined },
+      label: `${l.cableType}${l.protocol ? ` · ${l.protocol}` : ''}`,
     })
   })
 

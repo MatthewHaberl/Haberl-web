@@ -8,6 +8,8 @@ import { BatterySection } from './BatterySection'
 import { DcCombinerSection } from './DcCombinerSection'
 import { EarthingSection } from './EarthingSection'
 import { AcCombinerSection } from './AcCombinerSection'
+import { MonitoringSection } from './MonitoringSection'
+import { DataSection } from './DataSection'
 import { ExtrasSection } from './ExtrasSection'
 
 // Index-aligned with BUILD_STEPS in ../BuildRail.
@@ -18,8 +20,10 @@ const SECTIONS = [
   InverterSection,    // 3 Inverter
   BatterySection,     // 4 Batteries
   AcCombinerSection,  // 5 AC combiner
-  EarthingSection,    // 6 Earthing
-  ExtrasSection,      // 7 Extras
+  MonitoringSection,  // 6 Monitoring
+  EarthingSection,    // 7 Earthing
+  DataSection,        // 8 Data
+  ExtrasSection,      // 9 Extras
 ]
 
 export function ActiveSection() {

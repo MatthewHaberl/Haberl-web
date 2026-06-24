@@ -38,6 +38,8 @@ export interface EquipmentCatalogItem {
   show_on_store?: boolean
   store_price_rands?: number | null
   model_3d_url?: string | null
+  // "To-add" queue placeholder from the design canvas custom quick-add (migration 049).
+  pending?: boolean
   created_at?: string
   updated_at?: string
 }
@@ -623,6 +625,11 @@ export interface CompanySettings {
     account_type?: string
   }
   quote_expiry_days: number
+  // Per-company design-canvas circuit colour overrides (jsonb). Partial: only the
+  // layers/fields the user changed are stored; missing/null falls back to the brand
+  // defaults in lib/solar/canvas-theme.ts (CIRCUIT_THEME). Shape mirrors
+  // CanvasColorOverrides there — Partial<Record<CircuitLayer, Partial<CircuitStyle>>>.
+  canvas_colors?: Record<string, { label?: string; stroke?: string; fill?: string; striped?: boolean; stripe?: string }> | null
   updated_at: string
 }
 

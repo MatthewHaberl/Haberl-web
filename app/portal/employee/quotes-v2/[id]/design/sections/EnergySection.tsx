@@ -71,10 +71,20 @@ function fmtKw(v: number): string {
   return s.startsWith('0.') ? s.slice(1) : s      // ".5" reads cleaner than "0.5"
 }
 
+/** Colour options for the hourly bars — pick one live; we can persist the chosen one. */
+const BAR_COLORS: Array<{ key: string; label: string; from: string; to: string }> = [
+  { key: 'solar', label: 'Solar amber', from: '#d97706', to: '#fbbf24' },
+  { key: 'teal', label: 'Teal', from: '#0f766e', to: '#2dd4bf' },
+  { key: 'ocean', label: 'Ocean blue', from: '#1d4ed8', to: '#38bdf8' },
+  { key: 'grape', label: 'Grape', from: '#6d28d9', to: '#a78bfa' },
+]
+
 /** Draggable 24-hour bar chart. Drag a bar up/down to set that hour's kW. */
 function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: number, value: number) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState(false)
+  const [colorKey, setColorKey] = useState(BAR_COLORS[0].key)
+  const color = BAR_COLORS.find((c) => c.key === colorKey) ?? BAR_COLORS[0]
   const maxScale = useMemo(() => niceCeil(Math.max(...values, 0.5)), [values])
 
   const apply = useCallback((clientX: number, clientY: number) => {
@@ -97,9 +107,24 @@ function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: num
 
   return (
     <div className="select-none">
-      <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
+      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
         <span className="font-mono">{maxScale.toFixed(maxScale < 1 ? 2 : 1)} kW</span>
-        <span>Drag the bars to shape the day</span>
+        <div className="flex items-center gap-2">
+          <span className="hidden sm:inline">Drag the bars to shape the day</span>
+          <div className="flex items-center gap-1" title="Bar colour">
+            {BAR_COLORS.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                aria-label={c.label}
+                title={c.label}
+                onClick={() => setColorKey(c.key)}
+                className={`h-3.5 w-3.5 rounded-full transition ${colorKey === c.key ? 'ring-2 ring-foreground/50 ring-offset-1' : 'ring-1 ring-border'}`}
+                style={{ background: `linear-gradient(to top, ${c.from}, ${c.to})` }}
+              />
+            ))}
+          </div>
+        </div>
       </div>
       <div
         ref={ref}
@@ -111,21 +136,32 @@ function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: num
         <div className="pointer-events-none absolute inset-x-1 top-1/2 border-t border-dashed border-border/70" />
         {values.map((v, h) => {
           const frac = Math.min(1, v / maxScale)
+          const inside = frac > 0.16 // tall enough to hold the label inside the bar
           return (
             <div
               key={h}
-              className="flex h-full flex-1 flex-col items-center justify-end"
+              className="relative flex h-full flex-1 flex-col items-center justify-end"
               title={`${String(h).padStart(2, '0')}:00 — ${v.toFixed(2)} kW`}
             >
-              {v > 0 && (
+              {v > 0 && !inside && (
                 <span className="pointer-events-none mb-0.5 font-mono text-[7px] leading-none tabular-nums text-muted-foreground">
                   {fmtKw(v)}
                 </span>
               )}
               <div
-                className="w-full rounded-t bg-primary/70 transition-[height] hover:bg-primary"
-                style={{ height: `${frac * 100}%`, minHeight: v > 0 ? 2 : 0 }}
-              />
+                className="relative w-full rounded-t transition-[height] hover:brightness-110"
+                style={{
+                  height: `${frac * 100}%`,
+                  minHeight: v > 0 ? 2 : 0,
+                  background: `linear-gradient(to top, ${color.from}, ${color.to})`,
+                }}
+              >
+                {v > 0 && inside && (
+                  <span className="pointer-events-none absolute inset-x-0 top-px text-center font-mono text-[7px] leading-none tabular-nums text-white/95">
+                    {fmtKw(v)}
+                  </span>
+                )}
+              </div>
             </div>
           )
         })}
@@ -266,21 +302,22 @@ export function EnergySection() {
           {/* Drag-to-edit bar chart — values stay bound to the inputs below */}
           <HourlyBarChart values={gridValues} onSet={setCell} />
 
-          {/* Numeric grid: 00:00–11:00 left, 12:00–23:00 right */}
-          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-1">
+          {/* Numeric grid: 00:00–11:00 left, 12:00–23:00 right — compact + centred so each
+              hour label sits right beside its value rather than spread across the full width */}
+          <div className="mt-3 mx-auto grid max-w-md grid-cols-2 gap-x-6 gap-y-1">
             {[0, 1].map((col) => (
               <div key={col} className="flex flex-col gap-1">
                 {gridValues.slice(col * 12, col * 12 + 12).map((v: number, idx: number) => {
                   const h = col * 12 + idx
                   return (
-                    <label key={h} className="flex items-center gap-1.5">
-                      <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground">{String(h).padStart(2, '0')}:00</span>
+                    <label key={h} className="flex items-center justify-center gap-1.5">
+                      <span className="w-9 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground">{String(h).padStart(2, '0')}:00</span>
                       <input
                         type="number" min={0} step="any"
                         value={v ? +v.toFixed(2) : ''}
                         placeholder="0"
                         onChange={(ev) => setCell(h, ev.target.value === '' ? 0 : Number(ev.target.value))}
-                        className="h-7 w-full rounded border border-border bg-background px-1.5 text-xs text-right tabular-nums focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                        className="h-7 w-16 rounded border border-border bg-background px-1.5 text-xs text-center tabular-nums focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                       />
                       <span className="shrink-0 text-[10px] text-muted-foreground">kW</span>
                     </label>

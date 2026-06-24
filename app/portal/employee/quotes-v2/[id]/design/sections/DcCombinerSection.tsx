@@ -9,7 +9,7 @@ import {
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
 import { ProductPicker } from '../ProductPicker'
-import { SectionCard, EmptyHint } from '../section-ui'
+import { SectionCard, EmptyHint, LockNote, LOCKED_FIELD, ReorderButtons } from '../section-ui'
 
 function stringLabel(panels: PanelGroup[], id: string): string {
   const i = panels.findIndex((p) => p.id === id)
@@ -79,6 +79,15 @@ export function DcCombinerSection() {
   function setStringConn(c: DcCombiner, sid: string, p: Partial<StringConnection>) {
     patch(c, { stringConnections: { ...c.stringConnections, [sid]: { ...conn(c, sid), ...p } } })
   }
+  // Fuse cascade (item 24): no fuse holder → there can be no fuse, so force fuse = none, qty 0.
+  function setFuseHolder(c: DcCombiner, sid: string, holderId: string | null) {
+    setStringConn(c, sid, holderId ? { fuseHolderId: holderId } : { fuseHolderId: null, fuseId: null, fuseQty: 0 })
+  }
+
+  // Move an output up/down within this combiner (item 25).
+  function moveOutput(c: DcCombiner, from: number, to: number) {
+    dispatch({ type: 'reorderCombinerComponent', combinerId: c.id, list: 'outputs', from, to })
+  }
 
   return (
     <SectionCard
@@ -100,7 +109,10 @@ export function DcCombinerSection() {
         </EmptyHint>
       ) : (
         <div className="flex flex-col gap-4">
-          {combiners.map((c) => (
+          {combiners.map((c) => {
+            // Catalog DB chosen → enclosure material / mount / ways / rows come from it (item 24).
+            const locked = !!c.enclosureCatalogId
+            return (
             <div key={c.id} className="rounded-lg border border-border p-3">
               <div className="flex items-center justify-between mb-3">
                 <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
@@ -130,28 +142,29 @@ export function DcCombinerSection() {
                 </select>
                 <span className="text-[10px] text-muted-foreground">Pick one to auto-fill the fields below, or set them manually.</span>
               </label>
+              {locked && <div className="mb-2"><LockNote>Material, mount, ways and rows come from the chosen DB</LockNote></div>}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] text-muted-foreground">Material</span>
-                  <select value={c.material} onChange={(e) => patch(c, { material: e.target.value as DcCombiner['material'] })} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
+                  <select value={c.material} disabled={locked} onChange={(e) => patch(c, { material: e.target.value as DcCombiner['material'] })} className={`h-8 rounded-md border border-border bg-background px-2 text-xs ${LOCKED_FIELD}`}>
                     {ENCLOSURE_MATERIALS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] text-muted-foreground">Mount</span>
-                  <select value={c.mount} onChange={(e) => patch(c, { mount: e.target.value as DcCombiner['mount'] })} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
+                  <select value={c.mount} disabled={locked} onChange={(e) => patch(c, { mount: e.target.value as DcCombiner['mount'] })} className={`h-8 rounded-md border border-border bg-background px-2 text-xs ${LOCKED_FIELD}`}>
                     {ENCLOSURE_MOUNTS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] text-muted-foreground">Ways</span>
-                  <select value={c.ways} onChange={(e) => patch(c, { ways: Number(e.target.value) })} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
+                  <select value={c.ways} disabled={locked} onChange={(e) => patch(c, { ways: Number(e.target.value) })} className={`h-8 rounded-md border border-border bg-background px-2 text-xs ${LOCKED_FIELD}`}>
                     {ENCLOSURE_WAYS.map((w) => <option key={w} value={w}>{w}-way</option>)}
                   </select>
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] text-muted-foreground">Rows</span>
-                  <input type="number" min={1} max={4} value={c.rows} onChange={(e) => patch(c, { rows: clamp(Math.round(Number(e.target.value) || 1), 1, 4) })} className="h-8 rounded-md border border-border bg-background px-2 text-xs" />
+                  <input type="number" min={1} max={4} value={c.rows} disabled={locked} onChange={(e) => patch(c, { rows: clamp(Math.round(Number(e.target.value) || 1), 1, 4) })} className={`h-8 rounded-md border border-border bg-background px-2 text-xs ${LOCKED_FIELD}`} />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] text-muted-foreground">IP rating</span>
@@ -193,7 +206,10 @@ export function DcCombinerSection() {
               <div className="flex flex-col gap-2.5">
                 {c.outputs.map((o, oi) => (
                   <div key={o.id} className="rounded-md border border-border/70 bg-muted/20 p-2.5">
-                    <span className="text-[11px] font-semibold text-foreground">{o.label || `Output ${oi + 1}`}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-foreground">{o.label || `Output ${oi + 1}`}</span>
+                      {c.outputs.length > 1 && <ReorderButtons index={oi} count={c.outputs.length} onMove={(from, to) => moveOutput(c, from, to)} />}
+                    </div>
 
                     {c.outputs.length > 1 && (
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -229,11 +245,21 @@ export function DcCombinerSection() {
                               <span className="text-[10px] font-medium text-foreground">{stringLabel(panels, sid)}</span>
                               <div className="mt-1 grid grid-cols-2 md:grid-cols-5 gap-1.5">
                                 <ProductPicker items={items} category="breaker" label="Breaker" value={k.breakerId} onChange={(v) => setStringConn(c, sid, { breakerId: v })} />
-                                <ProductPicker items={items} category="fuseholder" label="Fuse holder" value={k.fuseHolderId} onChange={(v) => setStringConn(c, sid, { fuseHolderId: v })} />
-                                <ProductPicker items={items} category="fuse" label="Fuse" value={k.fuseId} onChange={(v) => setStringConn(c, sid, { fuseId: v })} />
+                                <ProductPicker items={items} category="fuseholder" label="Fuse holder" value={k.fuseHolderId} onChange={(v) => setFuseHolder(c, sid, v)} />
+                                {/* No holder → no fuse: fuse + qty are forced to none and greyed out (item 24). */}
+                                {k.fuseHolderId ? (
+                                  <ProductPicker items={items} category="fuse" label="Fuse" value={k.fuseId} onChange={(v) => setStringConn(c, sid, { fuseId: v })} />
+                                ) : (
+                                  <label className="flex flex-col gap-0.5">
+                                    <span className="text-[10px] text-muted-foreground">Fuse</span>
+                                    <select disabled value="" className={`h-7 rounded border border-border bg-background px-1.5 text-[11px] ${LOCKED_FIELD}`}>
+                                      <option value="">None (no holder)</option>
+                                    </select>
+                                  </label>
+                                )}
                                 <label className="flex flex-col gap-0.5">
                                   <span className="text-[10px] text-muted-foreground">Fuse qty</span>
-                                  <input type="number" min={0} value={k.fuseQty} onChange={(e) => setStringConn(c, sid, { fuseQty: Math.max(0, Math.round(Number(e.target.value) || 0)) })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]" />
+                                  <input type="number" min={0} value={k.fuseQty} disabled={!k.fuseHolderId} onChange={(e) => setStringConn(c, sid, { fuseQty: Math.max(0, Math.round(Number(e.target.value) || 0)) })} className={`h-7 rounded border border-border bg-background px-1.5 text-[11px] ${LOCKED_FIELD}`} />
                                 </label>
                                 <ProductPicker items={items} category="isolator" label="Isolator" value={k.isolatorId} onChange={(v) => setStringConn(c, sid, { isolatorId: v })} />
                               </div>
@@ -256,7 +282,8 @@ export function DcCombinerSection() {
 
               <p className="mt-3 text-[11px] text-muted-foreground">{combinerConfigLabel(c)} · {c.productCode}</p>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </SectionCard>

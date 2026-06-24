@@ -2,28 +2,54 @@
 
 import React from 'react'
 import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react'
-import { Sun, Battery, Zap, Grid2x2, CircuitBoard, PlugZap, Combine, Box } from 'lucide-react'
+import { Sun, Battery, Zap, Grid2x2, CircuitBoard, PlugZap, Combine, Box, Activity } from 'lucide-react'
 import { getLugSpecsCached } from '@/lib/solar/lug-calculator'
+import { CIRCUIT_THEME, NODE_THEME, useCircuitTheme, type CircuitStyle, type CircuitLayer } from '@/lib/solar/canvas-theme'
 
 // ── Brand / circuit colours ───────────────────────────────────────────────────
-export const CLR = {
-  dc:      '#f97316',  // orange  — PV / DC
-  bat:     '#16a34a',  // green   — battery
-  ac:      '#2563eb',  // blue    — AC
-  earth:   '#65a30d',  // lime    — earthing
-  grid:    '#7c3aed',  // purple  — grid
-  inv:     '#1e3a5f',  // navy    — inverter
+// Single source of truth: lib/solar/canvas-theme.ts. CLR is kept as a thin alias
+// so existing imports (sld-edges) keep working, but every hex now comes from the
+// theme — AC=red, Data=dark blue, Battery=teal, PV=orange, grid=violet, earth striped.
+// These module-level constants are the DEFAULTS (no override). Node components read
+// the settings-overridable colours via useNodeColors(); these stay for static use.
+type Clr = {
+  dc: string; bat: string; ac: string; earth: string; grid: string; inv: string; data: string
+}
+function buildClr(theme: Record<CircuitLayer, CircuitStyle>): Clr {
+  return {
+    dc:      theme.pv.stroke,       // orange  — PV / DC
+    bat:     theme.battery.stroke,  // teal    — battery
+    ac:      theme.ac.stroke,       // red     — AC
+    earth:   theme.earth.stroke,    // green   — earthing (striped on edges)
+    grid:    theme.grid.stroke,     // violet  — grid
+    inv:     theme.data.stroke,     // dark blue — inverter body / data
+    data:    theme.data.stroke,     // dark blue — comms / monitoring
+  }
+}
+function buildSimpleBlockColor(c: Clr): Record<string, string> {
+  return {
+    dcIsolator:  c.dc,
+    acIsolator:  c.ac,
+    spd:         c.dc,
+    generator:   '#6b7280',
+    changeover:  '#6b7280',
+    meter:       c.ac,
+    evCharger:   c.bat,
+    custom:      '#6b7280',
+  }
 }
 
-export const SIMPLE_BLOCK_COLOR: Record<string, string> = {
-  dcIsolator:  CLR.dc,
-  acIsolator:  CLR.ac,
-  spd:         CLR.dc,
-  generator:   '#6b7280',
-  changeover:  '#6b7280',
-  meter:       CLR.ac,
-  evCharger:   CLR.bat,
-  custom:      '#6b7280',
+export const CLR = buildClr(CIRCUIT_THEME)
+
+export const SIMPLE_BLOCK_COLOR: Record<string, string> = buildSimpleBlockColor(CLR)
+
+// Per-render resolved circuit colours for the node components — follows the
+// settings override when a CanvasThemeProvider is present, else the defaults.
+function useNodeColors(): { CLR: Clr; SIMPLE_BLOCK_COLOR: Record<string, string> } {
+  const { theme } = useCircuitTheme()
+  if (theme === CIRCUIT_THEME) return { CLR, SIMPLE_BLOCK_COLOR }
+  const clr = buildClr(theme)
+  return { CLR: clr, SIMPLE_BLOCK_COLOR: buildSimpleBlockColor(clr) }
 }
 
 const H = (color: string, extra?: React.CSSProperties): React.CSSProperties => ({
@@ -108,8 +134,10 @@ function Chip({ label, color }: { label: string; color: string }) {
 }
 
 // Earth bonding points — a source + target dot on the left so earth/bonding runs
-// in the earth-map overlay can pin to any node (both ends resolvable).
+// in the earth-map overlay can pin to any node (both ends resolvable). Reads the
+// resolved earth colour so a settings override flows through here too.
 function EarthHandles() {
+  const { CLR } = useNodeColors()
   return (
     <>
       <Handle type="source" id="earth-s" position={Position.Left} style={H(CLR.earth, { top: '12%' })} title="Earth / bond" />
@@ -128,6 +156,7 @@ export function SolarArrayNode({ data, selected }: NodeProps) {
     mountingLayout?: Array<{ id: string; count: number; orientation: string; mountType: string }>
     earthingRequired?: boolean; earthingMethod?: string
   }
+  const { CLR } = useNodeColors()
   const shortModel = d.panelModel ? d.panelModel.split(' ').slice(0, 3).join(' ') : ''
 
   // Auto-calc kWp from panel count × watt if totalKwp not explicitly set
@@ -181,8 +210,13 @@ export function CombinerNode({ data, selected }: NodeProps) {
     hasSpd: boolean; config: string
     // new fields
     plastic?: boolean; metal?: boolean; requiresEarth?: boolean; earthingSource?: string
+    // ports (item 22) — set by designToFlow; default to single-output behaviour.
+    inputCount?: number; outputCount?: number
   }
-  const n = Math.max(1, d.stringCount)
+  const { CLR } = useNodeColors()
+  // Inputs default to the string count; outputs default to a single combined feed.
+  const n = Math.max(1, d.inputCount ?? d.stringCount)
+  const outN = Math.max(1, d.outputCount ?? 1)
 
   const materialChips: React.ReactNode[] = []
   if (d.plastic) materialChips.push(<Chip key="pl" label="Plastic" color="#6b7280" />)
@@ -216,7 +250,21 @@ export function CombinerNode({ data, selected }: NodeProps) {
       <Row label="Strings" value={n} />
       <Row label="Fuses" value={`${n} × ${d.fuseRating}`} />
       {d.hasSpd && <Row label="SPD" value="Type 2 included" />}
-      <Handle type="source" id="dc-out" position={Position.Bottom} style={H(CLR.dc)} title="DC out → Inverter PV input" />
+      {/* Output ports (item 22): one combined feed by default, or `outputCount` taps.
+          The first keeps id `dc-out` so existing combiner→inverter edges still resolve. */}
+      {Array.from({ length: outN }, (_, i) => {
+        const pct = outN === 1 ? 50 : 10 + (i / (outN - 1)) * 80
+        return (
+          <Handle
+            key={i}
+            type="source"
+            id={i === 0 ? 'dc-out' : `out-${i}`}
+            position={Position.Bottom}
+            style={H(CLR.dc, outN === 1 ? undefined : { left: `${pct}%`, transform: 'translateX(-50%)' })}
+            title="DC out → Inverter PV input"
+          />
+        )
+      })}
       <EarthHandles />
     </NodeCard>
   )
@@ -232,6 +280,7 @@ export function InverterNode({ data, selected }: NodeProps) {
     pvConnectorType?: string; pvConnectorQty?: number
     acOutCableSpec?: string; acOut2CableSpec?: string
   }
+  const { CLR } = useNodeColors()
   const shortModel = d.model ? d.model.split(' ').slice(0, 4).join(' ') : ''
   const outputCount = d.outputCount ?? 1
   const hasEps = d.hasEpsOutput ?? false
@@ -273,6 +322,9 @@ export function InverterNode({ data, selected }: NodeProps) {
       {(hasEps || outputCount >= 2) && (
         <Handle type="source" id="ac-out-2" position={Position.Bottom} style={H(CLR.ac, { left: '72%' })} title="EPS / backup output" />
       )}
+      {/* Data / comms ports — TOP right; monitoring + data-link edges land/leave here */}
+      <Handle type="target" id="data-in"  position={Position.Top}   style={H(CLR.data, { left: '78%' })} title="Data / comms in" />
+      <Handle type="source" id="data-out" position={Position.Top}   style={H(CLR.data, { left: '92%' })} title="Data / comms out" />
       <EarthHandles />
 
       {shortModel && <Row label="Model" value={shortModel} />}
@@ -290,6 +342,7 @@ export function BatteryNode({ data, selected }: NodeProps) {
     label: string; model: string; qty: number
     totalKwh: number; chemistry: string
   }
+  const { CLR } = useNodeColors()
   const shortModel = d.model ? d.model.split(' ').slice(0, 3).join(' ') : ''
 
   return (
@@ -311,6 +364,7 @@ export function GridNode({ data, selected }: NodeProps) {
     label: string; utility: string; voltage: number
     phases: number; breakerA: number
   }
+  const { CLR } = useNodeColors()
 
   return (
     <NodeCard color={CLR.grid} Icon={PlugZap} title={d.label || 'Grid Supply'} selected={selected}>
@@ -329,17 +383,29 @@ export function GridNode({ data, selected }: NodeProps) {
 export function DBBoardNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string; mainBreakerA: number; rccbA: number; phases: number
+    // ports (item 22): outgoing circuits fed from this board.
+    inputCount?: number; outputCount?: number
   }
+  const { CLR } = useNodeColors()
+  const outN = Math.max(1, Math.round(Number(d.outputCount) || 1))
 
   return (
     <NodeCard color={CLR.ac} Icon={CircuitBoard} title={d.label || 'Distribution Board'} selected={selected}>
       {/* AC input from inverter RIGHT → comes in from the LEFT */}
       <Handle type="target" id="ac-in"     position={Position.Left}   style={H(CLR.ac)}                      title="AC input from Inverter" />
+      {/* Outgoing circuits (item 22) — one tap per device fed from the supply, on the RIGHT */}
+      {Array.from({ length: outN }, (_, i) => {
+        const top = outN === 1 ? '50%' : `${((i + 1) / (outN + 1)) * 100}%`
+        return (
+          <Handle key={i} type="source" id={`circ-${i}`} position={Position.Right} style={H(CLR.ac, { top })} title="Outgoing circuit" />
+        )
+      })}
       {/* Earth goes DOWN to earthing system */}
       <Handle type="source" id="earth-out" position={Position.Bottom} style={H(CLR.earth, { left: '70%' })} title="Earth → Earthing system" />
       <EarthHandles />
       {d.mainBreakerA > 0 && <Row label="Main CB" value={`${d.mainBreakerA}A ${d.phases >= 3 ? 'TP' : 'DP'}`} />}
       {d.rccbA > 0 && <Row label="RCCB" value={`${d.rccbA} mA`} />}
+      {outN > 1 && <Row label="Ways out" value={outN} accent={CLR.ac} />}
       <Row label="Phase" value={`${d.phases}Ø`} />
     </NodeCard>
   )
@@ -348,6 +414,7 @@ export function DBBoardNode({ data, selected }: NodeProps) {
 // ── Earthing System — input on TOP (below DB Board) ───────────────────────────
 export function EarthingNode({ data, selected }: NodeProps) {
   const d = data as { label: string; spikeCount: number; spec: string }
+  const { CLR } = useNodeColors()
 
   return (
     <NodeCard color={CLR.earth} Icon={Grid2x2} title={d.label || 'Earthing'} selected={selected}>
@@ -368,6 +435,7 @@ export function SimpleBlockNode({ data, selected, type }: NodeProps) {
     kva?: number; kw?: number; fuelType?: string
     color?: string
   }
+  const { SIMPLE_BLOCK_COLOR } = useNodeColors()
   const color = d.color ?? SIMPLE_BLOCK_COLOR[type ?? 'custom'] ?? '#6b7280'
 
   return (
@@ -450,12 +518,20 @@ export function ConnectorNode({ data, selected }: NodeProps) {
 
 // ── Bus block — disconnect / busbar (upward flow: bottom-in, top-out) ─────────
 export function BusBlockNode({ data, selected }: NodeProps) {
-  const d = data as { label?: string; kind?: 'disconnect' | 'busbar'; product?: string; connections?: number }
+  const d = data as {
+    label?: string; kind?: 'disconnect' | 'busbar'; product?: string; connections?: number
+    // ports (item 22) + disconnect product/type (item 23) from designToFlow
+    inputCount?: number; outputCount?: number; disconnectType?: string
+  }
+  const { CLR } = useNodeColors()
   const isBus = d.kind === 'busbar'
   const color = CLR.bat
   // A busbar exposes one in/out port pair per connection so each battery (or feed)
-  // gets its own tap; a disconnect keeps a single up/down pair.
-  const conn = isBus ? Math.max(1, Math.min(24, Math.round(Number(d.connections) || 1))) : 1
+  // gets its own tap; a disconnect keeps a single up/down pair. `inputCount` (item 22)
+  // overrides the legacy `connections` count when supplied by designToFlow.
+  const conn = isBus ? Math.max(1, Math.min(24, Math.round(Number(d.inputCount ?? d.connections) || 1))) : 1
+  // Output taps off a disconnect — single by default; >1 splits the up port out.
+  const outN = isBus ? 1 : Math.max(1, Math.round(Number(d.outputCount) || 1))
   return (
     <div style={{
       minWidth: isBus ? Math.max(200, conn * 26) : 78, maxWidth: isBus ? Math.max(320, conn * 26) : 130,
@@ -478,7 +554,13 @@ export function BusBlockNode({ data, selected }: NodeProps) {
       ) : (
         <>
           <Handle type="target" id="down" position={Position.Bottom} style={H(color)} />
-          <Handle type="source" id="up" position={Position.Top} style={H(color)} />
+          {/* Output taps (item 22): first keeps id `up` so existing disconnect edges resolve. */}
+          {Array.from({ length: outN }, (_, i) => {
+            const left = outN === 1 ? '50%' : `${((i + 1) / (outN + 1)) * 100}%`
+            return (
+              <Handle key={i} type="source" id={i === 0 ? 'up' : `up-${i}`} position={Position.Top} style={H(color, { left })} />
+            )
+          })}
         </>
       )}
       <div style={{ padding: '4px 8px', textAlign: 'center', background: isBus ? color : '#fff' }}>
@@ -486,7 +568,44 @@ export function BusBlockNode({ data, selected }: NodeProps) {
           {d.label || (isBus ? 'Busbar' : 'Disconnect')}
         </div>
         {isBus && <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.85)', lineHeight: 1.3 }}>{conn}-way</div>}
+        {!isBus && d.disconnectType && <div style={{ fontSize: 8, color, lineHeight: 1.3, textTransform: 'uppercase' }}>{d.disconnectType}</div>}
         {d.product && <div style={{ fontSize: 8.5, color: isBus ? 'rgba(255,255,255,0.85)' : color }}>{d.product}</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── Monitoring / comms device (item 26) — sits on the DATA layer off the inverter ──
+export function MonitoringNode({ data, selected }: NodeProps) {
+  const d = data as { label?: string; role?: 'bundled' | 'additional'; commsType?: string; product?: string | null }
+  const { CLR } = useNodeColors()
+  const color = CLR.data
+  return (
+    <div style={{
+      minWidth: 96, maxWidth: 150,
+      background: '#fff',
+      border: `2px solid ${selected ? color : color + 'aa'}`,
+      borderRadius: 6,
+      boxShadow: selected ? `0 0 0 3px ${color}30, 0 1px 4px rgba(0,0,0,0.12)` : '0 1px 3px rgba(0,0,0,0.10)',
+      fontFamily: 'system-ui, sans-serif', overflow: 'hidden',
+    }}>
+      {/* Comms in from the inverter (or any data source) + an out for chained links */}
+      <Handle type="target" id="data-in"  position={Position.Bottom} style={H(color)} title="Data / comms in" />
+      <Handle type="source" id="data-out" position={Position.Top}    style={H(color)} title="Data / comms out" />
+      <div style={{
+        background: color, color: '#fff',
+        padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4,
+        fontWeight: 700, fontSize: 10, letterSpacing: 0.3,
+      }}>
+        <Activity size={11} />
+        <span style={{ textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {d.label || 'Monitoring'}
+        </span>
+      </div>
+      <div style={{ padding: '5px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {d.role && <Row label="Role" value={d.role === 'bundled' ? 'Bundled' : 'Additional'} />}
+        {d.commsType && <Row label="Comms" value={d.commsType} accent={color} />}
+        {d.product && <Row label="Product" value={d.product} />}
       </div>
     </div>
   )
@@ -511,5 +630,6 @@ export const nodeTypes = {
   evCharger:   SimpleBlockNode,
   custom:      SimpleBlockNode,
   connector:   ConnectorNode,
+  monitoring:  MonitoringNode,
   textNote:    TextNoteNode,
 }

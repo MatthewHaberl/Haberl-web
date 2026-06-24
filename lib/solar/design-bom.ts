@@ -13,6 +13,15 @@ import {
   designBatteryKwh, designToFlow, type SystemDesign,
 } from './system-design'
 
+// Defensive mirror of ProductPicker's custom sentinel (CUSTOM_PREFIX). A finished
+// design should only carry real catalog ids (custom quick-adds become `pending`
+// rows), but an older save or a failed insert may still hold a `custom:<label>`
+// value — we never print the raw marker, we surface the label as a "Quote" line.
+const CUSTOM_PREFIX = 'custom:'
+const isCustomValue = (v: string | null | undefined): v is string =>
+  typeof v === 'string' && v.startsWith(CUSTOM_PREFIX)
+const customLabel = (v: string): string => v.slice(CUSTOM_PREFIX.length)
+
 /** Why a line has no price — drives the "get a quote" view. */
 export type BomLineStatus = 'ok' | 'no-product' | 'product-missing' | 'no-cost'
 
@@ -75,6 +84,9 @@ export function designToBom(
       })
     }
     if (!catalogId) { unpriced(`unpriced:${section}:${label ?? lines.length}`, '—', label ?? `${section} item`, 'no-product'); return }
+    // Stray custom placeholder (sentinel) — render its label, flag for pricing, and
+    // never leak the raw `custom:` marker into the BOM.
+    if (isCustomValue(catalogId)) { unpriced(`unpriced:${section}:${label ?? lines.length}`, '—', customLabel(catalogId) || label || `${section} item`, 'no-product'); return }
     const item = catalog.get(catalogId)
     if (!item) { missing += 1; unpriced(catalogId, '—', label ? `${label} (product not in catalog)` : '(product not in catalog)', 'product-missing'); return }
     if (!item.cost_rands || item.cost_rands <= 0) { unpriced(catalogId, item.sku, item.description || label || item.sku, 'no-cost'); return }
@@ -90,22 +102,24 @@ export function designToBom(
   // Panels
   for (const g of design.panels) add('Panels', g.catalogId, g.panelCount, { label: g.panelModel || 'PV module' })
 
-  // DC combiners
-  for (const c of design.dcCombiners) {
-    add('DC combiner', c.enclosureCatalogId, 1, { label: 'DC combiner enclosure' })
+  // DC combiners — qualify each line with its combiner so the itemised view shows
+  // which enclosure an occurrence lives in (consolidation later sums identical items).
+  design.dcCombiners.forEach((c, ci) => {
+    const where = design.dcCombiners.length > 1 ? ` — DC combiner ${ci + 1}` : ''
+    add('DC combiner', c.enclosureCatalogId, 1, { label: `DC combiner enclosure${where}` })
     for (const sid of c.inputStringIds) {
       const k = c.stringConnections[sid]
       if (!k) continue
-      add('DC combiner', k.breakerId, 1, { label: 'String breaker' })
-      add('DC combiner', k.fuseHolderId, 1, { label: 'Fuse holder' })
-      add('DC combiner', k.fuseId, Math.max(1, k.fuseQty), { label: 'PV fuse' })
-      add('DC combiner', k.isolatorId, 1, { label: 'DC isolator' })
+      add('DC combiner', k.breakerId, 1, { label: `String breaker${where}` })
+      add('DC combiner', k.fuseHolderId, 1, { label: `Fuse holder${where}` })
+      add('DC combiner', k.fuseId, Math.max(1, k.fuseQty), { label: `PV fuse${where}` })
+      add('DC combiner', k.isolatorId, 1, { label: `DC isolator${where}` })
     }
     for (const o of c.outputs) {
-      add('DC combiner', o.spdId, 1, { label: 'DC SPD' })
-      if (o.stringIds.length > 1) add('DC combiner', o.mainBreakerId, 1, { label: 'DC main breaker' })
+      add('DC combiner', o.spdId, 1, { label: `DC SPD${where}` })
+      if (o.stringIds.length > 1) add('DC combiner', o.mainBreakerId, 1, { label: `DC main breaker${where}` })
     }
-  }
+  })
 
   // Inverter
   for (const u of design.inverters) add('Inverter', u.catalogId, u.qty, { label: u.model || 'Inverter' })
@@ -116,27 +130,53 @@ export function designToBom(
   const bank = design.bank
   if (designBatteryKwh(design) > 0) {
     // Rough cable metres until measured routes exist: ~3m per battery lead + 6m feed.
+    // (Itemised bank cables in bank.cables[] are priced via the diagram's conductors below.)
     if (bank.cableProductId) add('Batteries', bank.cableProductId, Math.max(6, batteryCount * 3 + 6), { approx: true, label: 'Battery cable' })
-    if (bank.perBatteryDisconnect) add('Batteries', bank.perBatteryDisconnectId, Math.max(1, batteryCount), { label: 'Battery disconnect' })
-    if (bank.mainDisconnect) add('Batteries', bank.mainDisconnectId, 1, { label: 'Main DC disconnect' })
-  }
-
-  // AC board(s) — enclosure + every device on the inside, in wiring order.
-  for (const c of design.acCombiners) {
-    add('AC board', c.enclosureCatalogId, 1, { label: 'AC board enclosure' })
-    const components = c.components ?? []
-    if (components.length > 0) {
-      for (const comp of components) add('AC board', comp.productId, Math.max(1, comp.qty || 1), { label: comp.label })
-    } else {
-      // Legacy boards saved before the component list (defensive — parseDesign normalizes).
-      add('AC board', c.mainBreakerId, 1, { label: 'AC main breaker' })
-      add('AC board', c.rccbId, 1, { label: 'RCCB / earth leakage' })
-      add('AC board', c.spdId, 1, { label: 'AC SPD' })
+    // Per-battery + main disconnect products (item 23): prefer the chosen product/type,
+    // falling back to the legacy ids so old saved designs still price.
+    const perBatProduct = bank.perBatteryDisconnectChoice?.product ?? bank.perBatteryDisconnectId
+    const mainProduct = bank.mainDisconnectChoice?.product ?? bank.mainDisconnectId
+    const perBatLabel = bank.perBatteryDisconnectChoice?.type ? `Battery disconnect (${bank.perBatteryDisconnectChoice.type})` : 'Battery disconnect'
+    const mainLabel = bank.mainDisconnectChoice?.type ? `Main DC disconnect (${bank.mainDisconnectChoice.type})` : 'Main DC disconnect'
+    if (bank.perBatteryDisconnect) add('Batteries', perBatProduct, Math.max(1, batteryCount), { label: perBatLabel })
+    if (bank.mainDisconnect) add('Batteries', mainProduct, 1, { label: mainLabel })
+    // Busbar fabrication (item 27) — only listed when a non-default bar is spec'd.
+    if (bank.busbar && bank.busbarSpec) {
+      const bs = bank.busbarSpec
+      const dims = bs.lengthMm && bs.widthMm ? ` ${bs.widthMm}×${bs.lengthMm}mm` : ''
+      const busLabel = `DC busbar${bs.material ? ` (${bs.material})` : ''}${dims}`.trim()
+      add('Batteries', bs.product, 1, { label: busLabel })
     }
   }
 
-  // Extras
-  for (const x of design.extras) add('Extras', x.productId, 1, { label: x.label })
+  // AC board(s) — enclosure + every device on the inside, in wiring order.
+  design.acCombiners.forEach((c, bi) => {
+    const where = design.acCombiners.length > 1 ? ` — AC board ${bi + 1}` : ''
+    add('AC board', c.enclosureCatalogId, 1, { label: `AC board enclosure${where}` })
+    const components = c.components ?? []
+    if (components.length > 0) {
+      for (const comp of components) add('AC board', comp.productId, Math.max(1, comp.qty || 1), { label: `${comp.label}${where}` })
+    } else {
+      // Legacy boards saved before the component list (defensive — parseDesign normalizes).
+      add('AC board', c.mainBreakerId, 1, { label: `AC main breaker${where}` })
+      add('AC board', c.rccbId, 1, { label: `RCCB / earth leakage${where}` })
+      add('AC board', c.spdId, 1, { label: `AC SPD${where}` })
+    }
+  })
+
+  // Extras — the block itself plus any nested sub-components (item 31).
+  for (const x of design.extras) {
+    add('Extras', x.productId, 1, { label: x.label })
+    for (const sc of x.components ?? []) {
+      add('Extras', sc.product, Math.max(1, sc.qty || 1), { label: `${x.label} — ${sc.label || sc.kind}` })
+    }
+  }
+
+  // Monitoring / comms hardware (item 26) — dongles, meters, gateways per inverter.
+  for (const m of design.monitoring ?? []) {
+    const label = `${m.label || 'Monitoring'}${m.commsType ? ` (${m.commsType})` : ''}${m.role === 'bundled' ? ' — bundled' : ''}`
+    add('Monitoring', m.catalogId, 1, { label })
+  }
 
   // Earthing hardware (rods + bars). No catalog product field yet → surfaced to quote.
   const earth = design.earthing
@@ -278,5 +318,72 @@ export function designToBom(
     totalSellR: round2(sections.reduce((s, x) => s + x.sellR, 0)),
     missing,
     needsPricing: lines.filter((l) => !l.priced).length,
+  }
+}
+
+// ── Consolidation ─────────────────────────────────────────────────────────────
+// Itemised BOM = one line per occurrence per location (built above). The
+// consolidated view SUMS identical items across the whole design into one line:
+// the same catalog product reused in three combiners (2 each) becomes "order 6";
+// equal cable colour+spec lengths add up (H07Z red 12m + 35m + 8m → 55m). Lines
+// merge when they share an identity key — the catalog product for a real product,
+// else the sku + a normalised description with the location qualifier stripped.
+
+/** Strip a trailing "— DC combiner 1 / — AC board 2 / — <extra>" location tag. */
+function stripLocation(description: string): string {
+  return description.replace(/\s+—\s+.*$/, '').trim()
+}
+
+/** Stable identity for grouping identical items across the whole design. */
+function consolidationKey(l: BomLine): string {
+  // Drop the location qualifier and any "N× " run-count prefix so the same cable
+  // colour+spec merges regardless of where it ran or how many parallel cores.
+  const base = stripLocation(l.description).replace(/^\d+×\s+/, '')
+  // A real catalog product is the same item wherever it appears.
+  if (l.priced && l.status === 'ok' && !l.catalogId.startsWith('cable:') && !l.catalogId.startsWith('consumable:') && !l.catalogId.startsWith('labour:')) {
+    return `prod:${l.catalogId}`
+  }
+  // Cables, consumables, labour and unpriced lines group on sku + base label.
+  return `spec:${l.sku}|${base}|${l.status}`
+}
+
+/**
+ * Collapse an itemised BOM into one line per identity, summing qty + line totals.
+ * Preserves section + line order (first occurrence wins). Used by the BOM panel's
+ * Consolidated view; the same DesignBom shape comes back, so renderers are shared.
+ */
+export function consolidateBom(bom: DesignBom): DesignBom {
+  const sections: BomSection[] = bom.sections.map((section) => {
+    const order: string[] = []
+    const map = new Map<string, BomLine>()
+    for (const l of section.lines) {
+      const key = consolidationKey(l)
+      const existing = map.get(key)
+      if (!existing) {
+        order.push(key)
+        // Clone, dropping the per-location qualifier + "N× " run prefix from the
+        // shown description (summed metres live in qty for the consolidated line).
+        map.set(key, { ...l, description: stripLocation(l.description).replace(/^\d+×\s+/, '') })
+      } else {
+        existing.qty += l.qty
+        existing.lineCostR = round2(existing.lineCostR + l.lineCostR)
+        existing.lineSellR = round2(existing.lineSellR + l.lineSellR)
+        existing.approx = existing.approx || l.approx
+      }
+    }
+    const lines = order.map((k) => map.get(k)!)
+    return {
+      name: section.name, lines,
+      costR: round2(lines.reduce((s, l) => s + l.lineCostR, 0)),
+      sellR: round2(lines.reduce((s, l) => s + l.lineSellR, 0)),
+      needsPricing: lines.filter((l) => !l.priced).length,
+    }
+  })
+  return {
+    sections,
+    totalCostR: round2(sections.reduce((s, x) => s + x.costR, 0)),
+    totalSellR: round2(sections.reduce((s, x) => s + x.sellR, 0)),
+    missing: bom.missing,
+    needsPricing: sections.reduce((s, x) => s + x.needsPricing, 0),
   }
 }

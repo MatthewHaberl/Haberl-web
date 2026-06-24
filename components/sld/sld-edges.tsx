@@ -10,20 +10,25 @@ import {
   type EdgeProps,
 } from '@xyflow/react'
 import type { CableEdgeData } from '@/lib/solar/sld-builder'
-import { CLR } from './sld-nodes'
+import { CIRCUIT_THEME, useCircuitTheme } from '@/lib/solar/canvas-theme'
 import { useSLDContext } from './sld-context'
 import { isLayerVisible } from '@/lib/solar/circuit-layer-manager'
 
-const CIRCUIT_COLOR: Record<string, string> = {
-  dc:            CLR.dc,
-  ac:            CLR.ac,
-  battery:       CLR.bat,
-  earth:         CLR.earth,
-  communication: '#f97316',
+// Map an edge's circuit layer / type token to a single-sourced theme style.
+// Edges use the older tokens (dc / ac / battery / earth / communication); the
+// canvas theme is keyed (pv / ac / battery / earth / data / grid).
+const LAYER_TO_THEME: Record<string, keyof typeof CIRCUIT_THEME> = {
+  dc:            'pv',
+  pv:            'pv',
+  ac:            'ac',
+  battery:       'battery',
+  earth:         'earth',
+  grid:          'grid',
+  communication: 'data',
+  data:          'data',
 }
 
 const STROKE_DASH: Record<string, string | undefined> = {
-  earth:         '6 3',
   communication: '5 4',
 }
 
@@ -53,6 +58,8 @@ export function CableEdge({
   const d = data as CableEdgeData | undefined
   const { layerVisibility, onWaypointChange, onEdgeLabelMove } = useSLDContext()
   const { screenToFlowPosition } = useReactFlow()
+  // Resolved (settings-overridable) circuit colours; defaults outside a provider.
+  const { theme } = useCircuitTheme()
 
   // Layer visibility check
   const circuitLayer = (d as any)?.circuitLayer as string | undefined
@@ -61,7 +68,12 @@ export function CableEdge({
   }
 
   const colorKey = circuitLayer ?? d?.circuitType ?? 'ac'
-  const color = CIRCUIT_COLOR[colorKey] ?? '#808080'
+  const themeKey = LAYER_TO_THEME[colorKey]
+  const style = themeKey ? theme[themeKey] : undefined
+  const color = style?.stroke ?? '#808080'
+  // Earth runs render as a green/yellow stripe (base colour + dashed overlay).
+  const isEarth = style?.striped === true
+  const stripeColor = style?.stripe
   const strokeDash = STROKE_DASH[circuitLayer ?? d?.circuitType ?? '']
   const routing = (d as any)?.routingType as EdgeRoutingType ?? 'smoothstep'
   const waypoints = (d as any)?.waypoints as Array<{ x: number; y: number }> ?? []
@@ -127,6 +139,14 @@ export function CableEdge({
   const lugSpec = (d as any)?.lugs as { count: number; size: string } | undefined
   const lugSuffix = lugSpec ? ` (${lugSpec.count}×${lugSpec.size})` : ''
   const dispLabel = (label as string | undefined) ?? ''
+
+  // Item 21: per-end termination labels. When showTerminations is on, render a
+  // small two-cell block (from | to) directly above the cable label.
+  const showTerminations = !!(d as any)?.showTerminations
+  const termFrom = (d as any)?.terminationFrom as { type: string; size?: string } | undefined
+  const termTo = (d as any)?.terminationTo as { type: string; size?: string } | undefined
+  const termText = (t?: { type: string; size?: string }): string =>
+    t ? `${t.type}${t.size ? ` ${t.size}` : ''}` : '—'
 
   // Label drag offset (persisted in edge data)
   const labelOffsetX = ((d as any)?.labelOffsetX as number) ?? 0
@@ -195,6 +215,21 @@ export function CableEdge({
         }}
         interactionWidth={12}
       />
+      {/* Earth green/yellow stripe — a dashed overlay in the stripe colour over the
+          green base, so the run reads as the standard earth conductor. Subtle. */}
+      {isEarth && stripeColor && (
+        <BaseEdge
+          id={`${id}-stripe`}
+          path={path}
+          style={{
+            stroke: stripeColor,
+            strokeWidth: 2.5,
+            strokeDasharray: '5 5',
+            pointerEvents: 'none',
+          }}
+          interactionWidth={0}
+        />
+      )}
 
       <EdgeLabelRenderer>
         {/* Draggable waypoint handles (visible when edge is selected) */}
@@ -262,6 +297,36 @@ export function CableEdge({
             {((d as any)?.targetProtocol as string[] | undefined)?.length
               ? ` → ${((d as any)?.targetProtocol as string[]).join('/')}`
               : ''}
+          </div>
+        )}
+
+        {/* Termination labels (item 21) — sit directly ABOVE the cable block, same
+            width, no connector lines: a two-cell from|to strip of where each end lands. */}
+        {showTerminations && !isCommunication && (
+          <div
+            className="nodrag nopan"
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%,-100%) translate(${labelX + labelOffsetX}px,${labelY + labelOffsetY - 12}px)`,
+              pointerEvents: 'none',
+              display: 'flex', minWidth: 'max-content',
+              border: `1px solid ${color}`,
+              borderRadius: 3,
+              overflow: 'hidden',
+              fontSize: 7.5, fontWeight: 700, color,
+              fontFamily: 'ui-monospace, monospace',
+              background: '#fff',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+              lineHeight: 1.4,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span style={{ flex: 1, textAlign: 'center', padding: '1px 5px', borderRight: `1px solid ${color}55` }}>
+              {termText(termFrom)}
+            </span>
+            <span style={{ flex: 1, textAlign: 'center', padding: '1px 5px' }}>
+              {termText(termTo)}
+            </span>
           </div>
         )}
 

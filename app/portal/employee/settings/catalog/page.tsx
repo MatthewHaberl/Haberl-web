@@ -130,7 +130,8 @@ export default function CatalogPage() {
   const [items, setItems] = useState<EquipmentCatalogItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState<CategoryTab>('inverter')
+  // 'pending' is a cross-category filter for the "to-add" queue, not a real category.
+  const [activeTab, setActiveTab] = useState<CategoryTab | 'pending'>('inverter')
   const [editing, setEditing] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
   const [markup, setMarkup] = useState(DEFAULT_PRICING.markup)
@@ -199,8 +200,13 @@ export default function CatalogPage() {
     }
   }, [supabase])
 
+  // Count of "to-add" placeholders created from the design canvas (migration 049).
+  const pendingCount = useMemo(() => items.filter((item) => item.pending).length, [items])
+
   const visibleItems = useMemo(
-    () => items.filter((item) => item.category === activeTab),
+    () => activeTab === 'pending'
+      ? items.filter((item) => item.pending)
+      : items.filter((item) => item.category === activeTab),
     [activeTab, items],
   )
 
@@ -230,6 +236,9 @@ export default function CatalogPage() {
       primary_image_url: editing.primary_image_url.trim() || null,
       datasheet_url: editing.datasheet_url.trim() || null,
       model_3d_url: editing.model_3d_url.trim() || null,
+      // Clear the "to-add" flag once the placeholder gets a real cost (migration 049).
+      // Only sent when clearing, so it's a no-op for rows that were never pending.
+      ...(Number(editing.cost_rands || 0) > 0 ? { pending: false } : {}),
     }
 
     const query = editing.id
@@ -300,11 +309,24 @@ export default function CatalogPage() {
             {label}
           </Button>
         ))}
+        {pendingCount > 0 && (
+          <Button
+            variant={activeTab === 'pending' ? 'accent' : 'outline'}
+            size="sm"
+            onClick={() => setActiveTab('pending')}
+            title="Placeholders created while designing — fill in the real product"
+          >
+            To add
+            <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive/15 px-1 text-[10px] font-semibold text-destructive">
+              {pendingCount}
+            </span>
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"
           className="ml-auto"
-          onClick={() => setEditing({ ...EMPTY_FORM, category: activeTab })}
+          onClick={() => setEditing({ ...EMPTY_FORM, category: activeTab === 'pending' ? 'inverter' : activeTab })}
         >
           <Plus className="h-4 w-4" /> Add item
         </Button>
@@ -353,7 +375,13 @@ export default function CatalogPage() {
                         <td className="py-3 pr-4">{spec}</td>
                         <td className="py-3 pr-4">{formatRands(item.cost_rands)}</td>
                         <td className="py-3 pr-4">{formatRands(item.cost_rands * markup)}</td>
-                        <td className="py-3 pr-4">{item.active ? 'Active' : 'Hidden'}</td>
+                        <td className="py-3 pr-4">
+                          {item.pending ? (
+                            <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive" title="Placeholder from the design canvas — needs a real SKU + cost">
+                              Needs product
+                            </span>
+                          ) : (item.active ? 'Active' : 'Hidden')}
+                        </td>
                         <td className="py-3 pr-4">
                           <button
                             onClick={() => toggleStore(item)}

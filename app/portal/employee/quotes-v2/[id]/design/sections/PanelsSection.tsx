@@ -5,7 +5,7 @@ import { PSH_GAUTENG, SYSTEM_EFFICIENCY } from '@/lib/solar/quote-calculator'
 import { panelGroupKwp, DIRECTIONS, ROOF_TYPES } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
-import { SectionCard, EmptyHint } from '../section-ui'
+import { SectionCard, EmptyHint, LockNote, LOCKED_FIELD } from '../section-ui'
 
 export function PanelsSection() {
   const { design, dispatch } = useDesign()
@@ -43,6 +43,8 @@ export function PanelsSection() {
           {design.panels.map((g, idx) => {
             const kwp = panelGroupKwp(g)
             const dailyKwh = kwp * PSH_GAUTENG * SYSTEM_EFFICIENCY
+            // Catalog panel selected → its watts come from the product (item 24).
+            const locked = !!g.catalogId
             return (
               <div key={g.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between mb-2">
@@ -90,9 +92,11 @@ export function PanelsSection() {
                     <input
                       type="number" min={0} step={5}
                       value={g.panelWatts || ''}
+                      disabled={locked}
                       onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { panelWatts: Number(ev.target.value) || 0 } })}
-                      className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                      className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
                     />
+                    {locked && <LockNote>Watts come from the catalog panel</LockNote>}
                   </label>
 
                   <label className="flex flex-col gap-1">

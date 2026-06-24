@@ -6,7 +6,7 @@ import { verifyPanelString, type EquipmentCatalogItem } from '@/lib/solar/quote-
 import { designInverterKw, designTotalKwp } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
-import { SectionCard } from '../section-ui'
+import { SectionCard, LockNote, LOCKED_FIELD } from '../section-ui'
 
 function phaseOf(gridSupply?: string): 'single' | 'three' {
   return String(gridSupply ?? '').toLowerCase().includes('three') ? 'three' : 'single'
@@ -40,7 +40,14 @@ export function InverterSection() {
 
   function pick(id: string) {
     const item = inverters.find((i) => i.id === id)
-    if (!item) { dispatch({ type: 'removeInverter' }); return }
+    if (!item) {
+      // Drop to a manual unit so model/kw/phases stay editable when there's no catalog match.
+      dispatch({
+        type: 'setInverter',
+        inverter: { catalogId: null, model: unit?.model ?? '', kw: unit?.kw ?? 0, phases: unit?.phases ?? (gridPhase === 'three' ? 3 : 1) },
+      })
+      return
+    }
     dispatch({
       type: 'setInverter',
       inverter: {
@@ -51,6 +58,9 @@ export function InverterSection() {
       },
     })
   }
+
+  // Catalog inverter selected → model / kW / phases are dictated by the product (item 24).
+  const locked = !!unit?.catalogId
 
   return (
     <SectionCard
@@ -83,6 +93,43 @@ export function InverterSection() {
           />
         </label>
       </div>
+
+      {/* Model / kW / phases — locked to the catalog spec when an inverter is chosen (item 24). */}
+      <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <label className="flex flex-col gap-1 md:col-span-1">
+          <span className="text-xs font-medium text-muted-foreground">Model</span>
+          <input
+            value={unit?.model ?? ''}
+            disabled={!unit || locked}
+            placeholder="e.g. Sunsynk 5kW"
+            onChange={(ev) => dispatch({ type: 'updateInverter', patch: { model: ev.target.value } })}
+            className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-muted-foreground">kW (AC)</span>
+          <input
+            type="number" min={0} step={0.1}
+            value={unit?.kw ?? ''}
+            disabled={!unit || locked}
+            onChange={(ev) => dispatch({ type: 'updateInverter', patch: { kw: Math.max(0, Number(ev.target.value) || 0) } })}
+            className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-muted-foreground">Phases</span>
+          <select
+            value={unit?.phases ?? 1}
+            disabled={!unit || locked}
+            onChange={(ev) => dispatch({ type: 'updateInverter', patch: { phases: Number(ev.target.value) >= 3 ? 3 : 1 } })}
+            className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
+          >
+            <option value={1}>Single-phase</option>
+            <option value={3}>Three-phase</option>
+          </select>
+        </label>
+      </div>
+      {locked && <div className="mt-1.5"><LockNote>Model, kW and phases come from the catalog inverter</LockNote></div>}
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span className="flex items-center gap-1.5 text-muted-foreground">
