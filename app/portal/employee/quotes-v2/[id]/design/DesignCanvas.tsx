@@ -30,6 +30,8 @@ const SEGMENT_ROUTE_TYPES = [
   'In conduit (surface)', 'In conduit (buried)', 'Through ceiling void', 'Down wall (conduit)',
   'Overhead (open)', 'Underground (direct burial)', 'Open trunking', 'Under floor', 'Custom',
 ]
+const TERMINATION_TYPES = ['Direct', 'Lug', 'Pin lug', 'Bootlace', 'MC4', 'Anderson', 'Screw terminal']
+const termNeedsSize = (type: string) => /lug|bootlace/i.test(type)
 
 type RouteSeg = { id: string; routeType: string; lengthM: number }
 let segSeq = 0
@@ -270,8 +272,8 @@ function NodeInspector({ nodeId, onClose }: { nodeId: string; onClose: () => voi
   )
 }
 
-// Click a cable → edit material / size / runs / phase / length (persisted as an override).
-function CableInspector({ edge, onClose }: { edge: Edge; onClose: () => void }) {
+// Click a cable → edit material / size / runs / phase / length / terminations (persisted as an override).
+function CableInspector({ edge, fromLabel, toLabel, onClose }: { edge: Edge; fromLabel: string; toLabel: string; onClose: () => void }) {
   const { dispatch } = useDesign()
   const data = (edge.data ?? {}) as CableEdgeData
   const ct = (data.circuitType as string) ?? 'ac'
@@ -372,6 +374,43 @@ function CableInspector({ edge, onClose }: { edge: Edge; onClose: () => void }) 
               </div>
             )}
           </div>
+
+          {/* Terminations — one per end, sized to the cable */}
+          <div className="flex flex-col gap-1.5">
+            <span className={lbl}>Terminations</span>
+            {([['From', 'terminationFrom', fromLabel], ['To', 'terminationTo', toLabel]] as const).map(([endLabel, key, connectsTo]) => {
+              const term = (data[key] as { type?: string; size?: string } | undefined) ?? { type: 'Direct' }
+              const ttype = term.type ?? 'Direct'
+              return (
+                <div key={key} className="rounded-md border border-border p-1.5">
+                  <div className="mb-1 flex items-center justify-between text-[11px]">
+                    <span className="font-medium text-foreground">{endLabel} end</span>
+                    <span className="truncate pl-2 text-muted-foreground">→ {connectsTo}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <select className="h-8 flex-1 rounded-md border border-border bg-background px-1.5 text-xs"
+                      value={ttype}
+                      onChange={(e) => set({ [key]: { type: e.target.value, size: termNeedsSize(e.target.value) ? (term.size || size) : undefined } })}>
+                      {TERMINATION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    {termNeedsSize(ttype) && (
+                      <select className="h-8 w-20 rounded-md border border-border bg-background px-1.5 text-xs"
+                        value={term.size || size}
+                        onChange={(e) => set({ [key]: { type: ttype, size: e.target.value } })}>
+                        {CABLE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Heat shrink — sized from the cross-section */}
+          <label className="flex items-center justify-between gap-2">
+            <span className={lbl}>Heat shrink <span className="text-muted-foreground/80">(sized to {size})</span></span>
+            <input type="checkbox" checked={!!data.heatShrink} onChange={(e) => set({ heatShrink: e.target.checked })} className="h-4 w-4 rounded border-border" />
+          </label>
         </div>
       )}
 
@@ -631,7 +670,9 @@ function CanvasInner({ height = 560 }: { height?: number }) {
       {selected.kind === 'edge' ? (
         (() => {
           const edge = edges.find((e) => e.id === selected.id)
-          return edge ? <CableInspector edge={edge} onClose={() => setSelected(null)} /> : null
+          if (!edge) return null
+          const labelOf = (id: string) => ((nodes.find((n) => n.id === id)?.data as { label?: string } | undefined)?.label) ?? id
+          return <CableInspector edge={edge} fromLabel={labelOf(edge.source)} toLabel={labelOf(edge.target)} onClose={() => setSelected(null)} />
         })()
       ) : (
         (() => {

@@ -145,7 +145,7 @@ export function DesignBomPanel() {
               </div>
               <p className="text-[10px] text-muted-foreground">
                 Priced cost {rands(bom.totalCostR)} · sell = cost × {markup.toFixed(2)} · ~ = estimated (cabling = conductor-metres × rate card; add a measured route on a cable to firm it up).
-                Total excludes items marked <span className="font-semibold text-amber-700">Quote</span>. Labour from your pricing settings; consumables + storey premium not yet included.
+                Total excludes items marked <span className="font-semibold text-amber-700">Quote</span>. Labour + consumables from your pricing settings; storey premium not yet included.
               </p>
             </div>
           )}

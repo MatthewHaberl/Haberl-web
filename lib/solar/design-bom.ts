@@ -7,7 +7,7 @@
 // are rough estimates until measured routes are wired in (flagged `approx`).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { cableCostPerMeter, type EquipmentCatalogItem, type PricingSettings } from './quote-calculator'
+import { cableCostPerMeter, terminationCost, heatShrinkCost, type EquipmentCatalogItem, type PricingSettings } from './quote-calculator'
 import type { CableEdgeData } from './sld-builder'
 import {
   designBatteryKwh, designToFlow, type SystemDesign,
@@ -153,6 +153,16 @@ export function designToBom(
     if (data.circuitType === 'dc' || data.circuitType === 'battery') return 2
     return (data.conductors as Record<string, boolean> | undefined)?.l1 === true ? 5 : 3
   }
+  // Consumables (terminations + heat shrink) accumulate across cables, then group.
+  const consumables = new Map<string, { qty: number; unit: number }>()
+  const addConsumable = (description: string, qty: number, unit: number) => {
+    if (qty <= 0) return
+    const c = consumables.get(description) ?? { qty: 0, unit }
+    c.qty += qty
+    c.unit = unit
+    consumables.set(description, c)
+  }
+
   const flow = designToFlow(design, { gridSupply: opts.gridSupply })
   for (const edge of flow.edges) {
     const data = edge.data as CableEdgeData | undefined
@@ -160,13 +170,30 @@ export function designToBom(
     const material = (data.cableType as string | undefined) ?? data.spec?.split(' ')[0] ?? 'CU'
     const cs = (data.crossSection as string | undefined) ?? data.spec?.match(/\d+mm²/)?.[0]
     if (!cs) continue
+    const cores = conductorCount(data)
+    const runs = Math.max(1, Math.round(Number((data as { runs?: number }).runs) || 1))
+
+    // Terminations on each end + optional heat shrink, sized to the cable.
+    let terminatedEnds = 0
+    for (const term of [data.terminationFrom, data.terminationTo] as Array<{ type?: string; size?: string } | undefined>) {
+      const ttype = term?.type
+      if (!ttype || /direct/i.test(ttype)) continue
+      terminatedEnds += 1
+      const tsize = term?.size || cs
+      const label = /lug|bootlace/i.test(ttype) ? `${ttype} ${tsize}` : ttype
+      addConsumable(label, cores * runs, terminationCost(ttype, tsize))
+    }
+    if (data.heatShrink) {
+      const ends = terminatedEnds > 0 ? terminatedEnds : 2
+      addConsumable(`Heat shrink ${cs}`, cores * runs * ends, heatShrinkCost(cs))
+    }
+
     // Measured route wins over the rough default length when segments are entered.
     const segs = (data.segments as Array<{ lengthM: number }> | undefined) ?? []
     const measured = segs.length > 0
     const lengthM = measured ? segs.reduce((s, x) => s + (Number(x.lengthM) || 0), 0) : (Number(data.lengthM) || 0)
     if (lengthM <= 0) continue
-    const runs = Math.max(1, Math.round(Number((data as { runs?: number }).runs) || 1))
-    const qtyM = Math.round(lengthM * runs * conductorCount(data))
+    const qtyM = Math.round(lengthM * runs * cores)
     const desc = typeof edge.label === 'string' ? edge.label : `${material} ${cs}`
     const perM = cableCostPerMeter(material, cs)
     if (perM <= 0) {
@@ -184,6 +211,25 @@ export function designToBom(
       lineCostR: round2(perM * qtyM), lineSellR: round2(unitSellR * qtyM),
       approx: !measured, priced: true, status: 'ok',
     })
+  }
+
+  // Consumables section — terminations + heat shrink grouped across all cables.
+  for (const [description, c] of consumables) {
+    if (c.unit <= 0) {
+      lines.push({
+        section: 'Consumables', catalogId: `consumable:${description}`, sku: '—',
+        description, qty: c.qty, unitCostR: 0, unitSellR: 0, lineCostR: 0, lineSellR: 0,
+        priced: false, status: 'no-cost',
+      })
+    } else {
+      const unitSellR = round2(c.unit * markup)
+      lines.push({
+        section: 'Consumables', catalogId: `consumable:${description}`, sku: '—',
+        description, qty: c.qty, unitCostR: c.unit, unitSellR,
+        lineCostR: round2(c.unit * c.qty), lineSellR: round2(unitSellR * c.qty),
+        approx: true, priced: true, status: 'ok',
+      })
+    }
   }
 
   // Labour (installation) from pricing settings — sell-only, no markup.

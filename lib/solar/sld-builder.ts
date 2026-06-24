@@ -50,6 +50,11 @@ export interface CableEdgeData extends Record<string, unknown> {
   circuitLayer?: 'live' | 'neutral' | 'earth' | 'communication'
   lugs?: { count: number; size: string; material?: string }
   connectorType?: string
+  /** Per-end terminations (consumables) — what each end of the cable lands on. */
+  terminationFrom?: { type: string; size?: string }
+  terminationTo?: { type: string; size?: string }
+  /** Heat shrink over the terminations (sized from the cross-section). */
+  heatShrink?: boolean
   isDirect?: boolean          // direct bus / stackable connection — no cable
   // Communication-specific
   sourceProtocol?: string[]

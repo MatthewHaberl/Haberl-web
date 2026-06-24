@@ -45,6 +45,36 @@ export function cableCostPerMeter(material: string, crossSection: string): numbe
   return /al/i.test(material) ? Math.round(base * 0.55) : base
 }
 
+// ── Consumables rate card (terminations + heat shrink) ───────────────────────
+// Rough per-unit cost (R). Copper lug pricing by conductor cross-section.
+const LUG_COST_BY_CS: Record<string, number> = {
+  '1.5mm²': 3, '2.5mm²': 3, '4mm²': 4, '6mm²': 6, '10mm²': 9,
+  '16mm²': 14, '25mm²': 22, '35mm²': 30, '50mm²': 45, '70mm²': 65, '95mm²': 90,
+}
+const HEAT_SHRINK_COST_BY_CS: Record<string, number> = {
+  '1.5mm²': 2, '2.5mm²': 2, '4mm²': 3, '6mm²': 4, '10mm²': 6,
+  '16mm²': 9, '25mm²': 13, '35mm²': 18, '50mm²': 25, '70mm²': 34, '95mm²': 45,
+}
+
+/** Cost (R) of one termination of the given type, sized to a cross-section. */
+export function terminationCost(type: string, crossSection: string): number {
+  const t = type.toLowerCase()
+  if (!t || t.includes('direct')) return 0
+  const lug = LUG_COST_BY_CS[crossSection] ?? 10
+  if (t.includes('bootlace')) return Math.max(1, Math.round(lug * 0.4))
+  if (t.includes('pin')) return Math.max(2, Math.round(lug * 0.8))
+  if (t.includes('lug')) return lug
+  if (t.includes('mc4')) return 35
+  if (t.includes('anderson')) return 55
+  if (t.includes('screw')) return 8
+  return 8
+}
+
+/** Cost (R) of one heat-shrink piece sized to a cross-section. */
+export function heatShrinkCost(crossSection: string): number {
+  return HEAT_SHRINK_COST_BY_CS[crossSection] ?? 6
+}
+
 // ── Pricing settings (company_settings, migration 031) ───────────────────────
 // Business-policy knobs extracted from the constants above. Defaults reproduce
 // the historical behaviour exactly — quotes without explicit pricing are
