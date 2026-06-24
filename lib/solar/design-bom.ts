@@ -7,7 +7,7 @@
 // are rough estimates until measured routes are wired in (flagged `approx`).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { cableCostPerMeter, type EquipmentCatalogItem } from './quote-calculator'
+import { cableCostPerMeter, type EquipmentCatalogItem, type PricingSettings } from './quote-calculator'
 import type { CableEdgeData } from './sld-builder'
 import {
   designBatteryKwh, designToFlow, type SystemDesign,
@@ -57,7 +57,7 @@ export function designToBom(
   design: SystemDesign,
   catalog: Map<string, EquipmentCatalogItem>,
   markup: number,
-  opts: { gridSupply?: string } = {},
+  opts: { gridSupply?: string; pricing?: PricingSettings } = {},
 ): DesignBom {
   const lines: BomLine[] = []
   let missing = 0
@@ -132,6 +132,14 @@ export function designToBom(
   // Extras
   for (const x of design.extras) add('Extras', x.productId, 1, { label: x.label })
 
+  // Earthing hardware (rods + bars). No catalog product field yet → surfaced to quote.
+  const earth = design.earthing
+  const electrodeCount = earth.electrodes.length
+    ? earth.electrodes.reduce((s, el) => s + Math.max(1, el.spikeCount || 1), 0)
+    : (earth.spikeCount ?? 0)
+  if (electrodeCount > 0) add('Earthing', null, electrodeCount, { label: 'Earth spike / rod' })
+  for (const bar of earth.bars) add('Earthing', null, 1, { label: bar.label || 'Earth bar' })
+
   // Cabling — priced from the diagram's conductors, honouring per-cable overrides.
   // Conductor-metres = length × parallel runs × cores; cores follow the phase/circuit.
   const conductorCount = (data: CableEdgeData): number => {
@@ -170,6 +178,24 @@ export function designToBom(
       lineCostR: round2(perM * qtyM), lineSellR: round2(unitSellR * qtyM),
       approx: !measured, priced: true, status: 'ok',
     })
+  }
+
+  // Labour (installation) from pricing settings — sell-only, no markup.
+  const pricing = opts.pricing
+  if (pricing) {
+    const panelW = design.panels.reduce((s, g) => s + g.panelCount * g.panelWatts, 0)
+    const invW = design.inverters.reduce((s, u) => s + u.kw * 1000 * u.qty, 0)
+    const pushLabour = (description: string, amt: number) => {
+      if (amt <= 0) return
+      const r = round2(amt)
+      lines.push({
+        section: 'Labour', catalogId: `labour:${description}`, sku: '—', description, qty: 1,
+        unitCostR: r, unitSellR: r, lineCostR: r, lineSellR: r, priced: true, status: 'ok',
+      })
+    }
+    if (panelW > 0) pushLabour(`Panel install (${panelW} Wp)`, panelW * pricing.labourPanelPerW)
+    if (invW > 0) pushLabour(`Inverter install (${+(invW / 1000).toFixed(1)} kW)`, invW * pricing.labourInverterPerW)
+    if (panelW > 0 || invW > 0) pushLabour('Certificate of Compliance (CoC)', pricing.cocRands)
   }
 
   // Group by section, preserving first-seen order.

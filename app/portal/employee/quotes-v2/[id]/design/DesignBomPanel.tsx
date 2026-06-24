@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { PackageCheck, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
+import { PackageCheck, ChevronDown, ChevronRight, AlertTriangle, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { designToBom } from '@/lib/solar/design-bom'
@@ -22,14 +22,15 @@ const UNPRICED_HINT: Record<string, string> = {
 export function DesignBomPanel() {
   const { design, gridSupply } = useDesign()
   const { items, loading } = useCatalog()
-  const [markup, setMarkup] = useState(DEFAULT_PRICING.markup)
+  const [pricing, setPricing] = useState(DEFAULT_PRICING)
   const [open, setOpen] = useState(true)
+  const markup = pricing.markup
 
   useEffect(() => {
     let active = true
     createClient()
-      .from('company_settings').select('markup_pct').eq('id', true).maybeSingle()
-      .then(({ data }) => { if (active && data) setMarkup(mapSettingsToPricing(data).markup) })
+      .from('company_settings').select('*').eq('id', true).maybeSingle()
+      .then(({ data }) => { if (active && data) setPricing(mapSettingsToPricing(data)) })
     return () => { active = false }
   }, [])
 
@@ -39,7 +40,25 @@ export function DesignBomPanel() {
     return m
   }, [items])
 
-  const bom = useMemo(() => designToBom(design, catalog, markup, { gridSupply }), [design, catalog, markup, gridSupply])
+  const bom = useMemo(() => designToBom(design, catalog, markup, { gridSupply, pricing }), [design, catalog, markup, gridSupply, pricing])
+
+  // Export just the unpriced lines as a CSV to send to a supplier for quoting.
+  function exportQuoteCsv() {
+    const reason: Record<string, string> = {
+      'no-product': 'No product chosen', 'product-missing': 'Product not in catalog', 'no-cost': 'No cost captured', 'ok': '',
+    }
+    const rows: string[][] = [['Section', 'Item', 'Ref', 'Qty', 'Reason']]
+    for (const s of bom.sections) for (const l of s.lines) {
+      if (!l.priced) rows.push([s.name, l.description, l.sku, String(l.qty), reason[l.status] ?? ''])
+    }
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'items-to-quote.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="rounded-xl border border-border bg-card">
@@ -71,10 +90,19 @@ export function DesignBomPanel() {
           ) : (
             <div className="flex flex-col gap-3">
               {bom.needsPricing > 0 && (
-                <p className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-[11px] text-amber-800">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span><strong>{bom.needsPricing}</strong> item(s) need a price — shown as <span className="font-semibold">Quote</span> below. Send these to your supplier so the customer is quoted correctly.</span>
-                </p>
+                <div className="flex flex-col gap-1.5">
+                  <p className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-[11px] text-amber-800">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span><strong>{bom.needsPricing}</strong> item(s) need a price — shown as <span className="font-semibold">Quote</span> below. Send these to your supplier so the customer is quoted correctly.</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={exportQuoteCsv}
+                    className="self-start flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-muted"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Download items to quote (CSV)
+                  </button>
+                </div>
               )}
               {bom.sections.map((s) => (
                 <div key={s.name}>
@@ -111,7 +139,7 @@ export function DesignBomPanel() {
               </div>
               <p className="text-[10px] text-muted-foreground">
                 Priced cost {rands(bom.totalCostR)} · sell = cost × {markup.toFixed(2)} · ~ = estimated (cabling = conductor-metres × rate card; add a measured route on a cable to firm it up).
-                Total excludes items marked <span className="font-semibold text-amber-700">Quote</span>. Labour + consumables not yet included.
+                Total excludes items marked <span className="font-semibold text-amber-700">Quote</span>. Labour from your pricing settings; consumables + storey premium not yet included.
               </p>
             </div>
           )}
