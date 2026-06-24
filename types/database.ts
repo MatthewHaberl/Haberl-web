@@ -34,6 +34,10 @@ export interface EquipmentCatalogItem {
   primary_image_url: string | null
   datasheet_url: string | null
   research_ran_at: string | null
+  // Store-facing fields (migration 048).
+  show_on_store?: boolean
+  store_price_rands?: number | null
+  model_3d_url?: string | null
   created_at?: string
   updated_at?: string
 }

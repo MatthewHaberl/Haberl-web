@@ -283,6 +283,13 @@ export interface EquipmentCatalogItem {
   notes: string | null
   /** Stamped by DB trigger whenever cost_rands changes (migration 030). */
   price_updated_at?: string | null
+  // Store-facing fields (migration 048). Ignored by the calculator.
+  show_on_store?: boolean
+  store_price_rands?: number | null
+  shop_description?: string | null
+  primary_image_url?: string | null
+  datasheet_url?: string | null
+  model_3d_url?: string | null
 }
 
 export interface QuoteTierConfig {

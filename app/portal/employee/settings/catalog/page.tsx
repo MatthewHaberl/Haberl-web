@@ -50,6 +50,12 @@ type FormState = {
   sort_order: string
   notes: string
   active: boolean
+  show_on_store: boolean
+  store_price_rands: string
+  shop_description: string
+  primary_image_url: string
+  datasheet_url: string
+  model_3d_url: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -67,6 +73,12 @@ const EMPTY_FORM: FormState = {
   sort_order: '0',
   notes: '',
   active: true,
+  show_on_store: false,
+  store_price_rands: '',
+  shop_description: '',
+  primary_image_url: '',
+  datasheet_url: '',
+  model_3d_url: '',
 }
 
 function navLink(href: string, label: string) {
@@ -104,6 +116,12 @@ function itemToForm(item: EquipmentCatalogItem): FormState {
     sort_order: item.sort_order.toString(),
     notes: item.notes ?? '',
     active: item.active,
+    show_on_store: item.show_on_store ?? false,
+    store_price_rands: item.store_price_rands?.toString() ?? '',
+    shop_description: item.shop_description ?? '',
+    primary_image_url: item.primary_image_url ?? '',
+    datasheet_url: item.datasheet_url ?? '',
+    model_3d_url: item.model_3d_url ?? '',
   }
 }
 
@@ -116,13 +134,17 @@ export default function CatalogPage() {
   const [editing, setEditing] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
   const [markup, setMarkup] = useState(DEFAULT_PRICING.markup)
+  const [storeMarkup, setStoreMarkup] = useState(30)
 
   useEffect(() => {
     let active = true
     ;(async () => {
       const { data } = await supabase
-        .from('company_settings').select('markup_pct').eq('id', true).maybeSingle()
-      if (active && data) setMarkup(mapSettingsToPricing(data).markup)
+        .from('company_settings').select('markup_pct, store_markup_pct').eq('id', true).maybeSingle()
+      if (active && data) {
+        setMarkup(mapSettingsToPricing(data).markup)
+        setStoreMarkup(Number(data.store_markup_pct ?? 30))
+      }
     })()
     return () => { active = false }
   }, [supabase])
@@ -202,6 +224,12 @@ export default function CatalogPage() {
       sort_order: Number(editing.sort_order || 0),
       notes: editing.notes.trim() || null,
       active: editing.active,
+      show_on_store: editing.show_on_store,
+      store_price_rands: coerceNumber(editing.store_price_rands),
+      shop_description: editing.shop_description.trim() || null,
+      primary_image_url: editing.primary_image_url.trim() || null,
+      datasheet_url: editing.datasheet_url.trim() || null,
+      model_3d_url: editing.model_3d_url.trim() || null,
     }
 
     const query = editing.id
@@ -223,6 +251,22 @@ export default function CatalogPage() {
   async function toggleActive(item: EquipmentCatalogItem) {
     await supabase.from('equipment_catalog').update({ active: !item.active }).eq('id', item.id)
     await loadItems()
+  }
+
+  // Flip web-store visibility. The DB mirror trigger publishes/hides the
+  // matching shop product automatically — quoting is unaffected.
+  async function toggleStore(item: EquipmentCatalogItem) {
+    await supabase
+      .from('equipment_catalog')
+      .update({ show_on_store: !item.show_on_store })
+      .eq('id', item.id)
+    await loadItems()
+  }
+
+  function storeSellPrice(item: EquipmentCatalogItem) {
+    return item.store_price_rands != null && item.store_price_rands !== undefined
+      ? Number(item.store_price_rands)
+      : item.cost_rands * (1 + storeMarkup / 100)
   }
 
   return (
@@ -285,6 +329,7 @@ export default function CatalogPage() {
                     <th className="pb-3 pr-4">Cost</th>
                     <th className="pb-3 pr-4">Sell</th>
                     <th className="pb-3 pr-4">Status</th>
+                    <th className="pb-3 pr-4">Web store</th>
                     <th className="pb-3">Actions</th>
                   </tr>
                 </thead>
@@ -309,6 +354,25 @@ export default function CatalogPage() {
                         <td className="py-3 pr-4">{formatRands(item.cost_rands)}</td>
                         <td className="py-3 pr-4">{formatRands(item.cost_rands * markup)}</td>
                         <td className="py-3 pr-4">{item.active ? 'Active' : 'Hidden'}</td>
+                        <td className="py-3 pr-4">
+                          <button
+                            onClick={() => toggleStore(item)}
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                              item.show_on_store
+                                ? 'bg-accent/15 text-accent hover:bg-accent/25'
+                                : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                            }`}
+                            title={item.show_on_store
+                              ? 'On the web store — click to remove'
+                              : 'Not on the web store — click to sell online'}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${item.show_on_store ? 'bg-accent' : 'bg-muted-foreground/50'}`} />
+                            {item.show_on_store ? 'On store' : 'Off'}
+                          </button>
+                          {item.show_on_store && (
+                            <div className="mt-1 text-[11px] text-muted-foreground">{formatRands(storeSellPrice(item))}</div>
+                          )}
+                        </td>
                         <td className="py-3">
                           <div className="flex gap-2">
                             <Button variant="outline" size="sm" onClick={() => setEditing(itemToForm(item))}>
@@ -471,7 +535,67 @@ export default function CatalogPage() {
                   checked={editing.active}
                   onChange={(event) => setEditing({ ...editing, active: event.target.checked })}
                 />
-                Active
+                Active <span className="text-muted-foreground">(available to the quote calculator)</span>
+              </label>
+
+              {/* Web store */}
+              <div className="md:col-span-2 mt-2 border-t border-border pt-4">
+                <p className="text-sm font-semibold text-primary">Web store</p>
+                <p className="text-xs text-muted-foreground">
+                  Control whether customers can buy this item online, and what they see. Quoting is unaffected.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-sm md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={editing.show_on_store}
+                  onChange={(event) => setEditing({ ...editing, show_on_store: event.target.checked })}
+                />
+                Sell on web store
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium">Store price override (R)</span>
+                <Input
+                  value={editing.store_price_rands}
+                  onChange={(event) => setEditing({ ...editing, store_price_rands: event.target.value })}
+                  placeholder={`Auto: ${formatRands(Number(editing.cost_rands || 0) * (1 + storeMarkup / 100))}`}
+                />
+                <span className="text-xs text-muted-foreground">Leave blank to use cost + {storeMarkup}% store markup.</span>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium">Primary image URL</span>
+                <Input
+                  value={editing.primary_image_url}
+                  onChange={(event) => setEditing({ ...editing, primary_image_url: event.target.value })}
+                  placeholder="https://…"
+                />
+                <span className="text-xs text-muted-foreground">Shown on the store; reusable on quotes.</span>
+              </label>
+              <label className="flex flex-col gap-1.5 md:col-span-2">
+                <span className="text-sm font-medium">Shop description</span>
+                <textarea
+                  value={editing.shop_description}
+                  onChange={(event) => setEditing({ ...editing, shop_description: event.target.value })}
+                  rows={2}
+                  placeholder="Customer-facing description for the web store (falls back to the description above)."
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium">Datasheet URL</span>
+                <Input
+                  value={editing.datasheet_url}
+                  onChange={(event) => setEditing({ ...editing, datasheet_url: event.target.value })}
+                  placeholder="https://…"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium">3D model URL <span className="text-muted-foreground">(future)</span></span>
+                <Input
+                  value={editing.model_3d_url}
+                  onChange={(event) => setEditing({ ...editing, model_3d_url: event.target.value })}
+                  placeholder="https://… .glb / .gltf"
+                />
               </label>
             </div>
 
