@@ -110,6 +110,43 @@ export interface UserProfile {
   created_at: string
 }
 
+/**
+ * A customer is the business contact — independent of any login. It can exist
+ * with no account at all (a prospect), even with only a phone number, and links
+ * to a Supabase auth login via `auth_user_id` once the person registers.
+ *
+ * Account status is derived, not stored:
+ *   auth_user_id == null                  -> 'prospect'
+ *   auth_user_id != null, registered_at == null -> 'invited'
+ *   registered_at != null                 -> 'registered'
+ */
+export interface Customer {
+  id: string
+  full_name: string
+  email: string | null
+  phone: string | null
+  address: string | null
+  is_business: boolean
+  contact_name: string | null
+  source: string
+  notes: string | null
+  auth_user_id: string | null
+  invited_at: string | null
+  registered_at: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export type CustomerAccountStatus = 'prospect' | 'invited' | 'registered'
+
+export function customerAccountStatus(
+  c: Pick<Customer, 'auth_user_id' | 'registered_at'>,
+): CustomerAccountStatus {
+  if (c.registered_at) return 'registered'
+  if (c.auth_user_id) return 'invited'
+  return 'prospect'
+}
+
 export interface Site {
   id: string
   customer_id: string
@@ -124,7 +161,7 @@ export interface Site {
   gps_lng: number | null
   created_at: string
   // joined
-  customer?: UserProfile
+  customer?: Customer
 }
 
 export interface Document {
@@ -390,6 +427,7 @@ export interface QuoteRequest {
   created_at: string
 
   // Customer info
+  customer_id: string | null   // FK to public.customers (the CRM contact)
   site_number: number
   customer_name: string
   customer_phone: string | null
@@ -562,6 +600,7 @@ export interface Lead {
   note: string | null
   status: LeadStatus
   quote_request_id: string | null
+  customer_id: string | null   // FK to public.customers once converted
   source: string
   created_at: string
   contacted_at: string | null

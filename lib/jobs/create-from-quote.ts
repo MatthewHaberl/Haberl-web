@@ -28,26 +28,25 @@ interface BomLine {
   unitSellRands?: number
 }
 
+/**
+ * Find (or create) the site for this quote's customer. Sites now belong to the
+ * CRM customer record (quote_requests.customer_id), so a site can exist before
+ * the customer has a login — it becomes visible in their portal the moment they
+ * register (auth_user_id links them). Returns null only when the quote has no
+ * customer linked at all.
+ */
 async function resolveCustomerSite(
   supabase: SupabaseClient,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   quote: Record<string, any>,
 ): Promise<string | null> {
-  if (!quote.customer_email) return null
-
-  const { data: customer } = await supabase
-    .from('user_profiles')
-    .select('id')
-    .ilike('email', quote.customer_email)
-    .eq('role', 'customer')
-    .maybeSingle()
-
-  if (!customer) return null
+  const customerId = quote.customer_id as string | null
+  if (!customerId) return null
 
   const { data: site } = await supabase
     .from('sites')
     .select('id')
-    .eq('customer_id', customer.id)
+    .eq('customer_id', customerId)
     .ilike('address', quote.address ?? '')
     .maybeSingle()
 
@@ -56,7 +55,7 @@ async function resolveCustomerSite(
   const { data: newSite } = await supabase
     .from('sites')
     .insert({
-      customer_id: customer.id,
+      customer_id: customerId,
       name: `${quote.customer_name} - Site ${quote.site_number ?? 1}`,
       address: quote.address ?? '',
       system_type: 'Solar PV',
@@ -143,46 +142,12 @@ export async function createJobFromQuote(
       materialsSeeded: 0,
       warnings: linkedSiteId
         ? []
-        : ['No registered customer account matched this quote - job is not yet visible to the customer portal.'],
+        : ['No customer linked to this quote — link a customer so the job appears in their portal.'],
     }
   }
 
-  // Link to a customer site when the quote email matches a registered customer
-  let siteId = await resolveCustomerSite(supabase, quote)
-  if (!siteId && quote.customer_email) {
-    const { data: customer } = await supabase
-      .from('user_profiles')
-      .select('id')
-      .ilike('email', quote.customer_email)
-      .eq('role', 'customer')
-      .maybeSingle()
-
-    if (customer) {
-      const { data: site } = await supabase
-        .from('sites')
-        .select('id')
-        .eq('customer_id', customer.id)
-        .ilike('address', quote.address ?? '')
-        .maybeSingle()
-
-      if (site) {
-        siteId = site.id
-      } else {
-        const { data: newSite } = await supabase
-          .from('sites')
-          .insert({
-            customer_id: customer.id,
-            name: `${quote.customer_name} — Site ${quote.site_number ?? 1}`,
-            address: quote.address ?? '',
-            system_type: 'Solar PV',
-            status: 'pending',
-          })
-          .select('id')
-          .single()
-        siteId = newSite?.id ?? null
-      }
-    }
-  }
+  // Link to (or create) the customer's site via the quote's customer record.
+  const siteId = await resolveCustomerSite(supabase, quote)
 
   const { data: job, error: jobError } = await supabase
     .from('jobs')
@@ -249,7 +214,7 @@ export async function createJobFromQuote(
     materialsSeeded: bom.length,
     warnings: [
       ...(bom.length === 0 ? ['No supplier BOM found in saved quote — recalculate and save, then re-link.'] : []),
-      ...(siteId ? [] : ['No registered customer account matched this quote — job is not yet visible to the customer portal.']),
+      ...(siteId ? [] : ['No customer linked to this quote — link a customer so the job appears in their portal.']),
     ],
   }
 }

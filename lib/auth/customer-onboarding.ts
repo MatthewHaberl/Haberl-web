@@ -1,4 +1,18 @@
-import type { SupabaseClient, User } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { resolveOrCreateCustomer, normalizeEmail } from '@/lib/customers/resolve'
+import { inviteCustomer, type InvitableCustomer } from '@/lib/customers/invite'
+
+/**
+ * Quote-acceptance onboarding. Accepting a quote online is a strong enough
+ * signal to onboard the customer automatically, so this resolves (or creates)
+ * the CRM customer record for the quote and sends them a portal invite.
+ *
+ * Every OTHER way a customer is created (lead conversion, manual entry, quote
+ * draft) does NOT call this — those customers receive no account email until
+ * staff press "Send invite". See lib/customers/invite.ts.
+ *
+ * `supabase` is the service-role client (the public accept route uses it).
+ */
 
 export type CustomerPortalAccess =
   | {
@@ -20,55 +34,13 @@ export type CustomerPortalAccess =
       error: string
     }
 
-function normalizeEmail(email: unknown): string | null {
-  const normalized = String(email ?? '').trim().toLowerCase()
-  if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return null
-  return normalized
-}
-
-async function findCustomerProfile(supabase: SupabaseClient, email: string) {
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .select('id, full_name')
-    .ilike('email', email)
-    .eq('role', 'customer')
+async function loadCustomer(supabase: SupabaseClient, id: string): Promise<InvitableCustomer | null> {
+  const { data } = await supabase
+    .from('customers')
+    .select('id, full_name, email, phone, auth_user_id, registered_at')
+    .eq('id', id)
     .maybeSingle()
-
-  if (error) throw error
-  return data as { id: string; full_name: string | null } | null
-}
-
-async function findAuthUserByEmail(supabase: SupabaseClient, email: string): Promise<User | null> {
-  for (let page = 1; page <= 3; page += 1) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 })
-    if (error) return null
-
-    const match = data.users.find((user) => user.email?.toLowerCase() === email)
-    if (match) return match
-    if (data.users.length < 100) return null
-  }
-
-  return null
-}
-
-async function upsertCustomerProfile(
-  supabase: SupabaseClient,
-  userId: string,
-  email: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  quote: Record<string, any>,
-) {
-  const { error } = await supabase
-    .from('user_profiles')
-    .upsert({
-      id: userId,
-      email,
-      full_name: String(quote.customer_name ?? '').trim(),
-      phone: quote.customer_phone ?? null,
-      role: 'customer',
-    }, { onConflict: 'id' })
-
-  if (error) throw error
+  return (data as InvitableCustomer | null) ?? null
 }
 
 export async function ensureCustomerPortalAccess(
@@ -78,69 +50,46 @@ export async function ensureCustomerPortalAccess(
   baseUrl: string,
 ): Promise<CustomerPortalAccess> {
   const email = normalizeEmail(quote.customer_email)
-  if (!email) {
-    return { ok: true, status: 'skipped', reason: 'Quote has no valid customer email' }
-  }
-
-  const customerName = String(quote.customer_name ?? 'there').trim() || 'there'
-  const portalUrl = `${baseUrl.replace(/\/$/, '')}/portal`
 
   try {
-    const profile = await findCustomerProfile(supabase, email)
-    if (profile) {
-      return {
-        ok: true,
-        status: 'existing',
+    // Resolve the customer for this quote. Quotes created via the new flow
+    // already carry customer_id; older / external ones are resolved by email.
+    let customerId: string | null = quote.customer_id ?? null
+    if (!customerId) {
+      if (!email) {
+        return { ok: true, status: 'skipped', reason: 'Quote has no valid customer email' }
+      }
+      const resolved = await resolveOrCreateCustomer(supabase, {
+        full_name: quote.customer_name,
         email,
-        customerName: profile.full_name?.trim() || customerName,
-        actionUrl: portalUrl,
-        profileId: profile.id,
-      }
+        phone: quote.customer_phone,
+        address: quote.customer_address ?? quote.address,
+        is_business: quote.is_business ?? false,
+        contact_name: quote.contact_name,
+        source: 'quote',
+      })
+      customerId = resolved.id
+      // Best-effort backlink so the quote and customer stay joined.
+      await supabase.from('quote_requests').update({ customer_id: customerId }).eq('id', quote.id)
     }
 
-    const redirectTo = `${baseUrl.replace(/\/$/, '')}/auth/set-password?next=/portal`
-    const { data, error } = await supabase.auth.admin.generateLink({
-      type: 'invite',
-      email,
-      options: {
-        redirectTo,
-        data: {
-          full_name: customerName,
-          phone: quote.customer_phone ?? undefined,
-          accepted_quote_id: quote.id,
-          quote_number: quote.quote_number ?? undefined,
-        },
-      },
-    })
-
-    if (error) {
-      const existingAuthUser = await findAuthUserByEmail(supabase, email)
-      if (existingAuthUser) {
-        await upsertCustomerProfile(supabase, existingAuthUser.id, email, quote)
-        return {
-          ok: true,
-          status: 'existing',
-          email,
-          customerName,
-          actionUrl: portalUrl,
-          profileId: existingAuthUser.id,
-        }
-      }
-
-      return { ok: false, status: 'failed', error: error.message }
+    const customer = customerId ? await loadCustomer(supabase, customerId) : null
+    if (!customer) {
+      return { ok: false, status: 'failed', error: 'Could not resolve a customer record for this quote' }
     }
 
-    if (data.user?.id) {
-      await upsertCustomerProfile(supabase, data.user.id, email, quote)
-    }
+    const result = await inviteCustomer(supabase, customer, baseUrl)
+
+    if (result.status === 'skipped') return { ok: true, status: 'skipped', reason: result.reason }
+    if (!result.ok) return { ok: false, status: 'failed', error: result.error }
 
     return {
       ok: true,
-      status: 'invited',
-      email,
-      customerName,
-      actionUrl: data.properties?.action_link ?? redirectTo,
-      profileId: data.user?.id ?? null,
+      status: result.status,
+      email: result.email,
+      customerName: result.customerName,
+      actionUrl: result.actionUrl,
+      profileId: result.authUserId,
     }
   } catch (err) {
     return {

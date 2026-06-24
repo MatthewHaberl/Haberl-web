@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ClipboardList, Loader2, Phone, Trash2 } from 'lucide-react'
+import { ClipboardList, Loader2, Phone, Trash2, UserCheck } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { Lead } from '@/types/database'
 
@@ -44,6 +44,22 @@ export function LeadCard({ lead }: { lead: Lead }) {
     setBusy(false)
   }
 
+  async function convertToCustomer() {
+    setBusy(true)
+    const res = await fetch(`/api/leads/${lead.id}/convert`, { method: 'POST' })
+    if (!res.ok) {
+      setBusy(false)
+      await confirm({
+        title: 'Could not convert this lead',
+        body: 'Please try again, or check your connection.',
+        confirmText: 'OK',
+      })
+      return
+    }
+    const { customerId } = await res.json()
+    router.push(`/portal/employee/customers/${customerId}`)
+  }
+
   return (
     <Card className="border-accent/40">
       <CardContent className="pt-4 pb-4 flex items-center justify-between gap-3 flex-wrap">
@@ -74,6 +90,14 @@ export function LeadCard({ lead }: { lead: Lead }) {
           )}
           {!busy && (
             <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={convertToCustomer}
+                title="Create a customer record from this lead"
+              >
+                <UserCheck className="h-3.5 w-3.5" /> Convert to customer
+              </Button>
               <Button
                 variant="accent"
                 size="sm"

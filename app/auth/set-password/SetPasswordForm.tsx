@@ -74,6 +74,14 @@ export function SetPasswordForm({ title = 'Set your password' }: { title?: strin
       return
     }
 
+    // Mark the customer record as registered/verified. Best-effort — never
+    // block the customer from reaching the portal if this hiccups.
+    try {
+      await fetch('/api/customers/me/confirm', { method: 'POST' })
+    } catch {
+      // ignore — RLS/trigger linking still applies
+    }
+
     router.push(next)
     router.refresh()
   }

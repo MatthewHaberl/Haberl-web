@@ -1,4 +1,5 @@
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { getCurrentCustomerId } from '@/lib/customers/current'
 import { notFound } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,11 +11,11 @@ import type { Job, JobStatusHistory } from '@/types/database'
 
 export default async function SiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const user = await getUser()
   const supabase = await createClient()
+  const customerId = (await getCurrentCustomerId()) ?? '00000000-0000-0000-0000-000000000000'
 
   const [{ data: site }, { data: documents }, { data: serviceRecords }, { data: jobs }] = await Promise.all([
-    supabase.from('sites').select('*').eq('id', id).eq('customer_id', user!.id).single(),
+    supabase.from('sites').select('*').eq('id', id).eq('customer_id', customerId).single(),
     supabase.from('documents').select('*').eq('site_id', id).order('created_at', { ascending: false }),
     supabase.from('service_records').select('*, technician:user_profiles(full_name)').eq('site_id', id).order('date', { ascending: false }).limit(10),
     supabase.from('jobs').select('id, title, stage, scheduled_date').eq('site_id', id).neq('stage', 'completed').neq('stage', 'cancelled').order('created_at', { ascending: false }),

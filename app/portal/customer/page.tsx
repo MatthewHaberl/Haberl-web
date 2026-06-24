@@ -1,4 +1,5 @@
 import { createClient, getUser } from '@/lib/supabase/server'
+import { getCurrentCustomerId } from '@/lib/customers/current'
 import { redirect } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -7,14 +8,18 @@ import Link from 'next/link'
 import { MapPin, ShoppingBag, FileText, ChevronRight, CheckCircle } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
+const NO_CUSTOMER = '00000000-0000-0000-0000-000000000000'
+
 export default async function CustomerDashboard() {
   const user = await getUser()
   if (!user) redirect('/auth/login')
 
   const supabase = await createClient()
+  const customerId = (await getCurrentCustomerId()) ?? NO_CUSTOMER
 
   const [{ data: sites }, { data: orders }] = await Promise.all([
-    supabase.from('sites').select('*').eq('customer_id', user!.id).limit(3),
+    // Sites belong to the CRM customer; orders are still keyed to the login.
+    supabase.from('sites').select('*').eq('customer_id', customerId).limit(3),
     supabase.from('orders').select('*').eq('customer_id', user!.id).order('created_at', { ascending: false }).limit(3),
   ])
 

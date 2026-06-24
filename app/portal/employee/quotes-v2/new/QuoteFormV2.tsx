@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
+import { resolveOrCreateCustomer } from '@/lib/customers/resolve'
 import { detectMunicipality, MUNICIPALITIES } from '@/lib/solar/municipalities'
 import { getTariffRateForMunicipality } from '@/lib/solar/quote-calculator'
 import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
@@ -221,8 +222,22 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
 
       const usage = usageMode === 'advanced' ? avgKwh() : monthlyKwh
 
+      // Link the quote to a CRM customer (created here if new). No account
+      // email is sent — that stays a deliberate "Send invite" action.
+      const { id: customerId } = await resolveOrCreateCustomer(supabase, {
+        full_name: customerName,
+        email: customerEmail || null,
+        phone: customerPhone || null,
+        address: customerAddress || null,
+        is_business: isBusiness,
+        contact_name: isBusiness ? contactName || null : null,
+        source: 'quote',
+        created_by: user.id,
+      })
+
       const payload = {
         submitted_by:    user.id,
+        customer_id:     customerId,
         site_number:     prefill?.site_number ?? 1,
         // Customer
         customer_name:    customerName,
@@ -270,7 +285,9 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
       if (dbErr) { setError(dbErr.message); return }
 
       if (leadId && inserted?.id) {
-        await supabase.from('leads').update({ status: 'converted', quote_request_id: inserted.id }).eq('id', leadId)
+        await supabase.from('leads')
+          .update({ status: 'converted', quote_request_id: inserted.id, customer_id: customerId })
+          .eq('id', leadId)
       }
       setSubmitted(true)
     } finally {

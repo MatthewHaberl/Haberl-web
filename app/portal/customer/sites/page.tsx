@@ -1,17 +1,20 @@
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { getCurrentCustomerId } from '@/lib/customers/current'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { MapPin, ChevronRight, Sun } from 'lucide-react'
 
+const NO_CUSTOMER = '00000000-0000-0000-0000-000000000000'
+
 export default async function SitesPage() {
-  const user = await getUser()
   const supabase = await createClient()
+  const customerId = (await getCurrentCustomerId()) ?? NO_CUSTOMER
 
   const { data: sites } = await supabase
     .from('sites')
     .select('*')
-    .eq('customer_id', user!.id)
+    .eq('customer_id', customerId)
     .order('created_at', { ascending: false })
 
   return (
