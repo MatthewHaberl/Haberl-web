@@ -5,13 +5,13 @@ import { BatteryCharging, Gauge } from 'lucide-react'
 import { evaluateBatteryForInverter, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import {
   computeBalance, designBatteryKwh, designInverterKw,
-  batteryCRate, batteryDcCurrent, cableRunsNeeded,
-  BATTERY_TOPOLOGIES, DC_CABLE_AMPACITY,
+  batteryCRate, batteryDcCurrent, cableRunsNeeded, DC_CABLE_AMPACITY,
   type CRateLevel, type BatteryBank,
 } from '@/lib/solar/system-design'
 import { CompatSelect } from '@/components/ui/CompatSelect'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
+import { ProductPicker } from '../ProductPicker'
 import { SectionCard } from '../section-ui'
 
 const CRATE_STYLE: Record<CRateLevel, string> = {
@@ -43,9 +43,13 @@ export function BatterySection() {
   const inverterKw = designInverterKw(design)
   const bank = design.bank
   const cr = batteryCRate(inverterKw, batteryKwh)
-  const dcCurrent = batteryDcCurrent(inverterKw, bank.nominalVoltage)
+  // Worst-case: size off the discharge-cutoff voltage, not nominal.
+  const dcCurrent = batteryDcCurrent(inverterKw, bank.cutoffVoltage)
   const cableRuns = cableRunsNeeded(dcCurrent, bank.cableSizeMm2)
   const cableSizes = Object.keys(DC_CABLE_AMPACITY).map(Number)
+  // Derived: feeds = installed inverter count; whole house if no backup load is set.
+  const inverterFeeds = design.inverters.reduce((s, u) => s + u.qty, 0) || 1
+  const hasBackup = (design.energy.essentialLoadKw ?? 0) > 0
   function setBank(patch: Partial<BatteryBank>) { dispatch({ type: 'setBank', patch }) }
 
   function pick(id: string) {
@@ -99,7 +103,7 @@ export function BatterySection() {
           <strong className="text-foreground">{batteryKwh.toFixed(1)}</strong> kWh total
         </span>
         {balance.storageHours != null && (
-          <span><strong className="text-foreground">{balance.storageHours.toFixed(1)}</strong> hrs at backup load</span>
+          <span><strong className="text-foreground">{balance.storageHours.toFixed(1)}</strong> hrs at {hasBackup ? 'backup load' : 'full house load'}</span>
         )}
         {balance.storageHours == null && batteryKwh > 0 && (
           <span>Set an essential load or usage in Energy to see hours of storage.</span>
@@ -114,7 +118,7 @@ export function BatterySection() {
             </span>
           )}
           <p className="text-xs text-muted-foreground">
-            At full inverter draw ≈ <strong className="text-foreground">{Math.round(dcCurrent)}A</strong> DC (~{bank.nominalVoltage}V) →
+            At full inverter draw ≈ <strong className="text-foreground">{Math.round(dcCurrent)}A</strong> DC (~{bank.cutoffVoltage}V worst-case cutoff) →
             battery cable <strong className="text-foreground">{bank.cableSizeMm2}mm² × {cableRuns}</strong> run{cableRuns > 1 ? 's' : ''}.
           </p>
         </div>
@@ -123,56 +127,55 @@ export function BatterySection() {
       {design.batteries.length > 0 && (
         <div className="mt-4 border-t border-border pt-3">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Bank wiring</p>
+          <p className="text-xs text-muted-foreground mb-2.5">
+            <strong className="text-foreground">{bank.voltageClass}</strong> · {bank.nominalVoltage}V nominal ·{' '}
+            <strong className="text-foreground">{inverterFeeds}</strong> inverter feed{inverterFeeds === 1 ? '' : 's'}
+            <span className="opacity-70"> — derived from the inverter + batteries</span>
+          </p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
-            <label className="flex flex-col gap-1 md:col-span-2">
-              <span className="text-[11px] text-muted-foreground">Topology</span>
-              <select value={bank.topology} onChange={(e) => setBank({ topology: e.target.value as BatteryBank['topology'] })} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
-                {BATTERY_TOPOLOGIES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-muted-foreground">Voltage class</span>
-              <select value={bank.voltageClass} onChange={(e) => setBank({ voltageClass: e.target.value as BatteryBank['voltageClass'] })} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
-                <option value="LV">LV (48/51.2V)</option>
-                <option value="HV">HV (series)</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-muted-foreground">Nominal V</span>
-              <input type="number" min={0} step={0.1} value={bank.nominalVoltage} onChange={(e) => setBank({ nominalVoltage: Number(e.target.value) || 0 })} className="h-8 rounded-md border border-border bg-background px-2 text-xs" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-muted-foreground">Inverter feeds</span>
-              <input type="number" min={1} step={1} value={bank.inverterFeeds} onChange={(e) => setBank({ inverterFeeds: Math.max(1, Math.round(Number(e.target.value) || 1)) })} className="h-8 rounded-md border border-border bg-background px-2 text-xs" />
-            </label>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-muted-foreground">Cable size</span>
               <select value={bank.cableSizeMm2} onChange={(e) => setBank({ cableSizeMm2: Number(e.target.value) })} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
                 {cableSizes.map((s) => <option key={s} value={s}>{s}mm² (≈{DC_CABLE_AMPACITY[s]}A)</option>)}
               </select>
             </label>
-          </div>
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-            <label className="flex items-center gap-1.5">
-              <input type="checkbox" checked={bank.perBatteryDisconnect} onChange={(e) => setBank({ perBatteryDisconnect: e.target.checked })} className="accent-primary" />
-              <span>Per-battery disconnect</span>
-              {bank.perBatteryDisconnect && (
-                <input value={bank.disconnectRating} onChange={(e) => setBank({ disconnectRating: e.target.value })} placeholder="250A DC" className="h-7 w-24 rounded border border-border bg-background px-1.5 text-[11px]" />
-              )}
+            <ProductPicker items={items} category="cable" label="Cable product" value={bank.cableProductId} onChange={(v) => setBank({ cableProductId: v })} />
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-muted-foreground">Worst-case cutoff V</span>
+              <input type="number" min={0} step={0.1} value={bank.cutoffVoltage} onChange={(e) => setBank({ cutoffVoltage: Number(e.target.value) || 0 })} className="h-8 rounded-md border border-border bg-background px-2 text-xs" />
             </label>
+          </div>
+
+          {/* Disconnect / busbar builder — inverter → main disconnect → busbar → per-battery */}
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mt-3 mb-1.5">Disconnects &amp; busbar</p>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={bank.mainDisconnect} onChange={(e) => setBank({ mainDisconnect: e.target.checked })} className="accent-primary" />
+                <span className="text-xs">Main disconnect (bank → inverter)</span>
+              </label>
+              {bank.mainDisconnect && (
+                <ProductPicker items={items} category="disconnect" value={bank.mainDisconnectId} onChange={(v) => setBank({ mainDisconnectId: v })} className="min-w-[180px]" />
+              )}
+            </div>
             <label className="flex items-center gap-1.5">
               <input type="checkbox" checked={bank.busbar} onChange={(e) => setBank({ busbar: e.target.checked })} className="accent-primary" />
-              <span>Busbar</span>
+              <span className="text-xs">Busbar</span>
             </label>
-            <label className="flex items-center gap-1.5">
-              <input type="checkbox" checked={bank.mainDisconnect} onChange={(e) => setBank({ mainDisconnect: e.target.checked })} className="accent-primary" />
-              <span>Main disconnect</span>
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={bank.perBatteryDisconnect} onChange={(e) => setBank({ perBatteryDisconnect: e.target.checked })} className="accent-primary" />
+                <span className="text-xs">A disconnect per battery</span>
+              </label>
+              {bank.perBatteryDisconnect && (
+                <ProductPicker items={items} category="disconnect" value={bank.perBatteryDisconnectId} onChange={(v) => setBank({ perBatteryDisconnectId: v })} className="min-w-[180px]" />
+              )}
+            </div>
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
-            {BATTERY_TOPOLOGIES.find((t) => t.value === bank.topology)?.hint}
-            {unit && bank.perBatteryDisconnect ? ` · ${unit.qty} battery disconnect${unit.qty === 1 ? '' : 's'}` : ''}
-            {bank.inverterFeeds > 1 ? ` · ${bank.inverterFeeds} inverter feeds` : ''}
+            {bank.perBatteryDisconnect
+              ? `Each of the ${unit?.qty ?? 1} batteries → its own disconnect → ${bank.busbar ? 'busbar → ' : ''}${bank.mainDisconnect ? 'main disconnect → ' : ''}inverter.`
+              : `Batteries paralleled on a thick cable${bank.busbar ? ' → busbar' : ''}${bank.mainDisconnect ? ' → main disconnect' : ''} → inverter.`}
           </p>
         </div>
       )}

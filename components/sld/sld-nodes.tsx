@@ -107,6 +107,17 @@ function Chip({ label, color }: { label: string; color: string }) {
   )
 }
 
+// Earth bonding points — a source + target dot on the left so earth/bonding runs
+// in the earth-map overlay can pin to any node (both ends resolvable).
+function EarthHandles() {
+  return (
+    <>
+      <Handle type="source" id="earth-s" position={Position.Left} style={H(CLR.earth, { top: '12%' })} title="Earth / bond" />
+      <Handle type="target" id="earth-t" position={Position.Left} style={H(CLR.earth, { top: '88%' })} title="Earth / bond" />
+    </>
+  )
+}
+
 // ── Solar Array ───────────────────────────────────────────────────────────────
 export function SolarArrayNode({ data, selected }: NodeProps) {
   const d = data as {
@@ -158,6 +169,7 @@ export function SolarArrayNode({ data, selected }: NodeProps) {
       {computedKwp > 0 && <Row label="Array" value={`${computedKwp} kWp`} />}
       {d.config && <Row label="Config" value={d.config} />}
       <Handle type="source" id="dc-out" position={Position.Bottom} style={H(CLR.dc)} title="DC out → Combiner or Inverter" />
+      <EarthHandles />
     </NodeCard>
   )
 }
@@ -205,6 +217,7 @@ export function CombinerNode({ data, selected }: NodeProps) {
       <Row label="Fuses" value={`${n} × ${d.fuseRating}`} />
       {d.hasSpd && <Row label="SPD" value="Type 2 included" />}
       <Handle type="source" id="dc-out" position={Position.Bottom} style={H(CLR.dc)} title="DC out → Inverter PV input" />
+      <EarthHandles />
     </NodeCard>
   )
 }
@@ -260,6 +273,7 @@ export function InverterNode({ data, selected }: NodeProps) {
       {(hasEps || outputCount >= 2) && (
         <Handle type="source" id="ac-out-2" position={Position.Bottom} style={H(CLR.ac, { left: '72%' })} title="EPS / backup output" />
       )}
+      <EarthHandles />
 
       {shortModel && <Row label="Model" value={shortModel} />}
       {d.kw > 0 && <Row label="Power" value={`${d.kw} kW`} />}
@@ -282,6 +296,7 @@ export function BatteryNode({ data, selected }: NodeProps) {
     <NodeCard color={CLR.bat} Icon={Battery} title={d.label || 'Battery Bank'} selected={selected}>
       {/* Battery connects UP to inverter's bottom */}
       <Handle type="source" id="bat-out" position={Position.Top} style={H(CLR.bat)} title="Battery output → Inverter" />
+      <EarthHandles />
       {shortModel && <Row label="Model" value={shortModel} />}
       {d.qty > 0 && <Row label="Units" value={d.qty} />}
       {d.totalKwh > 0 && <Row label="Capacity" value={`${d.totalKwh} kWh`} />}
@@ -301,6 +316,7 @@ export function GridNode({ data, selected }: NodeProps) {
     <NodeCard color={CLR.grid} Icon={PlugZap} title={d.label || 'Grid Supply'} selected={selected}>
       {/* Grid is on the LEFT of inverter — so output goes RIGHT */}
       <Handle type="source" id="ac-out" position={Position.Right} style={H(CLR.ac)} title="Grid AC → Inverter" />
+      <EarthHandles />
       {d.utility && <Row label="Utility" value={d.utility} />}
       <Row label="Voltage" value={`${d.voltage}V`} />
       <Row label="Phase" value={`${d.phases}Ø`} />
@@ -321,6 +337,7 @@ export function DBBoardNode({ data, selected }: NodeProps) {
       <Handle type="target" id="ac-in"     position={Position.Left}   style={H(CLR.ac)}                      title="AC input from Inverter" />
       {/* Earth goes DOWN to earthing system */}
       <Handle type="source" id="earth-out" position={Position.Bottom} style={H(CLR.earth, { left: '70%' })} title="Earth → Earthing system" />
+      <EarthHandles />
       {d.mainBreakerA > 0 && <Row label="Main CB" value={`${d.mainBreakerA}A ${d.phases >= 3 ? 'TP' : 'DP'}`} />}
       {d.rccbA > 0 && <Row label="RCCB" value={`${d.rccbA} mA`} />}
       <Row label="Phase" value={`${d.phases}Ø`} />
@@ -336,6 +353,7 @@ export function EarthingNode({ data, selected }: NodeProps) {
     <NodeCard color={CLR.earth} Icon={Grid2x2} title={d.label || 'Earthing'} selected={selected}>
       {/* Earth cable comes from DB above */}
       <Handle type="target" id="earth-in" position={Position.Top} style={H(CLR.earth)} title="Earth input from DB Board" />
+      <EarthHandles />
       {d.spikeCount > 0 && <Row label="Spikes" value={`${d.spikeCount} × 1200mm`} />}
       {d.spec && <Row label="Conductor" value={d.spec} />}
       <Row label="System" value="TN-C-S" />
@@ -430,8 +448,35 @@ export function ConnectorNode({ data, selected }: NodeProps) {
   )
 }
 
+// ── Bus block — disconnect / busbar (upward flow: bottom-in, top-out) ─────────
+export function BusBlockNode({ data, selected }: NodeProps) {
+  const d = data as { label?: string; kind?: 'disconnect' | 'busbar'; product?: string }
+  const isBus = d.kind === 'busbar'
+  const color = CLR.bat
+  return (
+    <div style={{
+      minWidth: isBus ? 200 : 78, maxWidth: isBus ? 320 : 130,
+      background: '#fff',
+      border: `2px solid ${selected ? color : color + 'aa'}`,
+      borderRadius: 5,
+      boxShadow: selected ? `0 0 0 3px ${color}30, 0 1px 4px rgba(0,0,0,0.12)` : '0 1px 3px rgba(0,0,0,0.10)',
+      fontFamily: 'system-ui, sans-serif', overflow: 'hidden',
+    }}>
+      <Handle type="target" id="down" position={Position.Bottom} style={H(color)} />
+      <Handle type="source" id="up" position={Position.Top} style={H(color)} />
+      <div style={{ padding: '4px 8px', textAlign: 'center', background: isBus ? color : '#fff' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, lineHeight: 1.2, color: isBus ? '#fff' : '#111827' }}>
+          {d.label || (isBus ? 'Busbar' : 'Disconnect')}
+        </div>
+        {d.product && <div style={{ fontSize: 8.5, color: isBus ? 'rgba(255,255,255,0.85)' : color }}>{d.product}</div>}
+      </div>
+    </div>
+  )
+}
+
 // ── Node type registry ────────────────────────────────────────────────────────
 export const nodeTypes = {
+  busblock:    BusBlockNode,
   solarArray:  SolarArrayNode,
   combiner:    CombinerNode,
   inverter:    InverterNode,

@@ -2,8 +2,8 @@
 
 import { Plus, Trash2, Zap } from 'lucide-react'
 import {
-  designInverterKw, mkId, EARTH_SIZES,
-  type EarthConductor, type EarthElectrode, type EarthBar, type EarthKind,
+  designInverterKw, mkId, EARTH_SIZES, defaultElectrode, EARTH_ARRANGEMENTS,
+  type EarthConductor, type EarthElectrode, type EarthBar, type EarthKind, type EarthArrangement,
 } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { SectionCard, NumberField } from '../section-ui'
@@ -57,7 +57,7 @@ export function EarthingSection() {
       <SectionCard
         title="Earth electrodes (spikes)"
         action={
-          <button type="button" onClick={() => setElectrodes([...e.electrodes, { id: mkId('el'), label: `Earth spike ${e.electrodes.length + 1}`, spikeCount: suggestedSpikes(kw) }])} className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90">
+          <button type="button" onClick={() => setElectrodes([...e.electrodes, defaultElectrode(`Earth spike ${e.electrodes.length + 1}`, suggestedSpikes(kw))])} className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90">
             <Plus className="h-3.5 w-3.5" /> Add electrode
           </button>
         }
@@ -66,15 +66,45 @@ export function EarthingSection() {
           <p className="text-xs text-muted-foreground">No dedicated electrodes yet — add one (e.g. the panel-array earth spike).</p>
         ) : (
           <div className="flex flex-col gap-2">
-            {e.electrodes.map((el) => (
-              <div key={el.id} className="flex items-center gap-2">
-                <Zap className="h-3.5 w-3.5 text-lime-600 shrink-0" />
-                <input value={el.label} onChange={(ev) => setElectrodes(e.electrodes.map((x) => x.id === el.id ? { ...x, label: ev.target.value } : x))} className="h-8 flex-1 rounded border border-border bg-background px-2 text-xs" />
-                <input type="number" min={0} value={el.spikeCount} onChange={(ev) => setElectrodes(e.electrodes.map((x) => x.id === el.id ? { ...x, spikeCount: Math.max(0, Math.round(Number(ev.target.value) || 0)) } : x))} className="h-8 w-20 rounded border border-border bg-background px-2 text-xs" title="spikes" />
-                <span className="text-[11px] text-muted-foreground">spikes</span>
-                <button type="button" onClick={() => setElectrodes(e.electrodes.filter((x) => x.id !== el.id))} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-              </div>
-            ))}
+            {e.electrodes.map((el) => {
+              const up = (p: Partial<EarthElectrode>) => setElectrodes(e.electrodes.map((x) => x.id === el.id ? { ...x, ...p } : x))
+              return (
+                <div key={el.id} className="rounded-md border border-border/70 bg-muted/20 p-2.5">
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-3.5 w-3.5 text-lime-600 shrink-0" />
+                    <input value={el.label} onChange={(ev) => up({ label: ev.target.value })} className="h-8 flex-1 rounded border border-border bg-background px-2 text-xs" />
+                    <button type="button" onClick={() => setElectrodes(e.electrodes.filter((x) => x.id !== el.id))} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-muted-foreground">Spikes</span>
+                      <input type="number" min={0} value={el.spikeCount} onChange={(ev) => up({ spikeCount: Math.max(0, Math.round(Number(ev.target.value) || 0)) })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]" />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-muted-foreground">Joined per group</span>
+                      <input type="number" min={1} value={el.groupSize} onChange={(ev) => up({ groupSize: Math.max(1, Math.round(Number(ev.target.value) || 1)) })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]" />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-muted-foreground">Arrangement</span>
+                      <select value={el.arrangement} onChange={(ev) => up({ arrangement: ev.target.value as EarthArrangement })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">
+                        {EARTH_ARRANGEMENTS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-muted-foreground">Link cable</span>
+                      <select value={el.linkMm2} onChange={(ev) => up({ linkMm2: Number(ev.target.value) })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">
+                        {EARTH_SIZES.map((s) => <option key={s} value={s}>{s}mm²</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-muted-foreground">
+                    {el.spikeCount} spike{el.spikeCount === 1 ? '' : 's'}
+                    {el.groupSize > 1 ? ` · ${Math.ceil(el.spikeCount / el.groupSize)}×${el.groupSize} joined` : ' · single'}
+                    {' · '}{EARTH_ARRANGEMENTS.find((a) => a.value === el.arrangement)?.label} · {el.linkMm2}mm² link
+                  </p>
+                </div>
+              )
+            })}
           </div>
         )}
       </SectionCard>

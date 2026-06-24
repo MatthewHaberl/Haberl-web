@@ -244,7 +244,9 @@ export interface SizingSnapshot {
   stringSummary: string | null
 }
 
-export type EquipmentCatalogCategory = 'inverter' | 'battery' | 'panel' | 'other'
+export type EquipmentCatalogCategory =
+  | 'inverter' | 'battery' | 'panel' | 'connector' | 'cable' | 'isolator' | 'mounting'
+  | 'enclosure' | 'breaker' | 'fuse' | 'fuseholder' | 'spd' | 'disconnect' | 'other'
 export type EquipmentCatalogPhase = 'single' | 'three' | 'any'
 export type QuoteTier = 'premium' | 'recommended' | 'budget'
 

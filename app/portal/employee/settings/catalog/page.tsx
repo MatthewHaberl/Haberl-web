@@ -7,9 +7,32 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
+import {
+  parseEnclosureSpec, enclosureSpecToNotes,
+  ENCLOSURE_MATERIALS, ENCLOSURE_MOUNTS, ENCLOSURE_WAYS,
+  type EnclosureSpec, type EnclosureMaterial, type EnclosureMount,
+} from '@/lib/solar/system-design'
 import { Loader2, Pencil, Plus, Search, X } from 'lucide-react'
 
-type CategoryTab = 'inverter' | 'battery' | 'panel'
+type CategoryTab =
+  | 'inverter' | 'battery' | 'panel' | 'enclosure'
+  | 'breaker' | 'fuse' | 'fuseholder' | 'spd' | 'isolator' | 'disconnect' | 'cable'
+
+const TABS: Array<{ value: CategoryTab; label: string }> = [
+  { value: 'inverter', label: 'Inverters' },
+  { value: 'battery', label: 'Batteries' },
+  { value: 'panel', label: 'Panels' },
+  { value: 'enclosure', label: 'Enclosures / DBs' },
+  { value: 'breaker', label: 'Breakers' },
+  { value: 'fuse', label: 'Fuses' },
+  { value: 'fuseholder', label: 'Fuse holders' },
+  { value: 'spd', label: 'SPDs' },
+  { value: 'isolator', label: 'Isolators' },
+  { value: 'disconnect', label: 'Disconnects' },
+  { value: 'cable', label: 'Cables' },
+]
+
+const DEFAULT_ENCLOSURE: EnclosureSpec = { material: 'plastic', mount: 'surface', ways: 12, rows: 1, ip: 'IP4X' }
 
 type FormState = {
   id?: string
@@ -67,7 +90,7 @@ function formatRands(value: number) {
 function itemToForm(item: EquipmentCatalogItem): FormState {
   return {
     id: item.id,
-    category: item.category === 'other' ? 'inverter' : item.category,
+    category: (item.category === 'other' ? 'inverter' : item.category) as CategoryTab,
     brand: item.brand,
     sku: item.sku,
     description: item.description,
@@ -214,7 +237,7 @@ export default function CatalogPage() {
       <div>
         <h1 className="text-2xl font-bold text-primary">Equipment Catalog</h1>
         <p className="mt-1 text-muted-foreground">
-          Manage the exact inverter, battery, and panel models the calculator uses.
+          Manage the exact inverter, battery, panel and DB/enclosure models the calculator uses.
         </p>
       </div>
 
@@ -223,14 +246,14 @@ export default function CatalogPage() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        {(['inverter', 'battery', 'panel'] as CategoryTab[]).map((tab) => (
+        {TABS.map(({ value, label }) => (
           <Button
-            key={tab}
-            variant={activeTab === tab ? 'accent' : 'outline'}
+            key={value}
+            variant={activeTab === value ? 'accent' : 'outline'}
             size="sm"
-            onClick={() => setActiveTab(tab)}
+            onClick={() => setActiveTab(value)}
           >
-            {tab === 'inverter' ? 'Inverters' : tab === 'battery' ? 'Batteries' : 'Panels'}
+            {label}
           </Button>
         ))}
         <Button
@@ -267,11 +290,16 @@ export default function CatalogPage() {
                 </thead>
                 <tbody>
                   {visibleItems.map((item) => {
+                    const enc = item.category === 'enclosure' ? parseEnclosureSpec(item.notes) : null
                     const spec = item.category === 'inverter'
                       ? `${((item.watts_ac ?? 0) / 1000).toFixed(1)}kW · ${item.phase}`
                       : item.category === 'battery'
                         ? `${item.kwh ?? 0}kWh`
-                        : `${item.watts_dc ?? 0}Wp`
+                        : item.category === 'enclosure'
+                          ? (enc ? `${enc.rows > 1 ? `${enc.rows}×${enc.ways}` : `${enc.ways}-way`} · ${enc.mount} · ${enc.material} · ${enc.ip}` : 'DB')
+                          : item.category === 'panel'
+                            ? `${item.watts_dc ?? 0}Wp`
+                            : '—'
                     return (
                       <tr key={item.id} className="border-b border-border/60">
                         <td className="py-3 pr-4">{item.brand}</td>
@@ -327,9 +355,7 @@ export default function CatalogPage() {
                   onChange={(event) => setEditing({ ...editing, category: event.target.value as CategoryTab })}
                   className="h-10 rounded-md border border-border bg-background px-3 text-sm"
                 >
-                  <option value="inverter">Inverter</option>
-                  <option value="battery">Battery</option>
-                  <option value="panel">Panel</option>
+                  {TABS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </label>
               <label className="flex flex-col gap-1.5">
@@ -344,6 +370,40 @@ export default function CatalogPage() {
                 <span className="text-sm font-medium">Description</span>
                 <Input value={editing.description} onChange={(event) => setEditing({ ...editing, description: event.target.value })} />
               </label>
+              {editing.category === 'enclosure' && (() => {
+                const spec = parseEnclosureSpec(editing.notes) ?? DEFAULT_ENCLOSURE
+                const set = (p: Partial<EnclosureSpec>) => setEditing({ ...editing, notes: enclosureSpecToNotes({ ...spec, ...p }) })
+                return (
+                  <>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Material</span>
+                      <select value={spec.material} onChange={(e) => set({ material: e.target.value as EnclosureMaterial })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+                        {ENCLOSURE_MATERIALS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Mount</span>
+                      <select value={spec.mount} onChange={(e) => set({ mount: e.target.value as EnclosureMount })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+                        {ENCLOSURE_MOUNTS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Ways</span>
+                      <select value={spec.ways} onChange={(e) => set({ ways: Number(e.target.value) })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+                        {ENCLOSURE_WAYS.map((w) => <option key={w} value={w}>{w}-way</option>)}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Rows</span>
+                      <Input value={String(spec.rows)} onChange={(e) => set({ rows: Math.max(1, Math.round(Number(e.target.value) || 1)) })} />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">IP rating</span>
+                      <Input value={spec.ip} onChange={(e) => set({ ip: e.target.value })} />
+                    </label>
+                  </>
+                )
+              })()}
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium">AC Watts</span>
                 <Input value={editing.watts_ac} onChange={(event) => setEditing({ ...editing, watts_ac: event.target.value })} />

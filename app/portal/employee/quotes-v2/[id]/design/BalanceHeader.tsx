@@ -36,6 +36,7 @@ function Figure({
 export function BalanceHeader() {
   const { design, record, saveState } = useDesign()
   const balance = useMemo(() => computeBalance(design, record), [design, record])
+  const hasBackup = (design.energy.essentialLoadKw ?? 0) > 0
 
   const coverage = balance.coveragePct
   const coverageChip = coverage == null
@@ -82,7 +83,7 @@ export function BalanceHeader() {
           label="Storage"
           value={fmt(balance.storageHours)}
           unit="hrs"
-          sub={balance.batteryKwh > 0 ? `${fmt(balance.batteryKwh)} kWh at backup load` : 'add a battery'}
+          sub={balance.batteryKwh > 0 ? `${fmt(balance.batteryKwh)} kWh at ${hasBackup ? 'backup' : 'full house'} load` : 'add a battery'}
           accent="#16a34a"
         />
       </div>

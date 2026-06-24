@@ -44,7 +44,13 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
     dc: d.dcCombiners.length,
     i: d.inverters.map((u) => [u.catalogId, u.kw, u.model, u.qty, u.phases]),
     b: d.batteries.map((b) => [b.catalogId, b.kwh, b.qty, b.model]),
+    bk: [d.bank.perBatteryDisconnect, d.bank.busbar, d.bank.mainDisconnect, d.bank.cableSizeMm2, d.bank.cutoffVoltage],
     e: [d.earthing.spikeCount, d.earthing.spec],
+    em: [
+      ...d.earthing.conductors.map((c) => `${c.fromId}>${c.toId}:${c.sizeMm2}:${c.kind}`),
+      ...d.earthing.electrodes.map((x) => `el:${x.id}:${x.spikeCount}:${x.arrangement}:${x.groupSize}:${x.linkMm2}`),
+      ...d.earthing.bars.map((x) => `bar:${x.id}:${x.label}`),
+    ],
   })
 }
 

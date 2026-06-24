@@ -105,6 +105,8 @@ export interface BatteryBank {
   topology: BatteryTopology
   voltageClass: 'LV' | 'HV'
   nominalVoltage: number
+  /** Discharge-cutoff (worst-case) voltage — sizing uses this, not nominal. */
+  cutoffVoltage: number
   /** Each battery gets its own breaker/disconnect onto the busbar. */
   perBatteryDisconnect: boolean
   disconnectRating: string
@@ -113,6 +115,10 @@ export interface BatteryBank {
   /** Separate disconnect + cable run to each inverter. */
   inverterFeeds: number
   cableSizeMm2: number
+  /** Catalog products (null = none / not chosen). */
+  cableProductId: string | null
+  perBatteryDisconnectId: string | null
+  mainDisconnectId: string | null
 }
 
 export const BATTERY_TOPOLOGIES: Array<{ value: BatteryTopology; label: string; hint: string }> = [
@@ -124,9 +130,10 @@ export const BATTERY_TOPOLOGIES: Array<{ value: BatteryTopology; label: string; 
 
 export function defaultBank(): BatteryBank {
   return {
-    topology: 'parallel-busbar', voltageClass: 'LV', nominalVoltage: 51.2,
+    topology: 'parallel-busbar', voltageClass: 'LV', nominalVoltage: 51.2, cutoffVoltage: 44,
     perBatteryDisconnect: true, disconnectRating: '250A DC',
     busbar: true, mainDisconnect: true, inverterFeeds: 1, cableSizeMm2: 25,
+    cableProductId: null, perBatteryDisconnectId: null, mainDisconnectId: null,
   }
 }
 
@@ -138,6 +145,22 @@ export interface CombinerOutput {
   id: string
   label: string
   stringIds: string[]
+  /** Per-output protection (catalog product ids) — main breaker when >1 string, + SPD. */
+  spdId: string | null
+  mainBreakerId: string | null
+}
+
+/** Per-string connection products inside a combiner (catalog ids; null = none). */
+export interface StringConnection {
+  breakerId: string | null
+  fuseHolderId: string | null
+  fuseId: string | null
+  fuseQty: number
+  isolatorId: string | null
+}
+
+export function defaultStringConnection(): StringConnection {
+  return { breakerId: null, fuseHolderId: null, fuseId: null, fuseQty: 1, isolatorId: null }
 }
 
 export interface DcCombiner {
@@ -153,17 +176,13 @@ export interface DcCombiner {
   /** Auto-generated descriptive code; user can override (locks it). */
   productCode: string
   productCodeLocked: boolean
+  /** Chosen catalog enclosure (a specific DB product); null = manual config. */
+  enclosureCatalogId: string | null
   // Inputs (strings) and outputs (to inverter MPPTs)
   inputStringIds: string[]
   outputs: CombinerOutput[]
-  // What's inside
-  stringFuses: boolean
-  fuseRating: string
-  hasSpd: boolean
-  spdType: string
-  hasIsolator: boolean
-  isolatorRating: string
-  mainBreaker: string
+  /** Per-string connection products, keyed by panel-group id. */
+  stringConnections: Record<string, StringConnection>
 }
 
 export const ENCLOSURE_MATERIALS: Array<{ value: EnclosureMaterial; label: string }> = [
@@ -196,6 +215,39 @@ export function combinerConfigLabel(c: DcCombiner): string {
   return `${c.inputStringIds.length}-in ${c.outputs.length}-out · ${size}`
 }
 
+/** Enclosure attributes stored on a catalog DB product (in its notes JSON). */
+export interface EnclosureSpec {
+  material: EnclosureMaterial
+  mount: EnclosureMount
+  ways: number
+  rows: number
+  ip: string
+}
+
+/** Read an enclosure spec from a catalog item's notes JSON (`{"enclosure": {...}}`). */
+export function parseEnclosureSpec(notes: string | null | undefined): EnclosureSpec | null {
+  if (!notes) return null
+  try {
+    const obj = JSON.parse(notes) as { enclosure?: Partial<EnclosureSpec> }
+    const e = obj?.enclosure
+    if (!e) return null
+    return {
+      material: (e.material as EnclosureMaterial) ?? 'plastic',
+      mount: (e.mount as EnclosureMount) ?? 'surface',
+      ways: Number(e.ways) || 12,
+      rows: Number(e.rows) || 1,
+      ip: e.ip ?? 'IP4X',
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Serialise an enclosure spec back to the notes JSON for the catalog. */
+export function enclosureSpecToNotes(spec: EnclosureSpec): string {
+  return JSON.stringify({ enclosure: spec })
+}
+
 /** A new combiner pre-wired to the given strings, with rule-based protection defaults. */
 export function defaultCombiner(panelIds: string[]): DcCombiner {
   const inputs = panelIds.slice()
@@ -209,15 +261,10 @@ export function defaultCombiner(panelIds: string[]): DcCombiner {
     ipRating: 'IP65',
     productCode: '',
     productCodeLocked: false,
+    enclosureCatalogId: null,
     inputStringIds: inputs,
-    outputs: [{ id: mkId('out'), label: 'Output 1', stringIds: inputs.slice() }],
-    stringFuses: inputs.length >= 3, // 3-string rule
-    fuseRating: '15A gPV',
-    hasSpd: true,
-    spdType: 'Type 2',
-    hasIsolator: true,
-    isolatorRating: '1000V DC 25A',
-    mainBreaker: '',
+    outputs: [{ id: mkId('out'), label: 'Output 1', stringIds: inputs.slice(), spdId: null, mainBreakerId: null }],
+    stringConnections: {},
   }
   c.productCode = enclosureCode(c)
   return c
@@ -230,9 +277,31 @@ export interface AcCombiner {
 }
 
 export type EarthKind = 'earthing' | 'bonding'
+export type EarthArrangement = 'single' | 'line' | 'loop' | 'mat'
+
+export const EARTH_ARRANGEMENTS: Array<{ value: EarthArrangement; label: string }> = [
+  { value: 'single', label: 'Single point' },
+  { value: 'line', label: 'In a line' },
+  { value: 'loop', label: 'Closed loop' },
+  { value: 'mat', label: 'Earth mat' },
+]
 
 /** Driven earth rods / spike array (a fault-current electrode). */
-export interface EarthElectrode { id: string; label: string; spikeCount: number }
+export interface EarthElectrode {
+  id: string
+  label: string
+  spikeCount: number
+  /** How the spikes are laid out. */
+  arrangement: EarthArrangement
+  /** Spikes joined per group: 1 = all single, 2 = pairs (e.g. 3×2), … */
+  groupSize: number
+  /** Size of the conductor linking the spikes together. */
+  linkMm2: number
+}
+
+export function defaultElectrode(label: string, spikeCount: number): EarthElectrode {
+  return { id: mkId('el'), label, spikeCount, arrangement: 'line', groupSize: 1, linkMm2: 16 }
+}
 /** A collection busbar/bar that earth conductors land on. */
 export interface EarthBar { id: string; label: string }
 /** One sized earth run between two points, tagged earthing (to electrode) or bonding. */
@@ -404,10 +473,20 @@ export function parseDesign(raw: unknown): SystemDesign | null {
     ...src,
     energy,
     bank: { ...base.bank, ...(src.bank ?? {}) },
-    earthing: { ...base.earthing, ...(src.earthing ?? {}) },
+    earthing: {
+      ...base.earthing,
+      ...(src.earthing ?? {}),
+      electrodes: (src.earthing?.electrodes ?? []).map((el) => ({ ...el, arrangement: el.arrangement ?? 'line', groupSize: el.groupSize ?? 1, linkMm2: el.linkMm2 ?? 16 })),
+    },
     layout: { nodes: { ...(src.layout?.nodes ?? {}) } },
     panels: src.panels ?? [],
-    dcCombiners: src.dcCombiners ?? [],
+    // Backfill combiners saved before the product-driven protection model.
+    dcCombiners: (src.dcCombiners ?? []).map((c) => ({
+      ...c,
+      enclosureCatalogId: c.enclosureCatalogId ?? null,
+      stringConnections: c.stringConnections ?? {},
+      outputs: (c.outputs ?? []).map((o) => ({ ...o, spdId: o.spdId ?? null, mainBreakerId: o.mainBreakerId ?? null })),
+    })),
     inverters: src.inverters ?? [],
     batteries: src.batteries ?? [],
     acCombiners: src.acCombiners ?? [],
@@ -837,8 +916,7 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       data: {
         label: explicit?.label || 'DC Combiner Box',
         stringCount: explicit ? (explicit.inputStringIds.length || groupCount) : groupCount,
-        hasSpd: explicit?.hasSpd ?? true,
-        fuseRating: explicit?.stringFuses ? explicit.fuseRating : undefined,
+        hasSpd: explicit ? explicit.outputs.some((o) => !!o.spdId) : true,
         config: explicit ? combinerConfigLabel(explicit) : `${groupCount}-string`,
       },
     })
@@ -894,34 +972,63 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
     }
   }
 
-  // Battery
+  // ── Battery bank — granular wiring: batteries → [disconnect] → [busbar] → [main] → inverter
   const batKwh = designBatteryKwh(d)
   const bat0 = d.batteries[0]
-  if (bat0 || batKwh > 0) {
-    const id = NODE.battery
-    const totalQty = d.batteries.reduce((s, b) => s + b.qty, 0) || 1
-    nodes.push({
-      id,
-      type: 'battery',
-      position: pos(id, { x: INV_X, y: Y_BAT }),
-      data: {
-        label: 'Battery Bank',
-        model: bat0?.model ?? '',
-        qty: totalQty,
-        totalKwh: +batKwh.toFixed(1),
-        chemistry: 'LiFePO4',
-      },
-    })
-    if (invKw > 0 || inv0) {
-      // Battery cable reflects the DC current: a 10kW inverter ≈ 195A needs 2× 25mm².
-      const batBase = cableData('battery', 'CU 25mm²', 3)
-      const batRuns = cableRunsNeeded(batteryDcCurrent(invKw), 25)
+  if ((bat0 || batKwh > 0) && (invKw > 0 || inv0)) {
+    const bank = d.bank
+    const batSize = bank.cableSizeMm2
+    // Thick feed sized to worst-case full current; per-battery cables stay single.
+    const mainRuns = cableRunsNeeded(batteryDcCurrent(invKw, bank.cutoffVoltage), batSize)
+    const cable = (id: string, source: string, target: string, sourceHandle: string, targetHandle: string, runs = 1) =>
       edges.push({
-        id: 'e-bat-inv', source: id, target: NODE.inverter,
-        sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable',
-        data: { ...batBase, runs: batRuns },
-        label: `${batRuns > 1 ? `${batRuns}× ` : ''}${buildEdgeLabel(batBase)}`,
+        id, source, target, sourceHandle, targetHandle, type: 'cable',
+        data: { ...cableData('battery', `CU ${batSize}mm²`, 2), runs },
+        label: `${runs > 1 ? `${runs}× ` : ''}CU ${batSize}mm²`,
       })
+
+    // One node per physical battery (capped so the row stays readable).
+    const units: Array<{ model: string; kwh: number }> = []
+    for (const b of d.batteries) for (let k = 0; k < b.qty; k++) units.push({ model: b.model, kwh: b.kwh })
+    const N = Math.min(units.length || 1, 12)
+
+    const hasMain = bank.mainDisconnect
+    const hasBus = bank.busbar
+    const hasDisc = bank.perBatteryDisconnect
+    const Y_MAIN = Y_INV + 140
+    const Y_BUS = Y_BAT
+    const Y_DISC = Y_INV + 430
+    const Y_BATT = Y_INV + 560
+
+    if (hasMain) {
+      nodes.push({ id: 'bat-main', type: 'busblock', position: pos('bat-main', { x: INV_X + 10, y: Y_MAIN }), data: { kind: 'disconnect', label: 'Main disconnect' } })
+      cable('e-main-inv', 'bat-main', NODE.inverter, 'up', 'bat-in', mainRuns)
+    }
+    if (hasBus) {
+      nodes.push({ id: 'bat-busbar', type: 'busblock', position: pos('bat-busbar', { x: INV_X - 30, y: Y_BUS }), data: { kind: 'busbar', label: 'DC busbar' } })
+      if (hasMain) cable('e-bus-main', 'bat-busbar', 'bat-main', 'up', 'down', mainRuns)
+      else cable('e-bus-inv', 'bat-busbar', NODE.inverter, 'up', 'bat-in', mainRuns)
+    }
+    const mergeId = hasBus ? 'bat-busbar' : hasMain ? 'bat-main' : NODE.inverter
+    const mergeHandle = hasBus || hasMain ? 'down' : 'bat-in'
+    // A single battery wired straight to the inverter carries the full feed.
+    const directFull = mergeId === NODE.inverter && N === 1 ? mainRuns : 1
+
+    const spacing = 150
+    const startX = INV_X + 35 - ((N - 1) * spacing) / 2
+    for (let i = 0; i < N; i++) {
+      const u = units[i] ?? { model: bat0?.model ?? '', kwh: batKwh }
+      const bx = startX + i * spacing
+      const bid = i === 0 ? NODE.battery : `batt-${i}`
+      nodes.push({ id: bid, type: 'battery', position: pos(bid, { x: bx, y: Y_BATT }), data: { label: `Battery ${i + 1}`, model: u.model, qty: 1, totalKwh: +u.kwh.toFixed(1), chemistry: 'LiFePO4' } })
+      if (hasDisc) {
+        const did = `bat-disc-${i}`
+        nodes.push({ id: did, type: 'busblock', position: pos(did, { x: bx, y: Y_DISC }), data: { kind: 'disconnect', label: 'Disc' } })
+        cable(`e-bat${i}-disc`, bid, did, 'bat-out', 'down')
+        cable(`e-disc${i}`, did, mergeId, 'up', mergeHandle, directFull)
+      } else {
+        cable(`e-bat${i}`, bid, mergeId, 'bat-out', mergeHandle, directFull)
+      }
     }
   }
 
@@ -989,6 +1096,7 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       if (!nodes.some((n) => n.id === src) || !nodes.some((n) => n.id === tgt)) return
       edges.push({
         id: `earth-${c.id}`, source: src, target: tgt, type: 'cable',
+        sourceHandle: 'earth-s', targetHandle: 'earth-t',
         data: { ...cableData('earth', `CU ${c.sizeMm2}mm²`, 5), circuitLayer: 'earth' },
         label: `CU ${c.sizeMm2}mm² · ${c.kind === 'bonding' ? 'BOND' : 'E'}`,
       })
