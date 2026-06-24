@@ -7,9 +7,10 @@
 // are rough estimates until measured routes are wired in (flagged `approx`).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { EquipmentCatalogItem } from './quote-calculator'
+import { cableCostPerMeter, type EquipmentCatalogItem } from './quote-calculator'
+import type { CableEdgeData } from './sld-builder'
 import {
-  designBatteryKwh, type SystemDesign,
+  designBatteryKwh, designToFlow, type SystemDesign,
 } from './system-design'
 
 export interface BomLine {
@@ -46,6 +47,7 @@ export function designToBom(
   design: SystemDesign,
   catalog: Map<string, EquipmentCatalogItem>,
   markup: number,
+  opts: { gridSupply?: string } = {},
 ): DesignBom {
   const lines: BomLine[] = []
   let missing = 0
@@ -106,6 +108,40 @@ export function designToBom(
 
   // Extras
   for (const x of design.extras) add('Extras', x.productId, 1)
+
+  // Cabling — priced from the diagram's conductors, honouring per-cable overrides.
+  // Conductor-metres = length × parallel runs × cores; cores follow the phase/circuit.
+  const conductorCount = (data: CableEdgeData): number => {
+    if (data.circuitType === 'earth') return 1
+    if (data.circuitType === 'dc' || data.circuitType === 'battery') return 2
+    return (data.conductors as Record<string, boolean> | undefined)?.l1 === true ? 5 : 3
+  }
+  const flow = designToFlow(design, { gridSupply: opts.gridSupply })
+  for (const edge of flow.edges) {
+    const data = edge.data as CableEdgeData | undefined
+    if (!data || data.isDirect || data.circuitType === 'communication') continue
+    const material = (data.cableType as string | undefined) ?? data.spec?.split(' ')[0] ?? 'CU'
+    const cs = (data.crossSection as string | undefined) ?? data.spec?.match(/\d+mm²/)?.[0]
+    if (!cs) continue
+    const perM = cableCostPerMeter(material, cs)
+    const lengthM = Number(data.lengthM) || 0
+    if (perM <= 0 || lengthM <= 0) continue
+    const runs = Math.max(1, Math.round(Number((data as { runs?: number }).runs) || 1))
+    const qtyM = Math.round(lengthM * runs * conductorCount(data))
+    const unitSellR = round2(perM * markup)
+    lines.push({
+      section: 'Cabling',
+      catalogId: `cable:${edge.id}`,
+      sku: `${material} ${cs}`,
+      description: typeof edge.label === 'string' ? edge.label : `${material} ${cs}`,
+      qty: qtyM,
+      unitCostR: perM,
+      unitSellR,
+      lineCostR: round2(perM * qtyM),
+      lineSellR: round2(unitSellR * qtyM),
+      approx: true,
+    })
+  }
 
   // Group by section, preserving first-seen order.
   const order: string[] = []

@@ -14,13 +14,25 @@ import {
   type Edge,
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2 } from 'lucide-react'
+import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw } from 'lucide-react'
 import { nodeTypes } from '@/components/sld/sld-nodes'
 import { edgeTypes } from '@/components/sld/sld-edges'
 import {
   designToFlow, nodeIdToRef, panelGroupKwp, type SystemDesign,
 } from '@/lib/solar/system-design'
+import type { CableEdgeData } from '@/lib/solar/sld-builder'
 import { useDesign } from './DesignProvider'
+
+// Cable editor option lists (mirror the legacy SLD panel).
+const CABLE_MATERIALS = ['CU', 'Al', 'H1Z2Z2', 'XLPE', 'Flex (HO5VV-F)']
+const CABLE_SIZES = ['1.5mm²', '2.5mm²', '4mm²', '6mm²', '10mm²', '16mm²', '25mm²', '35mm²', '50mm²', '70mm²', '95mm²']
+
+function conductorSummary(circuitType: string, threePhase: boolean): string {
+  if (circuitType === 'earth') return 'E only'
+  if (circuitType === 'dc' || circuitType === 'battery') return '+ / − / E'
+  if (circuitType === 'communication') return 'data'
+  return threePhase ? 'L1 / L2 / L3 / N / E' : 'L / N / E'
+}
 
 const NODE_COLORS: Record<string, string> = {
   solarArray: '#f97316', combiner: '#f97316', inverter: '#1e3a5f',
@@ -81,6 +93,9 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
       ...d.earthing.electrodes.map((x) => `el:${x.id}:${x.spikeCount}:${x.arrangement}:${x.groupSize}:${x.linkMm2}`),
       ...d.earthing.bars.map((x) => `bar:${x.id}:${x.label}`),
     ],
+    // Inspector overrides change cables/ports, so they must force a rebuild too.
+    ov: JSON.stringify(d.layout.edgeOverrides ?? {}),
+    no: JSON.stringify(d.layout.nodeOverrides ?? {}),
   })
 }
 
@@ -216,6 +231,126 @@ function NodeInspector({ nodeId, onClose }: { nodeId: string; onClose: () => voi
   )
 }
 
+// Click a cable → edit material / size / runs / phase / length (persisted as an override).
+function CableInspector({ edge, onClose }: { edge: Edge; onClose: () => void }) {
+  const { dispatch } = useDesign()
+  const data = (edge.data ?? {}) as CableEdgeData
+  const ct = (data.circuitType as string) ?? 'ac'
+  const isAc = ct === 'ac'
+  const isComms = ct === 'communication'
+  const material = (data.cableType as string) || (data.spec?.split(' ')[0] ?? 'CU')
+  const size = (data.crossSection as string) || (data.spec?.match(/\d+mm²/)?.[0] ?? '6mm²')
+  const runs = Math.max(1, Math.round(Number((data as { runs?: number }).runs) || 1))
+  const lengthM = Number(data.lengthM) || 0
+  const threePhase = (data.conductors as Record<string, boolean> | undefined)?.l1 === true
+
+  const set = (patch: Record<string, unknown>) => dispatch({ type: 'setEdgeOverride', id: edge.id, patch })
+  const setSpec = (mat: string, sz: string) => set({ cableType: mat, crossSection: sz, spec: `${mat} ${sz}` })
+
+  const lbl = 'text-xs text-muted-foreground'
+  const field = 'h-9 rounded-md border border-border bg-background px-2 text-sm'
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <Cable className="h-3.5 w-3.5" /> Cable
+        </span>
+        <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+      </div>
+      <p className="mb-3 text-xs text-muted-foreground">
+        <span className="font-medium uppercase text-foreground">{ct}</span> · {conductorSummary(ct, threePhase)}
+      </p>
+
+      {isComms ? (
+        <p className="text-xs text-muted-foreground">Communication link — protocol editing arrives with the data layer.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <label className="flex flex-col gap-1">
+            <span className={lbl}>Conductor material</span>
+            <select className={field} value={material} onChange={(e) => setSpec(e.target.value, size)}>
+              {CABLE_MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={lbl}>Cross-section</span>
+            <select className={field} value={size} onChange={(e) => setSpec(material, e.target.value)}>
+              {CABLE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={lbl}>Parallel runs (×)</span>
+            <input type="number" min={1} step={1} value={runs} className={field}
+              onChange={(e) => set({ runs: Math.max(1, Math.round(Number(e.target.value) || 1)) })} />
+          </label>
+          {isAc && (
+            <label className="flex flex-col gap-1">
+              <span className={lbl}>Phase</span>
+              <select className={field} value={threePhase ? '3' : '1'}
+                onChange={(e) => set({ conductors: { ...(data.conductors as Record<string, boolean> ?? {}), l1: e.target.value === '3' } })}>
+                <option value="1">Single phase · L / N / E</option>
+                <option value="3">Three phase · L1 / L2 / L3 / N / E</option>
+              </select>
+            </label>
+          )}
+          <label className="flex flex-col gap-1">
+            <span className={lbl}>Run length (m)</span>
+            <input type="number" min={0} step={0.5} value={lengthM || ''} placeholder="0" className={field}
+              onChange={(e) => set({ lengthM: Math.max(0, Number(e.target.value) || 0) })} />
+          </label>
+        </div>
+      )}
+
+      <button type="button" onClick={() => dispatch({ type: 'clearEdgeOverride', id: edge.id })}
+        className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+        <RotateCcw className="h-3.5 w-3.5" /> Reset to auto
+      </button>
+    </div>
+  )
+}
+
+// Click a busbar / disconnect → edit ports + rating (persisted as a node override).
+function ComponentInspector({ node, onClose }: { node: Node; onClose: () => void }) {
+  const { dispatch } = useDesign()
+  const d = (node.data ?? {}) as { kind?: string; label?: string; product?: string; connections?: number }
+  const isBus = d.kind === 'busbar'
+  const set = (patch: Record<string, unknown>) => dispatch({ type: 'setNodeOverride', id: node.id, patch })
+  const lbl = 'text-xs text-muted-foreground'
+  const field = 'h-9 rounded-md border border-border bg-background px-2 text-sm'
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{isBus ? 'DC busbar' : 'Disconnect'}</span>
+        <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+      </div>
+      <div className="flex flex-col gap-2">
+        {isBus && (
+          <label className="flex flex-col gap-1">
+            <span className={lbl}>Connections (ports)</span>
+            <input type="number" min={1} max={24} step={1} value={d.connections ?? 1} className={field}
+              onChange={(e) => set({ connections: Math.max(1, Math.min(24, Math.round(Number(e.target.value) || 1))) })} />
+            <span className="text-[11px] text-muted-foreground">Each port gives a top + bottom tap for a battery or feed.</span>
+          </label>
+        )}
+        <label className="flex flex-col gap-1">
+          <span className={lbl}>Product / rating</span>
+          <input type="text" value={d.product ?? ''} placeholder="e.g. 250A DC" className={field}
+            onChange={(e) => set({ product: e.target.value })} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={lbl}>Label</span>
+          <input type="text" value={d.label ?? ''} className={field}
+            onChange={(e) => set({ label: e.target.value })} />
+        </label>
+      </div>
+      <button type="button" onClick={() => dispatch({ type: 'clearNodeOverride', id: node.id })}
+        className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+        <RotateCcw className="h-3.5 w-3.5" /> Reset to auto
+      </button>
+    </div>
+  )
+}
+
 function CanvasInner({ height = 560 }: { height?: number }) {
   const { design, dispatch, gridSupply } = useDesign()
   const designRef = useRef(design)
@@ -223,7 +358,7 @@ function CanvasInner({ height = 560 }: { height?: number }) {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<{ kind: 'node' | 'edge'; id: string } | null>(null)
   const [layers, setLayers] = useState<Record<string, boolean>>(ALL_LAYERS_ON)
   const [snap, setSnap] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
@@ -254,15 +389,15 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   }, [dispatch])
 
   // Keyboard: Delete removes the selected node; Esc leaves fullscreen.
-  const selectedRef = useRef<string | null>(null)
-  selectedRef.current = selectedId
+  const selectedNodeRef = useRef<string | null>(null)
+  selectedNodeRef.current = selected?.kind === 'node' ? selected.id : null
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') { setFullscreen(false); return }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return
       const tag = (e.target as HTMLElement).tagName
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
-      if (selectedRef.current) { dispatch({ type: 'removeNode', id: selectedRef.current }); setSelectedId(null) }
+      if (selectedNodeRef.current) { dispatch({ type: 'removeNode', id: selectedNodeRef.current }); setSelected(null) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -329,9 +464,10 @@ function CanvasInner({ height = 560 }: { height?: number }) {
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        onNodeClick={(_, node) => setSelectedId(node.id)}
+        onNodeClick={(_, node) => setSelected({ kind: 'node', id: node.id })}
+        onEdgeClick={(_, edge) => setSelected({ kind: 'edge', id: edge.id })}
         onNodeDragStop={onNodeDragStop}
-        onPaneClick={() => setSelectedId(null)}
+        onPaneClick={() => setSelected(null)}
         snapToGrid={snap}
         snapGrid={[20, 20]}
         fitView
@@ -354,9 +490,21 @@ function CanvasInner({ height = 560 }: { height?: number }) {
     </div>
   )
 
-  const panel = selectedId ? (
-    <div className="w-64 shrink-0 border-l border-border bg-card p-3 overflow-y-auto">
-      <NodeInspector nodeId={selectedId} onClose={() => setSelectedId(null)} />
+  const panel = selected ? (
+    <div className="w-72 shrink-0 border-l border-border bg-card p-3 overflow-y-auto">
+      {selected.kind === 'edge' ? (
+        (() => {
+          const edge = edges.find((e) => e.id === selected.id)
+          return edge ? <CableInspector edge={edge} onClose={() => setSelected(null)} /> : null
+        })()
+      ) : (
+        (() => {
+          const node = nodes.find((nn) => nn.id === selected.id)
+          return node?.type === 'busblock'
+            ? <ComponentInspector node={node} onClose={() => setSelected(null)} />
+            : <NodeInspector nodeId={selected.id} onClose={() => setSelected(null)} />
+        })()
+      )}
     </div>
   ) : null
 

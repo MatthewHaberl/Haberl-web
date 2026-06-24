@@ -53,6 +53,11 @@ export type DesignAction =
   | { type: 'moveNode'; id: string; position: NodePosition }
   | { type: 'applyNodePatch'; id: string; patch: Record<string, unknown> }
   | { type: 'removeNode'; id: string }
+  // Per-cable / per-component overrides from the diagram inspector.
+  | { type: 'setEdgeOverride'; id: string; patch: Record<string, unknown> }
+  | { type: 'clearEdgeOverride'; id: string }
+  | { type: 'setNodeOverride'; id: string; patch: Record<string, unknown> }
+  | { type: 'clearNodeOverride'; id: string }
 
 function n(value: unknown): number {
   const x = typeof value === 'string' ? parseFloat(value) : (value as number)
@@ -65,7 +70,7 @@ function clearPanelLayout(layout: SystemDesign['layout']): SystemDesign['layout'
   for (const [k, v] of Object.entries(layout.nodes)) {
     if (!k.startsWith('panel-')) nodes[k] = v
   }
-  return { nodes }
+  return { ...layout, nodes }
 }
 
 function newPanelGroup(group?: Partial<PanelGroup>): PanelGroup {
@@ -260,10 +265,32 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
       return { ...d, extras: d.extras.filter((x) => x.id !== action.id) }
 
     case 'moveNode':
-      return { ...d, layout: { nodes: { ...d.layout.nodes, [action.id]: action.position } } }
+      return { ...d, layout: { ...d.layout, nodes: { ...d.layout.nodes, [action.id]: action.position } } }
 
     case 'applyNodePatch':
       return applyNodePatch(d, action.id, action.patch)
+
+    case 'setEdgeOverride': {
+      const cur = d.layout.edgeOverrides ?? {}
+      return { ...d, layout: { ...d.layout, edgeOverrides: { ...cur, [action.id]: { ...(cur[action.id] ?? {}), ...action.patch } } } }
+    }
+
+    case 'clearEdgeOverride': {
+      const cur = { ...(d.layout.edgeOverrides ?? {}) }
+      delete cur[action.id]
+      return { ...d, layout: { ...d.layout, edgeOverrides: cur } }
+    }
+
+    case 'setNodeOverride': {
+      const cur = d.layout.nodeOverrides ?? {}
+      return { ...d, layout: { ...d.layout, nodeOverrides: { ...cur, [action.id]: { ...(cur[action.id] ?? {}), ...action.patch } } } }
+    }
+
+    case 'clearNodeOverride': {
+      const cur = { ...(d.layout.nodeOverrides ?? {}) }
+      delete cur[action.id]
+      return { ...d, layout: { ...d.layout, nodeOverrides: cur } }
+    }
 
     case 'removeNode': {
       const ref = nodeIdToRef(action.id)

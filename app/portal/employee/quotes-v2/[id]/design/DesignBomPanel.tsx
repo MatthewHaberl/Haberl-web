@@ -13,7 +13,7 @@ function rands(n: number) {
 }
 
 export function DesignBomPanel() {
-  const { design } = useDesign()
+  const { design, gridSupply } = useDesign()
   const { items, loading } = useCatalog()
   const [markup, setMarkup] = useState(DEFAULT_PRICING.markup)
   const [open, setOpen] = useState(true)
@@ -32,7 +32,7 @@ export function DesignBomPanel() {
     return m
   }, [items])
 
-  const bom = useMemo(() => designToBom(design, catalog, markup), [design, catalog, markup])
+  const bom = useMemo(() => designToBom(design, catalog, markup, { gridSupply }), [design, catalog, markup, gridSupply])
 
   return (
     <div className="rounded-xl border border-border bg-card">
@@ -88,8 +88,8 @@ export function DesignBomPanel() {
                 <span className="text-base font-bold text-primary">{rands(bom.totalSellR)}</span>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Cost {rands(bom.totalCostR)} · sell = cost × {markup.toFixed(2)} · ~ = estimated cable length (until measured routes are wired in).
-                Earthing + labour + consumables not yet included.
+                Cost {rands(bom.totalCostR)} · sell = cost × {markup.toFixed(2)} · ~ = estimated (cabling priced as conductor-metres × rate card; edit a cable on the diagram to reprice).
+                Labour + consumables not yet included.
               </p>
             </div>
           )}

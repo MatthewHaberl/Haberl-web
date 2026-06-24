@@ -378,6 +378,10 @@ export interface NodePosition {
 export interface DesignLayout {
   /** Persisted node positions keyed by diagram node id. */
   nodes: Record<string, NodePosition>
+  /** Per-cable spec overrides keyed by edge id (material, size, runs, phase, conductors…). */
+  edgeOverrides?: Record<string, Partial<CableEdgeData>>
+  /** Per-component attribute overrides keyed by node id (e.g. busbar connection count, product). */
+  nodeOverrides?: Record<string, Record<string, unknown>>
 }
 
 export interface SystemDesign {
@@ -518,7 +522,11 @@ export function parseDesign(raw: unknown): SystemDesign | null {
       ...(src.earthing ?? {}),
       electrodes: (src.earthing?.electrodes ?? []).map((el) => ({ ...el, arrangement: el.arrangement ?? 'line', groupSize: el.groupSize ?? 1, linkMm2: el.linkMm2 ?? 16 })),
     },
-    layout: { nodes: { ...(src.layout?.nodes ?? {}) } },
+    layout: {
+      nodes: { ...(src.layout?.nodes ?? {}) },
+      edgeOverrides: { ...(src.layout?.edgeOverrides ?? {}) },
+      nodeOverrides: { ...(src.layout?.nodeOverrides ?? {}) },
+    },
     panels: src.panels ?? [],
     // Backfill combiners saved before the product-driven protection model.
     dcCombiners: (src.dcCombiners ?? []).map((c) => ({
@@ -1040,17 +1048,22 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
     const Y_DISC = Y_INV + 430
     const Y_BATT = Y_INV + 560
 
+    // Busbar ports: one per battery by default, or an explicit override count.
+    // Battery taps clamp into the available ports below, so any value stays wired.
+    const overrideConn = Math.round(Number((d.layout.nodeOverrides?.['bat-busbar'] as { connections?: number } | undefined)?.connections) || 0)
+    const busConn = overrideConn > 0 ? overrideConn : N
+
     if (hasMain) {
       nodes.push({ id: 'bat-main', type: 'busblock', position: pos('bat-main', { x: INV_X + 10, y: Y_MAIN }), data: { kind: 'disconnect', label: 'Main disconnect' } })
       cable('e-main-inv', 'bat-main', NODE.inverter, 'up', 'bat-in', mainRuns)
     }
     if (hasBus) {
-      nodes.push({ id: 'bat-busbar', type: 'busblock', position: pos('bat-busbar', { x: INV_X - 30, y: Y_BUS }), data: { kind: 'busbar', label: 'DC busbar' } })
-      if (hasMain) cable('e-bus-main', 'bat-busbar', 'bat-main', 'up', 'down', mainRuns)
-      else cable('e-bus-inv', 'bat-busbar', NODE.inverter, 'up', 'bat-in', mainRuns)
+      nodes.push({ id: 'bat-busbar', type: 'busblock', position: pos('bat-busbar', { x: INV_X - 30, y: Y_BUS }), data: { kind: 'busbar', label: 'DC busbar', connections: busConn } })
+      if (hasMain) cable('e-bus-main', 'bat-busbar', 'bat-main', 'out-0', 'down', mainRuns)
+      else cable('e-bus-inv', 'bat-busbar', NODE.inverter, 'out-0', 'bat-in', mainRuns)
     }
     const mergeId = hasBus ? 'bat-busbar' : hasMain ? 'bat-main' : NODE.inverter
-    const mergeHandle = hasBus || hasMain ? 'down' : 'bat-in'
+    const mergeHandle = hasMain ? 'down' : 'bat-in'   // busbar uses a dedicated port per battery below
     // A single battery wired straight to the inverter carries the full feed.
     const directFull = mergeId === NODE.inverter && N === 1 ? mainRuns : 1
 
@@ -1060,16 +1073,25 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       const u = units[i] ?? { model: bat0?.model ?? '', kwh: batKwh }
       const bx = startX + i * spacing
       const bid = i === 0 ? NODE.battery : `batt-${i}`
+      const into = hasBus ? `in-${Math.min(i, busConn - 1)}` : mergeHandle
       nodes.push({ id: bid, type: 'battery', position: pos(bid, { x: bx, y: Y_BATT }), data: { label: `Battery ${i + 1}`, model: u.model, qty: 1, totalKwh: +u.kwh.toFixed(1), chemistry: 'LiFePO4' } })
       if (hasDisc) {
         const did = `bat-disc-${i}`
         nodes.push({ id: did, type: 'busblock', position: pos(did, { x: bx, y: Y_DISC }), data: { kind: 'disconnect', label: 'Disc' } })
         cable(`e-bat${i}-disc`, bid, did, 'bat-out', 'down')
-        cable(`e-disc${i}`, did, mergeId, 'up', mergeHandle, directFull)
+        cable(`e-disc${i}`, did, mergeId, 'up', into, directFull)
       } else {
-        cable(`e-bat${i}`, bid, mergeId, 'bat-out', mergeHandle, directFull)
+        cable(`e-bat${i}`, bid, mergeId, 'bat-out', into, directFull)
       }
     }
+
+    // BMS communications (Data layer) — battery ↔ inverter.
+    edges.push({
+      id: 'e-bms-comms', source: NODE.battery, target: NODE.inverter,
+      sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable',
+      data: { ...cableData('communication', 'CAN/RS485', 3), circuitLayer: 'communication' },
+      label: 'BMS · CAN',
+    })
   }
 
   // Grid + DB + Earth only become meaningful once there's an inverter.
@@ -1152,6 +1174,23 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       data: { label: x.label },
     })
   })
+
+  // ── Apply diagram-inspector overrides (per component + per cable), then relabel ──
+  const nodeOv = d.layout.nodeOverrides ?? {}
+  const edgeOv = d.layout.edgeOverrides ?? {}
+  for (const node of nodes) {
+    const ov = nodeOv[node.id]
+    if (ov) node.data = { ...node.data, ...ov }
+  }
+  for (const edge of edges) {
+    const ov = edgeOv[edge.id]
+    if (!ov) continue
+    const merged = { ...(edge.data as CableEdgeData), ...ov }
+    edge.data = merged
+    const runs = Math.max(1, Math.round(Number((merged as { runs?: number }).runs) || 1))
+    const base = buildEdgeLabel(merged)
+    edge.label = runs > 1 ? `${runs}× ${base}` : base
+  }
 
   return { nodes, edges }
 }

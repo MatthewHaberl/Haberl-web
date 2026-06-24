@@ -30,6 +30,21 @@ export const TARIFF_BY_MUNICIPALITY: Record<string, number> = {
   Eskom: 2.65,
 }
 
+// ── Cable rate card ──────────────────────────────────────────────────────────
+// Rough installed cost (R) per single-conductor metre by cross-section (copper).
+// Aluminium runs ~0.55× copper. Estimates until a supplier cable price list is
+// wired in — every cabling BOM line is flagged `approx`.
+export const CABLE_COST_PER_M_CU: Record<string, number> = {
+  '1.5mm²': 9, '2.5mm²': 13, '4mm²': 20, '6mm²': 30, '10mm²': 48,
+  '16mm²': 75, '25mm²': 115, '35mm²': 160, '50mm²': 225, '70mm²': 320, '95mm²': 430,
+}
+
+/** Installed cost (R) per single-conductor metre for a material + cross-section. */
+export function cableCostPerMeter(material: string, crossSection: string): number {
+  const base = CABLE_COST_PER_M_CU[crossSection] ?? 0
+  return /al/i.test(material) ? Math.round(base * 0.55) : base
+}
+
 // ── Pricing settings (company_settings, migration 031) ───────────────────────
 // Business-policy knobs extracted from the constants above. Defaults reproduce
 // the historical behaviour exactly — quotes without explicit pricing are

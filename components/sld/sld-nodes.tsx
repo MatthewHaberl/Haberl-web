@@ -450,24 +450,42 @@ export function ConnectorNode({ data, selected }: NodeProps) {
 
 // ── Bus block — disconnect / busbar (upward flow: bottom-in, top-out) ─────────
 export function BusBlockNode({ data, selected }: NodeProps) {
-  const d = data as { label?: string; kind?: 'disconnect' | 'busbar'; product?: string }
+  const d = data as { label?: string; kind?: 'disconnect' | 'busbar'; product?: string; connections?: number }
   const isBus = d.kind === 'busbar'
   const color = CLR.bat
+  // A busbar exposes one in/out port pair per connection so each battery (or feed)
+  // gets its own tap; a disconnect keeps a single up/down pair.
+  const conn = isBus ? Math.max(1, Math.min(24, Math.round(Number(d.connections) || 1))) : 1
   return (
     <div style={{
-      minWidth: isBus ? 200 : 78, maxWidth: isBus ? 320 : 130,
+      minWidth: isBus ? Math.max(200, conn * 26) : 78, maxWidth: isBus ? Math.max(320, conn * 26) : 130,
       background: '#fff',
       border: `2px solid ${selected ? color : color + 'aa'}`,
       borderRadius: 5,
       boxShadow: selected ? `0 0 0 3px ${color}30, 0 1px 4px rgba(0,0,0,0.12)` : '0 1px 3px rgba(0,0,0,0.10)',
       fontFamily: 'system-ui, sans-serif', overflow: 'hidden',
     }}>
-      <Handle type="target" id="down" position={Position.Bottom} style={H(color)} />
-      <Handle type="source" id="up" position={Position.Top} style={H(color)} />
+      {isBus ? (
+        Array.from({ length: conn }, (_, i) => {
+          const left = `${((i + 1) / (conn + 1)) * 100}%`
+          return (
+            <React.Fragment key={i}>
+              <Handle type="target" id={`in-${i}`} position={Position.Bottom} style={H(color, { left })} />
+              <Handle type="source" id={`out-${i}`} position={Position.Top} style={H(color, { left })} />
+            </React.Fragment>
+          )
+        })
+      ) : (
+        <>
+          <Handle type="target" id="down" position={Position.Bottom} style={H(color)} />
+          <Handle type="source" id="up" position={Position.Top} style={H(color)} />
+        </>
+      )}
       <div style={{ padding: '4px 8px', textAlign: 'center', background: isBus ? color : '#fff' }}>
         <div style={{ fontSize: 10, fontWeight: 700, lineHeight: 1.2, color: isBus ? '#fff' : '#111827' }}>
           {d.label || (isBus ? 'Busbar' : 'Disconnect')}
         </div>
+        {isBus && <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.85)', lineHeight: 1.3 }}>{conn}-way</div>}
         {d.product && <div style={{ fontSize: 8.5, color: isBus ? 'rgba(255,255,255,0.85)' : color }}>{d.product}</div>}
       </div>
     </div>
