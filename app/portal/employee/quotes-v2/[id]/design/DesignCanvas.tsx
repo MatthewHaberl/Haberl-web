@@ -14,7 +14,7 @@ import {
   type Edge,
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw } from 'lucide-react'
+import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes } from 'lucide-react'
 import { nodeTypes } from '@/components/sld/sld-nodes'
 import { edgeTypes } from '@/components/sld/sld-edges'
 import {
@@ -26,6 +26,14 @@ import { useDesign } from './DesignProvider'
 // Cable editor option lists (mirror the legacy SLD panel).
 const CABLE_MATERIALS = ['CU', 'Al', 'H1Z2Z2', 'XLPE', 'Flex (HO5VV-F)']
 const CABLE_SIZES = ['1.5mm²', '2.5mm²', '4mm²', '6mm²', '10mm²', '16mm²', '25mm²', '35mm²', '50mm²', '70mm²', '95mm²']
+const SEGMENT_ROUTE_TYPES = [
+  'In conduit (surface)', 'In conduit (buried)', 'Through ceiling void', 'Down wall (conduit)',
+  'Overhead (open)', 'Underground (direct burial)', 'Open trunking', 'Under floor', 'Custom',
+]
+
+type RouteSeg = { id: string; routeType: string; lengthM: number }
+let segSeq = 0
+const newSegId = () => `seg-${Date.now().toString(36)}-${++segSeq}`
 
 function conductorSummary(circuitType: string, threePhase: boolean): string {
   if (circuitType === 'earth') return 'E only'
@@ -62,6 +70,35 @@ function nodeLayer(node: Node): string {
     case 'comms': case 'meterComms': return 'data'
     default: return 'always' // textNote, connector, custom — never hidden by a layer
   }
+}
+
+function nodeSize(n: Node): { w: number; h: number } {
+  const a = n as { width?: number; height?: number; measured?: { width?: number; height?: number } }
+  return { w: a.measured?.width ?? a.width ?? 170, h: a.measured?.height ?? a.height ?? 90 }
+}
+
+// Nudge a dropped node out of any overlap with the others (simple separation pass).
+function resolveOverlap(nodes: Node[], movedId: string, start: { x: number; y: number }, size: { w: number; h: number }): { x: number; y: number } {
+  const margin = 14
+  const pos = { ...start }
+  for (let iter = 0; iter < 8; iter++) {
+    let bumped = false
+    for (const o of nodes) {
+      if (o.id === movedId) continue
+      const os = nodeSize(o)
+      const ax2 = pos.x + size.w, ay2 = pos.y + size.h
+      const bx2 = o.position.x + os.w, by2 = o.position.y + os.h
+      const ox = Math.min(ax2, bx2) - Math.max(pos.x, o.position.x)
+      const oy = Math.min(ay2, by2) - Math.max(pos.y, o.position.y)
+      if (ox > 0 && oy > 0) {
+        if (ox < oy) pos.x += (pos.x + ax2 < o.position.x + bx2 ? -(ox + margin) : (ox + margin))
+        else pos.y += (pos.y + ay2 < o.position.y + by2 ? -(oy + margin) : (oy + margin))
+        bumped = true
+      }
+    }
+    if (!bumped) break
+  }
+  return pos
 }
 
 // Which layer an edge belongs to (from its circuit type).
@@ -247,6 +284,10 @@ function CableInspector({ edge, onClose }: { edge: Edge; onClose: () => void }) 
   const set = (patch: Record<string, unknown>) => dispatch({ type: 'setEdgeOverride', id: edge.id, patch })
   const setSpec = (mat: string, sz: string) => set({ cableType: mat, crossSection: sz, spec: `${mat} ${sz}` })
 
+  const segments = (data.segments as RouteSeg[] | undefined) ?? []
+  const routeTotal = segments.reduce((s, x) => s + (Number(x.lengthM) || 0), 0)
+  const setSegs = (next: RouteSeg[]) => set({ segments: next })
+
   const lbl = 'text-xs text-muted-foreground'
   const field = 'h-9 rounded-md border border-border bg-background px-2 text-sm'
 
@@ -293,11 +334,42 @@ function CableInspector({ edge, onClose }: { edge: Edge; onClose: () => void }) 
               </select>
             </label>
           )}
-          <label className="flex flex-col gap-1">
-            <span className={lbl}>Run length (m)</span>
-            <input type="number" min={0} step={0.5} value={lengthM || ''} placeholder="0" className={field}
-              onChange={(e) => set({ lengthM: Math.max(0, Number(e.target.value) || 0) })} />
-          </label>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className={lbl}>Measured route</span>
+              <button type="button" onClick={() => setSegs([...segments, { id: newSegId(), routeType: SEGMENT_ROUTE_TYPES[0], lengthM: 0 }])}
+                className="text-[11px] font-medium text-primary hover:underline">+ Add segment</button>
+            </div>
+            {segments.length === 0 ? (
+              <>
+                <input type="number" min={0} step={0.5} value={lengthM || ''} placeholder="0" className={field}
+                  onChange={(e) => set({ lengthM: Math.max(0, Number(e.target.value) || 0) })} />
+                <span className="text-[11px] text-muted-foreground">Estimated run length (m). Add segments to measure the real route so no cable goes unaccounted.</span>
+              </>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {segments.map((s, i) => (
+                  <div key={s.id} className="flex items-center gap-1.5">
+                    <select className="h-8 flex-1 rounded-md border border-border bg-background px-1.5 text-xs" value={s.routeType}
+                      onChange={(e) => setSegs(segments.map((x, idx) => (idx === i ? { ...x, routeType: e.target.value } : x)))}>
+                      {SEGMENT_ROUTE_TYPES.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    <input type="number" min={0} step={0.5} value={s.lengthM || ''} placeholder="0"
+                      className="h-8 w-16 rounded-md border border-border bg-background px-1.5 text-xs text-right"
+                      onChange={(e) => setSegs(segments.map((x, idx) => (idx === i ? { ...x, lengthM: Math.max(0, Number(e.target.value) || 0) } : x)))} />
+                    <span className="text-[10px] text-muted-foreground">m</span>
+                    <button type="button" onClick={() => setSegs(segments.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between border-t border-border pt-1 text-xs">
+                  <span className="text-muted-foreground">Total route</span>
+                  <span className="font-semibold text-foreground">{routeTotal.toFixed(1)} m</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -361,7 +433,10 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   const [selected, setSelected] = useState<{ kind: 'node' | 'edge'; id: string } | null>(null)
   const [layers, setLayers] = useState<Record<string, boolean>>(ALL_LAYERS_ON)
   const [snap, setSnap] = useState(false)
+  const [allowOverlap, setAllowOverlap] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const nodesRef = useRef<Node[]>([])
+  nodesRef.current = nodes
 
   // Hiding a layer drops its components first, then any cable left dangling.
   const shownNodes = useMemo(
@@ -385,8 +460,11 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   }, [sig])
 
   const onNodeDragStop = useCallback((_: unknown, node: Node) => {
-    dispatch({ type: 'moveNode', id: node.id, position: node.position })
-  }, [dispatch])
+    const position = allowOverlap
+      ? node.position
+      : resolveOverlap(nodesRef.current, node.id, node.position, nodeSize(node))
+    dispatch({ type: 'moveNode', id: node.id, position })
+  }, [dispatch, allowOverlap])
 
   // Keyboard: Delete removes the selected node; Esc leaves fullscreen.
   const selectedNodeRef = useRef<string | null>(null)
@@ -432,6 +510,15 @@ function CanvasInner({ height = 560 }: { height?: number }) {
       </div>
 
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setAllowOverlap((v) => !v)}
+          title={allowOverlap ? 'Overlap allowed — components can stack' : 'Overlap prevented — dropped components nudge apart'}
+          className="flex items-center gap-1 rounded-lg border bg-card/90 px-2 py-1 text-[11px] font-medium backdrop-blur"
+          style={{ borderColor: allowOverlap ? '#e5e7eb' : '#16a34a', color: allowOverlap ? '#6b7280' : '#16a34a' }}
+        >
+          <Boxes className="h-3.5 w-3.5" /> {allowOverlap ? 'Overlap' : 'No overlap'}
+        </button>
         <button
           type="button"
           onClick={() => setSnap((v) => !v)}

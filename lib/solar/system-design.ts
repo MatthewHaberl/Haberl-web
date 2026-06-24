@@ -1085,11 +1085,12 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       }
     }
 
-    // BMS communications (Data layer) — battery ↔ inverter.
+    // BMS communications (Data layer) — battery ↔ inverter. Bezier so it rides its
+    // own lane instead of overlapping the power/AC cables.
     edges.push({
       id: 'e-bms-comms', source: NODE.battery, target: NODE.inverter,
       sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable',
-      data: { ...cableData('communication', 'CAN/RS485', 3), circuitLayer: 'communication' },
+      data: { ...cableData('communication', 'CAN/RS485', 3), circuitLayer: 'communication', routingType: 'bezier' },
       label: 'BMS · CAN',
     })
   }
