@@ -6,7 +6,7 @@ import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
   BarChart2, Users, Zap, User, Menu, X, FileText, Settings, Activity,
   ClipboardList, PackageX, Search, Sunrise, PhoneIncoming, Sparkles,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, Receipt,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -34,6 +34,7 @@ const employeeLinks = [
   { label: 'Metrics',   href: '/portal/employee/metrics',          icon: BarChart2, roles: ['manager', 'admin'] },
   { label: 'Lead Finder', href: '/portal/employee/lead-finder',     icon: Search,    roles: ['manager', 'admin'] },
   { label: 'Wastage',   href: '/portal/employee/reports/wastage',  icon: PackageX,  roles: ['manager', 'admin'] },
+  { label: 'Finance',   href: '/portal/employee/finance',          icon: Receipt,   roles: ['manager', 'admin'] },
   { label: 'Profile',   href: '/portal/employee/profile',          icon: User,      roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Shop Mgmt', href: '/portal/employee/shop',             icon: ShoppingBag, roles: ['admin'] },
 { label: 'Settings',  href: '/portal/employee/settings/company', icon: Settings,  roles: ['admin'] },
