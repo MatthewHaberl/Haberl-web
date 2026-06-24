@@ -6,6 +6,7 @@ import {
   type EarthConductor, type EarthElectrode, type EarthBar, type EarthKind, type EarthArrangement,
 } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
+import { useCatalog, byCategory } from '../useCatalog'
 import { SectionCard, NumberField } from '../section-ui'
 
 // ≤3kW → 2, 4–5kW → 4, 6kW+ → 6 (confirmed on site by soil-resistivity test).
@@ -18,6 +19,8 @@ function suggestedSpikes(kw: number): number {
 
 export function EarthingSection() {
   const { design, dispatch } = useDesign()
+  const { items, loading } = useCatalog()
+  const earthProducts = byCategory(items, 'other')
   const e = design.earthing
   const kw = designInverterKw(design)
 
@@ -51,6 +54,34 @@ export function EarthingSection() {
           </label>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">Suggested {suggestedSpikes(kw)} spikes for a {kw.toFixed(1)}kW system — final count confirmed on site.</p>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 max-w-md">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Earth spike product</span>
+            <select
+              value={e.spikeProductId ?? ''}
+              disabled={loading}
+              onChange={(ev) => dispatch({ type: 'setEarthing', patch: { spikeProductId: ev.target.value || null } })}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            >
+              <option value="">None (quote)</option>
+              {earthProducts.map((p) => <option key={p.id} value={p.id}>{p.description}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Earth bar product</span>
+            <select
+              value={e.barProductId ?? ''}
+              disabled={loading}
+              onChange={(ev) => dispatch({ type: 'setEarthing', patch: { barProductId: ev.target.value || null } })}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            >
+              <option value="">None (quote)</option>
+              {earthProducts.map((p) => <option key={p.id} value={p.id}>{p.description}</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">Pick catalog products (category “other”) to price spikes/bars; leave as “None” to surface them as Quote in the BOM.</p>
       </SectionCard>
 
       {/* Electrodes */}

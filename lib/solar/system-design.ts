@@ -434,6 +434,9 @@ export interface EarthConductor {
 export interface EarthingConfig {
   spikeCount: number | null
   spec: string
+  /** Catalog products for pricing the earth spike + bar (null = none → quoted). */
+  spikeProductId?: string | null
+  barProductId?: string | null
   electrodes: EarthElectrode[]
   bars: EarthBar[]
   conductors: EarthConductor[]
@@ -490,6 +493,8 @@ export interface SystemDesign {
   acCombiners: AcCombiner[]
   earthing: EarthingConfig
   extras: ExtraComponent[]
+  /** Building storeys for the install (drives the access/storey labour premium). */
+  storeys?: number
   layout: DesignLayout
 }
 

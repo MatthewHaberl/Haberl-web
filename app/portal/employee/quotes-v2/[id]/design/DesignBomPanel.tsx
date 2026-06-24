@@ -20,7 +20,7 @@ const UNPRICED_HINT: Record<string, string> = {
 }
 
 export function DesignBomPanel() {
-  const { design, gridSupply } = useDesign()
+  const { design, gridSupply, dispatch } = useDesign()
   const { items, loading } = useCatalog()
   const [pricing, setPricing] = useState(DEFAULT_PRICING)
   const [open, setOpen] = useState(true)
@@ -81,6 +81,18 @@ export function DesignBomPanel() {
 
       {open && (
         <div className="px-4 pb-4">
+          <div className="mb-3 flex items-center justify-between border-b border-border pb-2">
+            <span className="text-[11px] font-medium text-muted-foreground">Install access</span>
+            <select
+              value={design.storeys ?? 1}
+              onChange={(e) => dispatch({ type: 'setStoreys', storeys: Number(e.target.value) })}
+              className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+            >
+              <option value={1}>Single storey</option>
+              <option value={2}>Double storey (+premium)</option>
+              <option value={3}>Triple storey (+premium)</option>
+            </select>
+          </div>
           {loading ? (
             <p className="text-xs text-muted-foreground py-4 text-center">Loading catalog…</p>
           ) : bom.sections.length === 0 ? (

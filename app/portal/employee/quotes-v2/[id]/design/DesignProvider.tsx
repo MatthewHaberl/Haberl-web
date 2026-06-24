@@ -39,6 +39,7 @@ export type DesignAction =
   | { type: 'updateBattery'; patch: Partial<BatteryUnit> }
   | { type: 'removeBattery' }
   | { type: 'setEarthing'; patch: Partial<EarthingConfig> }
+  | { type: 'setStoreys'; storeys: number }
   | { type: 'addCombiner' }
   | { type: 'updateCombiner'; id: string; patch: Partial<DcCombiner> }
   | { type: 'removeCombiner'; id: string }
@@ -214,6 +215,9 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
 
     case 'setEarthing':
       return { ...d, earthing: { ...d.earthing, ...action.patch } }
+
+    case 'setStoreys':
+      return { ...d, storeys: Math.max(1, Math.min(3, Math.round(action.storeys) || 1)) }
 
     case 'addCombiner':
       return { ...d, dcCombiners: [...d.dcCombiners, defaultCombiner(d.panels.map((p) => p.id))] }

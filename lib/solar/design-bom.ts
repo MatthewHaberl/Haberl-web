@@ -143,8 +143,8 @@ export function designToBom(
   const electrodeCount = earth.electrodes.length
     ? earth.electrodes.reduce((s, el) => s + Math.max(1, el.spikeCount || 1), 0)
     : (earth.spikeCount ?? 0)
-  if (electrodeCount > 0) add('Earthing', null, electrodeCount, { label: 'Earth spike / rod' })
-  for (const bar of earth.bars) add('Earthing', null, 1, { label: bar.label || 'Earth bar' })
+  if (electrodeCount > 0) add('Earthing', earth.spikeProductId, electrodeCount, { label: 'Earth spike / rod' })
+  for (const bar of earth.bars) add('Earthing', earth.barProductId, 1, { label: bar.label || 'Earth bar' })
 
   // Cabling — priced from the diagram's conductors, honouring per-cable overrides.
   // Conductor-metres = length × parallel runs × cores; cores follow the phase/circuit.
@@ -247,7 +247,12 @@ export function designToBom(
     }
     if (panelW > 0) pushLabour(`Panel install (${panelW} Wp)`, panelW * pricing.labourPanelPerW)
     if (invW > 0) pushLabour(`Inverter install (${+(invW / 1000).toFixed(1)} kW)`, invW * pricing.labourInverterPerW)
-    if (panelW > 0 || invW > 0) pushLabour('Certificate of Compliance (CoC)', pricing.cocRands)
+    if (panelW > 0 || invW > 0) {
+      pushLabour('Certificate of Compliance (CoC)', pricing.cocRands)
+      const storeys = Math.max(1, design.storeys ?? 1)
+      if (storeys >= 3) pushLabour('Access premium (3-storey)', pricing.storeyPremium3)
+      else if (storeys === 2) pushLabour('Access premium (2-storey)', pricing.storeyPremium2)
+    }
   }
 
   // Group by section, preserving first-seen order.
