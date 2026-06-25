@@ -1,4 +1,9 @@
-import { PSH_GAUTENG, SYSTEM_EFFICIENCY } from './quote-calculator'
+import { buildLossModel } from './loss-model'
+
+// Itemised DC→AC system derate (~0.854): the SAME loss model the customer sees
+// in the System Performance panel now drives the generation figure (W59),
+// replacing the old hardcoded 0.95 × 0.8 = 0.76 (double-counted, over-conservative).
+const SYSTEM_LOSS_EFFICIENCY = buildLossModel().systemEfficiency
 
 // Gauteng location: approximately -26° latitude (Southern Hemisphere)
 const GAUTENG_LATITUDE = -26
@@ -137,12 +142,9 @@ export function calculateStringGeneration(
       baseIrradiance,
     )
 
-    // DC output: panels are not 100% efficient
-    const dcEfficiency = 0.95 // Panel temperature losses and other factors
-    const panelDcOutput = (panelCount * panelWatts * irradiance / 1000) * dcEfficiency
-
-    // AC output: inverter efficiency
-    const panelAcOutput = panelDcOutput * SYSTEM_EFFICIENCY
+    // Gross DC → net AC via one itemised system derate (W59, SYSTEM_LOSS_EFFICIENCY)
+    const panelDcOutput = panelCount * panelWatts * irradiance / 1000
+    const panelAcOutput = panelDcOutput * SYSTEM_LOSS_EFFICIENCY
 
     // Convert to kW
     const generationKw = panelAcOutput / 1000

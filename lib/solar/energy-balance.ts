@@ -29,45 +29,12 @@ export const DEFAULT_PV_DAY_SHAPE: number[] = [
 ]
 
 // ── Loss model ─────────────────────────────────────────────────────────────
-// The system derate, decomposed into the standard PV loss buckets so the
-// proposal can SHOW the assumptions (like the SAM "System Performance" panel)
-// instead of a single opaque 0.8 factor. The components multiply together — a
-// real derate is multiplicative, not additive.
-
-export interface LossComponent {
-  key: string
-  label: string
-  /** Loss as a fraction, e.g. 0.03 = 3 %. */
-  pct: number
-}
-
-export interface LossModel {
-  components: LossComponent[]
-  /** Combined loss, 1 − Π(1 − pct). */
-  totalLossPct: number
-  /** What survives: Π(1 − pct). Multiply gross DC by this for net AC. */
-  systemEfficiency: number
-}
-
-// Defaults land near a ~15 % total loss, in line with a clean modern install.
-export const DEFAULT_LOSS_COMPONENTS: LossComponent[] = [
-  { key: 'inverter', label: 'Inverter conversion', pct: 0.03 },
-  { key: 'temperature', label: 'Cell temperature', pct: 0.05 },
-  { key: 'wiring', label: 'DC + AC wiring', pct: 0.02 },
-  { key: 'soiling', label: 'Soiling / dust', pct: 0.02 },
-  { key: 'mismatch', label: 'Module mismatch', pct: 0.02 },
-  { key: 'shading', label: 'Shading', pct: 0.01 },
-  { key: 'availability', label: 'System availability', pct: 0.005 },
-]
-
-export function buildLossModel(components: LossComponent[] = DEFAULT_LOSS_COMPONENTS): LossModel {
-  const systemEfficiency = components.reduce((eff, c) => eff * (1 - c.pct), 1)
-  return {
-    components,
-    systemEfficiency,
-    totalLossPct: 1 - systemEfficiency,
-  }
-}
+// Single source of truth lives in ./loss-model (a leaf module with no solar
+// imports) so the hourly generation model (generation-calculator) consumes the
+// EXACT same derate without a circular import. Re-exported here so the existing
+// call sites + tests that import it from energy-balance keep working.
+export { buildLossModel, DEFAULT_LOSS_COMPONENTS } from './loss-model'
+export type { LossComponent, LossModel } from './loss-model'
 
 // ── Battery ──────────────────────────────────────────────────────────────────
 
