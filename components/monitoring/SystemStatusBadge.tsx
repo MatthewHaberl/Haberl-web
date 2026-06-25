@@ -3,11 +3,11 @@
 import type { DeviceState } from '@/lib/monitoring/types'
 
 const config: Record<DeviceState, { label: string; dot: string; text: string }> = {
-  online:  { label: 'Online',  dot: 'bg-green-500',  text: 'text-green-700'  },
-  offline: { label: 'Offline', dot: 'bg-red-500',    text: 'text-red-700'    },
-  fault:   { label: 'Fault',   dot: 'bg-red-600',    text: 'text-red-700'    },
-  standby: { label: 'Standby', dot: 'bg-yellow-400', text: 'text-yellow-700' },
-  unknown: { label: 'Unknown', dot: 'bg-gray-400',   text: 'text-gray-600'   },
+  online:  { label: 'Online',  dot: 'bg-success',          text: 'text-foreground'       },
+  offline: { label: 'Offline', dot: 'bg-destructive',      text: 'text-foreground'       },
+  fault:   { label: 'Fault',   dot: 'bg-destructive',      text: 'text-foreground'       },
+  standby: { label: 'Standby', dot: 'bg-warning',          text: 'text-foreground'       },
+  unknown: { label: 'Unknown', dot: 'bg-muted-foreground', text: 'text-muted-foreground' },
 }
 
 export function SystemStatusBadge({ state }: { state: DeviceState | null | undefined }) {

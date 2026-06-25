@@ -84,7 +84,7 @@ export function EarthingSection() {
       <SectionCard
         title="Earth electrodes (spikes)"
         action={
-          <button type="button" onClick={() => setElectrodes([...e.electrodes, defaultElectrode(`Earth spike ${e.electrodes.length + 1}`, suggestedSpikes(kw))])} className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90">
+          <button type="button" onClick={() => setElectrodes([...e.electrodes, defaultElectrode(`Earth spike ${e.electrodes.length + 1}`, suggestedSpikes(kw))])} className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">
             <Plus className="h-3.5 w-3.5" /> Add electrode
           </button>
         }
@@ -140,7 +140,7 @@ export function EarthingSection() {
       <SectionCard
         title="Earth bars / busbars"
         action={
-          <button type="button" onClick={() => setBars([...e.bars, { id: mkId('bar'), label: `Earth bar ${e.bars.length + 1}` }])} className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90">
+          <button type="button" onClick={() => setBars([...e.bars, { id: mkId('bar'), label: `Earth bar ${e.bars.length + 1}` }])} className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">
             <Plus className="h-3.5 w-3.5" /> Add bar
           </button>
         }
@@ -169,7 +169,7 @@ export function EarthingSection() {
             type="button"
             disabled={points.length < 2}
             onClick={() => setConductors([...e.conductors, { id: mkId('ec'), fromId: points[0].id, toId: points[1].id, sizeMm2: 16, kind: 'earthing' }])}
-            className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             <Plus className="h-3.5 w-3.5" /> Add run
           </button>

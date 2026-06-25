@@ -86,21 +86,21 @@ export function SavingsAccumulation({
 
       {/* Key insights */}
       <div className="grid grid-cols-3 gap-4 pt-4">
-        <div className="bg-blue-50 p-4 rounded-lg">
+        <div className="bg-blue-50 dark:bg-blue-950/40 p-4 rounded-lg">
           <div className="text-sm font-medium text-blue-900">Year 10 (Flat)</div>
-          <div className="text-2xl font-bold text-blue-600 mt-1">
+          <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
             {formatCurrency(data[9]?.flat || 0)}
           </div>
         </div>
-        <div className="bg-orange-50 p-4 rounded-lg">
+        <div className="bg-orange-50 dark:bg-orange-950/40 p-4 rounded-lg">
           <div className="text-sm font-medium text-orange-900">Year 10 (Escalated)</div>
-          <div className="text-2xl font-bold text-orange-600 mt-1">
+          <div className="text-2xl font-bold text-orange-600 dark:text-orange-400 mt-1">
             {formatCurrency(data[9]?.escalated || 0)}
           </div>
         </div>
-        <div className="bg-green-50 p-4 rounded-lg">
+        <div className="bg-green-50 dark:bg-green-950/40 p-4 rounded-lg">
           <div className="text-sm font-medium text-green-900">Year 20 (Escalated)</div>
-          <div className="text-2xl font-bold text-green-600 mt-1">
+          <div className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
             {formatCurrency(data[19]?.escalated || 0)}
           </div>
         </div>

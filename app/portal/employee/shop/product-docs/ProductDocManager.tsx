@@ -39,14 +39,14 @@ const DOC_TYPE_ICONS: Record<ProductDocType, React.ComponentType<{ className?: s
 }
 
 const DOC_TYPE_COLORS: Record<ProductDocType, string> = {
-  datasheet:          'bg-red-50 dark:bg-red-950/30 text-red-500',
-  manual:             'bg-blue-50 dark:bg-blue-950/30 text-blue-500',
-  installation_guide: 'bg-green-50 dark:bg-green-950/30 text-green-600',
-  drawing:            'bg-purple-50 dark:bg-purple-950/30 text-purple-500',
+  datasheet:          'bg-red-50 dark:bg-red-950/30 text-red-500 dark:text-red-400',
+  manual:             'bg-blue-50 dark:bg-blue-950/30 text-blue-500 dark:text-blue-400',
+  installation_guide: 'bg-green-50 dark:bg-green-950/30 text-green-600 dark:text-green-400',
+  drawing:            'bg-purple-50 dark:bg-purple-950/30 text-purple-500 dark:text-purple-400',
   '3d_model':         'bg-gray-100 dark:bg-gray-800/50 text-gray-500',
-  wiring_diagram:     'bg-yellow-50 dark:bg-yellow-950/30 text-yellow-600',
-  warranty:           'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500',
-  certification:      'bg-amber-50 dark:bg-amber-950/30 text-amber-600',
+  wiring_diagram:     'bg-yellow-50 dark:bg-yellow-950/30 text-yellow-600 dark:text-yellow-400',
+  warranty:           'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 dark:text-indigo-400',
+  certification:      'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400',
   other:              'bg-muted text-muted-foreground',
 }
 
@@ -186,9 +186,9 @@ export function ProductDocManager({ initialDocs, products }: Props) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'Total',          value: counts.total,     color: 'text-foreground' },
-            { label: 'Pending Review', value: counts.pending,   color: 'text-amber-500' },
-            { label: 'Published',      value: counts.published, color: 'text-green-500' },
-            { label: 'Rejected',       value: counts.rejected,  color: 'text-red-500' },
+            { label: 'Pending Review', value: counts.pending,   color: 'text-amber-500 dark:text-amber-400' },
+            { label: 'Published',      value: counts.published, color: 'text-green-500 dark:text-green-400' },
+            { label: 'Rejected',       value: counts.rejected,  color: 'text-red-500 dark:text-red-400' },
           ].map(s => (
             <Card key={s.label}>
               <CardContent className="pt-4 pb-3">
@@ -426,12 +426,12 @@ export function ProductDocManager({ initialDocs, products }: Props) {
                             {doc.status === 'pending_review' && (<>
                               <button title="Publish — make visible to customers" disabled={busy}
                                 onClick={() => updateStatus(doc.id, 'published')}
-                                className="h-7 w-7 rounded-md flex items-center justify-center text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30 disabled:opacity-40 transition-colors">
+                                className="h-7 w-7 rounded-md flex items-center justify-center text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/30 disabled:opacity-40 transition-colors">
                                 <CheckCircle className="h-4 w-4" />
                               </button>
                               <button title="Reject" disabled={busy}
                                 onClick={() => updateStatus(doc.id, 'rejected')}
-                                className="h-7 w-7 rounded-md flex items-center justify-center text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition-colors">
+                                className="h-7 w-7 rounded-md flex items-center justify-center text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition-colors">
                                 <XCircle className="h-4 w-4" />
                               </button>
                             </>)}
@@ -439,7 +439,7 @@ export function ProductDocManager({ initialDocs, products }: Props) {
                             {doc.status === 'published' && (
                               <button title="Unpublish" disabled={busy}
                                 onClick={() => updateStatus(doc.id, 'pending_review')}
-                                className="h-7 w-7 rounded-md flex items-center justify-center text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/30 disabled:opacity-40 transition-colors">
+                                className="h-7 w-7 rounded-md flex items-center justify-center text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 disabled:opacity-40 transition-colors">
                                 <XCircle className="h-4 w-4" />
                               </button>
                             )}
@@ -546,7 +546,7 @@ export function ProductDocManager({ initialDocs, products }: Props) {
                   {/* Error state */}
                   {previewError && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 z-10 bg-card">
-                      <AlertTriangle className="h-8 w-8 text-amber-500" />
+                      <AlertTriangle className="h-8 w-8 text-amber-500 dark:text-amber-400" />
                       <p className="text-sm font-medium text-center">
                         This document can&apos;t be previewed here
                       </p>

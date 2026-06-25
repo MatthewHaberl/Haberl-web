@@ -191,7 +191,7 @@ export function DepositPanel({
 
         {/* Declined — waiting on the customer to re-upload */}
         {declinedWaiting && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 flex flex-col gap-1">
+          <div className="rounded-md border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-800 dark:text-amber-300 flex flex-col gap-1">
             <span>
               Proof declined{' '}
               {new Date(rejectedAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}

@@ -256,12 +256,12 @@ export default async function MonitoringFleetPage() {
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Site / System</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Brand</th>
+                    <th className="hidden lg:table-cell px-4 py-3 text-left font-medium text-muted-foreground">Brand</th>
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
                     <th className="px-4 py-3 text-right font-medium text-muted-foreground">PV now</th>
                     <th className="px-4 py-3 text-right font-medium text-muted-foreground">SOC</th>
                     <th className="px-4 py-3 text-left font-medium text-muted-foreground">Last poll</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">Customer</th>
+                    <th className="hidden lg:table-cell px-4 py-3 text-left font-medium text-muted-foreground">Customer</th>
                     <th className="w-8" />
                   </tr>
                 </thead>
@@ -278,7 +278,7 @@ export default async function MonitoringFleetPage() {
                           <p className="font-medium">{row.site_name ?? '—'}</p>
                           {row.label && <p className="text-xs text-muted-foreground">{row.label}</p>}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="hidden lg:table-cell px-4 py-3">
                           <Badge variant="outline">{BRAND_LABELS[row.brand] ?? row.brand}</Badge>
                         </td>
                         <td className="px-4 py-3">
@@ -307,7 +307,7 @@ export default async function MonitoringFleetPage() {
                             {timeAgo(row.last_polled_at)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                        <td className="hidden lg:table-cell px-4 py-3 text-sm text-muted-foreground">
                           {row.customer_name ?? '—'}
                         </td>
                         <td className="px-4 py-3">

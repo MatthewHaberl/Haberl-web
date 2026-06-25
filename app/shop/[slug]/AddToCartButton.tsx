@@ -40,7 +40,7 @@ export function AddToCartButton({ product, disabled = false }: Props) {
     >
       {added ? (
         <>
-          <Check className="h-5 w-5 mr-2 text-green-600" />
+          <Check className="h-5 w-5 mr-2 text-success" />
           Added to cart
         </>
       ) : (

@@ -27,21 +27,21 @@ export default async function HomePage() {
       <Navbar isLoggedIn={!!user} />
       <main className="flex-1">
         {/* Hero */}
-        <section className="relative overflow-hidden bg-primary text-white py-24 px-4">
+        <section className="px-4 py-20 sm:py-28">
           <div className="mx-auto max-w-4xl text-center">
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-sm mb-6">
+            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-4 py-1.5 text-sm text-muted-foreground mb-7">
               <Star className="h-4 w-4 text-accent" />
-              Trusted electrical and solar contractors — Gauteng
+              Trusted electrical &amp; solar contractors — Gauteng
             </div>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight mb-6">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-foreground leading-[1.1] mb-6">
               Power your home.<br />
-              <span className="text-accent">Secure your future.</span>
+              Secure your future.
             </h1>
-            <p className="text-lg text-white/80 max-w-2xl mx-auto mb-8">
-              Expert electrical installations and solar solutions backed by a dedicated customer portal
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-9">
+              Expert electrical installations and solar solutions, backed by a dedicated customer portal
               — track your system, access documents, and manage everything in one place.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button variant="accent" size="lg" asChild>
                 {user ? (
                   <Link href="/portal">
@@ -53,7 +53,7 @@ export default async function HomePage() {
                   </a>
                 )}
               </Button>
-              <Button variant="outline" size="lg" className="text-white border-white/30 hover:bg-white/10" asChild>
+              <Button variant="outline" size="lg" asChild>
                 <Link href="/shop">Browse the shop</Link>
               </Button>
             </div>
@@ -69,7 +69,7 @@ export default async function HomePage() {
                 From a single light point to a full off-grid solar system — Haberl handles it all.
               </p>
             </div>
-            <div className="grid sm:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {services.map(({ icon: Icon, title, desc }) => (
                 <Card key={title} className="text-center">
                   <CardContent className="pt-8 pb-6">
@@ -108,7 +108,7 @@ export default async function HomePage() {
                   ))}
                 </ul>
               </div>
-              <div className="rounded-2xl bg-primary p-8 text-white">
+              <div className="rounded-2xl bg-primary p-8 text-white dark:bg-card dark:border dark:border-border">
                 <p className="text-xl font-bold mb-3">Built on compliance, not shortcuts</p>
                 <p className="text-white/80 text-sm leading-relaxed">
                   Solar-only companies install panels — but cannot certify your DB board changes or
@@ -123,7 +123,7 @@ export default async function HomePage() {
         {/* Portal CTA */}
         <section className="py-20 px-4 bg-muted">
           <div className="mx-auto max-w-4xl">
-            <div className="rounded-2xl bg-primary p-8 sm:p-12 text-white text-center">
+            <div className="rounded-2xl bg-primary p-8 sm:p-12 text-white text-center dark:bg-card dark:border dark:border-border">
               <h2 className="text-3xl font-bold mb-3">Already a customer?</h2>
               <p className="text-white/80 mb-8 max-w-xl mx-auto">
                 Log in to your portal to view your installation details, download compliance documents,
@@ -143,7 +143,7 @@ export default async function HomePage() {
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-bold text-primary mb-3">Get in touch</h2>
             <p className="text-muted-foreground mb-8">Ready for a quote? Have a question?</p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 justify-center">
               <Button variant="accent" size="lg" asChild>
                 <a href="/quote-request">Request a callback</a>
               </Button>

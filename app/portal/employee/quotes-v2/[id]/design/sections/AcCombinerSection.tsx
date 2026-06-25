@@ -72,7 +72,7 @@ export function AcCombinerSection() {
       title="AC combiner / Distribution board"
       subtitle={`The DB after the inverter — ${phase}-phase. Pick the board enclosure, its cable entry and everything on the inside.`}
       action={
-        <button type="button" onClick={() => dispatch({ type: 'addAcCombiner' })} className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90">
+        <button type="button" onClick={() => dispatch({ type: 'addAcCombiner' })} className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">
           <Plus className="h-3.5 w-3.5" /> Add board
         </button>
       }
@@ -89,7 +89,7 @@ export function AcCombinerSection() {
               <div key={c.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between mb-3">
                   <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                    <CircuitBoard className="h-3.5 w-3.5 text-blue-600" />
+                    <CircuitBoard className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                     <input value={c.label} onChange={(e) => patch(c, { label: e.target.value })} className="bg-transparent border-b border-transparent hover:border-border focus:border-primary text-xs font-semibold focus:outline-none" />
                   </span>
                   <button type="button" onClick={() => dispatch({ type: 'removeAcCombiner', id: c.id })} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>

@@ -125,7 +125,7 @@ export function WorkflowMap({ diagrams, initialCatchPoints, currentUserId }: Pro
             onClick={() => setActiveId(d.id)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               d.id === activeId
-                ? 'bg-primary text-white'
+                ? 'bg-primary text-primary-foreground'
                 : 'bg-muted text-muted-foreground hover:text-foreground'
             }`}
           >

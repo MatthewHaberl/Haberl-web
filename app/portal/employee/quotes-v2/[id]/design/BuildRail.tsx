@@ -19,7 +19,7 @@ export function BuildRail() {
             onClick={() => setActiveStep(i)}
             aria-current={i === activeStep ? 'step' : undefined}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-              i === activeStep ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
+              i === activeStep ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             {step}

@@ -188,9 +188,9 @@ export function ProductImageManager({ initialImages, products }: Props) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: 'Total',          value: counts.total,     color: 'text-foreground' },
-          { label: 'Pending Review', value: counts.pending,   color: 'text-amber-500' },
-          { label: 'Published',      value: counts.published, color: 'text-green-500' },
-          { label: 'Rejected',       value: counts.rejected,  color: 'text-red-500' },
+          { label: 'Pending Review', value: counts.pending,   color: 'text-amber-500 dark:text-amber-400' },
+          { label: 'Published',      value: counts.published, color: 'text-green-500 dark:text-green-400' },
+          { label: 'Rejected',       value: counts.rejected,  color: 'text-red-500 dark:text-red-400' },
         ].map(s => (
           <Card key={s.label}>
             <CardContent className="pt-4 pb-3">
@@ -351,7 +351,7 @@ export function ProductImageManager({ initialImages, products }: Props) {
                           <div className="aspect-square bg-muted/30 flex items-center justify-center overflow-hidden">
                             {hasError ? (
                               <div className="flex flex-col items-center gap-1 p-2">
-                                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                                <AlertTriangle className="h-5 w-5 text-amber-500 dark:text-amber-400" />
                                 <p className="text-[10px] text-muted-foreground text-center leading-tight">Can&apos;t load</p>
                               </div>
                             ) : (
@@ -416,7 +416,7 @@ export function ProductImageManager({ initialImages, products }: Props) {
                 <div className="aspect-square rounded-xl border border-border bg-muted/20 overflow-hidden flex items-center justify-center">
                   {imgError.has(selected.id) ? (
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <AlertTriangle className="h-8 w-8 text-amber-500" />
+                      <AlertTriangle className="h-8 w-8 text-amber-500 dark:text-amber-400" />
                       <p className="text-xs text-center">Image failed to load.<br />Check the URL.</p>
                     </div>
                   ) : (

@@ -43,7 +43,7 @@ export function DataSection() {
           type="button"
           disabled={points.length < 2}
           onClick={() => dispatch({ type: 'addDataLink', link: { fromId: points[0].id, toId: points[1].id } })}
-          className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
           <Plus className="h-3.5 w-3.5" /> Add link
         </button>
@@ -60,7 +60,7 @@ export function DataSection() {
             return (
               <div key={l.id} className="rounded-md border border-border/70 bg-muted/20 p-2">
                 <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <Cable className="h-3.5 w-3.5 text-blue-700 shrink-0" />
+                  <Cable className="h-3.5 w-3.5 text-blue-700 dark:text-blue-400 shrink-0" />
                   <select value={l.fromId} onChange={(e) => upd({ fromId: e.target.value })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">
                     {points.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                   </select>

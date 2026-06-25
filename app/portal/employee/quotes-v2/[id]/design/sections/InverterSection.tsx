@@ -194,7 +194,7 @@ export function InverterSection() {
         </span>
         {ratio != null && (
           <span className={`rounded-full border px-2 py-0.5 font-medium ${
-            ratio > 1.3 ? 'border-amber-300 bg-amber-50 text-amber-800'
+            ratio > 1.3 ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300'
               : ratio < 0.5 ? 'border-border bg-muted/40 text-muted-foreground'
               : 'border-success/40 bg-success/5 text-success'
           }`}>
@@ -210,7 +210,7 @@ export function InverterSection() {
       ) : stringVerdict ? (
         <div className={`mt-3 rounded-md border p-3 text-sm ${
           stringVerdict.level === 'block' ? 'border-destructive/40 bg-destructive/5 text-destructive'
-            : stringVerdict.level === 'warn' ? 'border-amber-300 bg-amber-50 text-amber-800'
+            : stringVerdict.level === 'warn' ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300'
             : 'border-success/40 bg-success/5 text-success'
         }`}>
           <p className="font-medium">

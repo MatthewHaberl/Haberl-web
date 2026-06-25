@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useRef } from 'react'
 import { Menu, X, Zap, Battery, Sun, Package, Wrench, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ThemeToggle } from '@/components/layout/ThemeToggle'
 
 const SHOP_CATEGORIES = [
   { label: 'All Products', href: '/shop',                   Icon: Package },
@@ -60,15 +61,20 @@ export function Navbar({ isLoggedIn = false }: Props) {
             </Link>
           ))}
 
-          {/* Shop dropdown */}
+          {/* Shop dropdown — opens on hover and keyboard focus, closes on Escape */}
           <div
             className="relative"
             onMouseEnter={handleShopEnter}
             onMouseLeave={handleShopLeave}
+            onFocus={handleShopEnter}
+            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setShopOpen(false) }}
+            onKeyDown={(e) => { if (e.key === 'Escape') setShopOpen(false) }}
           >
             <Link
               href="/shop"
               className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              aria-haspopup="menu"
+              aria-expanded={shopOpen}
             >
               Shop
               <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${shopOpen ? 'rotate-180' : ''}`} />
@@ -99,6 +105,7 @@ export function Navbar({ isLoggedIn = false }: Props) {
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
+          <ThemeToggle />
           {isLoggedIn ? (
             <Button variant="accent" size="sm" asChild>
               <Link href="/portal">My portal</Link>
@@ -109,25 +116,30 @@ export function Navbar({ isLoggedIn = false }: Props) {
                 <Link href="/auth/login">Log in</Link>
               </Button>
               <Button variant="accent" size="sm" asChild>
-                <a href="/#contact">Get a quote</a>
+                <a href="/quote-request">Get a quote</a>
               </Button>
             </>
           )}
         </div>
 
-        {/* Mobile toggle */}
-        <button
-          className="md:hidden p-2"
-          onClick={() => setOpen(!open)}
-          aria-label="Toggle menu"
-        >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        {/* Mobile controls */}
+        <div className="flex items-center gap-1 md:hidden">
+          <ThemeToggle />
+          <button
+            className="p-2"
+            onClick={() => setOpen(!open)}
+            aria-label="Toggle menu"
+            aria-expanded={open}
+            aria-controls="mobile-menu"
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile menu */}
       {open && (
-        <div className="md:hidden border-t border-border bg-background px-4 py-4 flex flex-col gap-3">
+        <div id="mobile-menu" className="md:hidden border-t border-border bg-background px-4 py-4 flex flex-col gap-3">
           {navLinks.map((l) => (
             <Link
               key={l.href}
@@ -144,6 +156,7 @@ export function Navbar({ isLoggedIn = false }: Props) {
             <button
               onClick={() => setMobileShopOpen(v => !v)}
               className="flex items-center justify-between w-full text-sm font-medium text-muted-foreground hover:text-foreground py-0.5"
+              aria-expanded={mobileShopOpen}
             >
               Shop
               <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${mobileShopOpen ? 'rotate-180' : ''}`} />
@@ -176,7 +189,7 @@ export function Navbar({ isLoggedIn = false }: Props) {
                   <Link href="/auth/login">Log in</Link>
                 </Button>
                 <Button variant="accent" asChild>
-                  <a href="/#contact">Get a quote</a>
+                  <a href="/quote-request">Get a quote</a>
                 </Button>
               </>
             )}

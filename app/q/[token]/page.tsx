@@ -70,10 +70,10 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   return (
     <div className="min-h-screen bg-muted/40">
       {/* Brand header */}
-      <header className="bg-[#1e3a5f] text-white">
+      <header className="bg-primary text-primary-foreground">
         <div className="mx-auto max-w-3xl px-4 py-4 flex items-center justify-between">
           <span className="text-lg font-bold">
-            Haberl <span className="text-[#f97316]">Solar</span>
+            Haberl <span className="text-accent">Solar</span>
           </span>
           {quote.quote_number && (
             <span className="text-sm font-mono opacity-90">{quote.quote_number}</span>
@@ -103,7 +103,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
 
         {/* Status banners */}
         {quote.status === 'accepted' && (
-          <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">
+          <div className="rounded-lg border border-green-300 dark:border-green-800/60 bg-green-50 dark:bg-green-950/40 px-4 py-3 text-sm text-green-800 dark:text-green-300">
             <strong>Quote accepted</strong>
             {quote.accepted_at && (
               <> on {new Date(quote.accepted_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}</>
@@ -119,7 +119,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
           </div>
         )}
         {expired && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="rounded-lg border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
             This quote expired on <strong>{expiryFormatted}</strong>. Equipment prices change over
             time — contact us and we&apos;ll refresh it for you.
           </div>

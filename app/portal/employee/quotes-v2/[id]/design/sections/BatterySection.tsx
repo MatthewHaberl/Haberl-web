@@ -17,9 +17,9 @@ import { ProductPicker } from '../ProductPicker'
 import { SectionCard, ReorderButtons, LOCKED_FIELD, LockNote } from '../section-ui'
 
 const CRATE_STYLE: Record<CRateLevel, string> = {
-  ideal: 'border-emerald-600/50 bg-emerald-50 text-emerald-800',
-  good: 'border-green-400/60 bg-green-50 text-green-700',
-  warn: 'border-amber-300 bg-amber-50 text-amber-800',
+  ideal: 'border-emerald-600/50 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300',
+  good: 'border-green-400/60 bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-300',
+  warn: 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300',
   block: 'border-destructive/40 bg-destructive/5 text-destructive',
 }
 
@@ -190,7 +190,7 @@ export function BatterySection() {
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
-          <BatteryCharging className="h-3.5 w-3.5 text-green-600" />
+          <BatteryCharging className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
           <strong className="text-foreground">{batteryKwh.toFixed(1)}</strong> kWh total
         </span>
         {balance.storageHours != null && (
@@ -339,7 +339,7 @@ export function BatterySection() {
             <div className="flex flex-col gap-1.5">
               {cables.map((c, i) => (
                 <div key={c.id} className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/70 bg-muted/20 p-2 text-xs">
-                  <Cable className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+                  <Cable className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
                   <select value={c.fromRef} onChange={(e) => updateCable(c.id, { fromRef: e.target.value })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">
                     {cablePoints.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                   </select>

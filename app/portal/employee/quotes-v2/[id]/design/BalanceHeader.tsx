@@ -16,7 +16,7 @@ function fmt(value: number | null, digits = 1): string {
 const VERDICT_STYLE: Record<VerdictLevel, { cls: string; Icon: typeof Info }> = {
   ok:    { cls: 'border-success/40 bg-success/5 text-success',         Icon: Check },
   info:  { cls: 'border-border bg-muted/40 text-muted-foreground',     Icon: Info },
-  warn:  { cls: 'border-amber-300 bg-amber-50 text-amber-800',         Icon: AlertTriangle },
+  warn:  { cls: 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300',         Icon: AlertTriangle },
   block: { cls: 'border-destructive/40 bg-destructive/5 text-destructive', Icon: CircleAlert },
 }
 
@@ -61,7 +61,7 @@ export function BalanceHeader() {
         cls: coverage >= 90
           ? 'border-success/40 bg-success/5 text-success'
           : coverage >= 50
-            ? 'border-amber-300 bg-amber-50 text-amber-800'
+            ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300'
             : 'border-destructive/40 bg-destructive/5 text-destructive',
       }
 

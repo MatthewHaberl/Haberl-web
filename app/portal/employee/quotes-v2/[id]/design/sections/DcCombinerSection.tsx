@@ -115,7 +115,7 @@ export function DcCombinerSection() {
         <button
           type="button"
           onClick={() => dispatch({ type: 'addCombiner' })}
-          className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+          className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
         >
           <Plus className="h-3.5 w-3.5" /> Add combiner
         </button>
@@ -141,7 +141,7 @@ export function DcCombinerSection() {
               key={c.id}
               title={
                 <span className="flex items-center gap-1.5">
-                  <CircuitBoard className="h-3.5 w-3.5 text-orange-500" />
+                  <CircuitBoard className="h-3.5 w-3.5 text-orange-500 dark:text-orange-400" />
                   <input
                     value={c.label}
                     onClick={(e) => e.stopPropagation()}

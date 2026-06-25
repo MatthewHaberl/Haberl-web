@@ -30,7 +30,7 @@ export function PanelsSection() {
         <button
           type="button"
           onClick={addGroup}
-          className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+          className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
         >
           <Plus className="h-3.5 w-3.5" /> Add group
         </button>
@@ -49,7 +49,7 @@ export function PanelsSection() {
               <div key={g.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                    <Sun className="h-3.5 w-3.5 text-orange-500" />
+                    <Sun className="h-3.5 w-3.5 text-orange-500 dark:text-orange-400" />
                     {design.panels.length > 1 ? `String ${idx + 1}` : 'Solar array'}
                   </span>
                   <button

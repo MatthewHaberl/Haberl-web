@@ -433,9 +433,9 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
             <div className="flex items-center justify-end">
               <div className="flex items-center gap-1 rounded-md border border-border p-0.5 text-xs">
                 <button type="button" onClick={() => setUsageMode('monthly')}
-                  className={`px-2.5 py-1 rounded ${usageMode === 'monthly' ? 'bg-primary text-white' : 'text-muted-foreground'}`}>Monthly avg</button>
+                  className={`px-2.5 py-1 rounded ${usageMode === 'monthly' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>Monthly avg</button>
                 <button type="button" onClick={() => setUsageMode('advanced')}
-                  className={`px-2.5 py-1 rounded ${usageMode === 'advanced' ? 'bg-primary text-white' : 'text-muted-foreground'}`}>12-month</button>
+                  className={`px-2.5 py-1 rounded ${usageMode === 'advanced' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>12-month</button>
               </div>
             </div>
             {usageMode === 'monthly' ? (

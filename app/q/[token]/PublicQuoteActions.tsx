@@ -109,7 +109,7 @@ export function PublicQuoteActions({
               {bankRow('Account type', banking?.account_type)}
               {bankRow('Amount', formatCents(depositCents))}
               {bankRow('Reference', quoteNumber ?? undefined)}
-              <p className="mt-3 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              <p className="mt-3 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
                 Please use <strong>{quoteNumber}</strong> as your payment reference so we can match
                 your deposit immediately.
               </p>
@@ -128,21 +128,21 @@ export function PublicQuoteActions({
             <CloudUpload className="h-4 w-4 text-accent" /> Proof of payment
           </h2>
           {proof?.confirmed ? (
-            <p className="flex items-center gap-2 text-sm text-green-700">
+            <p className="flex items-center gap-2 text-sm text-green-700 dark:text-green-300">
               <Check className="h-4 w-4" /> Deposit confirmed — your installation is moving into
               procurement. We&apos;ll contact you to book the installation date.
             </p>
           ) : (
             <>
               {!proof?.uploaded && proof?.rejected && (
-                <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <div className="mb-3 rounded-md border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
                   We couldn&apos;t confirm your last payment
                   {proof.rejectedReason ? <>: <strong>{proof.rejectedReason}</strong></> : null}. Please
                   double-check the details and upload your proof of payment again below.
                 </div>
               )}
               {proof?.uploaded && (
-                <p className="flex items-center gap-2 text-sm text-green-700 mb-2">
+                <p className="flex items-center gap-2 text-sm text-green-700 dark:text-green-300 mb-2">
                   <Check className="h-4 w-4" /> Proof received — we&apos;ll confirm your deposit shortly.
                 </p>
               )}
@@ -171,7 +171,7 @@ export function PublicQuoteActions({
               </label>
             </>
           )}
-          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
         </div>
       </div>
     )
@@ -225,7 +225,7 @@ export function PublicQuoteActions({
           type="checkbox"
           checked={agreed}
           onChange={(e) => setAgreed(e.target.checked)}
-          className="mt-0.5 h-4 w-4 accent-[#f97316]"
+          className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
         />
         <span className="text-muted-foreground">
           I accept this quote and authorise Haberl Electrical &amp; Solar to proceed with the
@@ -275,7 +275,7 @@ export function PublicQuoteActions({
         </div>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
     </div>
   )
 }

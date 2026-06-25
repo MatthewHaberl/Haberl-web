@@ -79,7 +79,7 @@ export function DesignBomPanel() {
         </span>
         <span className="flex items-center gap-2">
           {bom.needsPricing > 0 && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">{bom.needsPricing} to price</span>
+            <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">{bom.needsPricing} to price</span>
           )}
           <span className="text-sm font-bold text-primary">{rands(bom.totalSellR)}</span>
         </span>
@@ -126,7 +126,7 @@ export function DesignBomPanel() {
             <div className="flex flex-col gap-3">
               {bom.needsPricing > 0 && (
                 <div className="flex flex-col gap-1.5">
-                  <p className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-[11px] text-amber-800">
+                  <p className="flex items-start gap-1.5 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-3 py-1.5 text-[11px] text-amber-800 dark:text-amber-300">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span><strong>{bom.needsPricing}</strong> item(s) need a price — shown as <span className="font-semibold">Quote</span> below. Send these to your supplier so the customer is quoted correctly.</span>
                   </p>
@@ -144,7 +144,7 @@ export function DesignBomPanel() {
                   <div className="flex items-center justify-between border-b border-border pb-1 mb-1">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{s.name}</span>
                     <span className="flex items-center gap-1.5 text-xs">
-                      {s.needsPricing > 0 && <span className="text-[10px] font-medium text-amber-600">{s.needsPricing} to price</span>}
+                      {s.needsPricing > 0 && <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">{s.needsPricing} to price</span>}
                       <span className="font-medium text-foreground">{rands(s.sellR)}</span>
                     </span>
                   </div>
@@ -157,15 +157,15 @@ export function DesignBomPanel() {
                     </colgroup>
                     <tbody>
                       {s.lines.map((l, i) => (
-                        <tr key={`${l.catalogId}-${i}`} className={l.priced ? 'text-muted-foreground' : 'text-amber-700'}>
+                        <tr key={`${l.catalogId}-${i}`} className={l.priced ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'}>
                           <td className="truncate py-0.5 pr-2 align-top font-mono text-[10px]" title={l.sku}>{l.sku}</td>
-                          <td className="py-0.5 pr-2 align-top">{l.description}{l.approx && <span className="text-amber-600" title="estimated quantity"> ~</span>}</td>
+                          <td className="py-0.5 pr-2 align-top">{l.description}{l.approx && <span className="text-amber-600 dark:text-amber-400" title="estimated quantity"> ~</span>}</td>
                           <td className="py-0.5 pr-1 text-right align-top tabular-nums whitespace-nowrap text-muted-foreground">{l.qty}×</td>
                           <td className="py-0.5 text-right align-top tabular-nums whitespace-nowrap">
                             {l.priced ? (
                               <span className="text-foreground">{rands(l.lineSellR)}</span>
                             ) : (
-                              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title={UNPRICED_HINT[l.status]}>Quote</span>
+                              <span className="rounded bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400" title={UNPRICED_HINT[l.status]}>Quote</span>
                             )}
                           </td>
                         </tr>
@@ -180,7 +180,7 @@ export function DesignBomPanel() {
               </div>
               <p className="text-[10px] text-muted-foreground">
                 Priced cost {rands(bom.totalCostR)} · sell = cost × {markup.toFixed(2)} · ~ = estimated (cabling = conductor-metres × rate card; add a measured route on a cable to firm it up).
-                Total excludes items marked <span className="font-semibold text-amber-700">Quote</span>. Labour + consumables from your pricing settings; storey premium not yet included.
+                Total excludes items marked <span className="font-semibold text-amber-700 dark:text-amber-400">Quote</span>. Labour + consumables from your pricing settings; storey premium not yet included.
               </p>
             </div>
           )}

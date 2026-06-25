@@ -63,7 +63,7 @@ function MetricCard({
   accent?: boolean
 }) {
   return (
-    <Card className={accent ? 'border-accent/40' : undefined}>
+    <Card className={accent ? 'border-accent/60 bg-accent/5' : undefined}>
       <CardHeader className="pb-1.5">
         <CardTitle className="flex items-center justify-between text-xs font-medium text-muted-foreground">
           {label}
@@ -71,7 +71,7 @@ function MetricCard({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <p className={`text-2xl font-bold ${accent ? 'text-accent' : 'text-foreground'}`}>{value}</p>
+        <p className="text-2xl font-bold text-foreground">{value}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>
       </CardContent>
     </Card>
@@ -316,7 +316,7 @@ export default async function EmployeePortalRoot() {
   return (
     <div className="flex flex-col gap-6">
       {/* Slim header */}
-      <Card className="border-accent/30 bg-gradient-to-br from-primary to-primary/85 text-white">
+      <Card className="border-accent/30 bg-gradient-to-br from-primary to-primary/85 text-white dark:from-card dark:to-card dark:border-border">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
           <div>
             <div className="flex items-center gap-2">

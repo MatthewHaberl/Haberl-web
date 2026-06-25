@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
-import { FileText, Calendar, Shield, Download, Wrench } from 'lucide-react'
+import { FileText, Calendar, ShieldCheck, Download, Wrench, Sun, Zap } from 'lucide-react'
 import { InstallationTracker } from '@/components/jobs/InstallationTracker'
 import type { Job, JobStatusHistory } from '@/types/database'
 
@@ -58,10 +58,10 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
       {/* System details */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'System type',   value: site.system_type ?? '—',                icon: Shield },
-          { label: 'System size',   value: site.system_size_kw ? `${site.system_size_kw} kW` : '—', icon: Shield },
+          { label: 'System type',   value: site.system_type ?? '—',                icon: Sun },
+          { label: 'System size',   value: site.system_size_kw ? `${site.system_size_kw} kW` : '—', icon: Zap },
           { label: 'Install date',  value: site.install_date ? formatDate(site.install_date) : '—', icon: Calendar },
-          { label: 'Warranty to',   value: site.warranty_expiry ? formatDate(site.warranty_expiry) : '—', icon: Calendar },
+          { label: 'Warranty to',   value: site.warranty_expiry ? formatDate(site.warranty_expiry) : '—', icon: ShieldCheck },
         ].map(({ label, value, icon: Icon }) => (
           <Card key={label}>
             <CardContent className="pt-4 pb-4">

@@ -11,9 +11,9 @@ import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { BrandCategory, EquipmentBrand } from '@/types/database'
 
 const CATEGORIES: { key: BrandCategory; label: string; colour: string }[] = [
-  { key: 'inverter', label: 'Inverters', colour: 'bg-blue-50 border-blue-200'  },
-  { key: 'battery',  label: 'Batteries', colour: 'bg-green-50 border-green-200' },
-  { key: 'panel',    label: 'Panels',    colour: 'bg-orange-50 border-orange-200' },
+  { key: 'inverter', label: 'Inverters', colour: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/60'  },
+  { key: 'battery',  label: 'Batteries', colour: 'bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-800/60' },
+  { key: 'panel',    label: 'Panels',    colour: 'bg-orange-50 dark:bg-orange-950/40 border-orange-200 dark:border-orange-800/60' },
 ]
 
 export default function BrandsPage() {

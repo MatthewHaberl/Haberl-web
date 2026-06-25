@@ -272,7 +272,7 @@ export function EnergySection() {
               type="button"
               onClick={() => dispatch({ type: 'setEnergy', patch: { mode: t.mode } })}
               className={`px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                e.mode === t.mode ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                e.mode === t.mode ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {t.label}
@@ -340,7 +340,7 @@ export function EnergySection() {
               </button>
             ))}
             {e.curvePreset === 'custom' && (
-              <span className="self-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-800">
+              <span className="self-center rounded-lg border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">
                 Custom hourly profile in use
               </span>
             )}
