@@ -59,7 +59,13 @@ export function StagePipeline({ job, history, canAdvance }: Props) {
       })
       .eq('id', job.id)
     if (dbError) setError(dbError.message)
-    else router.refresh()
+    else {
+      // Fire-and-forget customer notification for the stages that warrant one.
+      if (nextValue === 'scheduled' || nextValue === 'installation' || nextValue === 'handover') {
+        fetch(`/api/jobs/${job.id}/notify-stage`, { method: 'POST' }).catch(() => {})
+      }
+      router.refresh()
+    }
     setBusy(false)
     setShowHoldInput(false)
     setHoldReason('')
