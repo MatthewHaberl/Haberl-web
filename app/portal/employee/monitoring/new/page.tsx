@@ -28,7 +28,7 @@ export default async function NewMonitoringSystemPage() {
 
   const { data: sitesRaw } = await supabase
     .from('sites')
-    .select('id, name, customer:user_profiles ( full_name )')
+    .select('id, name, customer:customers ( full_name )')
     .order('name')
 
   const sites: SiteOption[] = ((sitesRaw ?? []) as unknown as SiteRow[]).map((s) => {

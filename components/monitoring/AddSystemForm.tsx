@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -175,7 +176,10 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
               ))}
             </select>
             {sites.length === 0 && (
-              <span className="text-xs text-destructive">No sites yet — create a site/customer first.</span>
+              <span className="text-xs text-destructive">
+                No sites yet. Open a customer and use <strong>Add site</strong> first —{' '}
+                <Link href="/portal/employee/customers" className="underline hover:text-foreground">go to Customers</Link>.
+              </span>
             )}
           </label>
 

@@ -7,6 +7,8 @@ import { ArrowLeft, MapPin, FileText, Wrench, Clock, ChevronRight } from 'lucide
 import { formatDate } from '@/lib/utils'
 import { customerAccountStatus, type Customer } from '@/types/database'
 import { CustomerPanel } from './CustomerPanel'
+import { AddSiteDialog } from './AddSiteDialog'
+import { SiteCard } from './SiteCard'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -100,26 +102,21 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
       {/* Sites */}
       <section>
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          <MapPin className="h-4 w-4" /> Sites ({sites?.length ?? 0})
-        </h2>
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            <MapPin className="h-4 w-4" /> Sites ({sites?.length ?? 0})
+          </h2>
+          <AddSiteDialog customerId={id} defaultAddress={customer.address} />
+        </div>
         {!sites?.length ? (
-          <p className="text-sm text-muted-foreground">No sites yet. A site is created when a quote is accepted.</p>
+          <p className="text-sm text-muted-foreground">
+            No sites yet. A site is created automatically when a quote is accepted — or add one by hand
+            (e.g. an existing system you want to put on monitoring).
+          </p>
         ) : (
           <div className="grid sm:grid-cols-2 gap-3">
             {sites.map((s) => (
-              <Card key={s.id}>
-                <CardContent className="pt-4 pb-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-medium truncate">{s.name}</p>
-                    <Badge variant={s.status === 'active' ? 'success' : 'warning'}>{s.status}</Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1 truncate">{s.address}</p>
-                  {s.system_size_kw && (
-                    <p className="text-sm mt-1"><span className="font-medium">{s.system_size_kw} kW</span> {s.system_type}</p>
-                  )}
-                </CardContent>
-              </Card>
+              <SiteCard key={s.id} site={s} />
             ))}
           </div>
         )}

@@ -43,7 +43,7 @@ export default async function SystemDetailPage({ params }: { params: { systemId:
       id, brand, label, plant_id, device_sn,
       capacity_kw, battery_kwh, enabled,
       last_polled_at, poll_error,
-      sites ( id, name, address, customer:user_profiles ( full_name, email, phone ) )
+      sites ( id, name, address, customer:customers ( full_name, email, phone ) )
     `)
     .eq('id', params.systemId)
     .single()

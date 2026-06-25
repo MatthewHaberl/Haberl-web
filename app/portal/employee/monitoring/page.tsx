@@ -70,7 +70,7 @@ export default async function MonitoringFleetPage() {
       last_polled_at, poll_error, site_id,
       sites (
         name,
-        customer:user_profiles ( full_name )
+        customer:customers ( full_name )
       )
     `)
     .order('created_at')
