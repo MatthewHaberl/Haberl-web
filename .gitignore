@@ -40,3 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .claude/
+
+# local archives (demo clones, scratch zips — not source)
+/archives/
