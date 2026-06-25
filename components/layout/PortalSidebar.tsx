@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
-  BarChart2, Users, Zap, User, Menu, X, FileText, Settings, Activity,
+  BarChart2, Users, Zap, User, Menu, X, Settings, Activity,
   ClipboardList, PackageX, Search, Sunrise, PhoneIncoming, Sparkles,
   PanelLeftClose, PanelLeftOpen, Receipt,
 } from 'lucide-react'
@@ -26,8 +26,7 @@ const employeeLinks = [
   { label: 'Today',     href: '/portal/employee/briefing',         icon: Sunrise,   roles: ['manager', 'admin'] },
   { label: 'Leads',     href: '/portal/employee/leads',            icon: PhoneIncoming, roles: ['manager', 'admin'] },
   { label: 'Jobs',      href: '/portal/employee/jobs',             icon: Briefcase, roles: ['field_worker', 'manager', 'admin'] },
-  { label: 'Quotes',    href: '/portal/employee/quotes',            icon: FileText,  roles: ['field_worker', 'manager', 'admin'] },
-  { label: 'Quotes v2', href: '/portal/employee/quotes-v2',          icon: Sparkles,  roles: ['field_worker', 'manager', 'admin'] },
+  { label: 'Quotes',    href: '/portal/employee/quotes-v2',          icon: Sparkles,  roles: ['field_worker', 'manager', 'admin'] },
   { label: 'Procurement', href: '/portal/employee/procurement',    icon: ClipboardList, roles: ['manager', 'admin'] },
   { label: 'Customers', href: '/portal/employee/customers',        icon: Users,     roles: ['manager', 'admin'] },
   { label: 'Monitoring', href: '/portal/employee/monitoring',        icon: Activity,  roles: ['manager', 'admin'] },

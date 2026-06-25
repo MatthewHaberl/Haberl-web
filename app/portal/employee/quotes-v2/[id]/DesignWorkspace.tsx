@@ -11,7 +11,7 @@ import { extractQuoteJson, isMultiOption, type QuoteData } from '@/lib/solar/ren
 import {
   parseDesign, quoteDataToDesign, emptyDesign, type SystemDesign,
 } from '@/lib/solar/system-design'
-import { QuoteStatusBar } from '@/app/portal/employee/quotes/[id]/QuoteStatusBar'
+import { QuoteStatusBar } from './QuoteStatusBar'
 import type { QuoteRequestStatus } from '@/types/database'
 import { DesignProvider } from './design/DesignProvider'
 import { BalanceHeader } from './design/BalanceHeader'

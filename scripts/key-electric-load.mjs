@@ -40,6 +40,11 @@ function overlap(a, b) {
 const toDbRow = (r) => ({
   category: r.category, brand: r.brand, supplier: r.supplier, sku: r.sku,
   description: r.description, cost_rands: r.cost_rands, phase: r.phase || 'any',
+  // Electrical columns the quote pickers read (null for non-electrical lines like
+  // mounting/cable). Only set when the prep step parsed a value, so this stays a
+  // no-op for the protection import which never carried these.
+  watts_ac: r.watts_ac ?? null, watts_dc: r.watts_dc ?? null, kwh: r.kwh ?? null,
+  isc_amps: r.isc_amps ?? null, voc_volts: r.voc_volts ?? null,
   specs: r.specs || {}, primary_image_url: r.primary_image_url || null,
   datasheet_url: r.datasheet_url || null, source_url: r.source_url || null,
   external_ref: r.external_ref || null, active: false, show_on_store: false, sort_order: 0,

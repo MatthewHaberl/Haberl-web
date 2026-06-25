@@ -172,7 +172,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         `Total: ${formatCents((update.total_amount as number) ?? quote.total_amount)} · Deposit: ${formatCents((update.deposit_amount as number) ?? quote.deposit_amount)}`,
         ...(jobWarning ? [`⚠ ${jobWarning}`] : []),
       ],
-      `${getBaseUrl()}/portal/employee/quotes/${quote.id}`,
+      `${getBaseUrl()}/portal/employee/quotes-v2/${quote.id}`,
       'Open quote',
     )
   } catch (err) {

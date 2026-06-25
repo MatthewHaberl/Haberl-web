@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getUser } from '@/lib/supabase/server'
+import { normalizePhone } from '@/lib/customers/phone'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { PhoneIncoming, PhoneCall, CheckCircle2 } from 'lucide-react'
@@ -32,6 +33,22 @@ export default async function LeadsPage() {
     .select('*')
     .order('created_at', { ascending: false })
   const leads = (leadRows ?? []) as Lead[]
+
+  // Flag leads who are already customers (matched on canonical phone) so staff
+  // call them as a known contact and aren't offered "Convert to customer".
+  const { data: customerRows } = await supabase
+    .from('customers')
+    .select('id, full_name, phone_normalized')
+  const customersByPhone = new Map<string, { id: string; full_name: string }>()
+  for (const c of (customerRows ?? []) as { id: string; full_name: string; phone_normalized: string | null }[]) {
+    if (c.phone_normalized && !customersByPhone.has(c.phone_normalized)) {
+      customersByPhone.set(c.phone_normalized, { id: c.id, full_name: c.full_name })
+    }
+  }
+  const matchedCustomer = (lead: Lead) => {
+    const key = normalizePhone(lead.phone)
+    return key ? customersByPhone.get(key) ?? null : null
+  }
 
   const newLeads = leads.filter((l) => l.status === 'new')
   const contacted = leads.filter((l) => l.status === 'contacted')
@@ -79,7 +96,7 @@ export default async function LeadsPage() {
               </div>
               <div className="flex flex-col gap-2">
                 {newLeads.map((lead) => (
-                  <LeadCard key={lead.id} lead={lead} />
+                  <LeadCard key={lead.id} lead={lead} customer={matchedCustomer(lead)} />
                 ))}
               </div>
             </div>
@@ -95,7 +112,7 @@ export default async function LeadsPage() {
               </div>
               <div className="flex flex-col gap-2">
                 {contacted.map((lead) => (
-                  <LeadCard key={lead.id} lead={lead} />
+                  <LeadCard key={lead.id} lead={lead} customer={matchedCustomer(lead)} />
                 ))}
               </div>
             </div>

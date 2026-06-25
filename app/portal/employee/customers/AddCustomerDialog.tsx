@@ -3,10 +3,11 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { normalizePhone } from '@/lib/customers/phone'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { UserPlus, Loader2, X } from 'lucide-react'
+import { UserPlus, Loader2, X, AlertTriangle } from 'lucide-react'
 
 const fieldClass =
   'flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ' +
@@ -23,6 +24,9 @@ export function AddCustomerDialog() {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set when the typed number already belongs to someone. Staff can open that
+  // customer or override with "Add anyway" (e.g. spouses sharing a number).
+  const [dupe, setDupe] = useState<{ id: string; full_name: string } | null>(null)
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -34,14 +38,11 @@ export function AddCustomerDialog() {
 
   function reset() {
     setFullName(''); setEmail(''); setPhone(''); setAddress('')
-    setIsBusiness(false); setContactName(''); setNotes(''); setError(null)
+    setIsBusiness(false); setContactName(''); setNotes(''); setError(null); setDupe(null)
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    if (fullName.trim().length < 2) { setError('Please enter a name.'); return }
-
+  /** The actual insert — used by the normal path and by "Add anyway". */
+  async function insertCustomer() {
     setBusy(true)
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -66,6 +67,30 @@ export function AddCustomerDialog() {
     reset()
     setOpen(false)
     router.push(`/portal/employee/customers/${data!.id}`)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setDupe(null)
+    if (fullName.trim().length < 2) { setError('Please enter a name.'); return }
+
+    // Don't create a second record for a number we already have on file.
+    const phoneNorm = normalizePhone(phone)
+    if (phoneNorm) {
+      setBusy(true)
+      const supabase = createClient()
+      const { data: match } = await supabase
+        .from('customers')
+        .select('id, full_name')
+        .eq('phone_normalized', phoneNorm)
+        .limit(1)
+        .maybeSingle()
+      setBusy(false)
+      if (match) { setDupe(match as { id: string; full_name: string }); return }
+    }
+
+    await insertCustomer()
   }
 
   if (!open) {
@@ -123,6 +148,27 @@ export function AddCustomerDialog() {
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
               placeholder="Anything worth remembering…" className={`${fieldClass} h-auto`} />
           </div>
+
+          {dupe && (
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+              <p className="flex items-center gap-1.5 font-medium text-foreground">
+                <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+                This number is already on file
+              </p>
+              <p className="text-muted-foreground mt-1">
+                <span className="font-medium text-foreground">{dupe.full_name}</span> already has this phone number.
+              </p>
+              <div className="flex items-center gap-2 mt-2.5">
+                <Button type="button" variant="accent" size="sm"
+                  onClick={() => router.push(`/portal/employee/customers/${dupe.id}`)}>
+                  Open {dupe.full_name}
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={insertCustomer} disabled={busy}>
+                  Add anyway
+                </Button>
+              </div>
+            </div>
+          )}
 
           {error && <p className="text-xs text-destructive">{error}</p>}
 

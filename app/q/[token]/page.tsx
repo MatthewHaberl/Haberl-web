@@ -43,13 +43,13 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   // Accepted state: banking details for EFT + deposit/proof progress
   let banking = null
   let contactPhone: string | null = null
-  let proof: { uploaded: boolean; confirmed: boolean } | null = null
+  let proof: { uploaded: boolean; confirmed: boolean; rejected: boolean; rejectedReason: string | null } | null = null
   if (quote.status === 'accepted') {
     const [{ data: settings }, { data: job }] = await Promise.all([
       supabase.from('company_settings').select('banking, contact_phone').eq('id', true).maybeSingle(),
       supabase
         .from('jobs')
-        .select('deposit_proof_url, deposit_confirmed_at')
+        .select('deposit_proof_url, deposit_confirmed_at, deposit_proof_rejected_at, deposit_proof_rejected_reason')
         .eq('quote_request_id', quote.id)
         .maybeSingle(),
     ])
@@ -58,6 +58,8 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
     proof = {
       uploaded: !!job?.deposit_proof_url,
       confirmed: !!job?.deposit_confirmed_at,
+      rejected: !!job?.deposit_proof_rejected_at,
+      rejectedReason: job?.deposit_proof_rejected_reason ?? null,
     }
   }
 

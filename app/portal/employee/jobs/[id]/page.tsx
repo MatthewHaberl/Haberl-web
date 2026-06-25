@@ -90,19 +90,32 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       .maybeSingle()
     depositCents = qDeposit?.deposit_amount ?? null
   }
-  if (job.deposit_proof_url && isManager) {
-    try {
-      const admin = createAdminClient()
-      const { data: signed } = await admin.storage
-        .from('payment-proofs')
-        .createSignedUrl(job.deposit_proof_url, 60 * 60)
-      proofSignedUrl = signed?.signedUrl ?? null
-    } catch {
-      proofSignedUrl = null
+  let rejectedProofSignedUrl: string | null = null
+  if (isManager && (job.deposit_proof_url || job.deposit_proof_rejected_url)) {
+    const admin = createAdminClient()
+    if (job.deposit_proof_url) {
+      try {
+        const { data: signed } = await admin.storage
+          .from('payment-proofs')
+          .createSignedUrl(job.deposit_proof_url, 60 * 60)
+        proofSignedUrl = signed?.signedUrl ?? null
+      } catch {
+        proofSignedUrl = null
+      }
+    }
+    if (job.deposit_proof_rejected_url) {
+      try {
+        const { data: signed } = await admin.storage
+          .from('payment-proofs')
+          .createSignedUrl(job.deposit_proof_rejected_url, 60 * 60)
+        rejectedProofSignedUrl = signed?.signedUrl ?? null
+      } catch {
+        rejectedProofSignedUrl = null
+      }
     }
   }
   const showDepositPanel =
-    job.stage === 'deposit_pending' || !!job.deposit_proof_url || !!job.deposit_confirmed_at
+    job.stage === 'deposit_pending' || !!job.deposit_proof_url || !!job.deposit_confirmed_at || !!job.deposit_proof_rejected_at
 
   // Procurement: suppliers + POs on this job + which material lines are ordered
   let suppliers: Supplier[] = []
@@ -154,7 +167,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         <div className="flex items-center gap-2 shrink-0">
           {job.quote_request_id && (
             <Button asChild variant="ghost" size="sm">
-              <Link href={`/portal/employee/quotes/${job.quote_request_id}`}>
+              <Link href={`/portal/employee/quotes-v2/${job.quote_request_id}`}>
                 <FileText className="h-3.5 w-3.5" /> Quote
               </Link>
             </Button>
@@ -178,6 +191,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           proofSignedUrl={proofSignedUrl}
           proofUploadedAt={job.deposit_proof_uploaded_at}
           confirmedAt={job.deposit_confirmed_at}
+          rejectedAt={job.deposit_proof_rejected_at}
+          rejectedReason={job.deposit_proof_rejected_reason}
+          rejectedProofSignedUrl={rejectedProofSignedUrl}
           canConfirm={isManager}
         />
       )}

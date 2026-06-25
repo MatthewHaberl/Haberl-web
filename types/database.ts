@@ -131,6 +131,7 @@ export interface Customer {
   full_name: string
   email: string | null
   phone: string | null
+  phone_normalized: string | null   // generated: canonical phone for de-dup (migration 053)
   address: string | null
   is_business: boolean
   contact_name: string | null
@@ -200,6 +201,11 @@ export interface Job {
   deposit_proof_uploaded_at: string | null
   deposit_confirmed_at: string | null
   deposit_confirmed_by: string | null
+  // Proof-of-payment decline (migration 054)
+  deposit_proof_rejected_at: string | null
+  deposit_proof_rejected_by: string | null
+  deposit_proof_rejected_reason: string | null
+  deposit_proof_rejected_url: string | null
   // joined
   site?: Site
   assignee?: UserProfile
@@ -602,6 +608,7 @@ export interface Lead {
   id: string
   name: string
   phone: string
+  phone_normalized: string | null   // generated: canonical phone (migration 053)
   suburb: string | null
   note: string | null
   status: LeadStatus

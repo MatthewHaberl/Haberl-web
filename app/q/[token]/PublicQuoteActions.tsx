@@ -22,7 +22,7 @@ interface Props {
   depositCents: number | null
   tierOptions: PublicTierOption[] | null
   banking: BankingDetails | null
-  proof: { uploaded: boolean; confirmed: boolean } | null
+  proof: { uploaded: boolean; confirmed: boolean; rejected: boolean; rejectedReason: string | null } | null
   contactPhone: string | null
 }
 
@@ -134,6 +134,13 @@ export function PublicQuoteActions({
             </p>
           ) : (
             <>
+              {!proof?.uploaded && proof?.rejected && (
+                <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  We couldn&apos;t confirm your last payment
+                  {proof.rejectedReason ? <>: <strong>{proof.rejectedReason}</strong></> : null}. Please
+                  double-check the details and upload your proof of payment again below.
+                </div>
+              )}
               {proof?.uploaded && (
                 <p className="flex items-center gap-2 text-sm text-green-700 mb-2">
                   <Check className="h-4 w-4" /> Proof received — we&apos;ll confirm your deposit shortly.

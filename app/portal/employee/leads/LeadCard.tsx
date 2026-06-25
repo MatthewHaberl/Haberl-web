@@ -23,7 +23,19 @@ const SOURCE_LABELS: Record<string, string> = {
   whatsapp: 'WhatsApp', phone: 'Phone', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other',
 }
 
-export function LeadCard({ lead }: { lead: Lead }) {
+/**
+ * `customer` is set when this lead's phone (or email) already matches a customer
+ * on file — the page resolves it. When present we drop the "Convert to customer"
+ * action (they already are one) and badge the card so staff call them as a known
+ * contact, not a cold lead.
+ */
+export function LeadCard({
+  lead,
+  customer,
+}: {
+  lead: Lead
+  customer?: { id: string; full_name: string } | null
+}) {
   const router = useRouter()
   const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
@@ -69,6 +81,7 @@ export function LeadCard({ lead }: { lead: Lead }) {
             <Badge variant={lead.status === 'new' ? 'warning' : 'default'}>
               {lead.status === 'new' ? 'New lead' : 'Contacted'}
             </Badge>
+            {customer && <Badge variant="success">Existing customer</Badge>}
             <span className="text-xs text-muted-foreground">{timeAgo(lead.created_at)}</span>
             {lead.source && lead.source !== 'website' && (
               <span className="text-xs text-muted-foreground">· via {SOURCE_LABELS[lead.source] ?? lead.source}</span>
@@ -90,18 +103,29 @@ export function LeadCard({ lead }: { lead: Lead }) {
           )}
           {!busy && (
             <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={convertToCustomer}
-                title="Create a customer record from this lead"
-              >
-                <UserCheck className="h-3.5 w-3.5" /> Convert to customer
-              </Button>
+              {customer ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push(`/portal/employee/customers/${customer.id}`)}
+                  title="This person is already a customer"
+                >
+                  <UserCheck className="h-3.5 w-3.5" /> View customer
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={convertToCustomer}
+                  title="Create a customer record from this lead"
+                >
+                  <UserCheck className="h-3.5 w-3.5" /> Convert to customer
+                </Button>
+              )}
               <Button
                 variant="accent"
                 size="sm"
-                onClick={() => router.push(`/portal/employee/quotes/new?lead=${lead.id}`)}
+                onClick={() => router.push(`/portal/employee/quotes-v2/new?lead=${lead.id}`)}
               >
                 <ClipboardList className="h-3.5 w-3.5" /> Convert to survey
               </Button>

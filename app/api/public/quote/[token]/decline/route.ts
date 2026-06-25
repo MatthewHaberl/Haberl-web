@@ -45,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
         `<strong>${quote.customer_name}</strong> declined quote <strong>${quote.quote_number ?? ''}</strong>.`,
         reason ? `Reason: ${reason}` : 'No reason given.',
       ],
-      `${getBaseUrl()}/portal/employee/quotes/${quote.id}`,
+      `${getBaseUrl()}/portal/employee/quotes-v2/${quote.id}`,
       'Open quote',
     )
   } catch (err) {

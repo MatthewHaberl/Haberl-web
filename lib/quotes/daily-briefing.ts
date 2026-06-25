@@ -171,7 +171,7 @@ export async function buildDailyBriefing(
     if (!action) continue
     const ref: BriefingQuoteRef = {
       id: q.id, quoteNumber: q.quote_number, customerName: q.customer_name,
-      detail: describeAction(action), href: `/portal/employee/quotes/${q.id}`,
+      detail: describeAction(action), href: `/portal/employee/quotes-v2/${q.id}`,
       ageDays: daysSince(q.sent_at, now),
       // Personal follow-ups are the escalations (no reply after 2 nudges, or expired)
       // — they always need attention.
@@ -188,7 +188,7 @@ export async function buildDailyBriefing(
         id: q.id,
         label: `${q.customer_name}${q.quote_number ? ` · ${q.quote_number}` : ''}`,
         sub: rands(q.total_amount) || undefined,
-        href: `/portal/employee/quotes/${q.id}`,
+        href: `/portal/employee/quotes-v2/${q.id}`,
         ageDays,
         urgent: ageDays != null && ageDays >= 3,
       }
@@ -201,7 +201,7 @@ export async function buildDailyBriefing(
         id: q.id,
         label: `${q.customer_name}${q.quote_number ? ` · ${q.quote_number}` : ''}`,
         sub: q.viewed_at ? `opened ${shortDate(q.viewed_at)}` : undefined,
-        href: `/portal/employee/quotes/${q.id}`,
+        href: `/portal/employee/quotes-v2/${q.id}`,
         ageDays,
         urgent: ageDays != null && ageDays >= 7,
       }

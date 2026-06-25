@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sendAdminNotice } from '@/lib/email/quotes'
 import { getBaseUrl, getClientIp, getCompanySettings } from '@/lib/quotes/server'
 import { parseBriefingRecipients } from '@/lib/quotes/daily-briefing'
+import { normalizePhone } from '@/lib/customers/phone'
 
 export const runtime = 'nodejs'
 
@@ -58,10 +59,12 @@ export async function POST(req: Request) {
 
   const supabase = createAdminClient()
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  // Throttle on the canonical number so "079 033 6247" and "0790336247" count
+  // as the same person rather than slipping past as two.
   const { count: recentPhoneCount } = await supabase
     .from('leads')
     .select('id', { count: 'exact', head: true })
-    .eq('phone', phone)
+    .eq('phone_normalized', normalizePhone(phone))
     .gte('created_at', since)
 
   if ((recentPhoneCount ?? 0) >= MAX_LEADS_PER_PHONE_DAY) {

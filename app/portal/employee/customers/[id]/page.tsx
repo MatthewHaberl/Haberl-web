@@ -135,7 +135,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         ) : (
           <div className="flex flex-col gap-2">
             {quotes.map((q) => (
-              <Link key={q.id} href={`/portal/employee/quotes/${q.id}`}>
+              <Link key={q.id} href={`/portal/employee/quotes-v2/${q.id}`}>
                 <Card className="hover:border-accent transition-colors">
                   <CardContent className="py-3 flex items-center justify-between gap-3">
                     <div className="min-w-0">

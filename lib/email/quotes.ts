@@ -101,6 +101,25 @@ export async function sendDepositReceiptEmail(quote: QuoteEmailFields): Promise<
   return sendEmail({ to: [quote.customer_email], subject: `Deposit received — ${quote.quote_number ?? 'your solar installation'}`, html, text, replyTo: 'info@haberl.co.za' })
 }
 
+export async function sendProofRejectedEmail(quote: QuoteEmailFields, reason: string | null, baseUrl: string): Promise<SendResult> {
+  if (!quote.customer_email) return { sent: false, error: 'No customer email' }
+  const link = quoteLink(baseUrl, quote.share_token)
+  const reasonHtml = reason
+    ? `<p style="font-size:14px;line-height:1.6;background:#fef3c7;border-radius:6px;padding:10px 12px;color:#b45309;"><strong>Reason:</strong> ${reason}</p>`
+    : ''
+  const html = emailLayout(
+    "We couldn't confirm your payment yet",
+    `<p style="font-size:15px;line-height:1.6;">Hi ${quote.customer_name},</p>
+     <p style="font-size:15px;line-height:1.6;">Thanks for sending your proof of payment for quote <strong>${quote.quote_number ?? ''}</strong>. Unfortunately we weren't able to confirm it.</p>
+     ${reasonHtml}
+     <p style="font-size:15px;line-height:1.6;">Please double-check the details and upload your proof of payment again — it only takes a moment:</p>
+     ${emailButton(link, 'Upload proof of payment')}
+     <p style="font-size:13px;color:#6b7280;">If you think this is a mistake or need a hand, just reply to this email or call us on +27 61 519 3016.</p>`,
+  )
+  const text = `Hi ${quote.customer_name},\n\nWe weren't able to confirm your proof of payment for quote ${quote.quote_number ?? ''}.${reason ? `\n\nReason: ${reason}` : ''}\n\nPlease check the details and upload it again here: ${link}\n\nHaberl Electrical & Solar`
+  return sendEmail({ to: [quote.customer_email], subject: `Action needed: proof of payment for ${quote.quote_number ?? 'your solar installation'}`, html, text, replyTo: 'info@haberl.co.za' })
+}
+
 // ── Admin notifications ───────────────────────────────────────────────────────
 
 export async function sendCustomerPortalOnboardingEmail({

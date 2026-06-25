@@ -395,7 +395,7 @@ export default async function EmployeePortalRoot() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/portal/employee/quotes">
+        <Link href="/portal/employee/quotes-v2">
           <Card className="h-full transition-colors hover:border-accent">
             <CardContent className="flex h-full items-center justify-between gap-3 p-4">
               <div>

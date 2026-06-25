@@ -1,11 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { normalizePhone } from './phone'
 
 /**
  * Resolve a customer record for a contact, creating one if none exists.
  *
  * Matching order:
  *   1. by email (case-insensitive) — the strongest key when present
- *   2. otherwise create a fresh record (phone-only prospects are fine)
+ *   2. by normalized phone — catches leads / phone-only prospects, where the
+ *      same number written with or without spaces would otherwise duplicate
+ *   3. otherwise create a fresh record
  *
  * Used wherever a customer first enters the system as a real contact:
  * converting a lead, drafting a quote, or accepting a quote online. Callers
@@ -43,14 +46,39 @@ export async function findCustomerByEmail(
   return (data as { id: string } | null) ?? null
 }
 
+/**
+ * Match by canonical phone (customers.phone_normalized, migration 053).
+ * limit(1) keeps this safe even while duplicate numbers still exist in the
+ * data — it returns one match rather than erroring on "multiple rows".
+ */
+export async function findCustomerByPhone(
+  supabase: SupabaseClient,
+  normalizedPhone: string,
+): Promise<{ id: string } | null> {
+  const { data, error } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('phone_normalized', normalizedPhone)
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return (data as { id: string } | null) ?? null
+}
+
 export async function resolveOrCreateCustomer(
   supabase: SupabaseClient,
   input: CustomerInput,
 ): Promise<{ id: string; created: boolean }> {
   const email = normalizeEmail(input.email)
+  const phoneNorm = normalizePhone(input.phone)
 
   if (email) {
     const existing = await findCustomerByEmail(supabase, email)
+    if (existing) return { id: existing.id, created: false }
+  }
+
+  if (phoneNorm) {
+    const existing = await findCustomerByPhone(supabase, phoneNorm)
     if (existing) return { id: existing.id, created: false }
   }
 
@@ -71,9 +99,13 @@ export async function resolveOrCreateCustomer(
     .single()
 
   if (error) {
-    // Lost a race on the unique email index — fetch the winner.
+    // Lost a race — fetch the winner instead of surfacing the error.
     if (email) {
       const existing = await findCustomerByEmail(supabase, email)
+      if (existing) return { id: existing.id, created: false }
+    }
+    if (phoneNorm) {
+      const existing = await findCustomerByPhone(supabase, phoneNorm)
       if (existing) return { id: existing.id, created: false }
     }
     throw error

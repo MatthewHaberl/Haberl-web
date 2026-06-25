@@ -18,7 +18,7 @@ import OffersPanel from './OffersPanel'
 type CategoryTab =
   | 'inverter' | 'battery' | 'panel' | 'enclosure'
   | 'breaker' | 'fuse' | 'fuseholder' | 'spd' | 'isolator' | 'disconnect' | 'rccb' | 'cable'
-  | 'connector' | 'mounting'
+  | 'connector' | 'mounting' | 'other'
 
 const TABS: Array<{ value: CategoryTab; label: string }> = [
   { value: 'inverter', label: 'Inverters' },
@@ -35,6 +35,7 @@ const TABS: Array<{ value: CategoryTab; label: string }> = [
   { value: 'cable', label: 'Cables' },
   { value: 'connector', label: 'Terminals / glands' },
   { value: 'mounting', label: 'Mounting' },
+  { value: 'other', label: 'Other / Accessories' },
 ]
 
 // Categories that carry structured protection-gear attributes (migration 051 specs).
@@ -66,6 +67,9 @@ const CATEGORY_FIELDS: Record<CategoryTab, ElectricalField[]> = {
   cable: [],
   connector: [],
   mounting: [],
+  // Catch-all bucket (EV chargers, ATESS utility gear, dongles, misc) — no generic
+  // electrical fields; use Notes for any spec.
+  other: [],
 }
 
 // Compact one-line spec for the table, e.g. "2P · 63A · DC · 1000V · 6kA · Curve C · polarized".
@@ -157,7 +161,7 @@ function formatRands(value: number) {
 function itemToForm(item: EquipmentCatalogItem): FormState {
   return {
     id: item.id,
-    category: (item.category === 'other' ? 'inverter' : item.category) as CategoryTab,
+    category: item.category as CategoryTab,
     supplier: item.supplier ?? '',
     brand: item.brand,
     sku: item.sku,
