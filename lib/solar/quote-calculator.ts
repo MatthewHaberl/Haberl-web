@@ -295,6 +295,26 @@ export type EquipmentCatalogCategory =
 export type EquipmentCatalogPhase = 'single' | 'three' | 'any'
 export type QuoteTier = 'premium' | 'recommended' | 'budget'
 
+/**
+ * Structured technical attributes (migration 051), stored in equipment_catalog.specs.
+ * Protection-gear fields are first-class; extra category-specific keys are allowed.
+ */
+export interface CatalogSpecs {
+  poles?: number | null
+  pole_config?: string | null
+  amperage_a?: number | null
+  current_type?: 'AC' | 'DC' | 'AC/DC' | null
+  voltage_v?: number | null
+  voltage_ac_v?: number | null
+  voltage_dc_v?: number | null
+  polarized?: boolean | null
+  breaking_capacity_ka?: number | null
+  curve?: string | null
+  mechanism?: string | null
+  modules?: number | null
+  [key: string]: unknown
+}
+
 export interface EquipmentCatalogItem {
   id: string
   category: EquipmentCatalogCategory
@@ -322,6 +342,11 @@ export interface EquipmentCatalogItem {
   model_3d_url?: string | null
   // "To-add" queue placeholder created from the design canvas (migration 049). Ignored by the calculator.
   pending?: boolean
+  // Supplier dimension + structured attributes (migration 051). Ignored by the calculator.
+  supplier?: string | null
+  specs?: CatalogSpecs | null
+  source_url?: string | null
+  external_ref?: string | null
 }
 
 export interface QuoteTierConfig {

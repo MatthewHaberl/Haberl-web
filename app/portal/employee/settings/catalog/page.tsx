@@ -6,17 +6,19 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
+import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem, type CatalogSpecs } from '@/lib/solar/quote-calculator'
 import {
   parseEnclosureSpec, enclosureSpecToNotes,
   ENCLOSURE_MATERIALS, ENCLOSURE_MOUNTS, ENCLOSURE_WAYS,
   type EnclosureSpec, type EnclosureMaterial, type EnclosureMount,
 } from '@/lib/solar/system-design'
 import { Loader2, Pencil, Plus, Search, X } from 'lucide-react'
+import OffersPanel from './OffersPanel'
 
 type CategoryTab =
   | 'inverter' | 'battery' | 'panel' | 'enclosure'
-  | 'breaker' | 'fuse' | 'fuseholder' | 'spd' | 'isolator' | 'disconnect' | 'cable'
+  | 'breaker' | 'fuse' | 'fuseholder' | 'spd' | 'isolator' | 'disconnect' | 'rccb' | 'cable'
+  | 'connector' | 'mounting'
 
 const TABS: Array<{ value: CategoryTab; label: string }> = [
   { value: 'inverter', label: 'Inverters' },
@@ -29,14 +31,64 @@ const TABS: Array<{ value: CategoryTab; label: string }> = [
   { value: 'spd', label: 'SPDs' },
   { value: 'isolator', label: 'Isolators' },
   { value: 'disconnect', label: 'Disconnects' },
+  { value: 'rccb', label: 'Earth leakage' },
   { value: 'cable', label: 'Cables' },
+  { value: 'connector', label: 'Terminals / glands' },
+  { value: 'mounting', label: 'Mounting' },
 ]
+
+// Categories that carry structured protection-gear attributes (migration 051 specs).
+const PROTECTION_CATEGORIES: CategoryTab[] = ['breaker', 'fuse', 'fuseholder', 'spd', 'isolator', 'disconnect', 'rccb']
+const CURRENT_TYPES = ['AC', 'DC', 'AC/DC'] as const
+
+// Per-category electrical fields shown in the edit modal (item 49). Only surface the
+// spec inputs that actually apply to a category, so e.g. cables don't show "Voc / Wp"
+// and inverters don't show panel-only "Wp". Enclosures + protection gear render their
+// own dedicated spec blocks below, so they don't list any of these generic fields.
+type ElectricalField = 'watts_ac' | 'watts_dc' | 'kwh' | 'phase' | 'isc' | 'voc'
+const CATEGORY_FIELDS: Record<CategoryTab, ElectricalField[]> = {
+  // PV panels: peak watts (Wp) + cell electrical (Voc / Isc).
+  panel: ['watts_dc', 'voc', 'isc'],
+  // Inverters: AC output + phase (MPPT / PV limits live in notes).
+  inverter: ['watts_ac', 'phase'],
+  // Batteries: usable energy (kWh) — V / class live in specs / notes.
+  battery: ['kwh'],
+  // Enclosures + protection gear carry their own structured spec blocks.
+  enclosure: [],
+  breaker: [],
+  fuse: [],
+  fuseholder: [],
+  spd: [],
+  isolator: [],
+  disconnect: [],
+  rccb: [],
+  // Passive / mechanical lines have no generic electrical fields here.
+  cable: [],
+  connector: [],
+  mounting: [],
+}
+
+// Compact one-line spec for the table, e.g. "2P · 63A · DC · 1000V · 6kA · Curve C · polarized".
+function formatProtectionSpec(specs?: CatalogSpecs | null): string {
+  if (!specs) return '—'
+  const parts: string[] = []
+  if (specs.pole_config) parts.push(String(specs.pole_config))
+  else if (specs.poles != null) parts.push(`${specs.poles}P`)
+  if (specs.amperage_a != null) parts.push(`${specs.amperage_a}A`)
+  if (specs.current_type) parts.push(String(specs.current_type))
+  if (specs.voltage_v != null) parts.push(`${specs.voltage_v}V`)
+  if (specs.breaking_capacity_ka != null) parts.push(`${specs.breaking_capacity_ka}kA`)
+  if (specs.curve) parts.push(`Curve ${specs.curve}`)
+  if (specs.polarized) parts.push('polarized')
+  return parts.length ? parts.join(' · ') : '—'
+}
 
 const DEFAULT_ENCLOSURE: EnclosureSpec = { material: 'plastic', mount: 'surface', ways: 12, rows: 1, ip: 'IP4X' }
 
 type FormState = {
   id?: string
   category: CategoryTab
+  supplier: string
   brand: string
   sku: string
   description: string
@@ -56,10 +108,12 @@ type FormState = {
   primary_image_url: string
   datasheet_url: string
   model_3d_url: string
+  specs: CatalogSpecs
 }
 
 const EMPTY_FORM: FormState = {
   category: 'inverter',
+  supplier: '',
   brand: '',
   sku: '',
   description: '',
@@ -79,6 +133,7 @@ const EMPTY_FORM: FormState = {
   primary_image_url: '',
   datasheet_url: '',
   model_3d_url: '',
+  specs: {},
 }
 
 function navLink(href: string, label: string) {
@@ -103,6 +158,7 @@ function itemToForm(item: EquipmentCatalogItem): FormState {
   return {
     id: item.id,
     category: (item.category === 'other' ? 'inverter' : item.category) as CategoryTab,
+    supplier: item.supplier ?? '',
     brand: item.brand,
     sku: item.sku,
     description: item.description,
@@ -122,6 +178,7 @@ function itemToForm(item: EquipmentCatalogItem): FormState {
     primary_image_url: item.primary_image_url ?? '',
     datasheet_url: item.datasheet_url ?? '',
     model_3d_url: item.model_3d_url ?? '',
+    specs: (item.specs ?? {}) as CatalogSpecs,
   }
 }
 
@@ -132,6 +189,7 @@ export default function CatalogPage() {
   const [error, setError] = useState('')
   // 'pending' is a cross-category filter for the "to-add" queue, not a real category.
   const [activeTab, setActiveTab] = useState<CategoryTab | 'pending'>('inverter')
+  const [supplierFilter, setSupplierFilter] = useState<string>('all')
   const [editing, setEditing] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
   const [markup, setMarkup] = useState(DEFAULT_PRICING.markup)
@@ -203,12 +261,18 @@ export default function CatalogPage() {
   // Count of "to-add" placeholders created from the design canvas (migration 049).
   const pendingCount = useMemo(() => items.filter((item) => item.pending).length, [items])
 
-  const visibleItems = useMemo(
-    () => activeTab === 'pending'
-      ? items.filter((item) => item.pending)
-      : items.filter((item) => item.category === activeTab),
-    [activeTab, items],
+  // Distinct suppliers present in the catalog, for the supplier filter.
+  const suppliers = useMemo(
+    () => Array.from(new Set(items.map((i) => i.supplier).filter((s): s is string => !!s))).sort(),
+    [items],
   )
+
+  const visibleItems = useMemo(() => {
+    const base = activeTab === 'pending'
+      ? items.filter((item) => item.pending)
+      : items.filter((item) => item.category === activeTab)
+    return supplierFilter === 'all' ? base : base.filter((item) => item.supplier === supplierFilter)
+  }, [activeTab, items, supplierFilter])
 
   async function saveItem() {
     if (!editing) return
@@ -236,6 +300,8 @@ export default function CatalogPage() {
       primary_image_url: editing.primary_image_url.trim() || null,
       datasheet_url: editing.datasheet_url.trim() || null,
       model_3d_url: editing.model_3d_url.trim() || null,
+      supplier: editing.supplier.trim() || null,
+      specs: editing.specs ?? {},
       // Clear the "to-add" flag once the placeholder gets a real cost (migration 049).
       // Only sent when clearing, so it's a no-op for rows that were never pending.
       ...(Number(editing.cost_rands || 0) > 0 ? { pending: false } : {}),
@@ -322,14 +388,30 @@ export default function CatalogPage() {
             </span>
           </Button>
         )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto"
-          onClick={() => setEditing({ ...EMPTY_FORM, category: activeTab === 'pending' ? 'inverter' : activeTab })}
-        >
-          <Plus className="h-4 w-4" /> Add item
-        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          {suppliers.length > 0 && (
+            <select
+              value={supplierFilter}
+              onChange={(event) => setSupplierFilter(event.target.value)}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+              title="Filter by supplier"
+            >
+              <option value="all">All suppliers</option>
+              {suppliers.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditing({
+              ...EMPTY_FORM,
+              category: activeTab === 'pending' ? 'inverter' : activeTab,
+              supplier: supplierFilter !== 'all' ? supplierFilter : '',
+            })}
+          >
+            <Plus className="h-4 w-4" /> Add item
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -345,6 +427,7 @@ export default function CatalogPage() {
                 <thead className="text-left text-muted-foreground">
                   <tr className="border-b border-border">
                     <th className="pb-3 pr-4">Brand</th>
+                    <th className="pb-3 pr-4">Supplier</th>
                     <th className="pb-3 pr-4">SKU</th>
                     <th className="pb-3 pr-4">Description</th>
                     <th className="pb-3 pr-4">Spec</th>
@@ -366,10 +449,13 @@ export default function CatalogPage() {
                           ? (enc ? `${enc.rows > 1 ? `${enc.rows}×${enc.ways}` : `${enc.ways}-way`} · ${enc.mount} · ${enc.material} · ${enc.ip}` : 'DB')
                           : item.category === 'panel'
                             ? `${item.watts_dc ?? 0}Wp`
-                            : '—'
+                            : PROTECTION_CATEGORIES.includes(item.category as CategoryTab)
+                              ? formatProtectionSpec(item.specs)
+                              : '—'
                     return (
                       <tr key={item.id} className="border-b border-border/60">
                         <td className="py-3 pr-4">{item.brand}</td>
+                        <td className="py-3 pr-4 text-muted-foreground">{item.supplier ?? '—'}</td>
                         <td className="py-3 pr-4 font-mono text-xs">{item.sku}</td>
                         <td className="py-3 pr-4">{item.description}</td>
                         <td className="py-3 pr-4">{spec}</td>
@@ -428,8 +514,8 @@ export default function CatalogPage() {
 
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl rounded-xl bg-background p-6 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
+          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-background shadow-xl">
+            <div className="flex items-center justify-between border-b border-border bg-background px-6 py-4">
               <div>
                 <h2 className="text-lg font-semibold text-primary">{editing.id ? 'Edit catalog item' : 'Add catalog item'}</h2>
                 <p className="text-sm text-muted-foreground">Sell price is always cost × 1.15.</p>
@@ -439,7 +525,7 @@ export default function CatalogPage() {
               </Button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 overflow-y-auto px-6 py-5 md:grid-cols-2">
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium">Category</span>
                 <select
@@ -451,8 +537,12 @@ export default function CatalogPage() {
                 </select>
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Brand</span>
+                <span className="text-sm font-medium">Brand <span className="text-muted-foreground">(manufacturer)</span></span>
                 <Input value={editing.brand} onChange={(event) => setEditing({ ...editing, brand: event.target.value })} />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium">Supplier</span>
+                <Input value={editing.supplier} onChange={(event) => setEditing({ ...editing, supplier: event.target.value })} placeholder="e.g. Key Electric" />
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium">SKU</span>
@@ -496,30 +586,90 @@ export default function CatalogPage() {
                   </>
                 )
               })()}
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">AC Watts</span>
-                <Input value={editing.watts_ac} onChange={(event) => setEditing({ ...editing, watts_ac: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">DC Watts / Wp</span>
-                <Input value={editing.watts_dc} onChange={(event) => setEditing({ ...editing, watts_dc: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">kWh</span>
-                <Input value={editing.kwh} onChange={(event) => setEditing({ ...editing, kwh: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Phase</span>
-                <select
-                  value={editing.phase}
-                  onChange={(event) => setEditing({ ...editing, phase: event.target.value as FormState['phase'] })}
-                  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-                >
-                  <option value="single">Single</option>
-                  <option value="three">Three</option>
-                  <option value="any">Any</option>
-                </select>
-              </label>
+              {PROTECTION_CATEGORIES.includes(editing.category) && (() => {
+                const s = editing.specs ?? {}
+                const setSpec = (patch: Partial<CatalogSpecs>) => setEditing({ ...editing, specs: { ...s, ...patch } })
+                return (
+                  <div className="md:col-span-2 grid gap-4 md:grid-cols-3 rounded-lg border border-border bg-muted/30 p-4">
+                    <p className="md:col-span-3 text-sm font-semibold text-primary">Protection attributes</p>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Poles</span>
+                      <Input value={s.poles?.toString() ?? ''} onChange={(e) => setSpec({ poles: coerceNumber(e.target.value) })} placeholder="1 / 2 / 3 / 4" />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Pole config</span>
+                      <Input value={s.pole_config ?? ''} onChange={(e) => setSpec({ pole_config: e.target.value || null })} placeholder="1P / 2P / 3P / 4P / 1P+N" />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Amperage (A)</span>
+                      <Input value={s.amperage_a?.toString() ?? ''} onChange={(e) => setSpec({ amperage_a: coerceNumber(e.target.value) })} />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Current type</span>
+                      <select
+                        value={(s.current_type as string) ?? ''}
+                        onChange={(e) => setSpec({ current_type: (e.target.value || null) as CatalogSpecs['current_type'] })}
+                        className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+                      >
+                        <option value="">—</option>
+                        {CURRENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Voltage (V)</span>
+                      <Input value={s.voltage_v?.toString() ?? ''} onChange={(e) => setSpec({ voltage_v: coerceNumber(e.target.value) })} placeholder="230 / 400 / 1000" />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Breaking capacity (kA)</span>
+                      <Input value={s.breaking_capacity_ka?.toString() ?? ''} onChange={(e) => setSpec({ breaking_capacity_ka: coerceNumber(e.target.value) })} />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">Trip curve</span>
+                      <Input value={s.curve ?? ''} onChange={(e) => setSpec({ curve: e.target.value || null })} placeholder="B / C / D / 2 / 3" />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={!!s.polarized}
+                        onChange={(e) => setSpec({ polarized: e.target.checked })}
+                      />
+                      Polarized <span className="text-muted-foreground">(DC)</span>
+                    </label>
+                  </div>
+                )
+              })()}
+              {CATEGORY_FIELDS[editing.category].includes('watts_ac') && (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">AC Watts <span className="text-muted-foreground">(kW × 1000)</span></span>
+                  <Input value={editing.watts_ac} onChange={(event) => setEditing({ ...editing, watts_ac: event.target.value })} />
+                </label>
+              )}
+              {CATEGORY_FIELDS[editing.category].includes('watts_dc') && (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Wp <span className="text-muted-foreground">(peak watts)</span></span>
+                  <Input value={editing.watts_dc} onChange={(event) => setEditing({ ...editing, watts_dc: event.target.value })} />
+                </label>
+              )}
+              {CATEGORY_FIELDS[editing.category].includes('kwh') && (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">kWh</span>
+                  <Input value={editing.kwh} onChange={(event) => setEditing({ ...editing, kwh: event.target.value })} />
+                </label>
+              )}
+              {CATEGORY_FIELDS[editing.category].includes('phase') && (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Phase</span>
+                  <select
+                    value={editing.phase}
+                    onChange={(event) => setEditing({ ...editing, phase: event.target.value as FormState['phase'] })}
+                    className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+                  >
+                    <option value="single">Single</option>
+                    <option value="three">Three</option>
+                    <option value="any">Any</option>
+                  </select>
+                </label>
+              )}
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium">Cost (R)</span>
                 <Input value={editing.cost_rands} onChange={(event) => setEditing({ ...editing, cost_rands: event.target.value })} />
@@ -528,14 +678,18 @@ export default function CatalogPage() {
                 <span className="text-sm font-medium">Sell price (read-only)</span>
                 <Input value={formatRands(Number(editing.cost_rands || 0) * markup)} readOnly />
               </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Isc (A)</span>
-                <Input value={editing.isc_amps} onChange={(event) => setEditing({ ...editing, isc_amps: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Voc (V)</span>
-                <Input value={editing.voc_volts} onChange={(event) => setEditing({ ...editing, voc_volts: event.target.value })} />
-              </label>
+              {CATEGORY_FIELDS[editing.category].includes('isc') && (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Isc (A)</span>
+                  <Input value={editing.isc_amps} onChange={(event) => setEditing({ ...editing, isc_amps: event.target.value })} />
+                </label>
+              )}
+              {CATEGORY_FIELDS[editing.category].includes('voc') && (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Voc (V)</span>
+                  <Input value={editing.voc_volts} onChange={(event) => setEditing({ ...editing, voc_volts: event.target.value })} />
+                </label>
+              )}
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium">Sort order</span>
                 <Input value={editing.sort_order} onChange={(event) => setEditing({ ...editing, sort_order: event.target.value })} />
@@ -565,6 +719,10 @@ export default function CatalogPage() {
                 />
                 Active <span className="text-muted-foreground">(available to the quote calculator)</span>
               </label>
+
+              {editing.id && (
+                <OffersPanel catalogId={editing.id} onChange={loadItems} />
+              )}
 
               {/* Web store */}
               <div className="md:col-span-2 mt-2 border-t border-border pt-4">
@@ -627,7 +785,7 @@ export default function CatalogPage() {
               </label>
             </div>
 
-            <div className="mt-6 flex items-center justify-end gap-2">
+            <div className="flex items-center justify-end gap-2 border-t border-border bg-background px-6 py-4">
               <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
               <Button variant="accent" onClick={saveItem} disabled={saving}>
                 {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving...</> : 'Save item'}
