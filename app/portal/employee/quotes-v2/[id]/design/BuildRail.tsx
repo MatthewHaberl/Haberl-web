@@ -4,7 +4,7 @@ import { useDesign } from './DesignProvider'
 
 // Energy-first build order. Index is the source of truth for the active section.
 export const BUILD_STEPS = [
-  'Energy', 'Panels', 'DC combiner', 'Inverter', 'Batteries', 'AC combiner', 'Monitoring', 'Earthing', 'Data', 'Extras',
+  'Energy', 'Panels', 'DC combiner', 'Inverter', 'Batteries', 'AC combiner', 'Monitoring', 'Earthing', 'Data', 'Extras', 'Savings',
 ] as const
 
 export function BuildRail() {

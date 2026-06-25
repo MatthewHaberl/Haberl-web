@@ -11,6 +11,7 @@ import { AcCombinerSection } from './AcCombinerSection'
 import { MonitoringSection } from './MonitoringSection'
 import { DataSection } from './DataSection'
 import { ExtrasSection } from './ExtrasSection'
+import { SavingsSection } from './SavingsSection'
 
 // Index-aligned with BUILD_STEPS in ../BuildRail.
 const SECTIONS = [
@@ -24,6 +25,7 @@ const SECTIONS = [
   EarthingSection,    // 7 Earthing
   DataSection,        // 8 Data
   ExtrasSection,      // 9 Extras
+  SavingsSection,     // 10 Savings & Performance
 ]
 
 export function ActiveSection() {
