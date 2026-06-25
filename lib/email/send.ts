@@ -14,12 +14,14 @@ export interface SendResult {
 
 export async function sendEmail({
   to,
+  cc,
   subject,
   html,
   text,
   replyTo,
 }: {
   to: string[]
+  cc?: string[]
   subject: string
   html: string
   text: string
@@ -37,6 +39,7 @@ export async function sendEmail({
     body: JSON.stringify({
       from: FROM,
       to,
+      ...(cc && cc.length ? { cc } : {}),
       subject,
       html,
       text,

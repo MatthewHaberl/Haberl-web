@@ -560,6 +560,18 @@ export interface CableRoute {
   created_at: string
 }
 
+export interface SupplierContact {
+  id: string
+  supplier_id: string
+  name: string | null
+  email: string | null
+  phone: string | null
+  role: string | null
+  cc_on_po: boolean
+  sort_order: number
+  created_at: string
+}
+
 export interface Supplier {
   id: string
   name: string
@@ -569,6 +581,8 @@ export interface Supplier {
   notes: string | null
   active: boolean
   created_at: string
+  // loaded separately from supplier_contacts
+  contacts?: SupplierContact[]
 }
 
 export type PurchaseOrderStatus = 'draft' | 'sent' | 'partial' | 'received' | 'cancelled'

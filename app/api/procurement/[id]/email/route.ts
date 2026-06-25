@@ -88,8 +88,25 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     'Please confirm availability and lead time by reply.',
   ].join('\n')
 
+  // CC any supplier contacts flagged "CC on POs" (excluding the primary recipient)
+  const { data: ccContacts } = po.supplier_id
+    ? await supabase
+        .from('supplier_contacts')
+        .select('email')
+        .eq('supplier_id', po.supplier_id)
+        .eq('cc_on_po', true)
+    : { data: [] as { email: string | null }[] }
+  const cc = Array.from(
+    new Set(
+      (ccContacts ?? [])
+        .map((c) => (c.email ?? '').trim())
+        .filter((e) => e && e.toLowerCase() !== supplier.email!.toLowerCase()),
+    ),
+  )
+
   const result = await sendEmail({
     to: [supplier.email],
+    cc: cc.length ? cc : undefined,
     subject: `Purchase Order ${po.po_number} — Haberl Electrical & Solar`,
     html,
     text,
