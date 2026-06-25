@@ -55,6 +55,8 @@ export interface CableEdgeData extends Record<string, unknown> {
   terminationTo?: { type: string; size?: string }
   /** Heat shrink over the terminations (sized from the cross-section). */
   heatShrink?: boolean
+  /** AC output topology hint (item 50) so labels can show split-phase L1/L2/N/E. */
+  phaseConfig?: 'single_230' | 'split_phase' | 'american_120' | 'three_phase'
   isDirect?: boolean          // direct bus / stackable connection — no cable
   // Communication-specific
   sourceProtocol?: string[]
@@ -337,6 +339,9 @@ export function buildEdgeLabel(data: CableEdgeData): string {
     condStr = '+/−' + (conds?.earth !== false ? '/E' : '')
   } else if (data.circuitType === 'earth') {
     condStr = 'E'
+  } else if (data.phaseConfig === 'split_phase') {
+    // Split-phase (item 50) carries two lines + neutral + earth.
+    condStr = 'L1/L2/N/E'
   } else {
     condStr = conds?.l1 !== false ? 'L1/L2/L3/N/E' : 'L/N/E'
   }

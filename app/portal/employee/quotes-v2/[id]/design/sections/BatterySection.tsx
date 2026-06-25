@@ -6,7 +6,7 @@ import { evaluateBatteryForInverter, type EquipmentCatalogItem } from '@/lib/sol
 import {
   computeBalance, designBatteryKwh, designInverterKw,
   batteryCRate, batteryDcCurrent, cableRunsNeeded, DC_CABLE_AMPACITY,
-  defaultDisconnectChoice,
+  defaultDisconnectChoice, inverterAcceptsBattery,
   type CRateLevel, type BatteryBank, type DisconnectKind, type DisconnectChoice,
   type BatteryBusbarSpec, type BankCable,
 } from '@/lib/solar/system-design'
@@ -51,6 +51,10 @@ export function BatterySection() {
 
   const inverterItem: EquipmentCatalogItem | null =
     byCategory(items, 'inverter').find((i) => i.id === design.inverters[0]?.catalogId) ?? null
+
+  // Item 51: grid-tie inverters can't take a battery — gate the whole section.
+  const inv0 = design.inverters[0]
+  const acceptsBattery = inv0 ? inverterAcceptsBattery(inv0) : true
 
   // Keep blocked batteries visible but push them to the bottom of the list, so a
   // mistakenly-blocked item can still be spotted and flagged.
@@ -132,6 +136,20 @@ export function BatterySection() {
       type: 'setBattery',
       battery: { catalogId: item.id, model: item.description, kwh: item.kwh ?? 0 },
     })
+  }
+
+  // Grid-tie inverter (acceptsBattery === false): no battery editors, can't add one.
+  if (!acceptsBattery) {
+    return (
+      <SectionCard
+        title="Batteries"
+        subtitle="Incompatible batteries are shown greyed-out with the reason. Storage hours update live."
+      >
+        <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+          This inverter does not accept batteries.
+        </p>
+      </SectionCard>
+    )
   }
 
   return (

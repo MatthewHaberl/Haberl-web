@@ -2,7 +2,10 @@
 
 import { useMemo } from 'react'
 import { Gauge, Sun, BatteryCharging, Check, AlertTriangle, Info, CircleAlert } from 'lucide-react'
-import { computeBalance, ENERGY_SOURCE_LABEL, type VerdictLevel } from '@/lib/solar/system-design'
+import {
+  computeBalance, ENERGY_SOURCE_LABEL, inverterAcceptsPv, inverterAcceptsBattery,
+  type VerdictLevel,
+} from '@/lib/solar/system-design'
 import { useDesign } from './DesignProvider'
 
 function fmt(value: number | null, digits = 1): string {
@@ -37,6 +40,18 @@ export function BalanceHeader() {
   const { design, record, saveState } = useDesign()
   const balance = useMemo(() => computeBalance(design, record), [design, record])
   const hasBackup = (design.energy.essentialLoadKw ?? 0) > 0
+
+  // Item 51: a no-MPPT inverter (acceptsPv === false) shouldn't be string-checked,
+  // so drop the PV/DC:AC sizing verdicts (and the "no max DC voltage" note); an
+  // AC-coupled inverter (acceptsBattery === false) drops the battery sizing verdicts.
+  const inv0 = design.inverters[0]
+  const showPvVerdicts = inv0 ? inverterAcceptsPv(inv0) : true
+  const showBatteryVerdicts = inv0 ? inverterAcceptsBattery(inv0) : true
+  const verdicts = balance.verdicts.filter((v) => {
+    if (!showPvVerdicts && v.id.startsWith('inv-')) return false
+    if (!showBatteryVerdicts && v.id.startsWith('bat-')) return false
+    return true
+  })
 
   const coverage = balance.coveragePct
   const coverageChip = coverage == null
@@ -88,14 +103,14 @@ export function BalanceHeader() {
         />
       </div>
 
-      {(coverageChip || balance.verdicts.length > 0) && (
+      {(coverageChip || verdicts.length > 0) && (
         <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border pt-3">
           {coverageChip && (
             <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${coverageChip.cls}`}>
               {coverageChip.text}
             </span>
           )}
-          {balance.verdicts.map((v) => {
+          {verdicts.map((v) => {
             const s = VERDICT_STYLE[v.level]
             return (
               <span key={v.id} className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${s.cls}`}>

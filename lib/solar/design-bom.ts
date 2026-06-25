@@ -102,22 +102,36 @@ export function designToBom(
   // Panels
   for (const g of design.panels) add('Panels', g.catalogId, g.panelCount, { label: g.panelModel || 'PV module' })
 
+  // MC4 jumpers (item 42) — each jumper pair is two MC4 connectors (male + female
+  // extension lead). Surfaced as a "Quote" line (no catalog field yet) per string.
+  for (const g of design.panels) {
+    const jumpers = Math.max(0, Math.round(g.jumpers ?? 0))
+    if (jumpers > 0) add('Cables & Connectors', null, jumpers * 2, { label: `MC4 jumper connector (${g.label || 'string'})` })
+  }
+
   // DC combiners — qualify each line with its combiner so the itemised view shows
   // which enclosure an occurrence lives in (consolidation later sums identical items).
   design.dcCombiners.forEach((c, ci) => {
     const where = design.dcCombiners.length > 1 ? ` — DC combiner ${ci + 1}` : ''
     add('DC combiner', c.enclosureCatalogId, 1, { label: `DC combiner enclosure${where}` })
-    for (const sid of c.inputStringIds) {
-      const k = c.stringConnections[sid]
-      if (!k) continue
-      add('DC combiner', k.breakerId, 1, { label: `String breaker${where}` })
-      add('DC combiner', k.fuseHolderId, 1, { label: `Fuse holder${where}` })
-      add('DC combiner', k.fuseId, Math.max(1, k.fuseQty), { label: `PV fuse${where}` })
-      add('DC combiner', k.isolatorId, 1, { label: `DC isolator${where}` })
-    }
-    for (const o of c.outputs) {
-      add('DC combiner', o.spdId, 1, { label: `DC SPD${where}` })
-      if (o.stringIds.length > 1) add('DC combiner', o.mainBreakerId, 1, { label: `DC main breaker${where}` })
+    const components = c.components ?? []
+    if (components.length > 0) {
+      // New internals model (item 44) — itemise the inside list like the AC board.
+      for (const comp of components) add('DC combiner', comp.product, Math.max(1, comp.qty || 1), { label: `${comp.label}${where}` })
+    } else {
+      // Legacy per-string connection products (parseable; the new UI uses components).
+      for (const sid of c.inputStringIds) {
+        const k = c.stringConnections[sid]
+        if (!k) continue
+        add('DC combiner', k.breakerId, 1, { label: `String breaker${where}` })
+        add('DC combiner', k.fuseHolderId, 1, { label: `Fuse holder${where}` })
+        add('DC combiner', k.fuseId, Math.max(1, k.fuseQty), { label: `PV fuse${where}` })
+        add('DC combiner', k.isolatorId, 1, { label: `DC isolator${where}` })
+      }
+      for (const o of c.outputs) {
+        add('DC combiner', o.spdId, 1, { label: `DC SPD${where}` })
+        if (o.stringIds.length > 1) add('DC combiner', o.mainBreakerId, 1, { label: `DC main breaker${where}` })
+      }
     }
   })
 

@@ -12,6 +12,7 @@ import {
   useEdgesState,
   type Node,
   type Edge,
+  type Connection,
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes, GitMerge } from 'lucide-react'
@@ -139,14 +140,37 @@ function edgeLayer(edge: Edge): string {
   }
 }
 
+// Infer a sensible circuit type for a hand-drawn cable (item 53) from the handles
+// it lands on / the layers its endpoints belong to, so the new cable picks up the
+// right colour + layer. Falls back to 'ac'.
+function inferUserCircuitType(conn: Connection, nodes: Node[]): CableEdgeData['circuitType'] {
+  const handle = `${conn.sourceHandle ?? ''} ${conn.targetHandle ?? ''}`
+  if (/earth|bond/i.test(handle)) return 'earth'
+  if (/data|comm/i.test(handle)) return 'communication'
+  if (/bat/i.test(handle)) return 'battery'
+  if (/dc|pv|str|out-\d|dc-out/i.test(handle)) return 'dc'
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const layers = [conn.source, conn.target].map((id) => (id ? nodeLayer(byId.get(id) ?? ({} as Node)) : 'always'))
+  if (layers.includes('earth')) return 'earth'
+  if (layers.includes('data')) return 'communication'
+  if (layers.every((l) => l === 'pv')) return 'dc'
+  if (layers.includes('battery')) return 'battery'
+  return 'ac'
+}
+
 // Only structural fields force a diagram rebuild — positions live in layout and
 // are applied by designToFlow, so dragging never fights the rebuild.
 function structureSig(d: SystemDesign, gridSupply?: string): string {
   return JSON.stringify({
     g: gridSupply ?? '',
-    p: d.panels.map((p) => [p.id, p.panelCount, p.panelWatts, p.panelModel]),
-    dc: d.dcCombiners.length,
-    i: d.inverters.map((u) => [u.catalogId, u.kw, u.model, u.qty, u.phases]),
+    // Panel distance/jumpers (items 41/42): jumpers drive BOM, distance is metadata.
+    p: d.panels.map((p) => [p.id, p.panelCount, p.panelWatts, p.panelModel, p.distanceFromCombinerM, p.jumpers]),
+    // Energy shaping profiles (items 37–40) — harmless to key on; only matters if they drive flow.
+    ep: JSON.stringify([d.energy.weekly ?? null, d.energy.monthlyProfile ?? null, d.energy.annualProfile ?? null]),
+    // DC combiners (items 34/44): per-combiner string assignment + output count + internals.
+    dc: JSON.stringify(d.dcCombiners.map((c) => [c.id, c.inputStringIds, c.outputs.length, (c.components ?? []).map((k) => [k.id, k.product, k.qty, k.fedFrom])])),
+    // Inverter phaseConfig + PV/battery capability toggles (items 50/51) reshape the AC + DC topology.
+    i: d.inverters.map((u) => [u.catalogId, u.kw, u.model, u.qty, u.phases, u.phaseConfig, u.acceptsPv, u.acceptsBattery]),
     b: d.batteries.map((b) => [b.catalogId, b.kwh, b.qty, b.model]),
     bk: [d.bank.perBatteryDisconnect, d.bank.busbar, d.bank.mainDisconnect, d.bank.cableSizeMm2, d.bank.cutoffVoltage],
     // New bank wiring (items 23/27/28): disconnect product/type, busbar spec, itemised cables.
@@ -167,6 +191,8 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
     // Inspector overrides change cables/ports, so they must force a rebuild too.
     ov: JSON.stringify(d.layout.edgeOverrides ?? {}),
     no: JSON.stringify(d.layout.nodeOverrides ?? {}),
+    // User-drawn cables (item 53) emit real edges, so a new/removed one rebuilds the flow.
+    ue: JSON.stringify(d.layout.userEdges ?? []),
   })
 }
 
@@ -305,6 +331,8 @@ function NodeInspector({ nodeId, onClose }: { nodeId: string; onClose: () => voi
 // Click a cable → edit material / size / runs / phase / length / terminations (persisted as an override).
 function CableInspector({ edge, fromLabel, toLabel, onClose }: { edge: Edge; fromLabel: string; toLabel: string; onClose: () => void }) {
   const { dispatch } = useDesign()
+  // A user-drawn cable (item 53) is removable outright; auto-derived cables only reset.
+  const isUserEdge = edge.id.startsWith('user-')
   const data = (edge.data ?? {}) as CableEdgeData
   const ct = (data.circuitType as string) ?? 'ac'
   const isAc = ct === 'ac'
@@ -444,10 +472,17 @@ function CableInspector({ edge, fromLabel, toLabel, onClose }: { edge: Edge; fro
         </div>
       )}
 
-      <button type="button" onClick={() => dispatch({ type: 'clearEdgeOverride', id: edge.id })}
-        className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-        <RotateCcw className="h-3.5 w-3.5" /> Reset to auto
-      </button>
+      {isUserEdge ? (
+        <button type="button" onClick={() => { dispatch({ type: 'removeUserEdge', id: edge.id.slice('user-'.length) }); onClose() }}
+          className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive">
+          <Trash2 className="h-3.5 w-3.5" /> Remove cable
+        </button>
+      ) : (
+        <button type="button" onClick={() => dispatch({ type: 'clearEdgeOverride', id: edge.id })}
+          className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+          <RotateCcw className="h-3.5 w-3.5" /> Reset to auto
+        </button>
+      )}
     </div>
   )
 }
@@ -569,6 +604,31 @@ function CanvasInner({ height = 560 }: { height?: number }) {
       : resolveOverlap(nodesRef.current, node.id, node.position, nodeSize(node))
     dispatch({ type: 'moveNode', id: node.id, position })
   }, [dispatch, allowOverlap])
+
+  // Item 53: dragging from one handle to another creates a user-drawn cable. We
+  // persist it through the store (addUserEdge) and let designToFlow re-emit it as
+  // a real `cable` edge — so it gains overrides, layer toggles and a BOM line.
+  const onConnect = useCallback((conn: Connection) => {
+    if (!conn.source || !conn.target) return
+    dispatch({
+      type: 'addUserEdge',
+      edge: {
+        source: conn.source,
+        target: conn.target,
+        sourceHandle: conn.sourceHandle ?? undefined,
+        targetHandle: conn.targetHandle ?? undefined,
+        circuitType: inferUserCircuitType(conn, nodesRef.current),
+      },
+    })
+  }, [dispatch])
+
+  // Item 53: deleting a cable only removes user-drawn ones (`user-<id>`); auto-derived
+  // edges have no stored source, so they just re-appear on the next rebuild.
+  const onEdgesDelete = useCallback((deleted: Edge[]) => {
+    for (const e of deleted) {
+      if (e.id.startsWith('user-')) dispatch({ type: 'removeUserEdge', id: e.id.slice('user-'.length) })
+    }
+  }, [dispatch])
 
   // Keyboard: Delete removes the selected node; Esc leaves fullscreen.
   const selectedNodeRef = useRef<string | null>(null)
@@ -697,8 +757,12 @@ function CanvasInner({ height = 560 }: { height?: number }) {
         edges={shownEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onEdgesDelete={onEdgesDelete}
+        nodesConnectable
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        defaultEdgeOptions={{ type: 'cable' }}
         onNodeClick={(_, node) => setSelected({ kind: 'node', id: node.id })}
         onEdgeClick={(_, edge) => setSelected({ kind: 'edge', id: edge.id })}
         onNodeDragStop={onNodeDragStop}

@@ -5,7 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import {
-  calculateAllStringsGeneration,
+  calculateGenerationByString,
   calculateMonthlyBreakdown,
 } from '@/lib/solar/generation-calculator'
 import type { Season } from '@/lib/solar/generation-calculator'
@@ -33,17 +33,36 @@ export function GenerationChart({ segments, panelWatts }: Props) {
   const [season, setSeason] = useState<Season>('average')
   const [view, setView] = useState<'chart' | 'table'>('chart')
 
-  const generationData = calculateAllStringsGeneration(segments, panelWatts, season)
+  // Per-string DIRECTIONAL curves (item 43): east peaks mid-morning, west
+  // mid-afternoon, north at solar noon & yields most — see the modelled-estimate
+  // caveat below. Indexed by segment order; we synthesise a groupId per index.
+  const directional = calculateGenerationByString(
+    segments.map((seg, idx) => ({
+      id: String(idx), panelCount: seg.panelCount, panelWatts, azimuth: seg.azimuth, pitch: seg.pitch,
+    })),
+    season,
+  )
   const monthly = calculateMonthlyBreakdown(segments, panelWatts)
 
-  // Build chart data — one point per hour, one key per segment
-  const chartData = (generationData.get(0)?.hourly ?? []).map((h, i) => {
-    const point: Record<string, string | number> = { time: h.timeLabel }
+  // Build chart data — one point per daylight hour, one key per segment. The
+  // directional curves are 24h arrays (index = hour); we plot the daylight band.
+  const HOURS = Array.from({ length: 14 }, (_, i) => i + 5) // 05:00 → 18:00
+  const chartData = HOURS.map((hour) => {
+    const point: Record<string, string | number> = { time: `${hour}:00` }
     segments.forEach((seg, idx) => {
-      point[seg.label] = generationData.get(idx)?.hourly[i]?.generation_kw ?? 0
+      point[seg.label] = directional[idx]?.hourly[hour] ?? 0
     })
     return point
   })
+
+  // Per-segment peak (kW + hour) read off the directional curve for the cards.
+  const peakOf = (idx: number): { kw: number; time: string } => {
+    const hourly = directional[idx]?.hourly ?? []
+    let peakKw = 0
+    let peakHour = 12
+    hourly.forEach((kw, h) => { if (kw > peakKw) { peakKw = kw; peakHour = h } })
+    return { kw: Math.round(peakKw * 100) / 100, time: `${String(peakHour).padStart(2, '0')}:30` }
+  }
 
   const seasonLabels: Record<Season, string> = { summer: '☀ Summer', average: '◑ Average', winter: '❄ Winter' }
 
@@ -80,23 +99,30 @@ export function GenerationChart({ segments, panelWatts }: Props) {
             </LineChart>
           </ResponsiveContainer>
 
-          {/* Per-segment daily summary cards */}
+          {/* Per-segment daily summary cards — per-string directional estimate */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {segments.map((seg, idx) => {
-              const d = generationData.get(idx)
+              const d = directional[idx]
               if (!d) return null
+              const peak = peakOf(idx)
               return (
                 <div key={idx} className="p-2.5 rounded-lg border border-border bg-muted/40 text-xs flex flex-col gap-1">
                   <div className="flex items-center gap-1.5 font-semibold">
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: segmentColor(seg.azimuth) }} />
                     {seg.label} · {seg.panelCount}p
                   </div>
-                  <div className="text-muted-foreground">Peak <span className="font-medium text-foreground">{d.peak_kw} kW</span> @ {d.peak_time}</div>
-                  <div className="text-muted-foreground">Daily est. <span className="font-medium text-foreground">{d.daily_kwh} kWh</span></div>
+                  <div className="text-muted-foreground">{d.orientation}-facing · peaks {peak.time}</div>
+                  <div className="text-muted-foreground">Peak <span className="font-medium text-foreground">{peak.kw} kW</span></div>
+                  <div className="text-muted-foreground">Daily est. <span className="font-medium text-foreground">{d.dailyKwh} kWh</span></div>
                 </div>
               )
             })}
           </div>
+
+          {/* Honest caveat — these per-direction curves are a modelled estimate. */}
+          <p className="text-[11px] text-muted-foreground">
+            Per-string curves are a <span className="font-medium">modelled estimate</span> — east peaks mid-morning, west mid-afternoon, north at midday and yields the most over a year. First-pass directional model for Gauteng, not a ray-traced shading study.
+          </p>
         </>
       ) : (
         /* Monthly table */

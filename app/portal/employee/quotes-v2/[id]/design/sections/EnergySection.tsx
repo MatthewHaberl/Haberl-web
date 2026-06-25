@@ -3,10 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   resolveEnergy, ENERGY_SOURCE_LABEL, seasonalMonthly, MONTH_LABELS,
-  type CurvePreset, type EnergyMode,
+  type CurvePreset, type EnergyMode, type EnergyProfileField,
 } from '@/lib/solar/system-design'
+import { HOURLY_BAR_COLOR } from '@/lib/solar/canvas-theme'
 import { useDesign } from '../DesignProvider'
 import { SectionCard, NumberField, EmptyHint } from '../section-ui'
+
+const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const WEEK_LABELS = ['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4', 'Wk 5']
 
 const TABS: Array<{ mode: EnergyMode; label: string }> = [
   { mode: 'daily', label: 'Daily' },
@@ -64,27 +68,41 @@ function niceCeil(x: number): number {
   return step * pow
 }
 
-/** Compact kW label for the tiny per-bar readout: 1, 0.5 → ".5", 2.45 → "2.5". */
-function fmtKw(v: number): string {
+/** Compact value label for the per-bar readout: 1, 0.5 → ".5", 2.45 → "2.5". */
+function fmtCell(v: number): string {
   if (v >= 10) return Math.round(v).toString()
   const s = (Math.round(v * 10) / 10).toString() // one decimal at most
   return s.startsWith('0.') ? s.slice(1) : s      // ".5" reads cleaner than "0.5"
 }
 
-/** Colour options for the hourly bars — pick one live; we can persist the chosen one. */
-const BAR_COLORS: Array<{ key: string; label: string; from: string; to: string }> = [
-  { key: 'solar', label: 'Solar amber', from: '#d97706', to: '#fbbf24' },
-  { key: 'teal', label: 'Teal', from: '#0f766e', to: '#2dd4bf' },
-  { key: 'ocean', label: 'Ocean blue', from: '#1d4ed8', to: '#38bdf8' },
-  { key: 'grape', label: 'Grape', from: '#6d28d9', to: '#a78bfa' },
-]
+/** A bar colour derived from the single canvas-theme amber: a darker base for the
+ *  gradient foot, the theme colour for the cap. One colour, no per-chart picker. */
+const BAR_GRADIENT = `linear-gradient(to top, ${HOURLY_BAR_COLOR}cc, ${HOURLY_BAR_COLOR})`
 
-/** Draggable 24-hour bar chart. Drag a bar up/down to set that hour's kW. */
-function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: number, value: number) => void }) {
+/** Reusable N-cell profile editor (item 40). Drag a bar up/down to set a cell, or
+ *  type the value in the paired number grid below — both stay bound to `values`.
+ *  Generalised from the original 24-hour hourly chart: pass any cell count via
+ *  `values`, a `unit`, a per-cell `cellLabel`, optional axis `ticks`, and a grid
+ *  column count so weekly (7), monthly (4–5), annual (12) and hourly (24) all share
+ *  the exact same drag + numeric editing UX. */
+function ProfileEditor({
+  values, onSet, unit, cellLabel, ticks, gridCols = 2, hint,
+}: {
+  values: number[]
+  onSet: (index: number, value: number) => void
+  unit: string
+  /** Long label for the bar tooltip + a short axis tick, per cell index. */
+  cellLabel: (i: number) => string
+  /** Optional evenly-spaced axis labels under the bars (e.g. clock hours). When
+   *  omitted, each cell gets a short label drawn beneath it instead. */
+  ticks?: string[]
+  /** Numeric-grid column count; cells flow down each column in order. */
+  gridCols?: number
+  hint?: string
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState(false)
-  const [colorKey, setColorKey] = useState(BAR_COLORS[0].key)
-  const color = BAR_COLORS.find((c) => c.key === colorKey) ?? BAR_COLORS[0]
+  const count = values.length
   const maxScale = useMemo(() => niceCeil(Math.max(...values, 0.5)), [values])
 
   const apply = useCallback((clientX: number, clientY: number) => {
@@ -92,9 +110,9 @@ function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: num
     if (!el) return
     const r = el.getBoundingClientRect()
     const frac = Math.min(1, Math.max(0, (r.bottom - clientY) / r.height))
-    const hour = Math.min(23, Math.max(0, Math.floor(((clientX - r.left) / r.width) * 24)))
-    onSet(hour, +(frac * maxScale).toFixed(2))
-  }, [maxScale, onSet])
+    const index = Math.min(count - 1, Math.max(0, Math.floor(((clientX - r.left) / r.width) * count)))
+    onSet(index, +(frac * maxScale).toFixed(2))
+  }, [maxScale, onSet, count])
 
   useEffect(() => {
     if (!dragging) return
@@ -105,26 +123,14 @@ function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: num
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
   }, [dragging, apply])
 
+  // Lay the numeric grid out column-major so each column holds a contiguous run.
+  const perCol = Math.ceil(count / gridCols)
+
   return (
     <div className="select-none">
       <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-        <span className="font-mono">{maxScale.toFixed(maxScale < 1 ? 2 : 1)} kW</span>
-        <div className="flex items-center gap-2">
-          <span className="hidden sm:inline">Drag the bars to shape the day</span>
-          <div className="flex items-center gap-1" title="Bar colour">
-            {BAR_COLORS.map((c) => (
-              <button
-                key={c.key}
-                type="button"
-                aria-label={c.label}
-                title={c.label}
-                onClick={() => setColorKey(c.key)}
-                className={`h-3.5 w-3.5 rounded-full transition ${colorKey === c.key ? 'ring-2 ring-foreground/50 ring-offset-1' : 'ring-1 ring-border'}`}
-                style={{ background: `linear-gradient(to top, ${c.from}, ${c.to})` }}
-              />
-            ))}
-          </div>
-        </div>
+        <span className="font-mono">{maxScale.toFixed(maxScale < 1 ? 2 : 1)} {unit}</span>
+        {hint && <span className="hidden sm:inline">{hint}</span>}
       </div>
       <div
         ref={ref}
@@ -134,31 +140,27 @@ function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: num
       >
         {/* midline guide */}
         <div className="pointer-events-none absolute inset-x-1 top-1/2 border-t border-dashed border-border/70" />
-        {values.map((v, h) => {
+        {values.map((v, i) => {
           const frac = Math.min(1, v / maxScale)
           const inside = frac > 0.16 // tall enough to hold the label inside the bar
           return (
             <div
-              key={h}
+              key={i}
               className="relative flex h-full flex-1 flex-col items-center justify-end"
-              title={`${String(h).padStart(2, '0')}:00 — ${v.toFixed(2)} kW`}
+              title={`${cellLabel(i)} — ${v.toFixed(2)} ${unit}`}
             >
               {v > 0 && !inside && (
-                <span className="pointer-events-none mb-0.5 font-mono text-[7px] leading-none tabular-nums text-muted-foreground">
-                  {fmtKw(v)}
+                <span className="pointer-events-none mb-0.5 font-mono text-[10px] leading-none tabular-nums text-muted-foreground">
+                  {fmtCell(v)}
                 </span>
               )}
               <div
                 className="relative w-full rounded-t transition-[height] hover:brightness-110"
-                style={{
-                  height: `${frac * 100}%`,
-                  minHeight: v > 0 ? 2 : 0,
-                  background: `linear-gradient(to top, ${color.from}, ${color.to})`,
-                }}
+                style={{ height: `${frac * 100}%`, minHeight: v > 0 ? 2 : 0, background: BAR_GRADIENT }}
               >
                 {v > 0 && inside && (
-                  <span className="pointer-events-none absolute inset-x-0 top-px text-center font-mono text-[7px] leading-none tabular-nums text-white/95">
-                    {fmtKw(v)}
+                  <span className="pointer-events-none absolute inset-x-0 top-px text-center font-mono text-[10px] font-semibold leading-none tabular-nums text-white/95">
+                    {fmtCell(v)}
                   </span>
                 )}
               </div>
@@ -166,8 +168,40 @@ function HourlyBarChart({ values, onSet }: { values: number[]; onSet: (hour: num
           )
         })}
       </div>
-      <div className="mt-0.5 flex justify-between font-mono text-[9px] text-muted-foreground">
-        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span>
+      {ticks ? (
+        <div className="mt-0.5 flex justify-between font-mono text-[9px] text-muted-foreground">
+          {ticks.map((t, i) => <span key={i}>{t}</span>)}
+        </div>
+      ) : (
+        <div className="mt-0.5 flex gap-px">
+          {values.map((_, i) => (
+            <span key={i} className="flex-1 text-center font-mono text-[9px] text-muted-foreground">{cellLabel(i)}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Paired numeric grid — column-major so labels sit beside their value. */}
+      <div className="mt-3 mx-auto grid max-w-md gap-x-6 gap-y-1" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
+        {Array.from({ length: gridCols }).map((_, col) => (
+          <div key={col} className="flex flex-col gap-1">
+            {values.slice(col * perCol, col * perCol + perCol).map((v, idx) => {
+              const i = col * perCol + idx
+              return (
+                <label key={i} className="flex items-center justify-center gap-1.5">
+                  <span className="w-9 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground">{cellLabel(i)}</span>
+                  <input
+                    type="number" min={0} step="any"
+                    value={v ? +v.toFixed(2) : ''}
+                    placeholder="0"
+                    onChange={(ev) => onSet(i, ev.target.value === '' ? 0 : Number(ev.target.value))}
+                    className="h-7 w-16 rounded border border-border bg-background px-1.5 text-xs text-center tabular-nums focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  />
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{unit}</span>
+                </label>
+              )
+            })}
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -188,6 +222,19 @@ export function EnergySection() {
     } else {
       dispatch({ type: 'setHour', hour, value })
     }
+  }
+
+  // Shaping overlays (items 37–40). Each shares the SAME drag + numeric editing as
+  // the hourly chart; they redistribute the total without changing it.
+  const PROFILE_LENGTH: Record<EnergyProfileField, number> = { weekly: 7, monthlyProfile: 5, annualProfile: 12 }
+  function profileValues(field: EnergyProfileField): number[] {
+    const arr = e[field]
+    const len = PROFILE_LENGTH[field]
+    if (Array.isArray(arr) && arr.length) return Array.from({ length: len }, (_, i) => arr[i] ?? 0)
+    return new Array(len).fill(0)
+  }
+  function setProfileCell(field: EnergyProfileField, index: number, value: number) {
+    dispatch({ type: 'setProfileCell', field, index, value })
   }
 
   const monthlyForGraph = e.monthlyKwh && e.monthlyKwh > 0
@@ -299,40 +346,94 @@ export function EnergySection() {
             )}
           </div>
 
-          {/* Drag-to-edit bar chart — values stay bound to the inputs below */}
-          <HourlyBarChart values={gridValues} onSet={setCell} />
-
-          {/* Numeric grid: 00:00–11:00 left, 12:00–23:00 right — compact + centred so each
-              hour label sits right beside its value rather than spread across the full width */}
-          <div className="mt-3 mx-auto grid max-w-md grid-cols-2 gap-x-6 gap-y-1">
-            {[0, 1].map((col) => (
-              <div key={col} className="flex flex-col gap-1">
-                {gridValues.slice(col * 12, col * 12 + 12).map((v: number, idx: number) => {
-                  const h = col * 12 + idx
-                  return (
-                    <label key={h} className="flex items-center justify-center gap-1.5">
-                      <span className="w-9 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground">{String(h).padStart(2, '0')}:00</span>
-                      <input
-                        type="number" min={0} step="any"
-                        value={v ? +v.toFixed(2) : ''}
-                        placeholder="0"
-                        onChange={(ev) => setCell(h, ev.target.value === '' ? 0 : Number(ev.target.value))}
-                        className="h-7 w-16 rounded border border-border bg-background px-1.5 text-xs text-center tabular-nums focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                      />
-                      <span className="shrink-0 text-[10px] text-muted-foreground">kW</span>
-                    </label>
-                  )
-                })}
-              </div>
-            ))}
-          </div>
+          {/* Drag-to-edit bar chart + paired numeric grid — same reusable editor used
+              by the weekly/monthly/annual shaping profiles below (item 40). */}
+          <ProfileEditor
+            values={gridValues}
+            onSet={setCell}
+            unit="kW"
+            cellLabel={(h) => `${String(h).padStart(2, '0')}:00`}
+            ticks={['00:00', '06:00', '12:00', '18:00', '24:00']}
+            gridCols={2}
+            hint="Drag the bars to shape the day"
+          />
         </SectionCard>
       )}
 
-      {/* Monthly → seasonal year graph */}
+      {/* Weekly → day-of-week profile (item 37) */}
+      {e.mode === 'weekly' && (
+        <SectionCard
+          title="Day-of-week profile"
+          subtitle="Drag or type to shape usage across the week — heavier weekdays, lighter weekends, however it falls."
+          action={
+            e.weekly != null ? (
+              <button type="button" onClick={() => dispatch({ type: 'clearProfile', field: 'weekly' })} className="text-xs text-muted-foreground hover:text-foreground underline">
+                Clear profile
+              </button>
+            ) : undefined
+          }
+        >
+          <ProfileEditor
+            values={profileValues('weekly')}
+            onSet={(i, v) => setProfileCell('weekly', i, v)}
+            unit="kWh"
+            cellLabel={(i) => DOW_LABELS[i]}
+            gridCols={2}
+            hint="Drag the bars to shape the week"
+          />
+        </SectionCard>
+      )}
+
+      {/* Monthly → seasonal year graph + per-week profile (item 38) */}
       {e.mode === 'monthly' && (
-        <SectionCard title="Seasonal spread" subtitle="How the monthly figure typically rises in winter and dips in summer.">
-          <SeasonalGraph avgMonthly={monthlyForGraph} />
+        <>
+          <SectionCard title="Seasonal spread" subtitle="How the monthly figure typically rises in winter and dips in summer.">
+            <SeasonalGraph avgMonthly={monthlyForGraph} />
+          </SectionCard>
+          <SectionCard
+            title="Per-week profile"
+            subtitle="Shape usage across the weeks of a month — leave flat for an even spread."
+            action={
+              e.monthlyProfile != null ? (
+                <button type="button" onClick={() => dispatch({ type: 'clearProfile', field: 'monthlyProfile' })} className="text-xs text-muted-foreground hover:text-foreground underline">
+                  Clear profile
+                </button>
+              ) : undefined
+            }
+          >
+            <ProfileEditor
+              values={profileValues('monthlyProfile')}
+              onSet={(i, v) => setProfileCell('monthlyProfile', i, v)}
+              unit="kWh"
+              cellLabel={(i) => WEEK_LABELS[i]}
+              gridCols={1}
+              hint="Drag the bars to shape the month"
+            />
+          </SectionCard>
+        </>
+      )}
+
+      {/* Annual → 12-month seasonal profile (item 39) */}
+      {e.mode === 'annual' && (
+        <SectionCard
+          title="Monthly profile"
+          subtitle="Shape usage across the year — seasonal highs and lows. Leave flat for an even spread."
+          action={
+            e.annualProfile != null ? (
+              <button type="button" onClick={() => dispatch({ type: 'clearProfile', field: 'annualProfile' })} className="text-xs text-muted-foreground hover:text-foreground underline">
+                Clear profile
+              </button>
+            ) : undefined
+          }
+        >
+          <ProfileEditor
+            values={profileValues('annualProfile')}
+            onSet={(i, v) => setProfileCell('annualProfile', i, v)}
+            unit="kWh"
+            cellLabel={(i) => MONTH_LABELS[i]}
+            gridCols={3}
+            hint="Drag the bars to shape the year"
+          />
         </SectionCard>
       )}
     </div>

@@ -253,3 +253,108 @@ export function calculateMonthlyBreakdown(
 
   return { segments: segmentResults, totals, annualTotal: Math.round(cumulativeTotal) }
 }
+
+// ── Per-string directional generation (empirical, first-pass) ───────────────────
+//
+// NOTE: This is a deliberately simple, *empirical* directional model — NOT a
+// ray-traced or physics-derived one. It gives the chart layer per-string daily
+// curves whose SHAPE differs by compass direction (azimuth) and whose total
+// yield is scaled by a per-azimuth annual factor. Defensible rule-of-thumb for
+// Gauteng (~26°S, Southern Hemisphere):
+//   • North-facing peaks at solar noon and yields the most over a year (1.00).
+//   • East-facing peaks mid-morning, West-facing peaks mid-afternoon; both give
+//     up some annual yield vs north (~0.88) because the panel only sees the sun
+//     square-on for half the day.
+//   • South-facing is the worst in the S. hemisphere (~0.62) and stays flat.
+// The 24h shape is a Gaussian-style bell centred on the per-azimuth peak hour,
+// normalised so that Σ(hourly) = dailyKwh. Annual = dailyKwh × 365.
+
+export interface StringDirectionalGeneration {
+  /** PanelGroup id this curve belongs to. */
+  groupId: string
+  /** Roof azimuth in degrees (0 = N, 90 = E, 180 = S, 270 = W). */
+  azimuth: number
+  /** Compass label derived from the azimuth (North / East / South / West / n°). */
+  orientation: string
+  /** Estimated kWh generated on an average day. */
+  dailyKwh: number
+  /** dailyKwh × 365. */
+  annualKwh: number
+  /** 24-element array (index = hour 0-23) of kW, summing to dailyKwh. */
+  hourly: number[]
+}
+
+// Per-azimuth annual-yield factor (relative to a perfect north-facing array = 1.0).
+// First-pass empirical values for Gauteng — replace with measured data later.
+function azimuthAnnualFactor(azimuth: number): number {
+  const a = ((azimuth % 360) + 360) % 360
+  // Angular distance from due north (0°), 0-180°.
+  const offNorth = a > 180 ? 360 - a : a
+  if (offNorth <= 20) return 1.00          // North
+  if (offNorth >= 160) return 0.62         // South
+  if (offNorth >= 70 && offNorth <= 110) return 0.88 // East / West
+  // Linear blend across the in-between sectors.
+  if (offNorth < 70) return 1.00 - (offNorth - 20) * (1.00 - 0.88) / 50
+  return 0.88 - (offNorth - 110) * (0.88 - 0.62) / 50
+}
+
+// Per-azimuth peak hour: north midday, east morning, west afternoon.
+function azimuthPeakHour(azimuth: number): number {
+  const a = ((azimuth % 360) + 360) % 360
+  // Treat east (90°) → ~9:30, north (0/360°) → 12:00, west (270°) → ~14:30.
+  // Map the east-west swing onto a ±2.5h shift around solar noon.
+  if (a <= 180) {
+    // Eastern half (0 → 180): earlier as we rotate toward east (90°).
+    const eastness = a <= 90 ? a / 90 : (180 - a) / 90 // 0 at N/S, 1 at E
+    return 12 - 2.5 * eastness
+  }
+  // Western half (180 → 360): later as we rotate toward west (270°).
+  const westness = a <= 270 ? (a - 180) / 90 : (360 - a) / 90 // 0 at S/N, 1 at W
+  return 12 + 2.5 * westness
+}
+
+/**
+ * Per-string daily generation curves that DIFFER BY DIRECTION (azimuth).
+ *
+ * Uses an empirical per-azimuth daily-shape + annual-yield factor (see notes
+ * above) rather than the hourly physics model in calculateStringGeneration —
+ * the two coexist; this one is for honest "east peaks morning / west peaks
+ * afternoon / north peaks midday & yields most" charting, flagged as first-pass.
+ *
+ * Returns one entry per group, in input order. Groups with a null azimuth are
+ * treated as north-facing (the most favourable orientation) for shape purposes.
+ */
+export function calculateGenerationByString(
+  groups: Array<{ id: string; panelCount: number; panelWatts: number; azimuth: number | null; pitch?: number | null }>,
+  season: Season = 'average',
+): StringDirectionalGeneration[] {
+  return groups.map((g) => {
+    const azimuth = g.azimuth ?? 0 // default north-facing
+    // Anchor the daily kWh on the existing physics model so totals stay aligned,
+    // then re-shape the hourly curve with the empirical directional bell.
+    const base = calculateStringGeneration(
+      g.panelCount, g.panelWatts, azimuth, g.pitch ?? 15, season,
+    )
+    const yieldFactor = azimuthAnnualFactor(azimuth)
+    const dailyKwh = base.daily_kwh * yieldFactor
+    const peakHour = azimuthPeakHour(azimuth)
+
+    // Gaussian-style bell over 24h, σ≈2.6h — daylight-weighted, zero overnight.
+    const sigma = 2.6
+    const raw = Array.from({ length: 24 }, (_, h) => {
+      if (h < 5 || h > 19) return 0
+      return Math.exp(-((h - peakHour) ** 2) / (2 * sigma * sigma))
+    })
+    const rawSum = raw.reduce((s, v) => s + v, 0) || 1
+    const hourly = raw.map((v) => Math.round((v / rawSum) * dailyKwh * 1000) / 1000)
+
+    return {
+      groupId: g.id,
+      azimuth,
+      orientation: orientationLabel(azimuth),
+      dailyKwh: Math.round(dailyKwh * 100) / 100,
+      annualKwh: Math.round(dailyKwh * 365),
+      hourly,
+    }
+  })
+}

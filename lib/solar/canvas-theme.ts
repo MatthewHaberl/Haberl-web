@@ -37,6 +37,14 @@ export const CIRCUIT_THEME: Record<CircuitLayer, CircuitStyle> = {
   grid:    { label: 'Grid',    stroke: '#7c3aed', fill: '#7c3aed' },                                  // violet
 }
 
+// ── Energy chart accent ───────────────────────────────────────────────────────
+// Bar colour for the hourly energy-balance bars. Deliberately NOT the plain
+// `primary` token — a brand-aligned amber that stays legible over the card and
+// reads as "energy/production" next to the PV-orange circuit layer.
+// Overridable later via the company_settings.canvas_colors override under the
+// 'hourlyBars' key (resolver wiring TBD — same pattern as the layer overrides above).
+export const HOURLY_BAR_COLOR = '#f59e0b' // amber-500
+
 // ── Node → layer colour map ───────────────────────────────────────────────────
 // Maps canvas node `type` keys to a circuit colour by reusing CIRCUIT_THEME, so
 // sld-nodes can import one source instead of its own CLR map. Unmapped/auxiliary

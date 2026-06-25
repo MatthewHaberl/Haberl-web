@@ -6,7 +6,7 @@ import { type MonitoringDevice } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
 import { ProductPicker } from '../ProductPicker'
-import { SectionCard, ReorderButtons, LOCKED_FIELD, LockNote } from '../section-ui'
+import { SectionCard, ReorderButtons, SearchableSelect, LOCKED_FIELD, LockNote } from '../section-ui'
 
 // Comms media (free metadata on the device — see research brief).
 const COMMS_TYPES: Array<{ value: string; label: string }> = [
@@ -17,6 +17,7 @@ const COMMS_TYPES: Array<{ value: string; label: string }> = [
   { value: 'can', label: 'CAN' },
   { value: 've-can', label: 'VE.Can' },
   { value: 've-direct', label: 'VE.Direct' },
+  { value: 'other', label: 'Other…' },
 ]
 
 // Brands that ship monitoring in the box → default to a bundled, no-cost device.
@@ -48,6 +49,24 @@ export function MonitoringSection() {
   const brand = inverterItem?.brand
   const bundling = bundlingFor(brand)
   const inverterLabel = unit?.model || inverterItem?.description || 'Inverter'
+
+  // "On device" targets (item 52): any node the device can hang off — an inverter, a
+  // monitoring gateway already added, or a panel string (for SolarEdge optimisers).
+  // Node ids mirror designToFlow: inverters fall on the representative node ('inverter'),
+  // gateways are 'monitoring-<id>', panel strings 'panel-<i>'.
+  const deviceTargets = useMemo(() => {
+    const opts: Array<{ value: string; label: string }> = []
+    design.inverters.forEach((u, i) => {
+      opts.push({ value: i === 0 ? 'inverter' : `inverter-${i}`, label: u.model || `Inverter ${i + 1}` })
+    })
+    monitoring.forEach((m) => {
+      opts.push({ value: `monitoring-${m.id}`, label: m.label || 'Gateway' })
+    })
+    design.panels.forEach((p, i) => {
+      opts.push({ value: `panel-${i}`, label: p.label || `String ${i + 1}` })
+    })
+    return opts
+  }, [design.inverters, design.panels, monitoring])
 
   function up(id: string, patch: Partial<MonitoringDevice>) {
     dispatch({ type: 'updateMonitoring', id, patch })
@@ -123,13 +142,24 @@ export function MonitoringSection() {
                     </select>
                   </label>
                   <label className="flex flex-col gap-0.5">
-                    <span className="text-[10px] text-muted-foreground">On inverter</span>
-                    <select value={m.inverterId ?? ''} onChange={(e) => up(m.id, { inverterId: e.target.value || null })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">
-                      <option value="">{inverterLabel}</option>
-                    </select>
+                    <span className="text-[10px] text-muted-foreground">On device</span>
+                    <SearchableSelect
+                      value={m.targetId ?? null}
+                      onChange={(v) => up(m.id, { targetId: v })}
+                      // Can't hang a device off itself.
+                      options={deviceTargets.filter((o) => o.value !== `monitoring-${m.id}`)}
+                      noneLabel={inverterLabel}
+                      placeholder={inverterLabel}
+                    />
                   </label>
                   <ProductPicker items={items} category="other" label="Product" value={m.catalogId} onChange={(v) => pick(m, v)} noneLabel="None (quote)" />
                 </div>
+                {m.commsType === 'other' && (
+                  <label className="mt-2 flex flex-col gap-0.5">
+                    <span className="text-[10px] text-muted-foreground">Comms detail</span>
+                    <input value={m.commsOther ?? ''} onChange={(e) => up(m.id, { commsOther: e.target.value })} className="h-7 rounded border border-border bg-background px-2 text-[11px]" placeholder="e.g. GX Touch 50 → Cerbo GX via HDMI+USB" />
+                  </label>
+                )}
                 {m.role === 'bundled' && (
                   <p className="mt-1.5 text-[10px] text-muted-foreground">Bundled — no separate cost line unless a product is picked.</p>
                 )}

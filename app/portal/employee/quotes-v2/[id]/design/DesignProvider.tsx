@@ -21,11 +21,13 @@ import {
 } from '@/lib/solar/system-design'
 import type {
   BatteryBank, AcCombiner, ExtraComponent, ExtraSubComponent,
-  BankCable, MonitoringDevice, DataLink,
+  BankCable, MonitoringDevice, DataLink, DcComponent, UserEdge,
+  EnergyProfileField,
 } from '@/lib/solar/system-design'
 import {
   defaultAcCombiner, defaultExtra, defaultExtraSubComponent,
   defaultBankCable, defaultMonitoring, defaultDataLink,
+  defaultDcComponent, defaultUserEdge,
 } from '@/lib/solar/system-design'
 
 // ── Actions ──────────────────────────────────────────────────────────────────
@@ -35,6 +37,9 @@ export type DesignAction =
   | { type: 'setEnergy'; patch: Partial<EnergyProfile> }
   | { type: 'setHour'; hour: number; value: number }
   | { type: 'clearHourly' }
+  // Energy shaping overlays (items 37–40)
+  | { type: 'setProfileCell'; field: EnergyProfileField; index: number; value: number }
+  | { type: 'clearProfile'; field: EnergyProfileField }
   | { type: 'addPanelGroup'; group?: Partial<PanelGroup> }
   | { type: 'updatePanelGroup'; id: string; patch: Partial<PanelGroup> }
   | { type: 'removePanelGroup'; id: string }
@@ -49,6 +54,10 @@ export type DesignAction =
   | { type: 'addCombiner' }
   | { type: 'updateCombiner'; id: string; patch: Partial<DcCombiner> }
   | { type: 'removeCombiner'; id: string }
+  // DC combiner internals (item 44) — mirror the AC component actions
+  | { type: 'addDcComponent'; combinerId: string; kind?: DcComponent['kind']; label?: string }
+  | { type: 'updateDcComponent'; combinerId: string; componentId: string; patch: Partial<DcComponent> }
+  | { type: 'removeDcComponent'; combinerId: string; componentId: string }
   | { type: 'setBank'; patch: Partial<BatteryBank> }
   | { type: 'addAcCombiner' }
   | { type: 'updateAcCombiner'; id: string; patch: Partial<AcCombiner> }
@@ -80,6 +89,10 @@ export type DesignAction =
   | { type: 'reorderDataLink'; from: number; to: number }
   | { type: 'reorderCombinerComponent'; combinerId: string; list: 'inputStringIds' | 'outputs'; from: number; to: number }
   | { type: 'reorderAcComponent'; combinerId: string; from: number; to: number }
+  | { type: 'reorderDcComponent'; combinerId: string; from: number; to: number }
+  // User-drawn cables (item 53) — the canvas wires onConnect / onEdgesDelete here.
+  | { type: 'addUserEdge'; edge: Partial<UserEdge> & Pick<UserEdge, 'source' | 'target'> }
+  | { type: 'removeUserEdge'; id: string }
   // Diagram-origin — both forms and the canvas dispatch the same reducer.
   | { type: 'moveNode'; id: string; position: NodePosition }
   | { type: 'applyNodePatch'; id: string; patch: Record<string, unknown> }
@@ -152,6 +165,13 @@ function applyNodePatch(d: SystemDesign, id: string, patch: Record<string, unkno
       if ('model' in patch) next.model = String(patch.model ?? '')
       if ('kw' in patch) next.kw = Math.max(0, n(patch.kw))
       if ('phases' in patch) next.phases = n(patch.phases) >= 3 ? 3 : 1
+      // Items 50/51: phase config + capability toggles edited on the diagram.
+      if ('phaseConfig' in patch) {
+        next.phaseConfig = patch.phaseConfig as InverterUnit['phaseConfig']
+        if (next.phaseConfig) next.phases = next.phaseConfig === 'three_phase' ? 3 : 1
+      }
+      if ('acceptsPv' in patch) next.acceptsPv = !!patch.acceptsPv
+      if ('acceptsBattery' in patch) next.acceptsBattery = !!patch.acceptsBattery
       return next
     })
     return { ...d, inverters }
@@ -196,6 +216,19 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
 
     case 'clearHourly':
       return { ...d, energy: { ...d.energy, hourly: null } }
+
+    // ── Energy shaping overlays (items 37–40) ───────────────────────────────────
+    case 'setProfileCell': {
+      const lengths: Record<EnergyProfileField, number> = { weekly: 7, monthlyProfile: 5, annualProfile: 12 }
+      if (action.index < 0 || action.index >= lengths[action.field]) return d
+      const current = (d.energy[action.field] as number[] | null | undefined) ?? []
+      const next = current.length ? current.slice() : new Array(lengths[action.field]).fill(0)
+      next[action.index] = Math.max(0, action.value)
+      return { ...d, energy: { ...d.energy, [action.field]: next } }
+    }
+
+    case 'clearProfile':
+      return { ...d, energy: { ...d.energy, [action.field]: null } }
 
     case 'addPanelGroup':
       return { ...d, panels: [...d.panels, newPanelGroup(action.group)], layout: clearPanelLayout(d.layout) }
@@ -276,6 +309,39 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
 
     case 'removeCombiner':
       return { ...d, dcCombiners: d.dcCombiners.filter((c) => c.id !== action.id) }
+
+    // ── DC combiner internals (item 44) — mirror the AC component actions ────────
+    case 'addDcComponent':
+      return {
+        ...d,
+        dcCombiners: d.dcCombiners.map((c) => {
+          if (c.id !== action.combinerId) return c
+          const comp = defaultDcComponent(action.kind, [])
+          if (action.label) comp.label = action.label
+          return { ...c, components: [...(c.components ?? []), comp] }
+        }),
+      }
+
+    case 'updateDcComponent':
+      return {
+        ...d,
+        dcCombiners: d.dcCombiners.map((c) => c.id === action.combinerId
+          ? { ...c, components: (c.components ?? []).map((k) => k.id === action.componentId ? { ...k, ...action.patch } : k) }
+          : c),
+      }
+
+    case 'removeDcComponent':
+      return {
+        ...d,
+        dcCombiners: d.dcCombiners.map((c) => c.id === action.combinerId
+          ? {
+              ...c,
+              components: (c.components ?? [])
+                .filter((k) => k.id !== action.componentId)
+                .map((k) => ({ ...k, fedFrom: (k.fedFrom ?? []).map((f) => (f === action.componentId ? '' : f)) })),
+            }
+          : c),
+      }
 
     case 'setBank':
       return { ...d, bank: { ...d.bank, ...action.patch } }
@@ -400,6 +466,27 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
         acCombiners: d.acCombiners.map((c) => c.id === action.combinerId
           ? { ...c, components: reorder(c.components, action.from, action.to) }
           : c),
+      }
+
+    case 'reorderDcComponent':
+      return {
+        ...d,
+        dcCombiners: d.dcCombiners.map((c) => c.id === action.combinerId
+          ? { ...c, components: reorder(c.components ?? [], action.from, action.to) }
+          : c),
+      }
+
+    // ── User-drawn cables (item 53) ─────────────────────────────────────────────
+    case 'addUserEdge':
+      return {
+        ...d,
+        layout: { ...d.layout, userEdges: [...(d.layout.userEdges ?? []), { ...defaultUserEdge(), ...action.edge }] },
+      }
+
+    case 'removeUserEdge':
+      return {
+        ...d,
+        layout: { ...d.layout, userEdges: (d.layout.userEdges ?? []).filter((u) => u.id !== action.id) },
       }
 
     case 'moveNode':

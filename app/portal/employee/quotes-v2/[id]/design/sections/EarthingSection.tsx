@@ -32,6 +32,9 @@ export function EarthingSection() {
     ...(design.batteries.length ? [{ id: 'battery', label: 'Battery bank' }] : []),
     { id: 'grid', label: 'Grid supply' },
     ...design.panels.map((_, i) => ({ id: `panel-${i}`, label: `String ${i + 1}` })),
+    // Extra/additional devices carry earth handles on the diagram (item 54) — let an
+    // earth run anchor to one (e.g. bond the DC isolator or SPD enclosure).
+    ...design.extras.map((x) => ({ id: x.id, label: `◇ ${x.label}` })),
     ...e.bars.map((b) => ({ id: b.id, label: `▣ ${b.label}` })),
     ...e.electrodes.map((el) => ({ id: el.id, label: `⏚ ${el.label}` })),
   ]

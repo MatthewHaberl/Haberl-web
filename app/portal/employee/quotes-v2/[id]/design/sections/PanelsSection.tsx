@@ -5,7 +5,7 @@ import { PSH_GAUTENG, SYSTEM_EFFICIENCY } from '@/lib/solar/quote-calculator'
 import { panelGroupKwp, DIRECTIONS, ROOF_TYPES } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
-import { SectionCard, EmptyHint, LockNote, LOCKED_FIELD } from '../section-ui'
+import { SectionCard, EmptyHint, LockNote, LOCKED_FIELD, SearchableSelect } from '../section-ui'
 
 export function PanelsSection() {
   const { design, dispatch } = useDesign()
@@ -65,11 +65,13 @@ export function PanelsSection() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <label className="flex flex-col gap-1 md:col-span-2">
                     <span className="text-xs font-medium text-muted-foreground">Panel</span>
-                    <select
-                      value={g.catalogId ?? ''}
-                      disabled={loading}
-                      onChange={(ev) => {
-                        const item = panels.find((p) => p.id === ev.target.value)
+                    <SearchableSelect
+                      value={g.catalogId}
+                      noneLabel="Custom / unspecified"
+                      placeholder={loading ? 'Loading…' : 'Custom / unspecified'}
+                      options={panels.map((p) => ({ value: p.id, label: p.description }))}
+                      onChange={(v) => {
+                        const item = v == null ? undefined : panels.find((p) => p.id === v)
                         dispatch({
                           type: 'updatePanelGroup',
                           id: g.id,
@@ -78,13 +80,7 @@ export function PanelsSection() {
                             : { catalogId: null },
                         })
                       }}
-                      className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-                    >
-                      <option value="">Custom / unspecified</option>
-                      {panels.map((p) => (
-                        <option key={p.id} value={p.id}>{p.description}</option>
-                      ))}
-                    </select>
+                    />
                   </label>
 
                   <label className="flex flex-col gap-1">
@@ -151,6 +147,25 @@ export function PanelsSection() {
                             <option key={rt} value={rt}>{rt}</option>
                           ))}
                         </select>
+                      </label>
+                      <label className="flex flex-col gap-0.5">
+                        <span className="text-[11px]">Distance from combiner (m)</span>
+                        <input
+                          type="number" min={0} step={0.5} placeholder="e.g. 12"
+                          value={g.distanceFromCombinerM ?? ''}
+                          onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { distanceFromCombinerM: ev.target.value === '' ? undefined : Math.max(0, Number(ev.target.value) || 0) } })}
+                          className="h-8 w-28 rounded border border-border bg-background px-1.5 text-xs"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-0.5">
+                        <span className="text-[11px]">Jumpers (MC4 pairs)</span>
+                        <input
+                          type="number" min={0} step={1} placeholder="0"
+                          value={g.jumpers ?? ''}
+                          onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { jumpers: ev.target.value === '' ? undefined : Math.max(0, Math.round(Number(ev.target.value) || 0)) } })}
+                          className="h-8 w-28 rounded border border-border bg-background px-1.5 text-xs"
+                        />
+                        <span className="text-[10px] text-muted-foreground">For a string spanning two rows/roofs — adds MC4s.</span>
                       </label>
                     </div>
                   </details>

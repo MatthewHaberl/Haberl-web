@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { addPendingCatalogItem, byCategory } from './useCatalog'
+import { SearchableSelect } from './section-ui'
 
 /** Sentinel prefix for a custom "to-add" placeholder selection. The picker's
  *  `onChange` still emits `string | null` (the catalog id contract is unchanged),
@@ -80,13 +81,22 @@ export function ProductPicker({
     }
   }
 
+  // Map catalog items + the custom-add affordance into SearchableSelect options. The
+  // " (to add)" suffix marks freshly-created pending rows; the "+ Custom…" row keeps the
+  // CUSTOM_PREFIX sentinel so its onChange branch mirrors the old native-select flow.
+  // When a custom label is already selected, the affordance row reads " (pending)" so the
+  // closed control shows the placeholder name rather than a bare "+ Custom…".
+  const selectOptions = [
+    ...options.map((o) => ({ value: o.id, label: `${o.description}${o.pending ? ' (to add)' : ''}` })),
+    { value: CUSTOM_PREFIX, label: custom ? `${customLabel(value)} (pending)` : '+ Custom…' },
+  ]
+
   return (
     <label className={`flex flex-col gap-0.5 ${className}`}>
       {label && <span className="text-[10px] text-muted-foreground">{label}</span>}
-      <select
-        value={custom ? CUSTOM_PREFIX : (value ?? '')}
-        onChange={(e) => {
-          const v = e.target.value
+      <SearchableSelect
+        value={custom ? CUSTOM_PREFIX : value}
+        onChange={(v) => {
           if (v === CUSTOM_PREFIX) {
             // Defer emitting until a label is typed + confirmed; keep onChange(id|null) clean.
             setDraft('')
@@ -94,14 +104,11 @@ export function ProductPicker({
             return
           }
           setEditingCustom(false)
-          onChange(v === '' ? null : v)
+          onChange(v)
         }}
-        className="h-7 rounded border border-border bg-background px-1.5 text-[11px]"
-      >
-        <option value="">{noneLabel}</option>
-        {options.map((o) => <option key={o.id} value={o.id}>{o.description}{o.pending ? ' (to add)' : ''}</option>)}
-        <option value={CUSTOM_PREFIX}>+ Custom…</option>
-      </select>
+        options={selectOptions}
+        noneLabel={noneLabel}
+      />
       {showCustomInput && (
         <input
           type="text"

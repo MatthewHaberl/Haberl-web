@@ -46,7 +46,19 @@ export interface EnergyProfile {
   annualKwh: number | null
   /** Essential (backed-up) load in kW — basis for battery hours-of-storage. */
   essentialLoadKw: number | null
+  /** Shaping overlays the UI edits (items 37–40). They never change the TOTAL
+   *  (which still comes from dailyKwh/weeklyKwh/monthlyKwh/annualKwh) — they let
+   *  the user redistribute it. Empty/null = flat (no shaping). */
+  /** Relative weight per weekday, Mon..Sun (length 7). */
+  weekly?: number[] | null
+  /** Relative weight per week within a month (length 4 or 5). */
+  monthlyProfile?: number[] | null
+  /** Relative weight per month, Jan..Dec (length 12). */
+  annualProfile?: number[] | null
 }
+
+/** Which shaping-overlay array a profile-cell edit targets (items 37–40). */
+export type EnergyProfileField = 'weekly' | 'monthlyProfile' | 'annualProfile'
 
 export interface PanelGroup {
   id: string
@@ -62,6 +74,11 @@ export interface PanelGroup {
   pitch: number | null
   /** Mounting surface — Tile / IBR / Klip-lok / Concrete flat … (free metadata for now). */
   roofType: string
+  /** Run length from this string to its DC combiner / inverter, in metres (item 41). */
+  distanceFromCombinerM?: number
+  /** MC4 jumper pairs for a string spanning rows / roofs (item 42). Each pair is
+   *  two MC4 connectors (a male + female extension), costed in design-bom.ts. */
+  jumpers?: number
 }
 
 // 8-way compass → azimuth degrees (0 = North), matching generation-calculator.
@@ -81,6 +98,17 @@ export const ROOF_TYPES = [
   'Concrete (flat)', 'Slate', 'Fibre-cement', 'Ground mount', 'Other',
 ]
 
+/** Output topology of an inverter (item 50). `phases` stays derived from this for
+ *  back-compat: single_230 / american_120 / split_phase are 1-ish, three_phase is 3. */
+export type InverterPhaseConfig = 'single_230' | 'split_phase' | 'american_120' | 'three_phase'
+
+export const INVERTER_PHASE_CONFIGS: Array<{ value: InverterPhaseConfig; label: string; phases: 1 | 3 }> = [
+  { value: 'single_230', label: 'Single-phase 230V (L/N/E)', phases: 1 },
+  { value: 'split_phase', label: 'Split-phase 120/240V (L1/L2/N/E)', phases: 1 },
+  { value: 'american_120', label: 'American 120V (L/N/E)', phases: 1 },
+  { value: 'three_phase', label: 'Three-phase 400V (L1/L2/L3/N/E)', phases: 3 },
+]
+
 export interface InverterUnit {
   id: string
   catalogId: string | null
@@ -88,6 +116,32 @@ export interface InverterUnit {
   kw: number
   qty: number
   phases: 1 | 3
+  /** AC output topology (item 50). When set, `phases` is derived from it. */
+  phaseConfig?: InverterPhaseConfig
+  /** Has a built-in MPPT and accepts PV strings directly (item 51). Default true. */
+  acceptsPv?: boolean
+  /** Accepts a battery (hybrid). Default true. AC-coupled inverters set this false. */
+  acceptsBattery?: boolean
+}
+
+/** Map a phase config to a 1|3 phase count (item 50). */
+export function phaseConfigToPhases(cfg: InverterPhaseConfig): 1 | 3 {
+  return cfg === 'three_phase' ? 3 : 1
+}
+
+/** The effective phase count for an inverter — phaseConfig wins, else legacy `phases`. */
+export function inverterPhases(u: InverterUnit): 1 | 3 {
+  return u.phaseConfig ? phaseConfigToPhases(u.phaseConfig) : (u.phases ?? 1)
+}
+
+/** Whether the inverter draws PV strings directly (item 51; default true). */
+export function inverterAcceptsPv(u: InverterUnit): boolean {
+  return u.acceptsPv !== false
+}
+
+/** Whether the inverter accepts a battery (item 51; default true). */
+export function inverterAcceptsBattery(u: InverterUnit): boolean {
+  return u.acceptsBattery !== false
 }
 
 export interface BatteryUnit {
@@ -213,6 +267,25 @@ export function defaultStringConnection(): StringConnection {
   return { breakerId: null, fuseHolderId: null, fuseId: null, fuseQty: 1, isolatorId: null }
 }
 
+/** A device inside a DC combiner (item 44) — mirrors AcCombiner's DbComponent
+ *  shape/kinds so the same "inside component list" UI + BOM itemisation apply.
+ *  `kind` reuses DbComponentKind; `product` mirrors DbComponent.productId. */
+export interface DcComponent {
+  id: string
+  kind: DbComponentKind
+  label: string
+  /** Catalog product id (null = spec'd but no product → goes to quote). */
+  product: string | null
+  qty: number
+  /** Upstream source ids — other DC component ids, a string id, or DB_SUPPLY_ID. */
+  fedFrom?: string[]
+}
+
+export function defaultDcComponent(kind: DbComponentKind = 'breaker', fedFrom: string[] = []): DcComponent {
+  const def = dbComponentKind(kind)
+  return { id: mkId('dcc'), kind, label: def.label, product: null, qty: 1, fedFrom }
+}
+
 export interface DcCombiner {
   id: string
   label: string
@@ -231,8 +304,13 @@ export interface DcCombiner {
   // Inputs (strings) and outputs (to inverter MPPTs)
   inputStringIds: string[]
   outputs: CombinerOutput[]
-  /** Per-string connection products, keyed by panel-group id. */
+  /** Per-string connection products, keyed by panel-group id.
+   *  @deprecated legacy — the new UI uses `components`. Kept parseable so old
+   *  designs don't crash; design-bom still itemises it when components are empty. */
   stringConnections: Record<string, StringConnection>
+  /** Devices mounted inside the box (item 44; mirrors AcCombiner.components).
+   *  Default EMPTY — protection is left OUT until the user adds it. */
+  components?: DcComponent[]
 }
 
 export const ENCLOSURE_MATERIALS: Array<{ value: EnclosureMaterial; label: string }> = [
@@ -315,6 +393,7 @@ export function defaultCombiner(panelIds: string[]): DcCombiner {
     inputStringIds: inputs,
     outputs: [{ id: mkId('out'), label: 'Output 1', stringIds: inputs.slice(), spdId: null, mainBreakerId: null }],
     stringConnections: {},
+    components: [],
   }
   c.productCode = enclosureCode(c)
   return c
@@ -542,14 +621,20 @@ export interface MonitoringDevice {
   role: 'bundled' | 'additional'
   catalogId: string | null
   label: string
-  /** Which inverter this hangs off (null = the representative inverter). */
+  /** @deprecated Which inverter this hangs off (null = representative inverter).
+   *  Superseded by `targetId` (item 52); kept readable for back-compat. */
   inverterId: string | null
-  /** Comms medium — 'wifi' | 'lan' | 'gsm' | 'rs485' | 'can' … (free metadata). */
+  /** Any node id this device hangs off — inverter, a gateway, a panel … (item 52).
+   *  null falls back to inverterId, then to the representative inverter. */
+  targetId?: string | null
+  /** Comms medium — 'wifi' | 'lan' | 'gsm' | 'rs485' | 'can' | 'other' … (free metadata). */
   commsType: string
+  /** Free-text comms description when commsType === 'other' (item 52). */
+  commsOther?: string
 }
 
 export function defaultMonitoring(role: 'bundled' | 'additional' = 'additional', label = 'Monitoring'): MonitoringDevice {
-  return { id: mkId('mon'), role, catalogId: null, label, inverterId: null, commsType: 'wifi' }
+  return { id: mkId('mon'), role, catalogId: null, label, inverterId: null, targetId: null, commsType: 'wifi', commsOther: '' }
 }
 
 // ── Data links (item 30) — comms wiring, modelled like earthing.conductors ─────
@@ -584,6 +669,17 @@ export interface NodePosition {
   y: number
 }
 
+/** A cable the user drew by hand on the canvas (item 53). designToFlow emits these
+ *  as real `cable` edges that participate in overrides + layers + the BOM. */
+export interface UserEdge {
+  id: string
+  source: string
+  target: string
+  sourceHandle?: string
+  targetHandle?: string
+  circuitType?: CableEdgeData['circuitType']
+}
+
 export interface DesignLayout {
   /** Persisted node positions keyed by diagram node id. */
   nodes: Record<string, NodePosition>
@@ -591,6 +687,12 @@ export interface DesignLayout {
   edgeOverrides?: Record<string, Partial<CableEdgeData>>
   /** Per-component attribute overrides keyed by node id (e.g. busbar connection count, product). */
   nodeOverrides?: Record<string, Record<string, unknown>>
+  /** User-drawn cables (item 53) — appended to the auto-derived edges. */
+  userEdges?: UserEdge[]
+}
+
+export function defaultUserEdge(source = '', target = ''): UserEdge {
+  return { id: mkId('uedge'), source, target }
 }
 
 export interface SystemDesign {
@@ -631,6 +733,9 @@ export function emptyEnergy(): EnergyProfile {
     monthlyKwh: null,
     annualKwh: null,
     essentialLoadKw: null,
+    weekly: null,
+    monthlyProfile: null,
+    annualProfile: null,
   }
 }
 
@@ -729,6 +834,10 @@ export function parseDesign(raw: unknown): SystemDesign | null {
   const src = obj as Partial<SystemDesign>
   const energy = { ...base.energy, ...(src.energy ?? {}) }
   if (!src.energy?.mode) energy.mode = inferEnergyMode(energy)
+  // Shaping overlays (items 37–40) — keep null/empty when absent.
+  energy.weekly = Array.isArray(src.energy?.weekly) ? src.energy!.weekly!.map((v) => num(v)) : (src.energy?.weekly ?? null)
+  energy.monthlyProfile = Array.isArray(src.energy?.monthlyProfile) ? src.energy!.monthlyProfile!.map((v) => num(v)) : (src.energy?.monthlyProfile ?? null)
+  energy.annualProfile = Array.isArray(src.energy?.annualProfile) ? src.energy!.annualProfile!.map((v) => num(v)) : (src.energy?.annualProfile ?? null)
   return {
     ...base,
     ...src,
@@ -759,16 +868,38 @@ export function parseDesign(raw: unknown): SystemDesign | null {
       nodes: { ...(src.layout?.nodes ?? {}) },
       edgeOverrides: { ...(src.layout?.edgeOverrides ?? {}) },
       nodeOverrides: { ...(src.layout?.nodeOverrides ?? {}) },
+      // User-drawn cables (item 53).
+      userEdges: (src.layout?.userEdges ?? []).map((u) => ({
+        ...u,
+        id: u.id ?? mkId('uedge'),
+        sourceHandle: u.sourceHandle,
+        targetHandle: u.targetHandle,
+      })),
     },
-    panels: src.panels ?? [],
-    // Backfill combiners saved before the product-driven protection model.
+    // Panel distance + jumpers (items 41/42) — optional, left undefined when absent.
+    panels: (src.panels ?? []).map((p) => ({
+      ...p,
+      distanceFromCombinerM: p.distanceFromCombinerM ?? undefined,
+      jumpers: p.jumpers ?? undefined,
+    })),
+    // Backfill combiners saved before the product-driven protection model. The new
+    // internals list (item 44) defaults EMPTY; legacy stringConnections stay parseable.
     dcCombiners: (src.dcCombiners ?? []).map((c) => ({
       ...c,
       enclosureCatalogId: c.enclosureCatalogId ?? null,
       stringConnections: c.stringConnections ?? {},
       outputs: (c.outputs ?? []).map((o) => ({ ...o, spdId: o.spdId ?? null, mainBreakerId: o.mainBreakerId ?? null })),
+      components: (c.components ?? []).map((k) => ({ ...k, product: k.product ?? null, qty: k.qty || 1, fedFrom: Array.isArray(k.fedFrom) ? k.fedFrom : [] })),
     })),
-    inverters: src.inverters ?? [],
+    // Inverter phase config + capability toggles (items 50/51). Derive `phases`
+    // from phaseConfig when present so existing logic still reads a 1|3.
+    inverters: (src.inverters ?? []).map((u) => ({
+      ...u,
+      phases: u.phaseConfig ? phaseConfigToPhases(u.phaseConfig) : (u.phases ?? 1),
+      phaseConfig: u.phaseConfig ?? undefined,
+      acceptsPv: u.acceptsPv ?? undefined,
+      acceptsBattery: u.acceptsBattery ?? undefined,
+    })),
     batteries: src.batteries ?? [],
     acCombiners: (src.acCombiners ?? []).map(normalizeAcCombiner),
     extras: (src.extras ?? []).map((x) => ({
@@ -781,8 +912,11 @@ export function parseDesign(raw: unknown): SystemDesign | null {
       ...m,
       catalogId: m.catalogId ?? null,
       inverterId: m.inverterId ?? null,
+      // Item 52: targetId supersedes inverterId; backfill from it for old saves.
+      targetId: m.targetId ?? m.inverterId ?? null,
       role: m.role ?? 'additional',
       commsType: m.commsType ?? 'wifi',
+      commsOther: m.commsOther ?? '',
       label: m.label ?? 'Monitoring',
     })),
     data: { links: (src.data?.links ?? []).map((l) => ({ ...l, protocol: l.protocol ?? '', note: l.note ?? '', termination: l.termination ?? 'crimp', cableType: l.cableType ?? 'Cat6' })) },
@@ -1101,10 +1235,12 @@ export function cableRunsNeeded(currentA: number, sizeMm2: number): number {
 // 1:1 nodes so a panel group edited in the diagram maps straight back to the
 // Panels section. Edges are auto-derived each render (cosmetic in Phase 1).
 
-// Stable node ids ↔ design entities.
+// Stable node ids ↔ design entities. The first DC combiner keeps the legacy
+// `combiner` id (so saved layouts/overrides still resolve); the rest are indexed.
 export const NODE = {
   panel: (i: number) => `panel-${i}`,
   combiner: 'combiner',
+  combinerN: (i: number) => (i === 0 ? 'combiner' : `combiner-${i}`),
   inverter: 'inverter',
   battery: 'battery',
   grid: 'grid',
@@ -1116,7 +1252,7 @@ export type DesignNodeRef =
   | { kind: 'panel'; index: number }
   | { kind: 'inverter' }
   | { kind: 'battery' }
-  | { kind: 'combiner' }
+  | { kind: 'combiner'; index: number }
   | { kind: 'grid' }
   | { kind: 'db' }
   | { kind: 'earth' }
@@ -1126,10 +1262,14 @@ export function nodeIdToRef(id: string): DesignNodeRef | null {
     const index = parseInt(id.slice('panel-'.length), 10)
     return Number.isInteger(index) ? { kind: 'panel', index } : null
   }
+  if (id.startsWith('combiner-')) {
+    const index = parseInt(id.slice('combiner-'.length), 10)
+    return Number.isInteger(index) ? { kind: 'combiner', index } : null
+  }
   switch (id) {
     case 'inverter': return { kind: 'inverter' }
     case 'battery': return { kind: 'battery' }
-    case 'combiner': return { kind: 'combiner' }
+    case 'combiner': return { kind: 'combiner', index: 0 }
     case 'grid': return { kind: 'grid' }
     case 'db': return { kind: 'db' }
     case 'earth': return { kind: 'earth' }
@@ -1145,9 +1285,10 @@ function cableData(circuitType: CableEdgeData['circuitType'], spec: string, leng
   }
 }
 
-/** AC cable whose conductor label reflects the phase (L/N/E vs L1/L2/L3/N/E). */
-function acCableData(spec: string, lengthM: number, phase: number): CableEdgeData {
-  return { ...cableData('ac', spec, lengthM), conductors: { l1: phase >= 3 } }
+/** AC cable whose conductor label reflects the phase (L/N/E vs L1/L2/L3/N/E),
+ *  or split-phase L1/L2/N/E when a phaseConfig is supplied (item 50). */
+function acCableData(spec: string, lengthM: number, phase: number, phaseConfig?: InverterPhaseConfig): CableEdgeData {
+  return { ...cableData('ac', spec, lengthM), conductors: { l1: phase >= 3 }, ...(phaseConfig ? { phaseConfig } : {}) }
 }
 
 export interface FlowGraph { nodes: Node[]; edges: Edge[] }
@@ -1163,7 +1304,13 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
   // single-phase 10kW inverter is shown single-phase, not forced to three.
   const gridPhase: 1 | 3 =
     opts.gridSupply?.toLowerCase().includes('three') || opts.gridSupply?.toLowerCase().includes('3 phase') ? 3 : 1
-  const inverterPhase: 1 | 3 = d.inverters[0]?.phases ?? gridPhase
+  // Phase + AC topology follow the inverter's phaseConfig when set (item 50).
+  const inverterPhase: 1 | 3 = d.inverters[0] ? inverterPhases(d.inverters[0]) : gridPhase
+  const inverterPhaseConfig: InverterPhaseConfig | undefined = d.inverters[0]?.phaseConfig
+  // Capability toggles (item 51): an inverter without a built-in MPPT draws no PV
+  // strings; one that can't take a battery suppresses the battery nodes/edges.
+  const acceptsPv = d.inverters[0] ? inverterAcceptsPv(d.inverters[0]) : true
+  const acceptsBattery = d.inverters[0] ? inverterAcceptsBattery(d.inverters[0]) : true
 
   const groupCount = d.panels.length
   const useCombiner = groupCount > 1 || d.dcCombiners.length > 0
@@ -1200,34 +1347,57 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
     })
   })
 
-  // DC combiner
-  if (useCombiner && groupCount > 0) {
-    const id = NODE.combiner
-    const explicit = d.dcCombiners[0]
-    nodes.push({
-      id,
-      type: 'combiner',
-      position: pos(id, { x: CX - 110, y: Y_COMB }),
-      data: {
-        label: explicit?.label || 'DC Combiner Box',
-        stringCount: explicit ? (explicit.inputStringIds.length || groupCount) : groupCount,
-        hasSpd: explicit ? explicit.outputs.some((o) => !!o.spdId) : true,
-        config: explicit ? combinerConfigLabel(explicit) : `${groupCount}-string`,
-        // Ports (item 22): inputs = wired strings, outputs = combined feeds.
-        inputCount: explicit ? (explicit.inputStringIds.length || groupCount) : groupCount,
-        outputCount: explicit ? Math.max(1, explicit.outputs.length) : 1,
-      },
-    })
-    d.panels.forEach((_, i) => {
-      edges.push({
-        id: `e-panel${i}-comb`,
-        source: NODE.panel(i),
-        target: id,
-        sourceHandle: 'dc-out',
-        targetHandle: `str-${i}`,
-        type: 'cable',
-        data: cableData('dc', 'H1Z2Z2 6mm²', 12),
-        label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', 12)),
+  // ── DC combiner(s) (items 34/44) ──────────────────────────────────────────────
+  // One node per explicit dcCombiners[] entry, each wired from ITS assigned strings
+  // (inputStringIds, by panel-group id) and feeding the inverter. Two combiners on
+  // two different strings both appear, correctly wired. When there's no explicit
+  // combiner but multiple strings exist, a single implicit combiner is emitted.
+  const panelIndexById = new Map<string, number>()
+  d.panels.forEach((g, i) => panelIndexById.set(g.id, i))
+  // The string node-indices feeding each combiner. Explicit combiners use their
+  // inputStringIds (falling back to all strings when empty); the implicit combiner
+  // gathers every string.
+  const combinerStringIdx = (c: DcCombiner | undefined): number[] => {
+    if (!c) return d.panels.map((_, i) => i)
+    const idx = c.inputStringIds.map((sid) => panelIndexById.get(sid)).filter((x): x is number => x != null)
+    return idx.length ? idx : d.panels.map((_, i) => i)
+  }
+  // The list of combiners to render: explicit entries, or one implicit when needed.
+  const renderCombiners: Array<DcCombiner | undefined> =
+    d.dcCombiners.length > 0 ? d.dcCombiners : (useCombiner && groupCount > 0 ? [undefined] : [])
+  const COMB_GAP = 280
+  const combStartX = CX - 110 - ((renderCombiners.length - 1) * COMB_GAP) / 2
+  if (groupCount > 0) {
+    renderCombiners.forEach((explicit, ci) => {
+      const id = NODE.combinerN(ci)
+      const strIdx = combinerStringIdx(explicit)
+      const outCount = explicit ? Math.max(1, explicit.outputs.length) : 1
+      nodes.push({
+        id,
+        type: 'combiner',
+        position: pos(id, { x: combStartX + ci * COMB_GAP, y: Y_COMB }),
+        data: {
+          label: explicit?.label || 'DC Combiner Box',
+          stringCount: strIdx.length || groupCount,
+          hasSpd: explicit ? explicit.outputs.some((o) => !!o.spdId) : true,
+          config: explicit ? combinerConfigLabel(explicit) : `${groupCount}-string`,
+          // Ports (item 22/44): inputs = wired strings, outputs = combined feeds.
+          inputCount: strIdx.length || groupCount,
+          outputCount: outCount,
+        },
+      })
+      // Input edges from each assigned string.
+      strIdx.forEach((pi, k) => {
+        edges.push({
+          id: ci === 0 ? `e-panel${pi}-comb` : `e-panel${pi}-comb${ci}`,
+          source: NODE.panel(pi),
+          target: id,
+          sourceHandle: 'dc-out',
+          targetHandle: `str-${k}`,
+          type: 'cable',
+          data: cableData('dc', 'H1Z2Z2 6mm²', 12),
+          label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', 12)),
+        })
       })
     })
   }
@@ -1247,33 +1417,44 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
         model: inv0?.model ?? '',
         kw: invKw,
         phases: inverterPhase,
-        hasBattery: d.batteries.length > 0,
+        phaseConfig: inverterPhaseConfig,
+        acceptsPv,
+        acceptsBattery,
+        hasBattery: acceptsBattery && d.batteries.length > 0,
         outputCount: 1,
       },
     })
 
-    // PV → inverter (via combiner when present, else direct from first group)
-    if (useCombiner && groupCount > 0) {
-      edges.push({
-        id: 'e-comb-inv', source: NODE.combiner, target: id,
-        sourceHandle: 'dc-out', targetHandle: 'pv-in', type: 'cable',
-        data: cableData('dc', 'H1Z2Z2 6mm²', 8),
-        label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', 8)),
-      })
-    } else if (groupCount > 0) {
-      edges.push({
-        id: 'e-panel0-inv', source: NODE.panel(0), target: id,
-        sourceHandle: 'dc-out', targetHandle: 'pv-in', type: 'cable',
-        data: cableData('dc', 'H1Z2Z2 6mm²', 15),
-        label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', 15)),
-      })
+    // PV → inverter. Item 51: when the inverter has no built-in MPPT (acceptsPv ===
+    // false) no PV strings/combiners feed it, so no PV edge is drawn. Item 34: each
+    // combiner's output feeds the inverter; without a combiner the first string does.
+    if (acceptsPv) {
+      if (renderCombiners.length > 0 && groupCount > 0) {
+        renderCombiners.forEach((_, ci) => {
+          edges.push({
+            id: ci === 0 ? 'e-comb-inv' : `e-comb${ci}-inv`, source: NODE.combinerN(ci), target: id,
+            sourceHandle: 'dc-out', targetHandle: 'pv-in', type: 'cable',
+            data: cableData('dc', 'H1Z2Z2 6mm²', 8),
+            label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', 8)),
+          })
+        })
+      } else if (groupCount > 0) {
+        edges.push({
+          id: 'e-panel0-inv', source: NODE.panel(0), target: id,
+          sourceHandle: 'dc-out', targetHandle: 'pv-in', type: 'cable',
+          data: cableData('dc', 'H1Z2Z2 6mm²', 15),
+          label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', 15)),
+        })
+      }
     }
   }
 
   // ── Battery bank — granular wiring: batteries → [disconnect] → [busbar] → [main] → inverter
+  // Item 51: an inverter that can't take a battery (acceptsBattery === false, e.g.
+  // AC-coupled / grid-tie) suppresses the whole battery sub-graph.
   const batKwh = designBatteryKwh(d)
   const bat0 = d.batteries[0]
-  if ((bat0 || batKwh > 0) && (invKw > 0 || inv0)) {
+  if (acceptsBattery && (bat0 || batKwh > 0) && (invKw > 0 || inv0)) {
     const bank = d.bank
     const batSize = bank.cableSizeMm2
     // Thick feed sized to worst-case full current; per-battery cables stay single.
@@ -1405,7 +1586,8 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
     edges.push({
       id: 'e-inv-db', source: NODE.inverter, target: dbId,
       sourceHandle: 'ac-out', targetHandle: 'ac-in', type: 'cable',
-      data: acCableData('CU 6mm²', 8, inverterPhase), label: buildEdgeLabel(acCableData('CU 6mm²', 8, inverterPhase)),
+      // Item 50: the AC output cable's conductors follow the inverter's phaseConfig.
+      data: acCableData('CU 6mm²', 8, inverterPhase, inverterPhaseConfig), label: buildEdgeLabel(acCableData('CU 6mm²', 8, inverterPhase, inverterPhaseConfig)),
     })
 
     // Default single earth node — only until a detailed earth map is drawn.
@@ -1454,30 +1636,39 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
   }
 
   // ── Extras (standalone palette components — user-positioned, not auto-wired) ──
+  // Item 54: extras carry earth handles so an earthing.conductors run can anchor to
+  // them (the SimpleBlock node renders EarthHandles when data.earthHandles is set).
   d.extras.forEach((x, i) => {
     nodes.push({
       id: x.id,
       type: x.type,
       position: pos(x.id, { x: GRID_X - 250, y: 40 + i * 130 }),
-      data: { label: x.label, subComponentCount: x.components?.length ?? 0 },
+      data: { label: x.label, subComponentCount: x.components?.length ?? 0, earthHandles: true },
     })
   })
 
-  // ── Monitoring (item 26) — comms hardware hanging off the inverter on the DATA layer ──
+  // ── Monitoring (item 26/52) — comms hardware on the DATA layer ───────────────
+  // The comms edge attaches to the chosen device (item 52: targetId — any node id,
+  // inverter / gateway / panel), falling back to the legacy inverterId and finally
+  // the representative inverter. The label shows the comms medium (free-text when
+  // commsType === 'other').
   const hasInv = !!(inv0 || invKw > 0)
   ;(d.monitoring ?? []).forEach((m, i) => {
     const id = `monitor-${m.id}`
     nodes.push({
       id, type: 'monitoring',
       position: pos(id, { x: INV_X + 220 + i * 170, y: Y_INV - 160 }),
-      data: { label: m.label || 'Monitoring', role: m.role, commsType: m.commsType, product: m.catalogId },
+      data: { label: m.label || 'Monitoring', role: m.role, commsType: m.commsType, commsOther: m.commsOther, product: m.catalogId },
     })
-    if (hasInv) {
+    const wantTarget = m.targetId ?? m.inverterId ?? (hasInv ? NODE.inverter : null)
+    const target = wantTarget && nodes.some((nn) => nn.id === wantTarget) ? wantTarget : (hasInv ? NODE.inverter : null)
+    if (target) {
+      const comms = (m.commsType === 'other' ? (m.commsOther || 'other') : (m.commsType || 'comms'))
       edges.push({
-        id: `e-monitor-${m.id}`, source: NODE.inverter, target: id,
+        id: `e-monitor-${m.id}`, source: target, target: id,
         sourceHandle: 'ac-out', targetHandle: 'data-in', type: 'cable',
-        data: { ...cableData('communication', m.commsType || 'comms', 2), circuitLayer: 'communication', routingType: 'bezier' },
-        label: `${m.role === 'bundled' ? 'Bundled' : 'Monitoring'} · ${m.commsType || 'comms'}`,
+        data: { ...cableData('communication', comms, 2), circuitLayer: 'communication', routingType: 'bezier' },
+        label: `${m.role === 'bundled' ? 'Bundled' : 'Monitoring'} · ${comms}`,
       })
     }
   })
@@ -1490,6 +1681,25 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       sourceHandle: 'data-out', targetHandle: 'data-in',
       data: { ...cableData('communication', l.cableType, 3), circuitLayer: 'communication', routingType: 'bezier', sourceProtocol: l.protocol ? [l.protocol] : undefined },
       label: `${l.cableType}${l.protocol ? ` · ${l.protocol}` : ''}`,
+    })
+  })
+
+  // ── User-drawn cables (item 53) — appended as real cable edges so they take part
+  // in overrides + layers + BOM. Endpoints must resolve to emitted nodes. ─────────
+  ;(d.layout.userEdges ?? []).forEach((u) => {
+    if (!u.source || !u.target) return
+    if (!nodes.some((nn) => nn.id === u.source) || !nodes.some((nn) => nn.id === u.target)) return
+    const ct = u.circuitType ?? 'ac'
+    const spec = ct === 'dc' ? 'H1Z2Z2 6mm²' : ct === 'earth' ? 'CU GY 10mm²' : ct === 'communication' ? 'Cat6' : 'CU 6mm²'
+    const data: CableEdgeData = {
+      ...cableData(ct, spec, 5),
+      ...(ct === 'earth' ? { circuitLayer: 'earth' as const } : {}),
+      ...(ct === 'communication' ? { circuitLayer: 'communication' as const, routingType: 'bezier' as const } : {}),
+    }
+    edges.push({
+      id: `user-${u.id}`, source: u.source, target: u.target, type: 'cable',
+      sourceHandle: u.sourceHandle, targetHandle: u.targetHandle,
+      data, label: buildEdgeLabel(data),
     })
   })
 
