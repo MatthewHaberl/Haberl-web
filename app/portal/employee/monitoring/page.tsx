@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { AlertTriangle, Activity, Zap, BatteryCharging, Map, Bell, Settings2, ChevronRight, Clock } from 'lucide-react'
+import { AlertTriangle, Activity, Zap, BatteryCharging, Map, Bell, Settings2, ChevronRight, Clock, Plus } from 'lucide-react'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -156,6 +156,12 @@ export default async function MonitoringFleetPage() {
               </span>
             )}
           </Link>
+          <Link
+            href="/portal/employee/monitoring/new"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/90 transition-colors"
+          >
+            <Plus className="h-4 w-4" /> Add system
+          </Link>
         </div>
       </div>
 
@@ -224,9 +230,15 @@ export default async function MonitoringFleetPage() {
             <div>
               <p className="font-semibold">No monitoring systems added yet</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Open a site in the customer portal and add a monitoring system to get started.
+                Connect an installed inverter to its cloud platform to see live performance, alerts and customer dashboards.
               </p>
             </div>
+            <Link
+              href="/portal/employee/monitoring/new"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/90 transition-colors"
+            >
+              <Plus className="h-4 w-4" /> Add your first system
+            </Link>
           </CardContent>
         </Card>
       )}
