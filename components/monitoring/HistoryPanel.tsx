@@ -146,12 +146,17 @@ export function HistoryPanel({ systemId, brand }: { systemId: string; brand: str
 
 /** Dry-run one day to confirm the brand endpoint parses before a full backfill. */
 function PreviewDay({ systemId }: { systemId: string }) {
+  const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
-  const [day, setDay] = useState(yesterday)
+  // Uncontrolled on purpose: a controlled <input type="date"> rejects partial
+  // values mid-typing ("enter a valid date"). We read the value on click only.
+  const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<string>('')
 
   async function preview() {
+    const day = inputRef.current?.value
+    if (!day) { setResult('Pick a date first'); return }
     setBusy(true)
     setResult('')
     try {
@@ -168,10 +173,10 @@ function PreviewDay({ systemId }: { systemId: string }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <input
-        type="date" value={day} onChange={(e) => setDay(e.target.value)}
+        ref={inputRef} type="date" defaultValue={yesterday} max={today}
         className="h-9 rounded-md border border-border bg-background px-2 text-sm"
       />
-      <button onClick={preview} disabled={busy} className={btn}>
+      <button type="button" onClick={preview} disabled={busy} className={btn}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />} Preview one day
       </button>
       {result && <span className="text-xs text-muted-foreground">{result}</span>}
