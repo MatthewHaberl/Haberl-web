@@ -272,16 +272,33 @@ export const sunsynkAdapter: BrandAdapter = {
     const infos = res.data?.infos ?? []
     if (infos.length === 0) return []
 
+    // Records carry either a full datetime or just HH:mm[:ss] (the chart is
+    // already scoped to `date`), or occasionally an epoch. Compose a UTC ISO
+    // from the chart day + the record's time-of-day; skip anything unparseable
+    // rather than throwing.
+    const recordIso = (raw: string): string | null => {
+      const t = raw.trim()
+      if (!t) return null
+      if (/^\d{10,13}$/.test(t)) {
+        const ms = t.length <= 10 ? Number(t) * 1000 : Number(t)
+        const d = new Date(ms)
+        return Number.isNaN(d.getTime()) ? null : d.toISOString()
+      }
+      const hm = t.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/)
+      if (!hm) return null
+      const d = new Date(`${date}T${hm[1].padStart(2, '0')}:${hm[2]}:${hm[3] ?? '00'}${SAST_OFFSET}`)
+      return Number.isNaN(d.getTime()) ? null : d.toISOString()
+    }
+
     // Merge all series into one reading per timestamp.
     const byTime = new Map<string, NormalisedReading>()
     for (const series of infos) {
       const field = classifySeries(series.label ?? '')
       if (!field) continue
       for (const rec of series.records ?? []) {
-        const t = (rec.time ?? rec.updateTime ?? '').trim()
+        const iso = recordIso(String(rec.time ?? rec.updateTime ?? ''))
         const v = num(rec.value)
-        if (!t || v === null) continue
-        const iso = new Date(`${t.replace(' ', 'T')}${SAST_OFFSET}`).toISOString()
+        if (!iso || v === null) continue
         let reading = byTime.get(iso)
         if (!reading) { reading = blankReading(iso); byTime.set(iso, reading) }
         const scaled = scaleValue(field, series.unit, v)
