@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { FormField } from '@/components/ui/form-field'
 import { Loader2, Plus, Star, Trash2, ExternalLink } from 'lucide-react'
 
 const VAT = 1.15
@@ -127,7 +128,7 @@ export default function OffersPanel({
           </p>
         </div>
         {!adding && (
-          <Button variant="outline" size="sm" onClick={() => setAdding(true)} disabled={busy}>
+          <Button type="button" variant="outline" size="sm" onClick={() => setAdding(true)} disabled={busy}>
             <Plus className="h-3.5 w-3.5" /> Add supplier
           </Button>
         )}
@@ -216,26 +217,25 @@ export default function OffersPanel({
       )}
 
       {adding && (
+        // Not wrapped in its own <form>: this panel renders inside the catalog
+        // edit modal's <form>, and nested forms are invalid HTML. Buttons stay
+        // type="button" + onClick so neither this nor the parent form submits.
         <div className="mt-3 grid gap-3 rounded-lg border border-border bg-muted/30 p-3 md:grid-cols-2">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium">Supplier</span>
+          <FormField label="Supplier" required>
             <Input value={fSupplier} onChange={(e) => setFSupplier(e.target.value)} placeholder="e.g. Herholdt's" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium">List price (ex-VAT, R)</span>
-            <Input value={fList} onChange={(e) => setFList(e.target.value)} placeholder="e.g. 573.00" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium">Their SKU (optional)</span>
+          </FormField>
+          <FormField label="List price (ex-VAT)" required>
+            <Input type="number" min={0} step="0.01" leadingText="R" value={fList} onChange={(e) => setFList(e.target.value)} placeholder="e.g. 573.00" />
+          </FormField>
+          <FormField label="Their SKU (optional)">
             <Input value={fSku} onChange={(e) => setFSku(e.target.value)} />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium">Source URL (optional)</span>
-            <Input value={fSource} onChange={(e) => setFSource(e.target.value)} placeholder="https://…" />
-          </label>
+          </FormField>
+          <FormField label="Source URL (optional)">
+            <Input type="url" value={fSource} onChange={(e) => setFSource(e.target.value)} placeholder="https://…" />
+          </FormField>
           <div className="md:col-span-2 flex items-center justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => { setAdding(false); setErr('') }} disabled={busy}>Cancel</Button>
-            <Button variant="accent" size="sm" onClick={addOffer} disabled={busy}>
+            <Button type="button" variant="ghost" size="sm" onClick={() => { setAdding(false); setErr('') }} disabled={busy}>Cancel</Button>
+            <Button type="button" variant="accent" size="sm" onClick={addOffer} disabled={busy}>
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Add offer'}
             </Button>
           </div>

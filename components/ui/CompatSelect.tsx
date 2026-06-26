@@ -49,14 +49,16 @@ export function CompatSelect({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-11 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 text-left text-sm"
+        className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 text-left text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >
-        <span className="truncate">{selected?.label ?? placeholder}</span>
+        <span className={cn('truncate', selected ? 'text-foreground' : 'text-muted-foreground')}>
+          {selected?.label ?? placeholder}
+        </span>
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-md border border-border bg-background py-1 shadow-lg">
+        <div className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-md border border-border bg-card py-1 shadow-md">
           {options.map((o) => {
             const blocked = o.level === 'block'
             const warn = o.level === 'warn'

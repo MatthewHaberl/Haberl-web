@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/utils'
 import {
   ShoppingBag, Package, Tag, Percent, Truck, BarChart2, ArrowRight, TrendingUp, FileText, Images
 } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = { title: 'Shop Management' }
@@ -53,11 +54,12 @@ export default async function ShopAdminPage() {
   ]
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">Shop Management</h1>
-        <p className="text-muted-foreground mt-1">Products, pricing, discounts, shipping, and orders</p>
-      </div>
+    <PageShell width="wide">
+      <PageHeader
+        icon={ShoppingBag}
+        title="Shop Management"
+        description="Products, pricing, discounts, shipping, and orders"
+      />
 
       {/* Revenue summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -145,6 +147,6 @@ export default async function ShopAdminPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   )
 }

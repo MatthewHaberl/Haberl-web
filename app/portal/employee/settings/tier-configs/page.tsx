@@ -6,8 +6,12 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { FormField } from '@/components/ui/form-field'
+import { Label } from '@/components/ui/label'
 import type { EquipmentCatalogItem, QuoteTierConfig } from '@/types/database'
 import { Loader2, Pencil, Plus, X } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 type FormState = {
   id?: string
@@ -160,7 +164,7 @@ export default function TierConfigsPage() {
   }
 
   return (
-    <div className="flex max-w-6xl flex-col gap-6">
+    <PageShell width="wide">
       <div className="flex flex-wrap items-center gap-2">
         {navLink('/portal/employee/settings', 'Settings')}
         {navLink('/portal/employee/settings/brands', 'Brands')}
@@ -168,17 +172,15 @@ export default function TierConfigsPage() {
         {navLink('/portal/employee/settings/tier-configs', 'Tier Configs')}
       </div>
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Tier Configs</h1>
-          <p className="mt-1 text-muted-foreground">
-            Map inverter size brackets to Premium, Recommended, and Budget equipment sets.
-          </p>
-        </div>
-        <Button variant="outline" onClick={() => setEditing({ ...EMPTY_FORM })}>
-          <Plus className="h-4 w-4" /> Add bracket row
-        </Button>
-      </div>
+      <PageHeader
+        title="Tier Configs"
+        description="Map inverter size brackets to Premium, Recommended, and Budget equipment sets."
+        actions={
+          <Button variant="outline" onClick={() => setEditing({ ...EMPTY_FORM })}>
+            <Plus className="h-4 w-4" /> Add bracket row
+          </Button>
+        }
+      />
 
       {error && (
         <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>
@@ -247,106 +249,100 @@ export default function TierConfigsPage() {
                 <h2 className="text-lg font-semibold text-primary">{editing.id ? 'Edit tier row' : 'Add tier row'}</h2>
                 <p className="text-sm text-muted-foreground">Each bracket should end up with Premium, Recommended, and Budget rows.</p>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(null)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Min inverter kW</span>
-                <Input value={editing.min_inverter_kw} onChange={(event) => setEditing({ ...editing, min_inverter_kw: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Max inverter kW</span>
-                <Input value={editing.max_inverter_kw} onChange={(event) => setEditing({ ...editing, max_inverter_kw: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Tier</span>
-                <select
-                  value={editing.tier}
-                  onChange={(event) => setEditing({ ...editing, tier: event.target.value as FormState['tier'] })}
-                  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-                >
-                  <option value="premium">Premium</option>
-                  <option value="recommended">Recommended</option>
-                  <option value="budget">Budget</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Phase</span>
-                <select
-                  value={editing.phase}
-                  onChange={(event) => setEditing({ ...editing, phase: event.target.value as FormState['phase'] })}
-                  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-                >
-                  <option value="single">Single</option>
-                  <option value="three">Three</option>
-                  <option value="any">Any</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5 md:col-span-2">
-                <span className="text-sm font-medium">Inverter</span>
-                <select
-                  value={editing.inverter_id}
-                  onChange={(event) => setEditing({ ...editing, inverter_id: event.target.value })}
-                  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-                >
-                  <option value="">Select inverter</option>
-                  {inverterOptions.map((item) => (
-                    <option key={item.id} value={item.id}>{item.description}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Battery</span>
-                <select
-                  value={editing.battery_id}
-                  onChange={(event) => setEditing({ ...editing, battery_id: event.target.value })}
-                  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-                >
-                  <option value="">Select battery</option>
-                  {batteryOptions.map((item) => (
-                    <option key={item.id} value={item.id}>{item.description}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Panel</span>
-                <select
-                  value={editing.panel_id}
-                  onChange={(event) => setEditing({ ...editing, panel_id: event.target.value })}
-                  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-                >
-                  <option value="">Select panel</option>
-                  {panelOptions.map((item) => (
-                    <option key={item.id} value={item.id}>{item.description}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Sort order</span>
-                <Input value={editing.sort_order} onChange={(event) => setEditing({ ...editing, sort_order: event.target.value })} />
-              </label>
-              <label className="flex items-center gap-2 text-sm md:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={editing.active}
-                  onChange={(event) => setEditing({ ...editing, active: event.target.checked })}
-                />
-                Active
-              </label>
-            </div>
+            <form onSubmit={(event) => { event.preventDefault(); saveConfig() }}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField label="Min inverter" htmlFor="tier-min-kw">
+                  <Input id="tier-min-kw" type="number" min={0} step="0.1" trailingText="kW" value={editing.min_inverter_kw} onChange={(event) => setEditing({ ...editing, min_inverter_kw: event.target.value })} />
+                </FormField>
+                <FormField label="Max inverter" htmlFor="tier-max-kw">
+                  <Input id="tier-max-kw" type="number" min={0} step="0.1" trailingText="kW" value={editing.max_inverter_kw} onChange={(event) => setEditing({ ...editing, max_inverter_kw: event.target.value })} />
+                </FormField>
+                <FormField label="Tier" htmlFor="tier-tier">
+                  <Select
+                    id="tier-tier"
+                    value={editing.tier}
+                    onChange={(event) => setEditing({ ...editing, tier: event.target.value as FormState['tier'] })}
+                  >
+                    <option value="premium">Premium</option>
+                    <option value="recommended">Recommended</option>
+                    <option value="budget">Budget</option>
+                  </Select>
+                </FormField>
+                <FormField label="Phase" htmlFor="tier-phase">
+                  <Select
+                    id="tier-phase"
+                    value={editing.phase}
+                    onChange={(event) => setEditing({ ...editing, phase: event.target.value as FormState['phase'] })}
+                  >
+                    <option value="single">Single</option>
+                    <option value="three">Three</option>
+                    <option value="any">Any</option>
+                  </Select>
+                </FormField>
+                <FormField label="Inverter" htmlFor="tier-inverter" className="md:col-span-2">
+                  <Select
+                    id="tier-inverter"
+                    value={editing.inverter_id}
+                    onChange={(event) => setEditing({ ...editing, inverter_id: event.target.value })}
+                  >
+                    <option value="">Select inverter</option>
+                    {inverterOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.description}</option>
+                    ))}
+                  </Select>
+                </FormField>
+                <FormField label="Battery" htmlFor="tier-battery">
+                  <Select
+                    id="tier-battery"
+                    value={editing.battery_id}
+                    onChange={(event) => setEditing({ ...editing, battery_id: event.target.value })}
+                  >
+                    <option value="">Select battery</option>
+                    {batteryOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.description}</option>
+                    ))}
+                  </Select>
+                </FormField>
+                <FormField label="Panel" htmlFor="tier-panel">
+                  <Select
+                    id="tier-panel"
+                    value={editing.panel_id}
+                    onChange={(event) => setEditing({ ...editing, panel_id: event.target.value })}
+                  >
+                    <option value="">Select panel</option>
+                    {panelOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.description}</option>
+                    ))}
+                  </Select>
+                </FormField>
+                <FormField label="Sort order" htmlFor="tier-sort">
+                  <Input id="tier-sort" type="number" min={0} step={1} value={editing.sort_order} onChange={(event) => setEditing({ ...editing, sort_order: event.target.value })} />
+                </FormField>
+                <Label className="flex items-center gap-2 md:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={editing.active}
+                    onChange={(event) => setEditing({ ...editing, active: event.target.checked })}
+                  />
+                  Active
+                </Label>
+              </div>
 
-            <div className="mt-6 flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-              <Button variant="accent" onClick={saveConfig} disabled={saving}>
-                {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving...</> : 'Save config'}
-              </Button>
-            </div>
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+                <Button type="submit" variant="accent" disabled={saving}>
+                  {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving...</> : 'Save config'}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

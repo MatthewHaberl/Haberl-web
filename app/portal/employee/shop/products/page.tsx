@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
-import { ArrowLeft, ExternalLink } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Package } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = { title: 'Products — Shop' }
@@ -58,16 +59,15 @@ export default async function ShopProductsPage() {
   const sortedCats = catOrder.filter(c => byCategory[c]?.length)
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Products</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">{rows.length} products · showing cost, price, and margin</p>
-        </div>
-      </div>
+    <PageShell width="wide">
+      <Button variant="ghost" size="sm" asChild className="self-start">
+        <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
+      </Button>
+      <PageHeader
+        icon={Package}
+        title="Products"
+        description={`${rows.length} products · showing cost, price, and margin`}
+      />
 
       {sortedCats.map(cat => (
         <Card key={cat}>
@@ -138,6 +138,6 @@ export default async function ShopProductsPage() {
           </Link>
         </Button>
       </div>
-    </div>
+    </PageShell>
   )
 }

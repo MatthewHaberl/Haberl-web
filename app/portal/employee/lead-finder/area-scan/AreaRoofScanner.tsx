@@ -17,6 +17,7 @@ import {
   SlidersHorizontal,
   SunMedium,
 } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 type SolarStatus = 'covered' | 'marginal' | 'not_covered' | 'error' | 'not_checked'
 
@@ -289,33 +290,28 @@ export function AreaRoofScanner() {
   }
 
   return (
-    <div className="flex max-w-7xl flex-col gap-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <Radar className="h-6 w-6 text-accent" />
-            <h1 className="text-2xl font-bold text-primary">Lead Finder</h1>
-          </div>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Scan a Gauteng suburb or business district for large roof footprints, then enrich the top targets with Google Solar estimates.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href="/portal/employee/lead-finder/solar-coverage">
-              <SunMedium className="h-4 w-4" />
-              Coverage tester
-            </Link>
-          </Button>
-          {data && (
-            <Button variant="outline" onClick={() => downloadCsv(data)}>
-              <Download className="h-4 w-4" />
-              Export CSV
+    <PageShell width="full">
+      <PageHeader
+        icon={Radar}
+        title="Lead Finder"
+        description="Scan a Gauteng suburb or business district for large roof footprints, then enrich the top targets with Google Solar estimates."
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <Link href="/portal/employee/lead-finder/solar-coverage">
+                <SunMedium className="h-4 w-4" />
+                Coverage tester
+              </Link>
             </Button>
-          )}
-        </div>
-      </div>
+            {data && (
+              <Button variant="outline" onClick={() => downloadCsv(data)}>
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
+            )}
+          </>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -485,6 +481,6 @@ export function AreaRoofScanner() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageShell>
   )
 }

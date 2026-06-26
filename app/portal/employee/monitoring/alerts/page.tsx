@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Bell, CheckCircle, Plus, Trash2, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react'
+import { Bell, CheckCircle, Plus, Trash2, ToggleLeft, ToggleRight, Loader2, Activity } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 type AlertRule = {
   id: string
@@ -138,19 +139,20 @@ export default function AlertsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Alert Rules</h1>
-          <p className="text-sm text-muted-foreground">Define when to get notified about system issues.</p>
-        </div>
-        {rules.length === 0 && (
-          <Button onClick={seedDefaultRules} disabled={saving} className="gap-2">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            Add default rules
-          </Button>
-        )}
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={Activity}
+        title="Alert Rules"
+        description="Define when to get notified about system issues."
+        actions={
+          rules.length === 0 && (
+            <Button onClick={seedDefaultRules} disabled={saving} className="gap-2">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Add default rules
+            </Button>
+          )
+        }
+      />
 
       {/* Open alerts */}
       {openEvents.length > 0 && (
@@ -264,6 +266,6 @@ export default function AlertsPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageShell>
   )
 }

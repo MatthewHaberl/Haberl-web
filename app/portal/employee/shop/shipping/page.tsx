@@ -2,8 +2,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Truck } from 'lucide-react'
 import { ShippingManager } from './ShippingManager'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = { title: 'Shipping — Shop' }
@@ -22,17 +23,16 @@ export default async function ShippingPage() {
     .order('name')
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Shipping Zones</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Weight-based delivery rates by region</p>
-        </div>
-      </div>
+    <PageShell width="content">
+      <Button variant="ghost" size="sm" asChild className="self-start">
+        <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
+      </Button>
+      <PageHeader
+        icon={Truck}
+        title="Shipping Zones"
+        description="Weight-based delivery rates by region"
+      />
       <ShippingManager zones={(zones ?? []) as Parameters<typeof ShippingManager>[0]['zones']} />
-    </div>
+    </PageShell>
   )
 }

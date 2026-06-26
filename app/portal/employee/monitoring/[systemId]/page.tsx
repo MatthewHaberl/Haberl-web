@@ -1,13 +1,15 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
-import { ArrowLeft, AlertTriangle, Info, RefreshCw } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, Info, RefreshCw, Activity, Settings2 } from 'lucide-react'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { SystemStatusBadge } from '@/components/monitoring/SystemStatusBadge'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import { PowerGauges } from '@/components/monitoring/PowerGauges'
 import { EnergyChart } from '@/components/monitoring/EnergyChart'
+import { SystemActions } from '@/components/monitoring/SystemActions'
 import type { DeviceState } from '@/lib/monitoring/types'
 
 export const metadata: Metadata = { title: 'Site Monitoring Detail' }
@@ -84,7 +86,7 @@ export default async function SystemDetailPage({ params }: { params: { systemId:
     : null
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell width="wide">
       {/* Breadcrumb */}
       <div className="flex flex-wrap items-center gap-3">
         <Link
@@ -98,28 +100,40 @@ export default async function SystemDetailPage({ params }: { params: { systemId:
       </div>
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">{site?.name ?? '—'}</h1>
+      <PageHeader
+        icon={Activity}
+        title={
+          <span className="flex items-center gap-2">
+            {site?.name ?? '—'}
             <SystemStatusBadge state={(latest?.device_state as DeviceState) ?? 'unknown'} />
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
+            {!system.enabled && <Badge variant="outline">Polling paused</Badge>}
+          </span>
+        }
+        description={
+          <>
             {BRAND_LABELS[system.brand] ?? system.brand}
             {system.label && ` · ${system.label}`}
             {site?.address && ` · ${site.address}`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline">{BRAND_LABELS[system.brand] ?? system.brand}</Badge>
-          {lastPollAge != null && (
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <RefreshCw className="h-3 w-3" />
-              {lastPollAge < 1 ? 'just now' : `${lastPollAge}m ago`}
-            </span>
-          )}
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Badge variant="outline">{BRAND_LABELS[system.brand] ?? system.brand}</Badge>
+            {lastPollAge != null && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <RefreshCw className="h-3 w-3" />
+                {lastPollAge < 1 ? 'just now' : `${lastPollAge}m ago`}
+              </span>
+            )}
+            <Link
+              href={`/portal/employee/monitoring/${system.id}/edit`}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
+            >
+              <Settings2 className="h-4 w-4" /> Edit connection
+            </Link>
+          </>
+        }
+      />
 
       {/* Poll error banner */}
       {system.poll_error && (
@@ -128,6 +142,12 @@ export default async function SystemDetailPage({ params }: { params: { systemId:
           <div>
             <p className="text-sm font-medium text-destructive">Polling error</p>
             <p className="mt-0.5 text-sm text-muted-foreground">{system.poll_error}</p>
+            <Link
+              href={`/portal/employee/monitoring/${system.id}/edit`}
+              className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-destructive hover:underline"
+            >
+              <Settings2 className="h-3.5 w-3.5" /> Check the ID &amp; API key
+            </Link>
           </div>
         </div>
       )}
@@ -259,6 +279,25 @@ export default async function SystemDetailPage({ params }: { params: { systemId:
           </CardContent>
         </Card>
       </div>
-    </div>
+
+      {/* Manage system */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Manage system</CardTitle>
+          <CardDescription>
+            Disable to stop polling while keeping history, or delete to remove it permanently.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <Link
+            href={`/portal/employee/monitoring/${system.id}/edit`}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
+          >
+            <Settings2 className="h-4 w-4" /> Edit connection
+          </Link>
+          <SystemActions systemId={system.id} enabled={system.enabled} systemName={site?.name ?? 'this system'} />
+        </CardContent>
+      </Card>
+    </PageShell>
   )
 }

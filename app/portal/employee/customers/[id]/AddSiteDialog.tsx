@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { FormField } from '@/components/ui/form-field'
 import { MapPinPlus, Loader2, X } from 'lucide-react'
 
 /**
@@ -85,22 +86,18 @@ export function AddSiteDialog({
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Site name *</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Home / Main roof / Warehouse" autoFocus />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Address</label>
-              <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, suburb" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">System type</label>
-              <Input value={systemType} onChange={(e) => setSystemType(e.target.value)} placeholder="Solar PV" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">System size (kWp)</label>
-              <Input value={sizeKw} onChange={(e) => setSizeKw(e.target.value)} inputMode="decimal" placeholder="e.g. 8" />
-            </div>
+            <FormField label="Site name" htmlFor="site-name" required>
+              <Input id="site-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Home / Main roof / Warehouse" autoFocus />
+            </FormField>
+            <FormField label="Address" htmlFor="site-address">
+              <Input id="site-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, suburb" />
+            </FormField>
+            <FormField label="System type" htmlFor="site-type">
+              <Input id="site-type" value={systemType} onChange={(e) => setSystemType(e.target.value)} placeholder="Solar PV" />
+            </FormField>
+            <FormField label="System size" htmlFor="site-size">
+              <Input id="site-size" value={sizeKw} onChange={(e) => setSizeKw(e.target.value)} type="number" min={0} inputMode="decimal" trailingText="kWp" placeholder="e.g. 8" />
+            </FormField>
           </div>
 
           {error && <p className="text-xs text-destructive">{error}</p>}

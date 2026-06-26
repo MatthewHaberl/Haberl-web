@@ -6,6 +6,9 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { FormField } from '@/components/ui/form-field'
 import { UserPlus, Loader2, X } from 'lucide-react'
 
 /** Channels a lead can come in on. Stored in leads.source (free text). */
@@ -17,11 +20,6 @@ const SOURCES = [
   { value: 'website', label: 'Website' },
   { value: 'other', label: 'Other' },
 ]
-
-const fieldClass =
-  'flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ' +
-  'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
-  'disabled:cursor-not-allowed disabled:opacity-50'
 
 /**
  * Log a lead that came in off-platform (a WhatsApp message, a phone call, a
@@ -97,35 +95,30 @@ export function AddLeadDialog() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Name *</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name" autoFocus />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Phone *</label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="082 123 4567" inputMode="tel" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Suburb</label>
-              <Input value={suburb} onChange={(e) => setSuburb(e.target.value)} placeholder="e.g. Fourways" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Came in via</label>
-              <select value={source} onChange={(e) => setSource(e.target.value)} className={fieldClass}>
+            <FormField label="Name" htmlFor="lead-name" required>
+              <Input id="lead-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name" autoFocus />
+            </FormField>
+            <FormField label="Phone" htmlFor="lead-phone" required>
+              <Input id="lead-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="082 123 4567" inputMode="tel" />
+            </FormField>
+            <FormField label="Suburb" htmlFor="lead-suburb">
+              <Input id="lead-suburb" value={suburb} onChange={(e) => setSuburb(e.target.value)} placeholder="e.g. Fourways" />
+            </FormField>
+            <FormField label="Came in via" htmlFor="lead-source">
+              <Select id="lead-source" value={source} onChange={(e) => setSource(e.target.value)}>
                 {SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
+              </Select>
+            </FormField>
           </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Note</label>
-            <textarea
+          <FormField label="Note" htmlFor="lead-note">
+            <Textarea
+              id="lead-note"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="What do they need? Anything they mentioned…"
               rows={2}
-              className={`${fieldClass} h-auto`}
             />
-          </div>
+          </FormField>
 
           {error && <p className="text-xs text-destructive">{error}</p>}
 

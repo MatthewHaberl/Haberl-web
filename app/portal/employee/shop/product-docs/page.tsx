@@ -2,8 +2,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, FileText } from 'lucide-react'
 import { ProductDocManager } from './ProductDocManager'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 import type { ProductDocument } from '@/types/database'
 
@@ -36,24 +37,21 @@ export default async function ProductDocsPage() {
   const rejected  = allDocs.filter(d => d.status === 'rejected').length
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Product Documents</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Review manuals, datasheets, drawings and certifications · approve to publish on product pages
-          </p>
-        </div>
-      </div>
+    <PageShell width="wide">
+      <Button variant="ghost" size="sm" asChild className="self-start">
+        <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
+      </Button>
+      <PageHeader
+        icon={FileText}
+        title="Product Documents"
+        description="Review manuals, datasheets, drawings and certifications · approve to publish on product pages"
+      />
 
       <ProductDocManager
         initialDocs={allDocs}
         products={products ?? []}
         counts={{ total: allDocs.length, pending, published, rejected }}
       />
-    </div>
+    </PageShell>
   )
 }

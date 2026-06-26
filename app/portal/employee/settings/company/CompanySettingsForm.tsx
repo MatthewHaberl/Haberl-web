@@ -4,7 +4,9 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Input, type InputProps } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { FormField } from '@/components/ui/form-field'
 import { Check, Loader2, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
 import { CIRCUIT_THEME, type CanvasColorOverrides, type CircuitLayer } from '@/lib/solar/canvas-theme'
 
@@ -136,15 +138,20 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
     setSaving(false)
   }
 
-  const field = (label: string, value: string, onChange: (v: string) => void, props: Record<string, unknown> = {}) => (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs text-muted-foreground">{label}</span>
+  const field = (
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    props: Partial<InputProps> = {},
+    hint?: string,
+  ) => (
+    <FormField label={label} hint={hint}>
       <Input value={value} onChange={(e) => onChange(e.target.value)} {...props} />
-    </label>
+    </FormField>
   )
 
   return (
-    <div className="flex flex-col gap-4">
+    <form onSubmit={(e) => { e.preventDefault(); save() }} className="flex flex-col gap-4">
       <Card>
         <CardContent className="pt-5 pb-5 flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-foreground">Company & contact</h2>
@@ -177,7 +184,7 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
           <h2 className="text-sm font-semibold text-foreground">Quote defaults</h2>
           <div className="grid sm:grid-cols-2 gap-3">
             {field('Quote number prefix', quotePrefix, setQuotePrefix, { placeholder: 'QUO' })}
-            {field('Quote validity (days)', expiryDays, setExpiryDays, { type: 'number', min: 1 })}
+            {field('Quote validity', expiryDays, setExpiryDays, { type: 'number', min: 1, trailingText: 'days' })}
           </div>
         </CardContent>
       </Card>
@@ -189,12 +196,12 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
             Used by the quote calculator from the next calculation onwards.
           </p>
           <div className="grid sm:grid-cols-2 gap-3">
-            {field('Markup % on cost', markupPct, setMarkupPct, { type: 'number', step: '0.5', min: 0 })}
-            {field('COC fee (R)', cocFee, setCocFee, { type: 'number', step: '50', min: 0 })}
-            {field('Labour — inverter (R per W)', labourInverter, setLabourInverter, { type: 'number', step: '0.01', min: 0 })}
-            {field('Labour — panels (R per W)', labourPanel, setLabourPanel, { type: 'number', step: '0.01', min: 0 })}
-            {field('2-storey access premium (R)', premium2, setPremium2, { type: 'number', step: '100', min: 0 })}
-            {field('3+-storey access premium (R)', premium3, setPremium3, { type: 'number', step: '100', min: 0 })}
+            {field('Markup on cost', markupPct, setMarkupPct, { type: 'number', step: '0.5', min: 0, trailingText: '%' })}
+            {field('COC fee', cocFee, setCocFee, { type: 'number', step: '50', min: 0, leadingText: 'R' })}
+            {field('Labour — inverter', labourInverter, setLabourInverter, { type: 'number', step: '0.01', min: 0, leadingText: 'R', trailingText: '/W' })}
+            {field('Labour — panels', labourPanel, setLabourPanel, { type: 'number', step: '0.01', min: 0, leadingText: 'R', trailingText: '/W' })}
+            {field('2-storey access premium', premium2, setPremium2, { type: 'number', step: '100', min: 0, leadingText: 'R' })}
+            {field('3+-storey access premium', premium3, setPremium3, { type: 'number', step: '100', min: 0, leadingText: 'R' })}
           </div>
         </CardContent>
       </Card>
@@ -235,6 +242,7 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
               </div>
             ))}
             <Button
+              type="button"
               variant="outline"
               size="sm"
               className="self-start"
@@ -258,8 +266,8 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
               const value = canvasColorOf(layer, field)
               const overridden = isCanvasColorOverridden(layer, field)
               return (
-                <div key={`${layer}.${field}`} className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-foreground">{label}</span>
+                <div key={`${layer}.${field}`} className="flex flex-col gap-1.5">
+                  <Label>{label}</Label>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
@@ -292,7 +300,7 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
       </Card>
 
       <div className="flex items-center gap-3">
-        <Button variant="accent" onClick={save} disabled={saving}>
+        <Button type="submit" variant="accent" disabled={saving}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save settings
         </Button>
         {saved && !saving && (
@@ -300,6 +308,6 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
         )}
         {error && <span className="text-sm text-destructive">{error}</span>}
       </div>
-    </div>
+    </form>
   )
 }

@@ -2,7 +2,8 @@ import { createClient, getUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
-import { TrendingUp, Users, Briefcase, MapPin, FileText, ArrowUpRight } from 'lucide-react'
+import { TrendingUp, Users, Briefcase, MapPin, FileText, ArrowUpRight, BarChart2 } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 export default async function MetricsPage() {
   const user = await getUser()
@@ -86,11 +87,12 @@ export default async function MetricsPage() {
   ]
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">Company Metrics</h1>
-        <p className="text-muted-foreground mt-1">Business performance at a glance</p>
-      </div>
+    <PageShell width="wide">
+      <PageHeader
+        icon={BarChart2}
+        title="Company Metrics"
+        description="Business performance at a glance"
+      />
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {tiles.map(({ label, value, sub, icon: Icon, accent }) => (
@@ -108,6 +110,6 @@ export default async function MetricsPage() {
           </Card>
         ))}
       </div>
-    </div>
+    </PageShell>
   )
 }

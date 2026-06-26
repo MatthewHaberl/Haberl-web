@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { MapPin, ChevronRight, Sun } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const NO_CUSTOMER = '00000000-0000-0000-0000-000000000000'
 
@@ -18,11 +19,12 @@ export default async function SitesPage() {
     .order('created_at', { ascending: false })
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">My Installations</h1>
-        <p className="text-muted-foreground mt-1">All your registered sites and systems</p>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={MapPin}
+        title="My Installations"
+        description="All your registered sites and systems"
+      />
 
       {!sites?.length ? (
         <Card>
@@ -68,6 +70,6 @@ export default async function SitesPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

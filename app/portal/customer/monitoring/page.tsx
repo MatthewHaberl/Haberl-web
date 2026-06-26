@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ChevronRight, Sun, BatteryCharging, AlertTriangle } from 'lucide-react'
+import { ChevronRight, Sun, BatteryCharging, AlertTriangle, Activity } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -64,8 +65,8 @@ export default async function CustomerMonitoringPage() {
 
   if (!systems?.length) {
     return (
-      <div className="flex flex-col gap-6">
-        <h1 className="text-2xl font-bold">My Solar Systems</h1>
+      <PageShell width="content">
+        <PageHeader icon={Activity} title="My Solar Systems" />
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Sun className="h-10 w-10 text-muted-foreground/40" />
@@ -75,16 +76,17 @@ export default async function CustomerMonitoringPage() {
             </p>
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     )
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold">My Solar Systems</h1>
-        <p className="text-sm text-muted-foreground">Live monitoring for all your installations</p>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={Activity}
+        title="My Solar Systems"
+        description="Live monitoring for all your installations"
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {(systems ?? []).map((system) => {
@@ -151,6 +153,6 @@ export default async function CustomerMonitoringPage() {
           )
         })}
       </div>
-    </div>
+    </PageShell>
   )
 }

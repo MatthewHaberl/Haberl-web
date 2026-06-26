@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Users, Trash2, ChevronDown, ChevronUp, Check } from 'lucide-react'
+import { FormField } from '@/components/ui/form-field'
+import { Plus, Users, Trash2, ChevronDown, ChevronUp, Check, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useRouter } from 'next/navigation'
@@ -211,35 +212,33 @@ export function PriceListEditor({ priceLists: initial, customers }: Props) {
       {/* Create new */}
       {creating ? (
         <Card>
-          <CardContent className="pt-4 flex flex-col gap-3">
-            <p className="font-semibold text-sm">New price list</p>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Name *</label>
-                <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Contractor 10%" className="mt-1" />
+          <CardContent className="pt-4">
+            <form onSubmit={(e) => { e.preventDefault(); handleCreate() }} className="flex flex-col gap-3">
+              <p className="font-semibold text-sm">New price list</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <FormField label="Name" htmlFor="pricelist-new-name" required>
+                  <Input id="pricelist-new-name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Contractor 10%" />
+                </FormField>
+                <FormField label="Description" htmlFor="pricelist-new-description">
+                  <Input id="pricelist-new-description" value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Optional description" />
+                </FormField>
+                <FormField label="Markup (base)" htmlFor="pricelist-new-markup">
+                  <Input id="pricelist-new-markup" type="number" value={newMarkup} onChange={e => setNewMarkup(Number(e.target.value))} min={0} trailingText="%" />
+                </FormField>
+                <FormField label="Discount (off marked price)" htmlFor="pricelist-new-discount">
+                  <Input id="pricelist-new-discount" type="number" value={newDiscount} onChange={e => setNewDiscount(Number(e.target.value))} min={0} max={100} trailingText="%" />
+                </FormField>
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Description</label>
-                <Input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Optional description" className="mt-1" />
+              <p className="text-xs text-muted-foreground">
+                Preview: R10,000 cost → <strong>R{calcPrice(EXAMPLE_COST, newMarkup, newDiscount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</strong>
+              </p>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={saving || !newName.trim()}>
+                  {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</> : 'Create list'}
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Markup % (base)</label>
-                <Input type="number" value={newMarkup} onChange={e => setNewMarkup(Number(e.target.value))} min={0} className="mt-1" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Discount % (off marked price)</label>
-                <Input type="number" value={newDiscount} onChange={e => setNewDiscount(Number(e.target.value))} min={0} max={100} className="mt-1" />
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Preview: R10,000 cost → <strong>R{calcPrice(EXAMPLE_COST, newMarkup, newDiscount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</strong>
-            </p>
-            <div className="flex gap-2">
-              <Button onClick={handleCreate} disabled={saving || !newName.trim()}>
-                {saving ? 'Saving…' : 'Create list'}
-              </Button>
-              <Button variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
-            </div>
+            </form>
           </CardContent>
         </Card>
       ) : (

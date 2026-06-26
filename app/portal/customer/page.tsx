@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { MapPin, ShoppingBag, FileText, ChevronRight, CheckCircle } from 'lucide-react'
+import { MapPin, ShoppingBag, FileText, ChevronRight, CheckCircle, Home } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const NO_CUSTOMER = '00000000-0000-0000-0000-000000000000'
 
@@ -24,11 +25,12 @@ export default async function CustomerDashboard() {
   ])
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">My Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Overview of your installations and account</p>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={Home}
+        title="My Dashboard"
+        description="Overview of your installations and account"
+      />
 
       {/* Stats row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -136,6 +138,6 @@ export default async function CustomerDashboard() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   )
 }

@@ -8,6 +8,7 @@ import type { Metadata } from 'next'
 import { UploadForm } from './UploadForm'
 import { DeleteDocButton } from './DeleteDocButton'
 import { FIN_DOC_TYPE_LABEL, type FinDocumentWithCustomer } from '@/lib/finance/types'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 export const metadata: Metadata = { title: 'Finance — Documents' }
 
@@ -33,15 +34,12 @@ export default async function FinanceDocumentsPage() {
   const customers = (customersRaw ?? []) as unknown as { id: string; full_name: string }[]
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-          <Receipt className="h-6 w-6" /> Finance — Documents
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Upload receipts, invoices and statements. Extraction and per-line allocation come next.
-        </p>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={Receipt}
+        title="Finance — Documents"
+        description="Upload receipts, invoices and statements. Extraction and per-line allocation come next."
+      />
 
       <UploadForm customers={customers} />
 
@@ -106,6 +104,6 @@ export default async function FinanceDocumentsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   )
 }

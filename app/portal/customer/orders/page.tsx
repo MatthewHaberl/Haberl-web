@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ShoppingBag } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate, formatCurrency } from '@/lib/utils'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { OrderStatus } from '@/types/database'
 
 const statusVariant: Record<OrderStatus, 'default' | 'warning' | 'success' | 'destructive' | 'outline'> = {
@@ -27,16 +28,17 @@ export default async function OrdersPage() {
     .order('created_at', { ascending: false })
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">My Orders</h1>
-          <p className="text-muted-foreground mt-1">{orders?.length ?? 0} orders total</p>
-        </div>
-        <Button variant="accent" asChild>
-          <Link href="/shop">Shop now</Link>
-        </Button>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={ShoppingBag}
+        title="My Orders"
+        description={`${orders?.length ?? 0} orders total`}
+        actions={
+          <Button variant="accent" asChild>
+            <Link href="/shop">Shop now</Link>
+          </Button>
+        }
+      />
 
       {!orders?.length ? (
         <Card>
@@ -77,6 +79,6 @@ export default async function OrdersPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

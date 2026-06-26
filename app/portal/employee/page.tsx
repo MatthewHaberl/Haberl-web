@@ -25,6 +25,7 @@ import { buildDailyBriefing } from '@/lib/quotes/daily-briefing'
 import { formatCurrency } from '@/lib/utils'
 import type { JobPriority, JobStatus, Role } from '@/types/database'
 import { PlanList, type PlanListItem } from './PlanList'
+import { PageShell } from '@/components/layout/page'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 export const dynamic = 'force-dynamic'
@@ -314,7 +315,7 @@ export default async function EmployeePortalRoot() {
       ]
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell width="wide">
       {/* Slim header */}
       <Card className="border-accent/30 bg-gradient-to-br from-primary to-primary/85 text-white dark:from-card dark:to-card dark:border-border">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
@@ -443,6 +444,6 @@ export default async function EmployeePortalRoot() {
           </Card>
         </Link>
       </div>
-    </div>
+    </PageShell>
   )
 }

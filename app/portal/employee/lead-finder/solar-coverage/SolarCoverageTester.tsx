@@ -17,6 +17,7 @@ import {
   Search,
   XCircle,
 } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 type ImageryQuality = 'HIGH' | 'MEDIUM' | 'LOW' | 'BASE'
 type CoverageStatus = 'covered' | 'marginal' | 'not_covered' | 'error'
@@ -259,52 +260,47 @@ export function SolarCoverageTester() {
   }
 
   return (
-    <div className="flex max-w-6xl flex-col gap-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <MapPinned className="h-6 w-6 text-accent" />
-            <h1 className="text-2xl font-bold text-primary">Solar Coverage</h1>
-          </div>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Validate whether Google Solar returns roof-level data in Gauteng before investing in automated suburb scanning.
-          </p>
-        </div>
+    <PageShell width="full">
+      <PageHeader
+        icon={MapPinned}
+        title="Solar Coverage"
+        description="Validate whether Google Solar returns roof-level data in Gauteng before investing in automated suburb scanning."
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <Link href="/portal/employee/lead-finder/area-scan">
+                <Radar className="h-4 w-4" />
+                Area scanner
+              </Link>
+            </Button>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href="/portal/employee/lead-finder/area-scan">
-              <Radar className="h-4 w-4" />
-              Area scanner
-            </Link>
-          </Button>
+            <select
+              value={requiredQuality}
+              onChange={(event) => setRequiredQuality(event.target.value as ImageryQuality)}
+              disabled={expandedCoverage}
+              className="h-10 rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <option value="HIGH">High quality</option>
+              <option value="MEDIUM">Medium quality</option>
+              <option value="LOW">Low quality</option>
+              <option value="BASE">Base quality</option>
+            </select>
 
-          <select
-            value={requiredQuality}
-            onChange={(event) => setRequiredQuality(event.target.value as ImageryQuality)}
-            disabled={expandedCoverage}
-            className="h-10 rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <option value="HIGH">High quality</option>
-            <option value="MEDIUM">Medium quality</option>
-            <option value="LOW">Low quality</option>
-            <option value="BASE">Base quality</option>
-          </select>
-
-          <label className="flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm">
-            <input
-              type="checkbox"
-              checked={expandedCoverage}
-              onChange={(event) => {
-                setExpandedCoverage(event.target.checked)
-                if (event.target.checked) setRequiredQuality('BASE')
-              }}
-              className="h-4 w-4 accent-accent"
-            />
-            Expanded coverage
-          </label>
-        </div>
-      </div>
+            <label className="flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm">
+              <input
+                type="checkbox"
+                checked={expandedCoverage}
+                onChange={(event) => {
+                  setExpandedCoverage(event.target.checked)
+                  if (event.target.checked) setRequiredQuality('BASE')
+                }}
+                className="h-4 w-4 accent-accent"
+              />
+              Expanded coverage
+            </label>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -405,6 +401,6 @@ export function SolarCoverageTester() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageShell>
   )
 }

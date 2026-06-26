@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import { useConfirm } from '@/components/ui/confirm-dialog'
-import { Plus, Pencil, Trash2, Check, X, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, Loader2, ShieldAlert } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 type Severity = 'block' | 'warn' | 'info'
 
@@ -128,18 +129,17 @@ export function AuditRulesManager({ initialRules }: { initialRules: AuditRule[] 
   )
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Audit Rules</h1>
-          <p className="text-muted-foreground mt-1">
-            The soft rules the engine checks on existing systems. Edit, add or switch them off — changes are live, no deploy.
-          </p>
-        </div>
-        <Button variant="accent" size="sm" onClick={() => setAdding((a) => !a)}>
-          <Plus className="h-4 w-4" /> Add rule
-        </Button>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={ShieldAlert}
+        title="Audit Rules"
+        description="The soft rules the engine checks on existing systems. Edit, add or switch them off — changes are live, no deploy."
+        actions={
+          <Button variant="accent" size="sm" onClick={() => setAdding((a) => !a)}>
+            <Plus className="h-4 w-4" /> Add rule
+          </Button>
+        }
+      />
 
       {adding && (
         <Card>
@@ -205,6 +205,6 @@ export function AuditRulesManager({ initialRules }: { initialRules: AuditRule[] 
           </div>
         </div>
       ))}
-    </div>
+    </PageShell>
   )
 }

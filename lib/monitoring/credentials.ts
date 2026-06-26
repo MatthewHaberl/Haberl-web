@@ -35,3 +35,17 @@ export function decryptCredentials(stored: string): BrandCredentials {
   const plain = Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8')
   return JSON.parse(plain) as BrandCredentials
 }
+
+/**
+ * Decrypt a stored credential blob, tolerating dev-mode plaintext JSON and
+ * returning {} instead of throwing. Use where a missing/unreadable blob should
+ * degrade gracefully (collector, connection tests) rather than crash.
+ */
+export function decryptCredentialsLoose(stored: string | null | undefined): BrandCredentials {
+  if (!stored) return {}
+  try {
+    return decryptCredentials(stored)
+  } catch {
+    try { return JSON.parse(stored) as BrandCredentials } catch { return {} }
+  }
+}

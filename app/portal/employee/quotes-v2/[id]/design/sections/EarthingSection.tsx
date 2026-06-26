@@ -7,7 +7,7 @@ import {
 } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
-import { SectionCard } from '../section-ui'
+import { SectionCard, SearchableSelect } from '../section-ui'
 
 // ≤3kW → 2, 4–5kW → 4, 6kW+ → 6 (confirmed on site by soil-resistivity test).
 function suggestedSpikes(kw: number): number {
@@ -54,27 +54,23 @@ export function EarthingSection() {
         <div className="mt-3 grid grid-cols-2 gap-3 max-w-md">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted-foreground">Earth spike product</span>
-            <select
-              value={e.spikeProductId ?? ''}
-              disabled={loading}
-              onChange={(ev) => dispatch({ type: 'setEarthing', patch: { spikeProductId: ev.target.value || null } })}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-            >
-              <option value="">None (quote)</option>
-              {earthProducts.map((p) => <option key={p.id} value={p.id}>{p.description}</option>)}
-            </select>
+            <SearchableSelect
+              value={e.spikeProductId ?? null}
+              onChange={(v) => dispatch({ type: 'setEarthing', patch: { spikeProductId: v } })}
+              options={earthProducts.map((p) => ({ value: p.id, label: p.description }))}
+              placeholder={loading ? 'Loading…' : 'None (quote)'}
+              noneLabel="None (quote)"
+            />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted-foreground">Earth bar product</span>
-            <select
-              value={e.barProductId ?? ''}
-              disabled={loading}
-              onChange={(ev) => dispatch({ type: 'setEarthing', patch: { barProductId: ev.target.value || null } })}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-            >
-              <option value="">None (quote)</option>
-              {earthProducts.map((p) => <option key={p.id} value={p.id}>{p.description}</option>)}
-            </select>
+            <SearchableSelect
+              value={e.barProductId ?? null}
+              onChange={(v) => dispatch({ type: 'setEarthing', patch: { barProductId: v } })}
+              options={earthProducts.map((p) => ({ value: p.id, label: p.description }))}
+              placeholder={loading ? 'Loading…' : 'None (quote)'}
+              noneLabel="None (quote)"
+            />
           </label>
         </div>
         <p className="mt-1 text-[11px] text-muted-foreground">Pick catalog products (category “other”) to price spikes/bars; leave as “None” to surface them as Quote in the BOM.</p>

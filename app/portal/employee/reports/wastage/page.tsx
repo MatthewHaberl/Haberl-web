@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { PackageX, TrendingDown } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 function rands(cents: number) {
   return `R ${(cents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -102,29 +103,27 @@ export default async function WastageReportPage({
   const lossPct = totals.loaded > 0 ? (totals.lost / totals.loaded) * 100 : 0
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Wastage Report</h1>
-          <p className="text-muted-foreground mt-1">
-            Loaded vs used vs returned across job materials — what left the warehouse and never
-            came back.
-          </p>
-        </div>
-        <div className="flex gap-1 rounded-md border border-border p-0.5">
-          {PERIODS.map((p) => (
-            <Link
-              key={p.key}
-              href={`/portal/employee/reports/wastage?period=${p.key}`}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                p.key === period.key ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {p.label}
-            </Link>
-          ))}
-        </div>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={PackageX}
+        title="Wastage Report"
+        description="Loaded vs used vs returned across job materials — what left the warehouse and never came back."
+        actions={
+          <div className="flex gap-1 rounded-md border border-border p-0.5">
+            {PERIODS.map((p) => (
+              <Link
+                key={p.key}
+                href={`/portal/employee/reports/wastage?period=${p.key}`}
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                  p.key === period.key ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {p.label}
+              </Link>
+            ))}
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card>
@@ -231,6 +230,6 @@ export default async function WastageReportPage({
           )}
         </>
       )}
-    </div>
+    </PageShell>
   )
 }

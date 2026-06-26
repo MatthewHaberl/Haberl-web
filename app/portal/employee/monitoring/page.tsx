@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { AlertTriangle, Activity, Zap, BatteryCharging, Map, Bell, Settings2, ChevronRight, Clock, Plus } from 'lucide-react'
+import { AlertTriangle, Activity, Zap, BatteryCharging, Map, Bell, Settings2, ChevronRight, Clock, Plus, Pencil, KeyRound } from 'lucide-react'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { SystemStatusBadge } from '@/components/monitoring/SystemStatusBadge'
 import type { DeviceState } from '@/lib/monitoring/types'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 export const metadata: Metadata = { title: 'Monitoring — Fleet Overview' }
 
@@ -130,40 +131,46 @@ export default async function MonitoringFleetPage() {
   const currentPvKw = rows.reduce((sum, r) => sum + ((r.latest_pv_w ?? 0) / 1000), 0)
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Monitoring — Fleet Overview</h1>
-          <p className="text-sm text-muted-foreground">All inverter systems across all sites</p>
-        </div>
-        <div className="flex gap-2">
-          <Link
-            href="/portal/employee/monitoring/map"
-            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
-          >
-            <Map className="h-4 w-4" /> Map view
-          </Link>
-          <Link
-            href="/portal/employee/monitoring/alerts"
-            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
-          >
-            <Bell className="h-4 w-4" />
-            Alerts
-            {(openAlerts ?? 0) > 0 && (
-              <span className="rounded-full bg-destructive px-1.5 py-0.5 text-xs font-bold text-white">
-                {openAlerts}
-              </span>
-            )}
-          </Link>
-          <Link
-            href="/portal/employee/monitoring/new"
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" /> Add system
-          </Link>
-        </div>
-      </div>
+    <PageShell width="wide">
+      <PageHeader
+        icon={Activity}
+        title="Monitoring — Fleet Overview"
+        description="All inverter systems across all sites"
+        actions={
+          <>
+            <Link
+              href="/portal/employee/monitoring/map"
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
+            >
+              <Map className="h-4 w-4" /> Map view
+            </Link>
+            <Link
+              href="/portal/employee/monitoring/accounts"
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
+            >
+              <KeyRound className="h-4 w-4" /> Brand connections
+            </Link>
+            <Link
+              href="/portal/employee/monitoring/alerts"
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
+            >
+              <Bell className="h-4 w-4" />
+              Alerts
+              {(openAlerts ?? 0) > 0 && (
+                <span className="rounded-full bg-destructive px-1.5 py-0.5 text-xs font-bold text-white">
+                  {openAlerts}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="/portal/employee/monitoring/new"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/90 transition-colors"
+            >
+              <Plus className="h-4 w-4" /> Add system
+            </Link>
+          </>
+        }
+      />
 
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -311,9 +318,22 @@ export default async function MonitoringFleetPage() {
                           {row.customer_name ?? '—'}
                         </td>
                         <td className="px-4 py-3">
-                          <Link href={`/portal/employee/monitoring/${row.id}`}>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          </Link>
+                          <div className="flex items-center justify-end gap-1">
+                            <Link
+                              href={`/portal/employee/monitoring/${row.id}/edit`}
+                              title="Edit connection"
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Link>
+                            <Link
+                              href={`/portal/employee/monitoring/${row.id}`}
+                              title="Open system"
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -324,6 +344,6 @@ export default async function MonitoringFleetPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageShell>
   )
 }

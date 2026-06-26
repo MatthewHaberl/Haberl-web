@@ -2,8 +2,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Image as ImageIcon } from 'lucide-react'
 import { ProductImageManager } from './ProductImageManager'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 import type { ProductImage } from '@/types/database'
 
@@ -36,24 +37,21 @@ export default async function ProductImagesPage() {
   const rejected  = allImages.filter(i => i.status === 'rejected').length
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Product Images</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Review product images · approve to show on product pages and the shop grid
-          </p>
-        </div>
-      </div>
+    <PageShell width="wide">
+      <Button variant="ghost" size="sm" asChild className="self-start">
+        <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
+      </Button>
+      <PageHeader
+        icon={ImageIcon}
+        title="Product Images"
+        description="Review product images · approve to show on product pages and the shop grid"
+      />
 
       <ProductImageManager
         initialImages={allImages}
         products={products ?? []}
         counts={{ total: allImages.length, pending, published, rejected }}
       />
-    </div>
+    </PageShell>
   )
 }

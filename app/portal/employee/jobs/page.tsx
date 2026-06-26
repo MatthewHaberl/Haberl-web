@@ -7,6 +7,7 @@ import { Briefcase, ChevronRight, Calendar, Landmark, Plus, User } from 'lucide-
 import { formatDate } from '@/lib/utils'
 import { PIPELINE_STAGES, STAGE_META, stageIndex } from '@/lib/jobs/stages'
 import type { JobStage, JobPriority } from '@/types/database'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const stageVariant = (stage: JobStage): 'default' | 'warning' | 'success' | 'destructive' => {
   if (stage === 'completed') return 'success'
@@ -103,25 +104,22 @@ export default async function JobsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">
-            {isManager ? 'All Jobs' : 'My Jobs'}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-          {active.length} active · {done.length} completed
-          </p>
-        </div>
-        {isManager && (
-          <Button asChild variant="accent" size="sm">
-            <Link href="/portal/employee/jobs/new">
-              <Plus className="h-3.5 w-3.5" />
-              New job
-            </Link>
-          </Button>
-        )}
-      </div>
+    <PageShell width="wide">
+      <PageHeader
+        icon={Briefcase}
+        title={isManager ? 'All Jobs' : 'My Jobs'}
+        description={`${active.length} active · ${done.length} completed`}
+        actions={
+          isManager && (
+            <Button asChild variant="accent" size="sm">
+              <Link href="/portal/employee/jobs/new">
+                <Plus className="h-3.5 w-3.5" />
+                New job
+              </Link>
+            </Button>
+          )
+        }
+      />
 
       {jobsError && (
         <Card className="border-destructive/40">
@@ -180,6 +178,6 @@ export default async function JobsPage() {
           )}
         </>
       )}
-    </div>
+    </PageShell>
   )
 }

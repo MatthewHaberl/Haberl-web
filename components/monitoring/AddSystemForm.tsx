@@ -7,6 +7,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import {
   BRAND_CONNECT, BRAND_ORDER, ACCESS_LABEL,
   type BrandField,
@@ -18,6 +20,46 @@ export interface SiteOption {
   id: string
   name: string
   customer_name: string | null
+}
+
+/** An existing system being edited. Credentials are intentionally absent — they
+ *  are never sent to the client; blank credential fields keep the saved value. */
+export interface ExistingSystem {
+  id: string
+  site_id: string | null
+  brand: MonitoringBrand
+  label: string | null
+  capacity_kw: number | null
+  battery_kwh: number | null
+  plant_id: string | null
+  device_sn: string | null
+  brand_account_id: string | null
+}
+
+/** A saved, reusable per-brand credential set the form can attach instead of
+ *  asking for a key again. */
+export interface BrandAccountOption {
+  id: string
+  brand: MonitoringBrand
+  name: string
+}
+
+/** Sentinel for "enter a one-off key for just this site" in the connection picker. */
+const OWN_KEY = '__own__'
+
+/** Pre-fill the field map for edit mode: only the non-secret locator fields
+ *  (plant_id / device_sn) carry over; credential fields stay blank. */
+function initialValues(
+  schema: { fields: BrandField[] },
+  existing: ExistingSystem | undefined,
+): Record<string, string> {
+  const v: Record<string, string> = {}
+  if (!existing) return v
+  for (const f of schema.fields) {
+    if (f.target === 'plant_id' && existing.plant_id) v[f.key] = existing.plant_id
+    else if (f.target === 'device_sn' && existing.device_sn) v[f.key] = existing.device_sn
+  }
+  return v
 }
 
 interface TestResult {
@@ -34,24 +76,48 @@ interface TestResult {
   }
 }
 
-const selectClass =
-  'flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ' +
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50'
-
 const accessBadgeVariant: Record<string, 'default' | 'outline'> = {
   easy: 'outline', 'self-serve': 'outline', application: 'default', 'local-only': 'default',
 }
 
-export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
+export function AddSystemForm({
+  sites,
+  existing,
+  initialSiteId,
+  accounts = [],
+}: {
+  sites: SiteOption[]
+  existing?: ExistingSystem
+  /** Preselect this site when arriving from a customer's site card (new-system mode only). */
+  initialSiteId?: string
+  /** Saved per-brand connections available to attach instead of a one-off key. */
+  accounts?: BrandAccountOption[]
+}) {
   const router = useRouter()
+  const editMode = !!existing
 
-  const [siteId, setSiteId] = useState('')
-  const [brand, setBrand] = useState<MonitoringBrand>('victron')
-  const [label, setLabel] = useState('')
-  const [capacityKw, setCapacityKw] = useState('')
-  const [batteryKwh, setBatteryKwh] = useState('')
+  const [siteId, setSiteId] = useState(
+    existing?.site_id ??
+      (initialSiteId && sites.some((s) => s.id === initialSiteId) ? initialSiteId : ''),
+  )
+  const [brand, setBrand] = useState<MonitoringBrand>(existing?.brand ?? 'victron')
+  const [label, setLabel] = useState(existing?.label ?? '')
+  const [capacityKw, setCapacityKw] = useState(existing?.capacity_kw != null ? String(existing.capacity_kw) : '')
+  const [batteryKwh, setBatteryKwh] = useState(existing?.battery_kwh != null ? String(existing.battery_kwh) : '')
   // Field values keyed by BrandField.key (covers credentials + plant_id + device_sn)
-  const [values, setValues] = useState<Record<string, string>>({})
+  const [values, setValues] = useState<Record<string, string>>(
+    () => initialValues(BRAND_CONNECT[existing?.brand ?? 'victron'], existing),
+  )
+
+  const accountsFor = (b: MonitoringBrand) => accounts.filter((a) => a.brand === b)
+  /** Default connection: keep the system's own account, else first saved account, else a one-off key. */
+  function defaultConnection(b: MonitoringBrand): string {
+    if (editMode && existing!.brand === b && existing!.brand_account_id) return existing!.brand_account_id
+    if (editMode && existing!.brand === b) return OWN_KEY  // existing one-off key
+    return accountsFor(b)[0]?.id ?? OWN_KEY
+  }
+  // Which credential source this system uses: a brand-account id, or OWN_KEY.
+  const [connection, setConnection] = useState<string>(() => defaultConnection(existing?.brand ?? 'victron'))
 
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
@@ -59,10 +125,24 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
   const [error, setError] = useState('')
 
   const schema = BRAND_CONNECT[brand]
+  const brandAccounts = accountsFor(brand)
+  const usingAccount = connection !== OWN_KEY
+  // Blank-credentials-keep-saved only applies when editing the SAME brand with a
+  // one-off key that already exists on the system (nothing to "keep" for accounts).
+  const brandChanged = editMode && existing!.brand !== brand
+  const credsOptional = editMode && !brandChanged && !usingAccount && !existing!.brand_account_id
 
   function changeBrand(next: MonitoringBrand) {
     setBrand(next)
-    setValues({})
+    // Switching back to the original brand re-fills its saved locators.
+    setValues(initialValues(BRAND_CONNECT[next], editMode && existing!.brand === next ? existing : undefined))
+    setConnection(defaultConnection(next))
+    setTestResult(null)
+    setError('')
+  }
+
+  function changeConnection(next: string) {
+    setConnection(next)
     setTestResult(null)
     setError('')
   }
@@ -72,7 +152,8 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
     setTestResult(null)
   }
 
-  /** Split the flat values map into the API payload shape. */
+  /** Split the flat values map into the API payload shape. Credentials are
+   *  omitted entirely when a saved account supplies the key. */
   const buildConnection = useMemo(
     () => () => {
       const credentials: BrandCredentials = {}
@@ -81,23 +162,27 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
       for (const f of schema.fields) {
         const v = (values[f.key] ?? '').trim()
         if (!v) continue
-        if (f.target === 'credential') credentials[f.key] = v
+        if (f.target === 'credential') { if (!usingAccount) credentials[f.key] = v }
         else if (f.target === 'plant_id') plant_id = v
         else if (f.target === 'device_sn') device_sn = v
       }
       return { credentials, plant_id, device_sn }
     },
-    [schema, values],
+    [schema, values, usingAccount],
   )
 
   /** Returns an error string if the form is incomplete, else null. */
   function validate(needSite: boolean): string | null {
     if (needSite && !siteId) return 'Choose which site this system belongs to.'
     for (const f of schema.fields) {
+      // Credential fields are hidden (account supplies the key) or optional
+      // (editing the same brand, blank = keep saved value).
+      if (f.target === 'credential' && (usingAccount || credsOptional)) continue
       if (f.required && !(values[f.key] ?? '').trim()) return `${f.label} is required.`
     }
-    // Growatt: needs a token OR a username+password pair.
-    if (brand === 'growatt') {
+    // Growatt: needs a token OR a username+password pair — only when a one-off
+    // key must actually be supplied here.
+    if (brand === 'growatt' && !usingAccount && !credsOptional) {
       const hasToken = !!(values.api_token ?? '').trim()
       const hasLogin = !!(values.username ?? '').trim() && !!(values.password ?? '').trim()
       if (!hasToken && !hasLogin) return 'Provide an API token, or a username and password.'
@@ -116,7 +201,12 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
       const res = await fetch('/api/monitoring/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brand, ...conn }),
+        body: JSON.stringify({
+          brand,
+          ...conn,
+          ...(editMode ? { systemId: existing!.id } : {}),
+          ...(usingAccount ? { brand_account_id: connection } : {}),
+        }),
       })
       const data = (await res.json()) as TestResult
       setTestResult(data)
@@ -134,17 +224,19 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
     setSaving(true)
     try {
       const conn = buildConnection()
+      const payload = {
+        site_id: siteId,
+        brand,
+        label: label.trim() || null,
+        capacity_kw: capacityKw ? Number(capacityKw) : null,
+        battery_kwh: batteryKwh ? Number(batteryKwh) : null,
+        brand_account_id: usingAccount ? connection : null,
+        ...conn,
+      }
       const res = await fetch('/api/monitoring/systems', {
-        method: 'POST',
+        method: editMode ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          site_id: siteId,
-          brand,
-          label: label.trim() || null,
-          capacity_kw: capacityKw ? Number(capacityKw) : null,
-          battery_kwh: batteryKwh ? Number(batteryKwh) : null,
-          ...conn,
-        }),
+        body: JSON.stringify(editMode ? { id: existing!.id, ...payload } : payload),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -152,7 +244,7 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
         setSaving(false)
         return
       }
-      router.push('/portal/employee/monitoring')
+      router.push(editMode ? `/portal/employee/monitoring/${existing!.id}` : '/portal/employee/monitoring')
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -161,52 +253,52 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-5">
+    <form onSubmit={(e) => { e.preventDefault(); save() }} className="flex max-w-2xl flex-col gap-5">
       {/* Site + brand */}
       <Card>
         <CardContent className="flex flex-col gap-4 pt-5">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">Site *</span>
-            <select className={selectClass} value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="system-site">Site *</Label>
+            <Select id="system-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
               <option value="">Select a site…</option>
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}{s.customer_name ? ` — ${s.customer_name}` : ''}
                 </option>
               ))}
-            </select>
+            </Select>
             {sites.length === 0 && (
               <span className="text-xs text-destructive">
                 No sites yet. Open a customer and use <strong>Add site</strong> first —{' '}
                 <Link href="/portal/employee/customers" className="underline hover:text-foreground">go to Customers</Link>.
               </span>
             )}
-          </label>
+          </div>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">Inverter brand *</span>
-            <select className={selectClass} value={brand} onChange={(e) => changeBrand(e.target.value as MonitoringBrand)}>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="system-brand">Inverter brand *</Label>
+            <Select id="system-brand" value={brand} onChange={(e) => changeBrand(e.target.value as MonitoringBrand)}>
               {BRAND_ORDER.map((b) => (
                 <option key={b} value={b}>{BRAND_CONNECT[b].label}</option>
               ))}
-            </select>
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">System size (kWp)</span>
-              <Input value={capacityKw} onChange={(e) => setCapacityKw(e.target.value)} inputMode="decimal" placeholder="e.g. 8" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Battery (kWh)</span>
-              <Input value={batteryKwh} onChange={(e) => setBatteryKwh(e.target.value)} inputMode="decimal" placeholder="e.g. 12" />
-            </label>
+            </Select>
           </div>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">Label (optional)</span>
-            <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Roof inverter, Garage" />
-          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="system-capacity">System size (kWp)</Label>
+              <Input id="system-capacity" value={capacityKw} onChange={(e) => setCapacityKw(e.target.value)} type="number" min={0} inputMode="decimal" trailingText="kWp" placeholder="e.g. 8" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="system-battery">Battery (kWh)</Label>
+              <Input id="system-battery" value={batteryKwh} onChange={(e) => setBatteryKwh(e.target.value)} type="number" min={0} inputMode="decimal" trailingText="kWh" placeholder="e.g. 12" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="system-label">Label (optional)</Label>
+            <Input id="system-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Roof inverter, Garage" />
+          </div>
         </CardContent>
       </Card>
 
@@ -237,23 +329,61 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
         </Card>
       ) : (
         <>
+          {/* Connection: reuse a saved brand key, or enter a one-off key. */}
+          {brandAccounts.length > 0 && (
+            <Card>
+              <CardContent className="flex flex-col gap-3 pt-5">
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="system-connection">{schema.label} connection *</Label>
+                  <Select id="system-connection" value={connection} onChange={(e) => changeConnection(e.target.value)}>
+                    {brandAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name} (saved key)</option>
+                    ))}
+                    <option value={OWN_KEY}>Enter a one-off key for just this site…</option>
+                  </Select>
+                  {usingAccount ? (
+                    <span className="text-xs text-muted-foreground/80">
+                      Using your saved {schema.label} key — you only need this site&apos;s ID below.
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/80">This key is stored on this site only.</span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardContent className="flex flex-col gap-4 pt-5">
-              {schema.fields.map((f: BrandField) => (
-                <label key={f.key} className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {f.label}{f.required ? ' *' : ''}
-                  </span>
-                  <Input
-                    type={f.type === 'password' ? 'password' : 'text'}
-                    autoComplete="off"
-                    value={values[f.key] ?? ''}
-                    placeholder={f.placeholder}
-                    onChange={(e) => setField(f.key, e.target.value)}
-                  />
-                  <span className="text-xs text-muted-foreground/80">{f.help}</span>
-                </label>
-              ))}
+              {credsOptional && (
+                <p className="text-xs text-muted-foreground">
+                  Leave a credential blank to keep its saved value. Change the Plant/Station ID or
+                  serial below to fix a wrong locator, or re-enter a credential to replace it.
+                </p>
+              )}
+              {schema.fields
+                // Hide credential fields when a saved account supplies the key.
+                .filter((f) => !(usingAccount && f.target === 'credential'))
+                .map((f: BrandField) => {
+                  // A blank credential keeps the stored secret when editing the same brand.
+                  const optional = credsOptional && f.target === 'credential'
+                  return (
+                    <div key={f.key} className="flex flex-col gap-1">
+                      <Label htmlFor={`system-field-${f.key}`}>
+                        {f.label}{f.required && !optional ? ' *' : ''}
+                      </Label>
+                      <Input
+                        id={`system-field-${f.key}`}
+                        type={f.type === 'password' ? 'password' : 'text'}
+                        autoComplete="off"
+                        value={values[f.key] ?? ''}
+                        placeholder={optional ? 'Saved — leave blank to keep' : f.placeholder}
+                        onChange={(e) => setField(f.key, e.target.value)}
+                      />
+                      <span className="text-xs text-muted-foreground/80">{f.help}</span>
+                    </div>
+                  )
+                })}
             </CardContent>
           </Card>
 
@@ -288,13 +418,13 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={testConnection} disabled={testing || saving}>
+            <Button type="button" variant="outline" onClick={testConnection} disabled={testing || saving}>
               {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlugZap className="h-4 w-4" />}
               Test connection
             </Button>
-            <Button variant="accent" onClick={save} disabled={saving || testing}>
+            <Button type="submit" variant="accent" disabled={saving || testing}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save system
+              {editMode ? 'Save changes' : 'Save system'}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -302,6 +432,6 @@ export function AddSystemForm({ sites }: { sites: SiteOption[] }) {
           </p>
         </>
       )}
-    </div>
+    </form>
   )
 }

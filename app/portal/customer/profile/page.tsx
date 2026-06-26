@@ -1,6 +1,7 @@
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { User, Mail, Phone } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = { title: 'My Profile' }
@@ -16,13 +17,14 @@ export default async function CustomerProfilePage() {
     .single()
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">My Profile</h1>
-        <p className="text-muted-foreground mt-1">Your account details</p>
-      </div>
+    <PageShell width="form">
+      <PageHeader
+        icon={User}
+        title="My Profile"
+        description="Your account details"
+      />
 
-      <Card className="max-w-lg">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <User className="h-5 w-5 text-accent" />
@@ -61,6 +63,6 @@ export default async function CustomerProfilePage() {
           </p>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   )
 }

@@ -5,7 +5,9 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Select } from '@/components/ui/select'
+import { FormField } from '@/components/ui/form-field'
+import { Plus, Trash2, ToggleLeft, ToggleRight, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 
@@ -128,67 +130,69 @@ export function DiscountCodeManager({ codes: initial }: Props) {
       {/* Create form */}
       {creating ? (
         <Card>
-          <CardContent className="pt-4 flex flex-col gap-4">
-            <p className="font-semibold text-sm">New discount code</p>
+          <CardContent className="pt-4">
+            <form onSubmit={(e) => { e.preventDefault(); handleCreate() }} className="flex flex-col gap-4">
+              <p className="font-semibold text-sm">New discount code</p>
 
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Code * (auto-uppercased)</label>
-                <Input value={form.code} onChange={e => set('code', e.target.value)} placeholder="WELCOME10" className="mt-1" />
+              <div className="grid sm:grid-cols-2 gap-3">
+                <FormField label="Code (auto-uppercased)" htmlFor="discount-code" required>
+                  <Input id="discount-code" value={form.code} onChange={e => set('code', e.target.value)} placeholder="WELCOME10" />
+                </FormField>
+                <FormField label="Description" htmlFor="discount-description">
+                  <Input id="discount-description" value={form.description} onChange={e => set('description', e.target.value)} placeholder="New customer discount" />
+                </FormField>
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Description</label>
-                <Input value={form.description} onChange={e => set('description', e.target.value)} placeholder="New customer discount" className="mt-1" />
-              </div>
-            </div>
 
-            <div className="grid sm:grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Type *</label>
-                <select
-                  value={form.discount_type}
-                  onChange={e => set('discount_type', e.target.value)}
-                  className="mt-1 w-full h-10 rounded-md border border-border bg-background px-3 text-sm"
-                >
-                  <option value="percentage">Percentage (%)</option>
-                  <option value="fixed_amount">Fixed amount (R)</option>
-                </select>
+              <div className="grid sm:grid-cols-3 gap-3">
+                <FormField label="Type" htmlFor="discount-type" required>
+                  <Select
+                    id="discount-type"
+                    value={form.discount_type}
+                    onChange={e => set('discount_type', e.target.value)}
+                  >
+                    <option value="percentage">Percentage (%)</option>
+                    <option value="fixed_amount">Fixed amount (R)</option>
+                  </Select>
+                </FormField>
+                <FormField label="Value" htmlFor="discount-value" required>
+                  <Input
+                    id="discount-value"
+                    type="number"
+                    value={form.discount_value}
+                    onChange={e => set('discount_value', e.target.value)}
+                    placeholder={form.discount_type === 'percentage' ? '10' : '50'}
+                    min={0}
+                    {...(form.discount_type === 'percentage'
+                      ? { max: 100, trailingText: '%' as const }
+                      : { leadingText: 'R' as const })}
+                  />
+                </FormField>
+                <FormField label="Max uses (blank = unlimited)" htmlFor="discount-max-uses">
+                  <Input id="discount-max-uses" type="number" value={form.max_uses} onChange={e => set('max_uses', e.target.value)} placeholder="Unlimited" min={1} />
+                </FormField>
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">
-                  Value * {form.discount_type === 'percentage' ? '(%)' : '(Rands)'}
-                </label>
-                <Input type="number" value={form.discount_value} onChange={e => set('discount_value', e.target.value)} placeholder={form.discount_type === 'percentage' ? '10' : '50'} min={0} className="mt-1" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Max uses (blank = unlimited)</label>
-                <Input type="number" value={form.max_uses} onChange={e => set('max_uses', e.target.value)} placeholder="Unlimited" min={1} className="mt-1" />
-              </div>
-            </div>
 
-            <div className="grid sm:grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Min order (Rands, optional)</label>
-                <Input type="number" value={form.min_order_rands} onChange={e => set('min_order_rands', e.target.value)} placeholder="e.g. 500" min={0} className="mt-1" />
+              <div className="grid sm:grid-cols-3 gap-3">
+                <FormField label="Min order (optional)" htmlFor="discount-min-order">
+                  <Input id="discount-min-order" type="number" value={form.min_order_rands} onChange={e => set('min_order_rands', e.target.value)} placeholder="e.g. 500" min={0} leadingText="R" />
+                </FormField>
+                <FormField label="Valid from (optional)" htmlFor="discount-valid-from">
+                  <Input id="discount-valid-from" type="datetime-local" value={form.valid_from} onChange={e => set('valid_from', e.target.value)} />
+                </FormField>
+                <FormField label="Valid until (optional)" htmlFor="discount-valid-until">
+                  <Input id="discount-valid-until" type="datetime-local" value={form.valid_until} onChange={e => set('valid_until', e.target.value)} />
+                </FormField>
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Valid from (optional)</label>
-                <Input type="datetime-local" value={form.valid_from} onChange={e => set('valid_from', e.target.value)} className="mt-1" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Valid until (optional)</label>
-                <Input type="datetime-local" value={form.valid_until} onChange={e => set('valid_until', e.target.value)} className="mt-1" />
-              </div>
-            </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+              {error && <p className="text-sm text-destructive">{error}</p>}
 
-            <div className="flex gap-2">
-              <Button onClick={handleCreate} disabled={saving}>
-                {saving ? 'Saving…' : 'Create code'}
-              </Button>
-              <Button variant="ghost" onClick={() => { setCreating(false); setError('') }}>Cancel</Button>
-            </div>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={saving}>
+                  {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</> : 'Create code'}
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => { setCreating(false); setError('') }}>Cancel</Button>
+              </div>
+            </form>
           </CardContent>
         </Card>
       ) : (

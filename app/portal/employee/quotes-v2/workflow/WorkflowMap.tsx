@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
-import { Loader2, Flag, ArrowLeft, CheckCircle2, XCircle, RotateCcw } from 'lucide-react'
+import { Loader2, Flag, ArrowLeft, CheckCircle2, XCircle, RotateCcw, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import type { WorkflowDiagram } from './diagrams'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 export interface CatchPoint {
   id: string
@@ -100,21 +101,20 @@ export function WorkflowMap({ diagrams, initialCatchPoints, currentUserId }: Pro
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Workflow map</h1>
-          <p className="text-muted-foreground mt-1">
-            The quoting workflow, in detail. Spot a gap mid-quote? Flag a catch-point and it becomes a candidate rule.
-          </p>
-        </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/portal/employee/quotes-v2">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Quotes
-          </Link>
-        </Button>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={Sparkles}
+        title="Workflow map"
+        description="The quoting workflow, in detail. Spot a gap mid-quote? Flag a catch-point and it becomes a candidate rule."
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link href="/portal/employee/quotes-v2">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Quotes
+            </Link>
+          </Button>
+        }
+      />
 
       {/* Flow selector */}
       <div className="flex flex-wrap gap-2">
@@ -233,6 +233,6 @@ export function WorkflowMap({ diagrams, initialCatchPoints, currentUserId }: Pro
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }

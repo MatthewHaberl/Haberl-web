@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select as UiSelect } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
 import { resolveOrCreateCustomer } from '@/lib/customers/resolve'
 import { detectMunicipality, MUNICIPALITIES } from '@/lib/solar/municipalities'
@@ -13,6 +15,8 @@ import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { FileText, Loader2, CheckCircle2, Upload, X, Image as ImageIcon } from 'lucide-react'
 import type { EquipmentBrand } from '@/types/database'
 import { ExistingArrayBuilder, type ArrayString } from './ExistingArrayBuilder'
+import { Sparkles } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'] as const
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -55,13 +59,9 @@ function Field({ label, required, children }: { label: string; required?: boolea
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { id: string; label: string }[] | string[] }) {
   const opts = options.map((o) => (typeof o === 'string' ? { id: o, label: o } : o))
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-    >
+    <UiSelect value={value} onChange={(e) => onChange(e.target.value)}>
       {opts.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-    </select>
+    </UiSelect>
   )
 }
 
@@ -314,11 +314,12 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">New quote</h1>
-        <p className="text-muted-foreground mt-1">Only the customer name is required — the calculator auto-sizes from usage. Everything else refines it.</p>
-      </div>
+    <PageShell width="form">
+      <PageHeader
+        icon={Sparkles}
+        title="New quote"
+        description="Only the customer name is required — the calculator auto-sizes from usage. Everything else refines it."
+      />
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         {/* 1 · Customer */}
@@ -330,10 +331,10 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
                 <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="John Smith" />
               </Field>
               <Field label="Email">
-                <Input value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="john@example.com" />
+                <Input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="john@example.com" />
               </Field>
               <Field label="Phone">
-                <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="082 000 0000" />
+                <Input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="082 000 0000" />
               </Field>
               <Field label="Customer Address">
                 <Input value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Billing / home address" />
@@ -349,7 +350,7 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
                   <Input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Contact name" />
                 </Field>
                 <Field label="Contact Email">
-                  <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="contact@business.co.za" />
+                  <Input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="contact@business.co.za" />
                 </Field>
               </div>
             )}
@@ -418,8 +419,7 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
                 <Field label="Current Panels"><Input value={existingPanels} onChange={(e) => setExistingPanels(e.target.value)} placeholder="Count × watt" /></Field>
               </div>
               <Field label="Scope — what needs to change?">
-                <textarea value={amendmentScope} onChange={(e) => setAmendmentScope(e.target.value)} rows={3}
-                  className="flex w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+                <Textarea value={amendmentScope} onChange={(e) => setAmendmentScope(e.target.value)} rows={3} className="resize-none" />
               </Field>
               <ExistingArrayBuilder value={existingArray} onChange={setExistingArray} />
             </CardContent>
@@ -446,8 +446,8 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
                 <Field label="…or average daily usage (kWh)">
                   <Input value={dailyKwh} onChange={(e) => handleDailyChange(e.target.value)} type="number" min="0" placeholder="e.g. 28" />
                 </Field>
-                <Field label="…or average monthly bill (R)">
-                  <Input value={monthlyBill} onChange={(e) => handleBillChange(e.target.value)} type="number" min="0" placeholder="e.g. 2 400" />
+                <Field label="…or average monthly bill">
+                  <Input leadingText="R" value={monthlyBill} onChange={(e) => handleBillChange(e.target.value)} type="number" min="0" placeholder="e.g. 2 400" />
                 </Field>
               </div>
             ) : (
@@ -504,8 +504,7 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
                 <ImageIcon className="h-4 w-4" /> No photos added yet
               </div>
             )}
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Conduit route, shade, DB layout, special requirements…"
-              className="flex w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Conduit route, shade, DB layout, special requirements…" className="resize-none" />
           </CardContent>
         </Card>
 
@@ -515,6 +514,6 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
           {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</> : <><FileText className="h-4 w-4" />Submit</>}
         </Button>
       </form>
-    </div>
+    </PageShell>
   )
 }

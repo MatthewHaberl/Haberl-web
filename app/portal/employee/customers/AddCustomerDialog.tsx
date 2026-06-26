@@ -7,12 +7,9 @@ import { normalizePhone } from '@/lib/customers/phone'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { FormField } from '@/components/ui/form-field'
 import { UserPlus, Loader2, X, AlertTriangle } from 'lucide-react'
-
-const fieldClass =
-  'flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ' +
-  'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
-  'disabled:cursor-not-allowed disabled:opacity-50'
 
 /**
  * Create a customer by hand (a walk-in, a referral, an existing client). No
@@ -114,22 +111,18 @@ export function AddCustomerDialog() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Name *</label>
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Customer / company name" autoFocus />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Email</label>
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" inputMode="email" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Phone</label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="082 123 4567" inputMode="tel" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Address</label>
-              <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Suburb / street" />
-            </div>
+            <FormField label="Name" htmlFor="customer-name" required>
+              <Input id="customer-name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Customer / company name" autoFocus />
+            </FormField>
+            <FormField label="Email" htmlFor="customer-email">
+              <Input id="customer-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" inputMode="email" />
+            </FormField>
+            <FormField label="Phone" htmlFor="customer-phone">
+              <Input id="customer-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="082 123 4567" inputMode="tel" />
+            </FormField>
+            <FormField label="Address" htmlFor="customer-address">
+              <Input id="customer-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Suburb / street" />
+            </FormField>
           </div>
 
           <label className="flex items-center gap-2 text-sm">
@@ -137,17 +130,15 @@ export function AddCustomerDialog() {
             This is a business
           </label>
           {isBusiness && (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Contact person</label>
-              <Input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Who to speak to" />
-            </div>
+            <FormField label="Contact person" htmlFor="customer-contact">
+              <Input id="customer-contact" value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Who to speak to" />
+            </FormField>
           )}
 
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Note</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
-              placeholder="Anything worth remembering…" className={`${fieldClass} h-auto`} />
-          </div>
+          <FormField label="Note" htmlFor="customer-notes">
+            <Textarea id="customer-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+              placeholder="Anything worth remembering…" />
+          </FormField>
 
           {dupe && (
             <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">

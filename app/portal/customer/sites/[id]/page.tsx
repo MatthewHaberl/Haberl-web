@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
-import { FileText, Calendar, ShieldCheck, Download, Wrench, Sun, Zap } from 'lucide-react'
+import { FileText, Calendar, ShieldCheck, Download, Wrench, Sun, Zap, MapPin } from 'lucide-react'
 import { InstallationTracker } from '@/components/jobs/InstallationTracker'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Job, JobStatusHistory } from '@/types/database'
 
 export default async function SiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -43,17 +44,17 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">{site.name}</h1>
-          <p className="text-muted-foreground mt-0.5">{site.address}</p>
-        </div>
-        <Badge variant={site.status === 'active' ? 'success' : 'warning'} className="text-sm px-3 py-1">
-          {site.status}
-        </Badge>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={MapPin}
+        title={site.name}
+        description={site.address}
+        actions={
+          <Badge variant={site.status === 'active' ? 'success' : 'warning'} className="text-sm px-3 py-1">
+            {site.status}
+          </Badge>
+        }
+      />
 
       {/* System details */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -149,6 +150,6 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   )
 }

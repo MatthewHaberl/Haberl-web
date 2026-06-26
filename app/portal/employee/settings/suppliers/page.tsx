@@ -1,7 +1,9 @@
 import { createClient, getUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import type { Supplier } from '@/types/database'
+import { Truck } from 'lucide-react'
 import { SuppliersEditor } from './SuppliersEditor'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 export default async function SuppliersPage() {
   const user = await getUser()
@@ -21,15 +23,13 @@ export default async function SuppliersPage() {
     .order('name')
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">Suppliers</h1>
-        <p className="text-muted-foreground mt-1">
-          Who you order from. Purchase orders pick from this list — add an email to send POs
-          directly from the platform.
-        </p>
-      </div>
+    <PageShell width="form">
+      <PageHeader
+        icon={Truck}
+        title="Suppliers"
+        description="Who you order from. Purchase orders pick from this list — add an email to send POs directly from the platform."
+      />
       <SuppliersEditor initialSuppliers={(suppliers ?? []) as Supplier[]} />
-    </div>
+    </PageShell>
   )
 }

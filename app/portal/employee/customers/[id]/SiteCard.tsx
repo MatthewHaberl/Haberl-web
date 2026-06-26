@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Pencil, Loader2, X, Save } from 'lucide-react'
+import { Pencil, Loader2, X, Save, Activity, ChevronRight } from 'lucide-react'
 
 export interface SiteCardData {
   id: string
@@ -34,7 +35,14 @@ const selectClass =
  * place staff can correct a site's name / address / size / status — including
  * the ones created by hand for monitoring.
  */
-export function SiteCard({ site }: { site: SiteCardData }) {
+export function SiteCard({
+  site,
+  monitoringSystemId,
+}: {
+  site: SiteCardData
+  /** id of the monitoring system attached to this site, if one exists */
+  monitoringSystemId?: string | null
+}) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -81,28 +89,42 @@ export function SiteCard({ site }: { site: SiteCardData }) {
   }
 
   if (!editing) {
+    // Clicking the card opens this site's live monitoring. If nothing is
+    // connected yet, send staff to the Add-system page pre-targeted at this site.
+    const monitoringHref = monitoringSystemId
+      ? `/portal/employee/monitoring/${monitoringSystemId}`
+      : `/portal/employee/monitoring/new?siteId=${site.id}`
+
     return (
-      <Card>
-        <CardContent className="pt-4 pb-4">
-          <div className="flex items-start justify-between gap-2">
-            <p className="font-medium truncate">{site.name}</p>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <Badge variant={statusBadge[site.status] ?? 'warning'}>{site.status}</Badge>
-              <button
-                type="button"
-                onClick={startEdit}
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Edit site"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
+      <Card className="relative transition-colors hover:border-accent">
+        {/* Edit pencil sits above the link so it stays independently clickable */}
+        <button
+          type="button"
+          onClick={startEdit}
+          className="absolute right-3 top-3 z-10 text-muted-foreground hover:text-foreground"
+          aria-label="Edit site"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <Link href={monitoringHref} className="block" aria-label={`Open ${site.name} monitoring`}>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-medium truncate pr-6">{site.name}</p>
+              <div className="flex items-center gap-1.5 shrink-0 pr-6">
+                <Badge variant={statusBadge[site.status] ?? 'warning'}>{site.status}</Badge>
+              </div>
             </div>
-          </div>
-          {site.address && <p className="text-sm text-muted-foreground mt-1 truncate">{site.address}</p>}
-          {site.system_size_kw != null && (
-            <p className="text-sm mt-1"><span className="font-medium">{site.system_size_kw} kW</span> {site.system_type}</p>
-          )}
-        </CardContent>
+            {site.address && <p className="text-sm text-muted-foreground mt-1 truncate">{site.address}</p>}
+            {site.system_size_kw != null && (
+              <p className="text-sm mt-1"><span className="font-medium">{site.system_size_kw} kW</span> {site.system_type}</p>
+            )}
+            <p className="flex items-center gap-1 text-xs text-accent mt-2">
+              <Activity className="h-3.5 w-3.5" />
+              {monitoringSystemId ? 'View live monitoring' : 'Connect monitoring'}
+              <ChevronRight className="h-3.5 w-3.5" />
+            </p>
+          </CardContent>
+        </Link>
       </Card>
     )
   }

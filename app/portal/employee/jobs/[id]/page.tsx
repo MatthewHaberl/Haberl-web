@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { MapPin, Calendar, ChevronLeft, FileText } from 'lucide-react'
+import { MapPin, Calendar, ChevronLeft, FileText, Briefcase } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { STAGE_META } from '@/lib/jobs/stages'
 import type { Job, JobTask, JobMaterial, JobStatusHistory } from '@/types/database'
@@ -17,6 +17,7 @@ import { DepositPanel } from './DepositPanel'
 import { CreatePoDialog } from './CreatePoDialog'
 import { JobLayout3DPanel } from './JobLayout3DPanel'
 import type { CableRouteRow } from '@/lib/solar/job-layout-3d'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -149,34 +150,35 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/portal/employee/jobs">
-            <ChevronLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-primary">{job.title}</h1>
-          {site && (
-            <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
-              <MapPin className="h-3.5 w-3.5" />{site.name} — {site.address}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {job.quote_request_id && (
-            <Button asChild variant="ghost" size="sm">
-              <Link href={`/portal/employee/quotes-v2/${job.quote_request_id}`}>
-                <FileText className="h-3.5 w-3.5" /> Quote
-              </Link>
-            </Button>
-          )}
-          <Badge variant={job.stage === 'completed' ? 'success' : job.stage === 'cancelled' ? 'destructive' : 'warning'}>
-            {stageMeta?.label ?? job.stage}
-          </Badge>
-        </div>
-      </div>
+    <PageShell width="wide">
+      <Button variant="ghost" size="sm" asChild className="self-start -ml-2">
+        <Link href="/portal/employee/jobs">
+          <ChevronLeft className="h-4 w-4" /> Jobs
+        </Link>
+      </Button>
+      <PageHeader
+        icon={Briefcase}
+        title={job.title}
+        description={site ? (
+          <span className="flex items-center gap-1">
+            <MapPin className="h-3.5 w-3.5" />{site.name} — {site.address}
+          </span>
+        ) : undefined}
+        actions={
+          <>
+            {job.quote_request_id && (
+              <Button asChild variant="ghost" size="sm">
+                <Link href={`/portal/employee/quotes-v2/${job.quote_request_id}`}>
+                  <FileText className="h-3.5 w-3.5" /> Quote
+                </Link>
+              </Button>
+            )}
+            <Badge variant={job.stage === 'completed' ? 'success' : job.stage === 'cancelled' ? 'destructive' : 'warning'}>
+              {stageMeta?.label ?? job.stage}
+            </Badge>
+          </>
+        }
+      />
 
       <StagePipeline
         job={{ id: job.id, stage: job.stage, on_hold_reason: job.on_hold_reason }}
@@ -243,6 +245,6 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         materials={materials}
         showPrices={isManager}
       />
-    </div>
+    </PageShell>
   )
 }

@@ -11,8 +11,9 @@ import { buildPoWorkbook } from '@/lib/procurement/po-workbook'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { PurchaseOrder, PurchaseOrderLine, PurchaseOrderStatus, Supplier } from '@/types/database'
 import {
-  AlertTriangle, Briefcase, Check, ChevronLeft, Download, Loader2, Mail, PackageCheck, Send, XCircle,
+  AlertTriangle, Briefcase, Check, ChevronLeft, ClipboardList, Download, Loader2, Mail, PackageCheck, Send, XCircle,
 } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const STATUS_VARIANT: Record<PurchaseOrderStatus, 'default' | 'warning' | 'success' | 'destructive'> = {
   draft: 'default',
@@ -142,36 +143,34 @@ export function PoDetail({ po, supplier, job, initialLines }: Props) {
   const receivingMode = ['sent', 'partial', 'received'].includes(status)
 
   return (
-    <div className="flex flex-col gap-4 max-w-4xl">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/portal/employee/procurement">
-            <ChevronLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-xl font-bold text-primary font-mono">{po.po_number}</h1>
+    <PageShell width="content">
+      <Button variant="ghost" size="sm" asChild className="self-start -ml-2">
+        <Link href="/portal/employee/procurement">
+          <ChevronLeft className="h-4 w-4" /> Procurement
+        </Link>
+      </Button>
+      <PageHeader
+        icon={ClipboardList}
+        title={
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-mono">{po.po_number}</span>
             <Badge variant={STATUS_VARIANT[status]}>{status}</Badge>
             {totals.shortages > 0 && ['sent', 'partial'].includes(status) && (
               <Badge variant="warning">
                 <AlertTriangle className="h-3 w-3 mr-1" /> {totals.shortages} line{totals.shortages === 1 ? '' : 's'} short
               </Badge>
             )}
-          </div>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {supplier?.name ?? 'No supplier'}
-            {po.expected_date && ` · required by ${new Date(po.expected_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long' })}`}
-          </p>
-        </div>
-        {job && (
+          </span>
+        }
+        description={`${supplier?.name ?? 'No supplier'}${po.expected_date ? ` · required by ${new Date(po.expected_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long' })}` : ''}`}
+        actions={job && (
           <Button asChild variant="ghost" size="sm">
             <Link href={`/portal/employee/jobs/${job.id}`}>
               <Briefcase className="h-3.5 w-3.5" /> Job
             </Link>
           </Button>
         )}
-      </div>
+      />
 
       {/* Actions */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -293,6 +292,6 @@ export function PoDetail({ po, supplier, job, initialLines }: Props) {
         <p className="text-sm text-muted-foreground"><strong className="text-foreground">Notes:</strong> {po.notes}</p>
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
-    </div>
+    </PageShell>
   )
 }

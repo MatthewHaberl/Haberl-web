@@ -10,6 +10,7 @@ import {
   ArrowLeft, Check, ChevronDown, ChevronUp, ExternalLink,
   FileText, Image, Loader2, Search, X, Zap,
 } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const RESOURCE_LABELS: Record<ResearchResourceType, string> = {
   description: 'Description',
@@ -268,7 +269,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     : null
 
   return (
-    <div className="flex max-w-5xl flex-col gap-6">
+    <PageShell width="content">
       {/* Nav */}
       <div className="flex flex-wrap items-center gap-2">
         <Link href="/portal/employee/settings/catalog" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -277,33 +278,31 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       </div>
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">{item.brand} {item.sku}</h1>
-          <p className="mt-0.5 text-muted-foreground">{item.description}</p>
-          <p className="mt-1 text-xs text-muted-foreground capitalize">
-            {item.category}
-            {item.watts_ac ? ` · ${(item.watts_ac / 1000).toFixed(1)} kW` : ''}
-            {item.kwh ? ` · ${item.kwh} kWh` : ''}
-            {item.watts_dc ? ` · ${item.watts_dc} Wp` : ''}
-            {item.phase !== 'any' ? ` · ${item.phase} phase` : ''}
-          </p>
-          {ranAt && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Last researched: {ranAt} · {research.length} items · {acceptedCount} accepted · {pendingCount} pending
-            </p>
-          )}
-          {!ranAt && (
-            <p className="mt-1 text-xs text-muted-foreground">No research yet — click Run Research to begin.</p>
-          )}
-        </div>
-
-        <Button variant="accent" onClick={runResearch} disabled={running}>
-          {running
-            ? <><Loader2 className="h-4 w-4 animate-spin" />Researching… (~60–90 s)</>
-            : <><Search className="h-4 w-4" />Run Research</>}
-        </Button>
-      </div>
+      <PageHeader
+        title={`${item.brand} ${item.sku}`}
+        description={
+          <>
+            {item.description}
+            <span className="mt-1 block capitalize">
+              {item.category}
+              {item.watts_ac ? ` · ${(item.watts_ac / 1000).toFixed(1)} kW` : ''}
+              {item.kwh ? ` · ${item.kwh} kWh` : ''}
+              {item.watts_dc ? ` · ${item.watts_dc} Wp` : ''}
+              {item.phase !== 'any' ? ` · ${item.phase} phase` : ''}
+            </span>
+            {ranAt
+              ? <span className="mt-1 block">Last researched: {ranAt} · {research.length} items · {acceptedCount} accepted · {pendingCount} pending</span>
+              : <span className="mt-1 block">No research yet — click Run Research to begin.</span>}
+          </>
+        }
+        actions={
+          <Button variant="accent" onClick={runResearch} disabled={running}>
+            {running
+              ? <><Loader2 className="h-4 w-4 animate-spin" />Researching… (~60–90 s)</>
+              : <><Search className="h-4 w-4" />Run Research</>}
+          </Button>
+        }
+      />
 
       {error && (
         <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>
@@ -376,6 +375,6 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
           <p className="mt-1 text-xs">Click <strong>Run Research</strong> above to fetch datasheets, photos, SLDs, and more.</p>
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

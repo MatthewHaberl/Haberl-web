@@ -4,8 +4,9 @@ import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Tag } from 'lucide-react'
 import { PriceListEditor } from './PriceListEditor'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = { title: 'Price Lists — Shop' }
@@ -27,16 +28,15 @@ export default async function PriceListsPage() {
   ])
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Price Lists</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Create pricing tiers and assign customers to them</p>
-        </div>
-      </div>
+    <PageShell width="wide">
+      <Button variant="ghost" size="sm" asChild className="self-start">
+        <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
+      </Button>
+      <PageHeader
+        icon={Tag}
+        title="Price Lists"
+        description="Create pricing tiers and assign customers to them"
+      />
 
       <Card>
         <CardHeader>
@@ -53,6 +53,6 @@ export default async function PriceListsPage() {
         priceLists={(priceLists ?? []) as Parameters<typeof PriceListEditor>[0]['priceLists']}
         customers={(customers ?? []) as Parameters<typeof PriceListEditor>[0]['customers']}
       />
-    </div>
+    </PageShell>
   )
 }

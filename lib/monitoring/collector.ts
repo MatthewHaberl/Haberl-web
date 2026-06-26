@@ -5,9 +5,9 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { getAdapter, AdapterError } from './adapters/index'
-import { decryptCredentials } from './credentials'
+import { decryptCredentialsLoose } from './credentials'
 import { runAlertEngine } from './alert-engine'
-import type { MonitoringBrand, NormalisedReading } from './types'
+import type { BrandCredentials, MonitoringBrand, NormalisedReading } from './types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySupabaseClient = ReturnType<typeof createClient<any>>
@@ -18,7 +18,10 @@ interface MonitoringSystem {
   brand: MonitoringBrand
   plant_id: string | null
   device_sn: string | null
-  credentials: string | null  // encrypted JSON string
+  credentials: string | null  // encrypted JSON string, or null when using an account
+  brand_account_id: string | null
+  // Joined shared brand account (to-one). May arrive as an object or 1-element array.
+  brand_account: { credentials: string | null } | { credentials: string | null }[] | null
   enabled: boolean
 }
 
@@ -38,7 +41,7 @@ export async function runCollector(): Promise<CollectorResult[]> {
 
   const { data: systems, error } = await supabase
     .from('monitoring_systems')
-    .select('id, site_id, brand, plant_id, device_sn, credentials, enabled')
+    .select('id, site_id, brand, plant_id, device_sn, credentials, brand_account_id, brand_account:monitoring_brand_accounts(credentials), enabled')
     .eq('enabled', true)
 
   if (error) throw new Error(`Failed to fetch monitoring systems: ${error.message}`)
@@ -87,19 +90,16 @@ async function processSingleSystem(
 ): Promise<CollectorResult> {
   const adapter = getAdapter(system.brand)
 
-  // Decrypt credentials
-  let credentials = {}
-  if (system.credentials) {
-    try {
-      credentials = decryptCredentials(system.credentials as string)
-    } catch {
-      // If no encryption key set (dev), try parsing as plain JSON
-      try {
-        credentials = JSON.parse(system.credentials as string)
-      } catch {
-        throw new AdapterError('Failed to decrypt credentials', system.brand, false)
-      }
-    }
+  // Resolve credentials: the system's own key wins; otherwise fall back to the
+  // shared brand account it links to.
+  const account = Array.isArray(system.brand_account) ? system.brand_account[0] : system.brand_account
+  const encrypted = system.credentials ?? account?.credentials ?? null
+  if (!encrypted) {
+    throw new AdapterError('No credentials — set a key on the system or its brand connection', system.brand, false)
+  }
+  const credentials: BrandCredentials = decryptCredentialsLoose(encrypted)
+  if (Object.keys(credentials).length === 0) {
+    throw new AdapterError('Failed to decrypt credentials', system.brand, false)
   }
 
   // Fetch from brand API

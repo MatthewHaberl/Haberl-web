@@ -8,6 +8,7 @@ import { PhoneIncoming, PhoneCall, CheckCircle2 } from 'lucide-react'
 import type { Lead } from '@/types/database'
 import { LeadCard } from './LeadCard'
 import { AddLeadDialog } from './AddLeadDialog'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,22 +58,17 @@ export default async function LeadsPage() {
   const toContact = newLeads.length + contacted.length
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <PhoneIncoming className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-bold text-primary">Leads</h1>
-          </div>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {toContact > 0
-              ? `${toContact} ${toContact === 1 ? 'person' : 'people'} to contact`
-              : 'No one waiting on a call right now'}
-          </p>
-        </div>
-      </div>
-
-      <AddLeadDialog />
+    <PageShell width="content">
+      <PageHeader
+        icon={PhoneIncoming}
+        title="Leads"
+        description={
+          toContact > 0
+            ? `${toContact} ${toContact === 1 ? 'person' : 'people'} to contact`
+            : 'No one waiting on a call right now'
+        }
+        actions={<AddLeadDialog />}
+      />
 
       {toContact === 0 ? (
         <Card>
@@ -132,6 +128,6 @@ export default async function LeadsPage() {
           {discardedCount > 0 && <>{discardedCount} discarded</>}
         </p>
       )}
-    </div>
+    </PageShell>
   )
 }

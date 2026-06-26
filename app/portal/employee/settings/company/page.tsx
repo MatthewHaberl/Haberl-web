@@ -1,7 +1,9 @@
 import { createClient, getUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { Settings } from 'lucide-react'
 import { CompanySettingsForm } from './CompanySettingsForm'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const SETTINGS_LINKS = [
   { href: '/portal/employee/settings/brands', label: 'Brands' },
@@ -27,15 +29,12 @@ export default async function CompanySettingsPage() {
     .maybeSingle()
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">Company Settings</h1>
-        <p className="text-muted-foreground mt-1">
-          Everything that used to be hardcoded: contact details, EFT banking, quote defaults, and
-          the pricing policy the calculator uses. Changes apply to the next calculation — existing
-          saved quotes keep their numbers.
-        </p>
-      </div>
+    <PageShell width="form">
+      <PageHeader
+        icon={Settings}
+        title="Company Settings"
+        description="Everything that used to be hardcoded: contact details, EFT banking, quote defaults, and the pricing policy the calculator uses. Changes apply to the next calculation — existing saved quotes keep their numbers."
+      />
       <div className="flex items-center gap-2 flex-wrap">
         {SETTINGS_LINKS.map((link) => (
           <Link
@@ -48,6 +47,6 @@ export default async function CompanySettingsPage() {
         ))}
       </div>
       <CompanySettingsForm initial={settings ?? {}} />
-    </div>
+    </PageShell>
   )
 }

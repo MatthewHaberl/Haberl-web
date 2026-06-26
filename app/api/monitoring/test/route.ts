@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { getAdapter, AdapterError } from '@/lib/monitoring/adapters/index'
+import { decryptCredentialsLoose } from '@/lib/monitoring/credentials'
 import type { BrandCredentials, MonitoringBrand } from '@/lib/monitoring/types'
 
 export const maxDuration = 30  // brand APIs can be slow; allow a generous timeout
@@ -31,16 +32,55 @@ export async function POST(req: NextRequest) {
     credentials: BrandCredentials
     plant_id?: string | null
     device_sn?: string | null
+    // When editing an existing system, the form keeps stored secrets blank.
+    // Pass its id so we can fall back to the saved credentials / locators for
+    // any field the user left untouched.
+    systemId?: string
+    // When connecting via a shared brand account, pass its id to test with the
+    // account's saved key (no per-site credentials entered).
+    brand_account_id?: string
+  }
+
+  let credentials: BrandCredentials = body.credentials ?? {}
+  let plantId = body.plant_id?.trim() || null
+  let deviceSn = body.device_sn?.trim() || null
+
+  if (body.systemId) {
+    const { data: stored } = await supabase
+      .from('monitoring_systems')
+      .select('brand, credentials, plant_id, device_sn')
+      .eq('id', body.systemId)
+      .single()
+
+    if (stored) {
+      // Only reuse stored secrets when the brand is unchanged — a different
+      // brand's saved keys don't apply to this adapter.
+      if (stored.brand === body.brand) {
+        const savedCreds = decryptCredentialsLoose(stored.credentials as string | null)
+        credentials = { ...savedCreds, ...credentials }
+      }
+      plantId = plantId ?? (stored.plant_id as string | null)
+      deviceSn = deviceSn ?? (stored.device_sn as string | null)
+    }
+  }
+
+  if (body.brand_account_id) {
+    const { data: account } = await supabase
+      .from('monitoring_brand_accounts')
+      .select('brand, credentials')
+      .eq('id', body.brand_account_id)
+      .single()
+
+    // Account's saved key underlies anything explicitly typed in this request.
+    if (account && account.brand === body.brand) {
+      credentials = { ...decryptCredentialsLoose(account.credentials as string | null), ...credentials }
+    }
   }
 
   const adapter = getAdapter(body.brand)
 
   try {
-    const reading = await adapter.fetchReading(
-      body.credentials ?? {},
-      body.plant_id?.trim() || null,
-      body.device_sn?.trim() || null,
-    )
+    const reading = await adapter.fetchReading(credentials, plantId, deviceSn)
     // Return a trimmed, non-sensitive snapshot the form can show as proof.
     return NextResponse.json({
       ok: true,

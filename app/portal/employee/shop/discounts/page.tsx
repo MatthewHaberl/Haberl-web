@@ -2,8 +2,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Percent } from 'lucide-react'
 import { DiscountCodeManager } from './DiscountCodeManager'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = { title: 'Discount Codes — Shop' }
@@ -22,17 +23,16 @@ export default async function DiscountsPage() {
     .order('created_at', { ascending: false })
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Discount Codes</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Percentage or fixed-amount codes for customers</p>
-        </div>
-      </div>
+    <PageShell width="content">
+      <Button variant="ghost" size="sm" asChild className="self-start">
+        <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
+      </Button>
+      <PageHeader
+        icon={Percent}
+        title="Discount Codes"
+        description="Percentage or fixed-amount codes for customers"
+      />
       <DiscountCodeManager codes={(codes ?? []) as Parameters<typeof DiscountCodeManager>[0]['codes']} />
-    </div>
+    </PageShell>
   )
 }

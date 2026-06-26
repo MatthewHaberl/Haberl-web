@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
+import { Settings } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const sections = [
   {
@@ -31,13 +33,12 @@ const sections = [
 
 export default function SettingsRoot() {
   return (
-    <div className="flex max-w-4xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">Quote Settings</h1>
-        <p className="mt-1 text-muted-foreground">
-          Configure the deterministic quote calculator and the survey options behind it.
-        </p>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        icon={Settings}
+        title="Quote Settings"
+        description="Configure the deterministic quote calculator and the survey options behind it."
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         {sections.map((section) => (
@@ -51,6 +52,6 @@ export default function SettingsRoot() {
           </Link>
         ))}
       </div>
-    </div>
+    </PageShell>
   )
 }

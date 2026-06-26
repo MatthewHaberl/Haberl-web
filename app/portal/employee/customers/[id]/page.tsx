@@ -68,6 +68,20 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     : { count: 0 }
 
   const siteIds = (sites ?? []).map((s) => s.id)
+
+  // Map each site to its monitoring system (if connected) so clicking a site
+  // card jumps straight to live monitoring — or to "add system" if there's none.
+  const { data: monitoringSystems } = siteIds.length
+    ? await supabase
+        .from('monitoring_systems')
+        .select('id, site_id')
+        .in('site_id', siteIds)
+    : { data: [] as { id: string; site_id: string }[] }
+  const monitoringBySite = new Map<string, string>()
+  for (const m of monitoringSystems ?? []) {
+    if (m.site_id && !monitoringBySite.has(m.site_id)) monitoringBySite.set(m.site_id, m.id)
+  }
+
   const { data: jobs } = siteIds.length
     ? await supabase
         .from('jobs')
@@ -154,7 +168,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         ) : (
           <div className="grid sm:grid-cols-2 gap-3">
             {sites.map((s) => (
-              <SiteCard key={s.id} site={s} />
+              <SiteCard key={s.id} site={s} monitoringSystemId={monitoringBySite.get(s.id) ?? null} />
             ))}
           </div>
         )}

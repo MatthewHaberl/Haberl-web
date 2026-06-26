@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ArrowLeft, ShoppingBag } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 import type { OrderStatus } from '@/types/database'
 
@@ -42,18 +43,15 @@ export default async function OrdersPage() {
   const pendingCount = (orders ?? []).filter(o => o.status === 'pending').length
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Orders</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            {orders?.length ?? 0} orders · {formatCurrency(totalRevenue)} paid revenue · {pendingCount} pending
-          </p>
-        </div>
-      </div>
+    <PageShell width="wide">
+      <Button variant="ghost" size="sm" asChild className="self-start">
+        <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
+      </Button>
+      <PageHeader
+        icon={ShoppingBag}
+        title="Orders"
+        description={`${orders?.length ?? 0} orders · ${formatCurrency(totalRevenue)} paid revenue · ${pendingCount} pending`}
+      />
 
       {!orders?.length ? (
         <Card>
@@ -121,6 +119,6 @@ export default async function OrdersPage() {
           })}
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

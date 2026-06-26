@@ -6,6 +6,9 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { FormField } from '@/components/ui/form-field'
 import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem, type CatalogSpecs } from '@/lib/solar/quote-calculator'
 import {
   parseEnclosureSpec, enclosureSpecToNotes,
@@ -14,6 +17,7 @@ import {
 } from '@/lib/solar/system-design'
 import { Loader2, Pencil, Plus, Search, X } from 'lucide-react'
 import OffersPanel from './OffersPanel'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 type CategoryTab =
   | 'inverter' | 'battery' | 'panel' | 'enclosure'
@@ -349,7 +353,7 @@ export default function CatalogPage() {
   }
 
   return (
-    <div className="flex max-w-6xl flex-col gap-6">
+    <PageShell width="wide">
       <div className="flex flex-wrap items-center gap-2">
         {navLink('/portal/employee/settings', 'Settings')}
         {navLink('/portal/employee/settings/brands', 'Brands')}
@@ -357,12 +361,10 @@ export default function CatalogPage() {
         {navLink('/portal/employee/settings/tier-configs', 'Tier Configs')}
       </div>
 
-      <div>
-        <h1 className="text-2xl font-bold text-primary">Equipment Catalog</h1>
-        <p className="mt-1 text-muted-foreground">
-          Manage the exact inverter, battery, panel and DB/enclosure models the calculator uses.
-        </p>
-      </div>
+      <PageHeader
+        title="Equipment Catalog"
+        description="Manage the exact inverter, battery, panel and DB/enclosure models the calculator uses."
+      />
 
       {error && (
         <p className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>
@@ -394,15 +396,15 @@ export default function CatalogPage() {
         )}
         <div className="ml-auto flex items-center gap-2">
           {suppliers.length > 0 && (
-            <select
+            <Select
               value={supplierFilter}
               onChange={(event) => setSupplierFilter(event.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+              className="w-auto"
               title="Filter by supplier"
             >
               <option value="all">All suppliers</option>
               {suppliers.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            </Select>
           )}
           <Button
             variant="outline"
@@ -518,75 +520,67 @@ export default function CatalogPage() {
 
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-background shadow-xl">
+          <form
+            onSubmit={(e) => { e.preventDefault(); saveItem() }}
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-background shadow-xl"
+          >
             <div className="flex items-center justify-between border-b border-border bg-background px-6 py-4">
               <div>
                 <h2 className="text-lg font-semibold text-primary">{editing.id ? 'Edit catalog item' : 'Add catalog item'}</h2>
                 <p className="text-sm text-muted-foreground">Sell price is always cost × 1.15.</p>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(null)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
 
             <div className="grid gap-4 overflow-y-auto px-6 py-5 md:grid-cols-2">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Category</span>
-                <select
+              <FormField label="Category">
+                <Select
                   value={editing.category}
                   onChange={(event) => setEditing({ ...editing, category: event.target.value as CategoryTab })}
-                  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
                 >
                   {TABS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Brand <span className="text-muted-foreground">(manufacturer)</span></span>
+                </Select>
+              </FormField>
+              <FormField label={<>Brand <span className="text-muted-foreground">(manufacturer)</span></>} required>
                 <Input value={editing.brand} onChange={(event) => setEditing({ ...editing, brand: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Supplier</span>
+              </FormField>
+              <FormField label="Supplier">
                 <Input value={editing.supplier} onChange={(event) => setEditing({ ...editing, supplier: event.target.value })} placeholder="e.g. Key Electric" />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">SKU</span>
+              </FormField>
+              <FormField label="SKU" required>
                 <Input value={editing.sku} onChange={(event) => setEditing({ ...editing, sku: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5 md:col-span-2">
-                <span className="text-sm font-medium">Description</span>
+              </FormField>
+              <FormField label="Description" required className="md:col-span-2">
                 <Input value={editing.description} onChange={(event) => setEditing({ ...editing, description: event.target.value })} />
-              </label>
+              </FormField>
               {editing.category === 'enclosure' && (() => {
                 const spec = parseEnclosureSpec(editing.notes) ?? DEFAULT_ENCLOSURE
                 const set = (p: Partial<EnclosureSpec>) => setEditing({ ...editing, notes: enclosureSpecToNotes({ ...spec, ...p }) })
                 return (
                   <>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Material</span>
-                      <select value={spec.material} onChange={(e) => set({ material: e.target.value as EnclosureMaterial })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+                    <FormField label="Material">
+                      <Select value={spec.material} onChange={(e) => set({ material: e.target.value as EnclosureMaterial })}>
                         {ENCLOSURE_MATERIALS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Mount</span>
-                      <select value={spec.mount} onChange={(e) => set({ mount: e.target.value as EnclosureMount })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+                      </Select>
+                    </FormField>
+                    <FormField label="Mount">
+                      <Select value={spec.mount} onChange={(e) => set({ mount: e.target.value as EnclosureMount })}>
                         {ENCLOSURE_MOUNTS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Ways</span>
-                      <select value={spec.ways} onChange={(e) => set({ ways: Number(e.target.value) })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+                      </Select>
+                    </FormField>
+                    <FormField label="Ways">
+                      <Select value={spec.ways} onChange={(e) => set({ ways: Number(e.target.value) })}>
                         {ENCLOSURE_WAYS.map((w) => <option key={w} value={w}>{w}-way</option>)}
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Rows</span>
+                      </Select>
+                    </FormField>
+                    <FormField label="Rows">
                       <Input value={String(spec.rows)} onChange={(e) => set({ rows: Math.max(1, Math.round(Number(e.target.value) || 1)) })} />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">IP rating</span>
+                    </FormField>
+                    <FormField label="IP rating">
                       <Input value={spec.ip} onChange={(e) => set({ ip: e.target.value })} />
-                    </label>
+                    </FormField>
                   </>
                 )
               })()}
@@ -596,41 +590,33 @@ export default function CatalogPage() {
                 return (
                   <div className="md:col-span-2 grid gap-4 md:grid-cols-3 rounded-lg border border-border bg-muted/30 p-4">
                     <p className="md:col-span-3 text-sm font-semibold text-primary">Protection attributes</p>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Poles</span>
+                    <FormField label="Poles">
                       <Input value={s.poles?.toString() ?? ''} onChange={(e) => setSpec({ poles: coerceNumber(e.target.value) })} placeholder="1 / 2 / 3 / 4" />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Pole config</span>
+                    </FormField>
+                    <FormField label="Pole config">
                       <Input value={s.pole_config ?? ''} onChange={(e) => setSpec({ pole_config: e.target.value || null })} placeholder="1P / 2P / 3P / 4P / 1P+N" />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Amperage (A)</span>
-                      <Input value={s.amperage_a?.toString() ?? ''} onChange={(e) => setSpec({ amperage_a: coerceNumber(e.target.value) })} />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Current type</span>
-                      <select
+                    </FormField>
+                    <FormField label="Amperage">
+                      <Input type="number" min={0} step="0.1" trailingText="A" value={s.amperage_a?.toString() ?? ''} onChange={(e) => setSpec({ amperage_a: coerceNumber(e.target.value) })} />
+                    </FormField>
+                    <FormField label="Current type">
+                      <Select
                         value={(s.current_type as string) ?? ''}
                         onChange={(e) => setSpec({ current_type: (e.target.value || null) as CatalogSpecs['current_type'] })}
-                        className="h-10 rounded-md border border-border bg-background px-3 text-sm"
                       >
                         <option value="">—</option>
                         {CURRENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Voltage (V)</span>
-                      <Input value={s.voltage_v?.toString() ?? ''} onChange={(e) => setSpec({ voltage_v: coerceNumber(e.target.value) })} placeholder="230 / 400 / 1000" />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Breaking capacity (kA)</span>
-                      <Input value={s.breaking_capacity_ka?.toString() ?? ''} onChange={(e) => setSpec({ breaking_capacity_ka: coerceNumber(e.target.value) })} />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">Trip curve</span>
+                      </Select>
+                    </FormField>
+                    <FormField label="Voltage">
+                      <Input type="number" min={0} step={1} trailingText="V" value={s.voltage_v?.toString() ?? ''} onChange={(e) => setSpec({ voltage_v: coerceNumber(e.target.value) })} placeholder="230 / 400 / 1000" />
+                    </FormField>
+                    <FormField label="Breaking capacity">
+                      <Input type="number" min={0} step="0.1" trailingText="kA" value={s.breaking_capacity_ka?.toString() ?? ''} onChange={(e) => setSpec({ breaking_capacity_ka: coerceNumber(e.target.value) })} />
+                    </FormField>
+                    <FormField label="Trip curve">
                       <Input value={s.curve ?? ''} onChange={(e) => setSpec({ curve: e.target.value || null })} placeholder="B / C / D / 2 / 3" />
-                    </label>
+                    </FormField>
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -643,78 +629,67 @@ export default function CatalogPage() {
                 )
               })()}
               {CATEGORY_FIELDS[editing.category].includes('watts_ac') && (
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium">AC Watts <span className="text-muted-foreground">(kW × 1000)</span></span>
-                  <Input value={editing.watts_ac} onChange={(event) => setEditing({ ...editing, watts_ac: event.target.value })} />
-                </label>
+                <FormField label={<>AC Watts <span className="text-muted-foreground">(kW × 1000)</span></>}>
+                  <Input type="number" min={0} step={1} trailingText="W" value={editing.watts_ac} onChange={(event) => setEditing({ ...editing, watts_ac: event.target.value })} />
+                </FormField>
               )}
               {CATEGORY_FIELDS[editing.category].includes('watts_dc') && (
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium">Wp <span className="text-muted-foreground">(peak watts)</span></span>
-                  <Input value={editing.watts_dc} onChange={(event) => setEditing({ ...editing, watts_dc: event.target.value })} />
-                </label>
+                <FormField label={<>Wp <span className="text-muted-foreground">(peak watts)</span></>}>
+                  <Input type="number" min={0} step={1} trailingText="W" value={editing.watts_dc} onChange={(event) => setEditing({ ...editing, watts_dc: event.target.value })} />
+                </FormField>
               )}
               {CATEGORY_FIELDS[editing.category].includes('kwh') && (
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium">kWh</span>
-                  <Input value={editing.kwh} onChange={(event) => setEditing({ ...editing, kwh: event.target.value })} />
-                </label>
+                <FormField label="Energy">
+                  <Input type="number" min={0} step="0.01" trailingText="kWh" value={editing.kwh} onChange={(event) => setEditing({ ...editing, kwh: event.target.value })} />
+                </FormField>
               )}
               {CATEGORY_FIELDS[editing.category].includes('phase') && (
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium">Phase</span>
-                  <select
+                <FormField label="Phase">
+                  <Select
                     value={editing.phase}
                     onChange={(event) => setEditing({ ...editing, phase: event.target.value as FormState['phase'] })}
-                    className="h-10 rounded-md border border-border bg-background px-3 text-sm"
                   >
                     <option value="single">Single</option>
                     <option value="three">Three</option>
                     <option value="any">Any</option>
-                  </select>
-                </label>
+                  </Select>
+                </FormField>
               )}
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Cost (R)</span>
-                <Input value={editing.cost_rands} onChange={(event) => setEditing({ ...editing, cost_rands: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Sell price (read-only)</span>
+              <FormField label="Cost" required>
+                <Input type="number" min={0} step="0.01" leadingText="R" value={editing.cost_rands} onChange={(event) => setEditing({ ...editing, cost_rands: event.target.value })} />
+              </FormField>
+              <FormField label="Sell price (read-only)">
                 <Input value={formatRands(Number(editing.cost_rands || 0) * markup)} readOnly />
-              </label>
+              </FormField>
               {CATEGORY_FIELDS[editing.category].includes('isc') && (
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium">Isc (A)</span>
-                  <Input value={editing.isc_amps} onChange={(event) => setEditing({ ...editing, isc_amps: event.target.value })} />
-                </label>
+                <FormField label="Isc">
+                  <Input type="number" min={0} step="0.01" trailingText="A" value={editing.isc_amps} onChange={(event) => setEditing({ ...editing, isc_amps: event.target.value })} />
+                </FormField>
               )}
               {CATEGORY_FIELDS[editing.category].includes('voc') && (
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium">Voc (V)</span>
-                  <Input value={editing.voc_volts} onChange={(event) => setEditing({ ...editing, voc_volts: event.target.value })} />
-                </label>
+                <FormField label="Voc">
+                  <Input type="number" min={0} step="0.01" trailingText="V" value={editing.voc_volts} onChange={(event) => setEditing({ ...editing, voc_volts: event.target.value })} />
+                </FormField>
               )}
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Sort order</span>
-                <Input value={editing.sort_order} onChange={(event) => setEditing({ ...editing, sort_order: event.target.value })} />
-              </label>
-              <label className="flex flex-col gap-1.5 md:col-span-2">
-                <span className="text-sm font-medium">Notes</span>
-                <textarea
+              <FormField label="Sort order">
+                <Input type="number" min={0} step={1} value={editing.sort_order} onChange={(event) => setEditing({ ...editing, sort_order: event.target.value })} />
+              </FormField>
+              <FormField
+                label="Notes"
+                className="md:col-span-2"
+                hint={editing.category === 'inverter'
+                  ? 'Use notes to store PV limits, max panel counts, string layouts, and battery brand compatibility.'
+                  : undefined}
+              >
+                <Textarea
                   value={editing.notes}
                   onChange={(event) => setEditing({ ...editing, notes: event.target.value })}
                   rows={3}
                   placeholder={editing.category === 'inverter'
                     ? 'Max PV kWp: 10.4\nMax panels: 20\nString example: 4 strings total, 2 parallel per MPPT, 8 in series\nBattery brands: Sunsynk, Deye'
                     : ''}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-sm"
                 />
-                {editing.category === 'inverter' && (
-                  <span className="text-xs text-muted-foreground">
-                    Use notes to store PV limits, max panel counts, string layouts, and battery brand compatibility.
-                  </span>
-                )}
-              </label>
+              </FormField>
               <label className="flex items-center gap-2 text-sm md:col-span-2">
                 <input
                   type="checkbox"
@@ -743,61 +718,60 @@ export default function CatalogPage() {
                 />
                 Sell on web store
               </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Store price override (R)</span>
+              <FormField label="Store price override" hint={`Leave blank to use cost + ${storeMarkup}% store markup.`}>
                 <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  leadingText="R"
                   value={editing.store_price_rands}
                   onChange={(event) => setEditing({ ...editing, store_price_rands: event.target.value })}
                   placeholder={`Auto: ${formatRands(Number(editing.cost_rands || 0) * (1 + storeMarkup / 100))}`}
                 />
-                <span className="text-xs text-muted-foreground">Leave blank to use cost + {storeMarkup}% store markup.</span>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Primary image URL</span>
+              </FormField>
+              <FormField label="Primary image URL" hint="Shown on the store; reusable on quotes.">
                 <Input
+                  type="url"
                   value={editing.primary_image_url}
                   onChange={(event) => setEditing({ ...editing, primary_image_url: event.target.value })}
                   placeholder="https://…"
                 />
-                <span className="text-xs text-muted-foreground">Shown on the store; reusable on quotes.</span>
-              </label>
-              <label className="flex flex-col gap-1.5 md:col-span-2">
-                <span className="text-sm font-medium">Shop description</span>
-                <textarea
+              </FormField>
+              <FormField label="Shop description" className="md:col-span-2">
+                <Textarea
                   value={editing.shop_description}
                   onChange={(event) => setEditing({ ...editing, shop_description: event.target.value })}
                   rows={2}
                   placeholder="Customer-facing description for the web store (falls back to the description above)."
-                  className="rounded-md border border-border bg-background px-3 py-2 text-sm"
                 />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Datasheet URL</span>
+              </FormField>
+              <FormField label="Datasheet URL">
                 <Input
+                  type="url"
                   value={editing.datasheet_url}
                   onChange={(event) => setEditing({ ...editing, datasheet_url: event.target.value })}
                   placeholder="https://…"
                 />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">3D model URL <span className="text-muted-foreground">(future)</span></span>
+              </FormField>
+              <FormField label={<>3D model URL <span className="text-muted-foreground">(future)</span></>}>
                 <Input
+                  type="url"
                   value={editing.model_3d_url}
                   onChange={(event) => setEditing({ ...editing, model_3d_url: event.target.value })}
                   placeholder="https://… .glb / .gltf"
                 />
-              </label>
+              </FormField>
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-border bg-background px-6 py-4">
-              <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-              <Button variant="accent" onClick={saveItem} disabled={saving}>
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+              <Button type="submit" variant="accent" disabled={saving}>
                 {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving...</> : 'Save item'}
               </Button>
             </div>
-          </div>
+          </form>
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

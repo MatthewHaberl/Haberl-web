@@ -6,6 +6,8 @@ import { Loader2, Save } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import type { JobPriority } from '@/types/database'
 
 type Assignee = {
@@ -64,44 +66,41 @@ export function NewJobForm({ assignees, currentUserId }: { assignees: Assignee[]
           </Field>
 
           <Field label="Assigned to">
-            <select
+            <Select
               value={assignedTo}
               onChange={(event) => setAssignedTo(event.target.value)}
               required
-              className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               {assignees.map((assignee) => (
                 <option key={assignee.id} value={assignee.id}>
                   {assignee.full_name} ({assignee.role.replace('_', ' ')})
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Scheduled date">
-              <Input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} />
+              <Input type="date" min={new Date().toISOString().split('T')[0]} value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} />
             </Field>
             <Field label="Priority">
-              <select
+              <Select
                 value={priority}
                 onChange={(event) => setPriority(event.target.value as JobPriority)}
-                className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
                 <option value="urgent">Urgent</option>
-              </select>
+              </Select>
             </Field>
           </div>
 
           <Field label="Description">
-            <textarea
+            <Textarea
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               rows={5}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </Field>
 

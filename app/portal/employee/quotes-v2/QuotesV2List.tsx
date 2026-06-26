@@ -15,6 +15,7 @@ import {
   MapPin, Copy, Pencil, Check, X, Loader2, Trash2,
 } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success'> = {
   pending: 'warning',
@@ -165,7 +166,37 @@ export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows:
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell width="wide">
+      <PageHeader
+        icon={Sparkles}
+        title="Quotes"
+        description={`${groups.length} ${groups.length === 1 ? 'customer' : 'customers'} · ${rows.length} ${rows.length === 1 ? 'option' : 'options'}`}
+        actions={
+          <>
+            {isAdmin && deletedCount > 0 && (
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/portal/employee/quotes-v2/deleted">
+                  <Trash2 className="h-4 w-4" />
+                  Deleted ({deletedCount})
+                </Link>
+              </Button>
+            )}
+            <Button asChild variant="outline" size="sm">
+              <Link href="/portal/employee/quotes-v2/workflow">
+                <MapIcon className="h-4 w-4" />
+                Workflow map
+              </Link>
+            </Button>
+            <Button asChild variant="accent" size="sm">
+              <Link href="/portal/employee/quotes-v2/new">
+                <Plus className="h-4 w-4" />
+                New request
+              </Link>
+            </Button>
+          </>
+        }
+      />
+
       <div className="flex items-start gap-3 rounded-lg border border-accent/40 bg-accent/5 px-4 py-3">
         <Sparkles className="h-5 w-5 text-accent shrink-0 mt-0.5" />
         <div className="text-sm">
@@ -173,38 +204,6 @@ export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows:
           <p className="text-muted-foreground">
             Customer → site → option. Rename a site or option inline, duplicate an option, or add a new site for the same customer.
           </p>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Quotes</h1>
-          <p className="text-muted-foreground mt-1">
-            {groups.length} {groups.length === 1 ? 'customer' : 'customers'} · {rows.length}{' '}
-            {rows.length === 1 ? 'option' : 'options'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && deletedCount > 0 && (
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/portal/employee/quotes-v2/deleted">
-                <Trash2 className="h-4 w-4" />
-                Deleted ({deletedCount})
-              </Link>
-            </Button>
-          )}
-          <Button asChild variant="outline" size="sm">
-            <Link href="/portal/employee/quotes-v2/workflow">
-              <MapIcon className="h-4 w-4" />
-              Workflow map
-            </Link>
-          </Button>
-          <Button asChild variant="accent" size="sm">
-            <Link href="/portal/employee/quotes-v2/new">
-              <Plus className="h-4 w-4" />
-              New request
-            </Link>
-          </Button>
         </div>
       </div>
 
@@ -378,6 +377,6 @@ export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows:
           })}
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

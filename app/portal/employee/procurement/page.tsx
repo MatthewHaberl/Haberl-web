@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ChevronRight, PackageSearch, Truck } from 'lucide-react'
+import { ChevronRight, PackageSearch, Truck, ClipboardList } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const STATUS_VARIANT: Record<string, 'default' | 'warning' | 'success' | 'destructive'> = {
   draft: 'default',
@@ -73,21 +74,19 @@ export default async function ProcurementPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Procurement</h1>
-          <p className="text-muted-foreground mt-1">
-            {open.length} open order{open.length === 1 ? '' : 's'} · purchase orders are created from a
-            job&apos;s materials list
-          </p>
-        </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/portal/employee/settings/suppliers">
-            <Truck className="h-3.5 w-3.5" /> Suppliers
-          </Link>
-        </Button>
-      </div>
+    <PageShell width="wide">
+      <PageHeader
+        icon={ClipboardList}
+        title="Procurement"
+        description={`${open.length} open order${open.length === 1 ? '' : 's'} · purchase orders are created from a job's materials list`}
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link href="/portal/employee/settings/suppliers">
+              <Truck className="h-3.5 w-3.5" /> Suppliers
+            </Link>
+          </Button>
+        }
+      />
 
       {orders.length === 0 ? (
         <Card>
@@ -116,6 +115,6 @@ export default async function ProcurementPage() {
           )}
         </>
       )}
-    </div>
+    </PageShell>
   )
 }

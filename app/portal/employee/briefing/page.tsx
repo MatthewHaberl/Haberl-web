@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Send, FileText, Eye, Wallet, Sprout, PackageX, PhoneCall, Sunrise } from 'lucide-react'
 import { buildDailyBriefing } from '@/lib/quotes/daily-briefing'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,14 +33,8 @@ export default async function BriefingPage() {
   ].filter((g) => g.items.length > 0)
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <div>
-        <div className="flex items-center gap-2">
-          <Sunrise className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-bold text-primary">Today</h1>
-        </div>
-        <p className="text-sm text-muted-foreground mt-0.5">{b.dateLabel}</p>
-      </div>
+    <PageShell width="content">
+      <PageHeader icon={Sunrise} title="Today" description={b.dateLabel} />
 
       {/* Going out automatically — no action from you */}
       <Card>
@@ -114,7 +109,7 @@ export default async function BriefingPage() {
       <p className="text-xs text-muted-foreground">
         You also get this as an email each morning (around 06:30 SAST), sent by the daily automation before the customer reminders go out.
       </p>
-    </div>
+    </PageShell>
   )
 }
 

@@ -26,6 +26,7 @@ import {
 import {
   ArrowLeft, BookOpenCheck, Calculator, Check, ChevronDown, Search, ShieldCheck, X, Zap,
 } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const ENFORCEMENT_META: Record<RuleEnforcement, { label: string; variant: 'success' | 'default' | 'warning' | 'outline' }> = {
   both:       { label: 'Auto-applied + verified', variant: 'success' },
@@ -67,22 +68,27 @@ export function RulesExplorer({ inverters, panels, batteries }: Props) {
   }, [filtered])
 
   return (
-    <div className="flex flex-col gap-6 max-w-5xl">
-      <div className="flex items-center gap-3">
+    <PageShell width="content">
+      <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/portal/employee/settings"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-            <BookOpenCheck className="h-6 w-6 text-accent" /> Design Rules
-          </h1>
-          <p className="text-muted-foreground mt-1">
+        <Link href="/portal/employee/settings" className="text-sm text-muted-foreground hover:text-foreground">
+          Settings
+        </Link>
+      </div>
+
+      <PageHeader
+        icon={BookOpenCheck}
+        title="Design Rules"
+        description={
+          <>
             Every rule the quoting engine enforces — SANS 10142-1, field-learned design rules, and
             datasheet physics. {DESIGN_RULES.length} rules. The same checks run automatically on every
             calculated quote and appear in the quote&apos;s BOM tab.
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <StringDesigner inverters={inverters} panels={panels} batteries={batteries} />
 
@@ -174,7 +180,7 @@ export function RulesExplorer({ inverters, panels, batteries }: Props) {
           </div>
         ))
       )}
-    </div>
+    </PageShell>
   )
 }
 

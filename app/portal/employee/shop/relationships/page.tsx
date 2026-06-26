@@ -2,8 +2,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, BarChart2 } from 'lucide-react'
 import { RelationshipManager } from './RelationshipManager'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = { title: 'Product Relationships — Shop' }
@@ -35,22 +36,19 @@ export default async function RelationshipsPage() {
   ])
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Product Relationships</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            "Products that go with this" — shown in cart when related items are added
-          </p>
-        </div>
-      </div>
+    <PageShell width="content">
+      <Button variant="ghost" size="sm" asChild className="self-start">
+        <Link href="/portal/employee/shop"><ArrowLeft className="h-4 w-4" /> Shop</Link>
+      </Button>
+      <PageHeader
+        icon={BarChart2}
+        title="Product Relationships"
+        description={'"Products that go with this" — shown in cart when related items are added'}
+      />
       <RelationshipManager
         relationships={(relationships ?? []) as Parameters<typeof RelationshipManager>[0]['relationships']}
         products={(products ?? []) as Parameters<typeof RelationshipManager>[0]['products']}
       />
-    </div>
+    </PageShell>
   )
 }

@@ -6,9 +6,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Trash2, Loader2, Eye, EyeOff } from 'lucide-react'
+import { Plus, Trash2, Loader2, Eye, EyeOff, Tag } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { BrandCategory, EquipmentBrand } from '@/types/database'
+import { PageShell, PageHeader } from '@/components/layout/page'
 
 const CATEGORIES: { key: BrandCategory; label: string; colour: string }[] = [
   { key: 'inverter', label: 'Inverters', colour: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/60'  },
@@ -84,13 +85,12 @@ export default function BrandsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">Equipment Brands</h1>
-        <p className="text-muted-foreground mt-1">
-          Manage the brand options available in the quote request form. Inactive brands are hidden from technicians.
-        </p>
-      </div>
+    <PageShell width="form">
+      <PageHeader
+        icon={Tag}
+        title="Equipment Brands"
+        description="Manage the brand options available in the quote request form. Inactive brands are hidden from technicians."
+      />
 
       {error && (
         <p className="text-sm text-destructive bg-destructive/10 rounded-md px-4 py-2">{error}</p>
@@ -149,7 +149,8 @@ export default function BrandsPage() {
                   onChange={(e) => setNewName((n) => ({ ...n, [key]: e.target.value }))}
                   onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addBrand(key))}
                   placeholder={`Add new ${label.toLowerCase().slice(0, -1)} brand…`}
-                  className="h-9 text-sm"
+                  aria-label={`Add new ${label.toLowerCase().slice(0, -1)} brand`}
+                  className="text-sm"
                 />
                 <Button
                   type="button"
@@ -167,6 +168,6 @@ export default function BrandsPage() {
           </Card>
         )
       })}
-    </div>
+    </PageShell>
   )
 }

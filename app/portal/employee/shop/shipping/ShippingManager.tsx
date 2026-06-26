@@ -5,7 +5,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Truck, Calculator } from 'lucide-react'
+import { FormField } from '@/components/ui/form-field'
+import { Plus, Truck, Calculator, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface ShippingZone {
@@ -90,10 +91,9 @@ export function ShippingManager({ zones: initial }: Props) {
             <p className="text-sm font-medium">Shipping cost calculator</p>
           </div>
           <div className="flex items-center gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">Cart weight (kg)</label>
-              <Input type="number" value={testWeight} onChange={e => setTestWeight(e.target.value)} className="mt-1 w-24" min={0} />
-            </div>
+            <FormField label="Cart weight" htmlFor="ship-test-weight">
+              <Input id="ship-test-weight" type="number" value={testWeight} onChange={e => setTestWeight(e.target.value)} className="w-24" min={0} trailingText="kg" />
+            </FormField>
             <div className="flex-1">
               <p className="text-xs text-muted-foreground mb-1">Cost by zone</p>
               <div className="flex flex-wrap gap-2">
@@ -141,17 +141,18 @@ export function ShippingManager({ zones: initial }: Props) {
               </div>
 
               {isEditing && (
-                <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-3 items-end">
-                  <div>
-                    <label className="text-xs text-muted-foreground">Base fee (R)</label>
-                    <Input type="number" value={ev.base} onChange={e => setEditBase(e.target.value)} className="mt-1 w-28" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">Per kg rate (R)</label>
-                    <Input type="number" value={ev.perKg} onChange={e => setEditPerKg(e.target.value)} className="mt-1 w-28" />
-                  </div>
-                  <Button onClick={() => handleSaveEdit(zone.id, ev.base, ev.perKg)}>Save</Button>
-                </div>
+                <form
+                  onSubmit={(e) => { e.preventDefault(); handleSaveEdit(zone.id, ev.base, ev.perKg) }}
+                  className="mt-3 pt-3 border-t border-border flex flex-wrap gap-3 items-end"
+                >
+                  <FormField label="Base fee" htmlFor={`ship-edit-base-${zone.id}`}>
+                    <Input id={`ship-edit-base-${zone.id}`} type="number" value={ev.base} onChange={e => setEditBase(e.target.value)} className="w-28" min={0} leadingText="R" />
+                  </FormField>
+                  <FormField label="Per kg rate" htmlFor={`ship-edit-perkg-${zone.id}`}>
+                    <Input id={`ship-edit-perkg-${zone.id}`} type="number" value={ev.perKg} onChange={e => setEditPerKg(e.target.value)} className="w-28" min={0} leadingText="R" trailingText="/kg" />
+                  </FormField>
+                  <Button type="submit">Save</Button>
+                </form>
               )}
 
               {zone.description && (
@@ -165,32 +166,30 @@ export function ShippingManager({ zones: initial }: Props) {
       {/* Create */}
       {creating ? (
         <Card>
-          <CardContent className="pt-4 flex flex-col gap-3">
-            <p className="font-semibold text-sm">New shipping zone</p>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Zone name *</label>
-                <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Cape Town" className="mt-1" />
+          <CardContent className="pt-4">
+            <form onSubmit={(e) => { e.preventDefault(); handleCreate() }} className="flex flex-col gap-3">
+              <p className="font-semibold text-sm">New shipping zone</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <FormField label="Zone name" htmlFor="ship-new-name" required>
+                  <Input id="ship-new-name" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Cape Town" />
+                </FormField>
+                <FormField label="Description" htmlFor="ship-new-description">
+                  <Input id="ship-new-description" value={form.description} onChange={e => set('description', e.target.value)} placeholder="Cape Metro area" />
+                </FormField>
+                <FormField label="Base fee" htmlFor="ship-new-base">
+                  <Input id="ship-new-base" type="number" value={form.base_fee_rands} onChange={e => set('base_fee_rands', e.target.value)} min={0} leadingText="R" />
+                </FormField>
+                <FormField label="Per kg rate" htmlFor="ship-new-perkg">
+                  <Input id="ship-new-perkg" type="number" value={form.per_kg_rands} onChange={e => set('per_kg_rands', e.target.value)} min={0} leadingText="R" trailingText="/kg" />
+                </FormField>
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Description</label>
-                <Input value={form.description} onChange={e => set('description', e.target.value)} placeholder="Cape Metro area" className="mt-1" />
+              <div className="flex gap-2">
+                <Button type="submit" disabled={saving || !form.name.trim()}>
+                  {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</> : 'Create zone'}
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Base fee (R)</label>
-                <Input type="number" value={form.base_fee_rands} onChange={e => set('base_fee_rands', e.target.value)} min={0} className="mt-1" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Per kg rate (R)</label>
-                <Input type="number" value={form.per_kg_rands} onChange={e => set('per_kg_rands', e.target.value)} min={0} className="mt-1" />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleCreate} disabled={saving || !form.name.trim()}>
-                {saving ? 'Saving…' : 'Create zone'}
-              </Button>
-              <Button variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
-            </div>
+            </form>
           </CardContent>
         </Card>
       ) : (
