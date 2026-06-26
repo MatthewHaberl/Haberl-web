@@ -65,6 +65,18 @@ export interface BrandCredentials {
 /** Where a stored reading came from. */
 export type ReadingSource = 'live' | 'backfill' | 'import'
 
+/** Result of a settings read: the normalised view plus the brand-native blob. */
+export interface SettingsReadResult {
+  settings: import('./settings/types').InverterSettings
+  raw: Record<string, unknown>
+}
+
+/** Result of a settings write: what the brand reports it applied, plus raw. */
+export interface SettingsWriteResult {
+  applied: Partial<import('./settings/types').InverterSettings>
+  raw: Record<string, unknown>
+}
+
 export interface BrandAdapter {
   fetchReading(credentials: BrandCredentials, plantId: string | null, deviceSn: string | null): Promise<NormalisedReading>
   /**
@@ -80,6 +92,29 @@ export interface BrandAdapter {
     deviceSn: string | null,
     dayStartUtc: Date,
   ): Promise<NormalisedReading[]>
+  /**
+   * Optional read of the device's current CONFIGURATION (not telemetry) —
+   * work mode, battery SoC limits, export settings, schedules. Only brands
+   * whose cloud API exposes settings implement this; everything else is
+   * captured manually. Implementations should be defensive: return whatever
+   * the API yields and leave unknown fields null rather than throwing.
+   */
+  fetchSettings?(
+    credentials: BrandCredentials,
+    plantId: string | null,
+    deviceSn: string | null,
+  ): Promise<SettingsReadResult>
+  /**
+   * Optional write of one or more settings back to the device. Gated by the
+   * caller (permissions + confirmation) — the adapter just performs the change
+   * and reports what it applied. Brands without a safe cloud write omit this.
+   */
+  applySettings?(
+    credentials: BrandCredentials,
+    plantId: string | null,
+    deviceSn: string | null,
+    changes: Partial<import('./settings/types').InverterSettings>,
+  ): Promise<SettingsWriteResult>
 }
 
 export class AdapterError extends Error {

@@ -5,8 +5,9 @@
  * Rate limit: 1,440 calls / day per device (~1/min), 1 call/sec query limit
  */
 import { createHash } from 'crypto'
-import type { BrandAdapter, BrandCredentials, NormalisedReading, PvString, DeviceState } from '../types'
+import type { BrandAdapter, BrandCredentials, NormalisedReading, PvString, DeviceState, SettingsReadResult } from '../types'
 import { AdapterError } from '../types'
+import { emptySettings, type InverterSettings, type WorkMode } from '../settings/types'
 
 const BASE_URL = 'https://www.foxesscloud.com/op/v0'
 
@@ -32,6 +33,29 @@ function mapWorkMode(mode: string | undefined): DeviceState {
   if (m.includes('standby') || m.includes('idle'))  return 'standby'
   if (m.includes('off') || m.includes('sleep'))      return 'offline'
   return 'online'
+}
+
+/** POST a FoxESS Open API endpoint and return the parsed JSON body (or throw). */
+async function postFox(apiKey: string, path: string, body: Record<string, unknown>): Promise<{ errno?: number; msg?: string; result?: unknown }> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: buildHeaders(apiKey, path),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new AdapterError(`FoxESS ${path} failed: ${res.status}`, 'foxess')
+  return (await res.json()) as { errno?: number; msg?: string; result?: unknown }
+}
+
+/** Map a FoxESS work-mode string onto our normalised WorkMode. */
+function normaliseWorkMode(raw: string | undefined | null): WorkMode | null {
+  if (!raw) return null
+  const m = raw.toLowerCase().replace(/[\s_-]/g, '')
+  if (m.includes('selfuse') || m.includes('selfconsumption')) return 'self_use'
+  if (m.includes('feedin')) return 'feed_in_priority'
+  if (m.includes('backup'))  return 'backup'
+  if (m.includes('peakshaving')) return 'peak_shaving'
+  if (m.includes('forcecharge') || m.includes('forcedischarge') || m.includes('manual')) return 'manual'
+  return 'unknown'
 }
 
 export const foxessAdapter: BrandAdapter = {
@@ -128,5 +152,58 @@ export const foxessAdapter: BrandAdapter = {
       device_state:      deviceState,
       raw_payload:       body as Record<string, unknown>,
     }
+  },
+
+  /**
+   * Read the inverter's current settings. FoxESS exposes a few dedicated config
+   * endpoints; we read each independently and tolerate partial failure so one
+   * unsupported key (firmware-dependent) never blocks the rest. The battery SoC
+   * limits are the most reliable; work mode / export limit are best-effort and
+   * should be confirmed before trusting them for a write.
+   */
+  async fetchSettings(credentials: BrandCredentials, _plantId: string | null, deviceSn: string | null): Promise<SettingsReadResult> {
+    const { api_key } = credentials
+    if (!api_key || !deviceSn) {
+      throw new AdapterError('FoxESS credentials incomplete (need api_key and device_sn)', 'foxess', false)
+    }
+
+    const settings: InverterSettings = emptySettings()
+    const raw: Record<string, unknown> = {}
+
+    // Battery min-SoC (on-grid reserve + off-grid floor).
+    try {
+      const soc = await postFox(api_key, '/op/v0/device/battery/soc/get', { sn: deviceSn })
+      raw.batterySoc = soc
+      if (soc.errno === 0 && soc.result && typeof soc.result === 'object') {
+        const r = soc.result as { minSoc?: number; minSocOnGrid?: number; maxSoc?: number }
+        if (typeof r.minSocOnGrid === 'number') settings.batteryMinSocPct = r.minSocOnGrid
+        else if (typeof r.minSoc === 'number')  settings.batteryMinSocPct = r.minSoc
+        if (typeof r.maxSoc === 'number')        settings.batteryMaxSocPct = r.maxSoc
+      }
+    } catch (e) { raw.batterySocError = e instanceof Error ? e.message : String(e) }
+
+    // Work mode + export limit via the generic setting/get. Keys are
+    // firmware-dependent, so each is attempted independently and ignored on error.
+    const scalarKeys: Array<{ key: string; apply: (v: string) => void }> = [
+      { key: 'WorkMode',    apply: (v) => { settings.workMode = normaliseWorkMode(v) } },
+      { key: 'ExportLimit', apply: (v) => { const n = Number(v); if (Number.isFinite(n)) settings.exportLimitW = n } },
+    ]
+    const settingResults: Record<string, unknown> = {}
+    for (const { key, apply } of scalarKeys) {
+      try {
+        const r = await postFox(api_key, '/op/v0/device/setting/get', { sn: deviceSn, key })
+        settingResults[key] = r
+        if (r.errno === 0 && r.result && typeof r.result === 'object') {
+          const val = (r.result as { value?: unknown }).value
+          if (val != null) apply(String(val))
+        }
+      } catch (e) { settingResults[`${key}Error`] = e instanceof Error ? e.message : String(e) }
+    }
+    raw.settings = settingResults
+
+    // exportEnabled is inferred from the export limit when we got one.
+    if (settings.exportLimitW != null) settings.exportEnabled = settings.exportLimitW > 0
+
+    return { settings, raw }
   },
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
-import { ArrowLeft, AlertTriangle, Info, RefreshCw, Activity, Settings2 } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, Info, RefreshCw, Activity, Settings2, SlidersHorizontal } from 'lucide-react'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -129,6 +129,12 @@ export default async function SystemDetailPage({ params }: { params: Promise<{ s
               </span>
             )}
             <PollNowButton systemId={system.id} />
+            <Link
+              href={`/portal/employee/monitoring/${system.id}/settings`}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"
+            >
+              <SlidersHorizontal className="h-4 w-4" /> Settings &amp; optimisation
+            </Link>
             <Link
               href={`/portal/employee/monitoring/${system.id}/edit`}
               className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"

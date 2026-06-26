@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getAdapter, AdapterError } from './adapters/index'
 import { decryptCredentialsLoose } from './credentials'
 import { runAlertEngine } from './alert-engine'
-import type { BrandCredentials, MonitoringBrand, NormalisedReading } from './types'
+import type { BrandCredentials, MonitoringBrand, NormalisedReading, SettingsReadResult } from './types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySupabaseClient = ReturnType<typeof createClient<any>>
@@ -156,6 +156,45 @@ export async function pollAllNow(supabase: AnySupabaseClient): Promise<Collector
     }
   }
   return results
+}
+
+/** Resolve a system's credentials (own key, else linked brand account). */
+function resolveCredentials(system: MonitoringSystem): BrandCredentials {
+  const account = Array.isArray(system.brand_account) ? system.brand_account[0] : system.brand_account
+  const encrypted = system.credentials ?? account?.credentials ?? null
+  if (!encrypted) {
+    throw new AdapterError('No credentials — set a key on the system or its brand connection', system.brand, false)
+  }
+  const credentials = decryptCredentialsLoose(encrypted)
+  if (Object.keys(credentials).length === 0) {
+    throw new AdapterError('Failed to decrypt credentials', system.brand, false)
+  }
+  return credentials
+}
+
+/**
+ * Read a system's current CONFIGURATION from its brand cloud (the "Refresh from
+ * cloud" action). Throws AdapterError when the brand has no settings-read
+ * adapter — the caller falls back to manual capture.
+ */
+export async function fetchSystemSettings(
+  supabase: AnySupabaseClient,
+  systemId: string,
+): Promise<SettingsReadResult> {
+  const { data: system, error } = await supabase
+    .from('monitoring_systems')
+    .select(SYSTEM_SELECT)
+    .eq('id', systemId)
+    .single()
+
+  if (error || !system) throw new Error('System not found')
+  const typed = system as MonitoringSystem
+  const adapter = getAdapter(typed.brand)
+  if (!adapter.fetchSettings) {
+    throw new AdapterError(`Reading settings from the ${typed.brand} cloud isn't supported yet — capture them manually`, typed.brand, false)
+  }
+  const credentials = resolveCredentials(typed)
+  return adapter.fetchSettings(credentials, typed.plant_id, typed.device_sn)
 }
 
 async function processSingleSystem(
