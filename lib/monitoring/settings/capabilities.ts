@@ -86,10 +86,10 @@ export const BRAND_SETTINGS_CAPABILITY: Record<MonitoringBrand, BrandSettingsCap
   }),
 
   victron: C({
-    readImplemented: false, writeImplemented: false,
+    readImplemented: true, writeImplemented: false,
     cloudReadPossible: true, cloudWritePossible: true, cloudWriteGated: false,
     localModbusOnly: false,
-    note: 'VRM exposes Dynamic-ESS config; full settings control is via local Modbus TCP / MQTT on the Cerbo GX.',
+    note: 'ESS settings (min SoC, ESS mode, grid feed-in, charge/discharge limits) auto-read from VRM where the ESS assistant reports them. Changing them is done on the Cerbo GX / local Modbus, not VRM.',
   }),
 
   goodwe: C({

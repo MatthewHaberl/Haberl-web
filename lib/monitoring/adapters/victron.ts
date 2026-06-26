@@ -10,10 +10,20 @@
  * one call. NOTE: the bare `GET /installations/{id}` endpoint does NOT exist —
  * it returns HTTP 400 — so we must use a sub-resource like /diagnostics.
  */
-import type { BrandAdapter, BrandCredentials, NormalisedReading, PvString, DeviceState } from '../types'
+import type { BrandAdapter, BrandCredentials, NormalisedReading, PvString, DeviceState, SettingsReadResult } from '../types'
 import { AdapterError } from '../types'
+import { emptySettings, type InverterSettings, type WorkMode } from '../settings/types'
 
 const BASE_URL = 'https://vrmapi.victronenergy.com/v2'
+
+/** Map a VRM ESS-mode label onto our normalised WorkMode. */
+function mapEssMode(label: string): WorkMode {
+  const m = label.toLowerCase()
+  if (m.includes('keep') && m.includes('charg')) return 'backup'        // "Keep batteries charged"
+  if (m.includes('optimiz') || m.includes('self'))  return 'self_use'   // "Optimized (with/without BatteryLife)"
+  if (m.includes('external'))                       return 'manual'      // "External control"
+  return 'unknown'
+}
 
 /** One row from VRM /diagnostics — the latest value of a single data attribute. */
 interface VrmDiagRecord {
@@ -196,5 +206,79 @@ export const victronAdapter: BrandAdapter = {
     }
 
     return [...byTime.values()].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at))
+  },
+
+  /**
+   * Read the system's ESS configuration from VRM. The same /diagnostics payload
+   * the live read uses also carries the ESS *settings* as named records (when
+   * the ESS assistant is installed) — Minimum SOC, ESS mode, grid feed-in,
+   * max charge/discharge. We match on each record's human description rather
+   * than VRM short codes (which change), and return whatever is present.
+   * Note: full Victron control (writing these) is local Modbus on the GX, not
+   * VRM — so this is read-only; changes are made on the inverter/Cerbo.
+   */
+  async fetchSettings(credentials: BrandCredentials, plantId: string | null): Promise<SettingsReadResult> {
+    const { access_token, vrm_installation_id } = credentials
+    const installId = vrm_installation_id ?? plantId
+    if (!access_token || !installId) {
+      throw new AdapterError('Victron credentials incomplete (need access_token and installation id)', 'victron', false)
+    }
+
+    const res = await fetch(`${BASE_URL}/installations/${installId}/diagnostics?count=1000`, {
+      headers: { 'X-Authorization': `Token ${access_token}`, 'Content-Type': 'application/json' },
+    })
+    if (!res.ok) throw new AdapterError(`Victron diagnostics fetch failed: ${res.status}`, 'victron')
+
+    const json = (await res.json()) as { records?: VrmDiagRecord[] }
+    const records = json.records ?? []
+    const settings: InverterSettings = emptySettings()
+
+    const find = (re: RegExp) => records.find((r) => re.test(r.description ?? ''))
+    const asBool = (r: VrmDiagRecord | undefined): boolean | null => {
+      if (!r) return null
+      const f = (r.formattedValue ?? '').toLowerCase()
+      if (/\b(on|enabled|yes|true)\b|^1$/.test(f)) return true
+      if (/\b(off|disabled|no|false)\b|^0$/.test(f)) return false
+      const n = numOrNull(r.rawValue)
+      return n == null ? null : n > 0
+    }
+    // Watts from a record, honouring a "kW" formatted unit.
+    const asWatts = (r: VrmDiagRecord | undefined): number | null => {
+      if (!r) return null
+      const n = numOrNull(r.rawValue)
+      if (n == null) return null
+      return /kw/i.test(r.formattedValue ?? '') ? Math.round(n * 1000) : Math.round(n)
+    }
+
+    // Minimum SOC (the reserve floor). "Active SOC limit" is the effective one.
+    const minSoc = find(/active soc limit/i) ?? find(/minimum (soc|state of charge)|min\.? ?soc/i)
+    if (minSoc) settings.batteryMinSocPct = numOrNull(minSoc.rawValue)
+
+    // ESS mode → work mode.
+    const ess = find(/ess.*(state|mode)|battery ?life|keep batteries charged|optimiz/i)
+    if (ess) settings.workMode = mapEssMode(ess.formattedValue ?? String(ess.rawValue ?? ''))
+
+    // Grid feed-in (export) enable + limit.
+    const feed = find(/feed-?in.*(excess|enabled)|grid feed-?in(?!.*limit)/i)
+    if (feed) settings.exportEnabled = asBool(feed)
+    const feedLimit = find(/(max(imum)?).*feed-?in|feed-?in.*(limit|power)/i)
+    if (feedLimit) settings.exportLimitW = asWatts(feedLimit)
+
+    // Charge / discharge limits.
+    const mcc = find(/max(imum)? charge current/i)
+    if (mcc) settings.maxChargeCurrentA = numOrNull(mcc.rawValue)
+    const mcp = find(/max(imum)? charge power/i)
+    if (mcp) settings.maxChargePowerW = asWatts(mcp)
+    const mdp = find(/max(imum)? discharge power/i)
+    if (mdp) settings.maxDischargePowerW = asWatts(mdp)
+
+    return {
+      settings,
+      raw: {
+        source: 'diagnostics',
+        settingsRecords: records.filter((r) =>
+          /soc|ess|feed-?in|charge|discharge|battery ?life|grid setpoint/i.test(r.description ?? '')),
+      },
+    }
   },
 }
