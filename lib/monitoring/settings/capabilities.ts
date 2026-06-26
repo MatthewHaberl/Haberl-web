@@ -51,10 +51,10 @@ export const BRAND_SETTINGS_CAPABILITY: Record<MonitoringBrand, BrandSettingsCap
   }),
 
   sunsynk: C({
-    readImplemented: false, writeImplemented: false,
+    readImplemented: true, writeImplemented: false,
     cloudReadPossible: true, cloudWritePossible: true, cloudWriteGated: false,
     localModbusOnly: false,
-    note: 'Sunsynk Connect can read and write settings (SoC, work mode, ToU) via the cloud — automatable next; cloud changes lag by a few minutes.',
+    note: 'Sunsynk Connect settings (export, battery SoC caps, time-of-use slots) auto-read from the cloud. Remote change is possible next; cloud changes lag by a few minutes.',
   }),
 
   sigenergy: C({

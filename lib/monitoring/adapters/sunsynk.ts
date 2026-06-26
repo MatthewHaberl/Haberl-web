@@ -15,8 +15,9 @@
  * Realtime power values are already in WATTS — no scaling.
  */
 import { createHash, publicEncrypt, constants } from 'crypto'
-import type { BrandAdapter, BrandCredentials, NormalisedReading, PvString, DeviceState } from '../types'
+import type { BrandAdapter, BrandCredentials, NormalisedReading, PvString, DeviceState, SettingsReadResult } from '../types'
 import { AdapterError } from '../types'
+import { emptySettings, type InverterSettings, type TouWindow } from '../settings/types'
 
 const BASE_URL = 'https://api.sunsynk.net'
 const SOURCE = 'sunsynk'
@@ -312,5 +313,77 @@ export const sunsynkAdapter: BrandAdapter = {
     }
 
     return [...byTime.values()].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at))
+  },
+
+  /**
+   * Read the inverter's current settings from Sunsynk Connect. The settings
+   * block lives at /api/v1/common/setting/{sn}/read and follows the well-known
+   * Sunsynk field model (same fields the Connect app + openHAB binding use):
+   *   solarSell           — export to grid enable
+   *   solarMaxSellPower   — export power cap (W)
+   *   cap1..cap6          — target battery SoC % per time slot
+   *   sellTime1..6        — slot start time "HH:MM"
+   *   time1on..time6on    — grid charge enabled for that slot
+   *   batteryShutdownCap  — shutdown / reserve floor SoC %
+   * Field-by-field, tolerant of anything the firmware doesn't return.
+   */
+  async fetchSettings(credentials: BrandCredentials, plantId: string | null, deviceSn: string | null): Promise<SettingsReadResult> {
+    const { username, password } = credentials
+    if (!username || !password) {
+      throw new AdapterError('Sunsynk Connect credentials incomplete (need account email + password)', 'sunsynk', false)
+    }
+
+    const token = await login(username, password)
+    const inverters = await resolveInverters(token, plantId, deviceSn)
+    const sn = inverters[0].sn
+
+    const res = await getJson<Record<string, unknown>>(`${BASE_URL}/api/v1/common/setting/${sn}/read`, token)
+    const d = res.data ?? {}
+
+    const settings: InverterSettings = emptySettings()
+    const truthy = (v: unknown) => v === true || v === 1 || v === '1'
+    const toMin = (v: unknown): number | null => {
+      const m = String(v ?? '').match(/(\d{1,2}):(\d{2})/)
+      return m ? Number(m[1]) * 60 + Number(m[2]) : null
+    }
+
+    // Export
+    if (d.solarSell !== undefined) settings.exportEnabled = truthy(d.solarSell)
+    const sellPower = num(d.solarMaxSellPower) ?? num(d.maxSellPower) ?? num(d.pvMaxLimit)
+    if (sellPower !== null) settings.exportLimitW = sellPower
+
+    // Battery SoC window from the six time-slot caps.
+    const caps = [1, 2, 3, 4, 5, 6].map((i) => num(d[`cap${i}`])).filter((n): n is number => n !== null)
+    if (caps.length) {
+      settings.batteryMinSocPct = Math.min(...caps)
+      settings.batteryMaxSocPct = Math.max(...caps)
+    }
+    const shutdown = num(d.batteryShutdownCap) ?? num(d.batteryLowCap)
+    if (shutdown !== null) settings.backupReserveSocPct = shutdown
+
+    // Grid charging — enabled if any slot allows it.
+    const onFlags = [1, 2, 3, 4, 5, 6].map((i) => d[`time${i}on`])
+    if (onFlags.some((v) => v !== undefined)) settings.gridChargeEnabled = onFlags.some(truthy)
+
+    // Time-of-use windows: each slot runs until the next slot's start.
+    const starts = [1, 2, 3, 4, 5, 6].map((i) => toMin(d[`sellTime${i}`]))
+    const windows: TouWindow[] = []
+    for (let i = 0; i < 6; i++) {
+      const start = starts[i]
+      if (start === null) continue
+      const next = starts[(i + 1) % 6]
+      const fromGrid = truthy(d[`time${i + 1}on`])
+      windows.push({
+        startMin: start,
+        endMin: next ?? 1440,
+        action: fromGrid ? 'charge' : 'idle',
+        targetSocPct: num(d[`cap${i + 1}`]),
+        powerW: null,
+        fromGrid,
+      })
+    }
+    if (windows.length) settings.touWindows = windows
+
+    return { settings, raw: d }
   },
 }
