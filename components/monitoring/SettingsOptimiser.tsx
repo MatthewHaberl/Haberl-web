@@ -145,8 +145,8 @@ export function SettingsOptimiser({
         setBaseline(data.baseline)
         setProfileNote(
           data.profileBasis === 'measured'
-            ? `Modelled on ${data.measuredDays} days of measured data.`
-            : 'Modelled on a capacity-based estimate — capture more monitoring data or enter the customer’s actual usage in What-if for sharper numbers.',
+            ? `Modelled on ${data.measuredMonths} month${data.measuredMonths === 1 ? '' : 's'} of your backfilled data (no API calls).`
+            : 'Modelled on a capacity-based estimate — backfill more monitoring data or enter the customer’s actual usage in What-if for sharper numbers.',
         )
       } else {
         setMsg({ kind: 'err', text: data.error || 'Could not calculate.' })

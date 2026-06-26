@@ -58,10 +58,10 @@ export const BRAND_SETTINGS_CAPABILITY: Record<MonitoringBrand, BrandSettingsCap
   }),
 
   sigenergy: C({
-    readImplemented: false, writeImplemented: false,
+    readImplemented: true, writeImplemented: false,
     cloudReadPossible: true, cloudWritePossible: true, cloudWriteGated: false,
     localModbusOnly: false,
-    note: 'Most open of the group — documented settings read plus a dispatch/VPP control API. Strong candidate to automate.',
+    note: 'SigenCloud settings auto-read (provisional field mapping — verify the first read). Most open of the group; also has a dispatch/VPP control API for remote change later.',
   }),
 
   growatt: C({

@@ -62,7 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sys
 
   const validMonthly = (a?: number[]) => Array.isArray(a) && a.length === 12
   const prof = validMonthly(body.generationMonthlyKwh) && validMonthly(body.consumptionMonthlyKwh)
-    ? { generationMonthlyKwh: body.generationMonthlyKwh!, consumptionMonthlyKwh: body.consumptionMonthlyKwh!, basis: 'measured' as const, measuredDays: 0 }
+    ? { generationMonthlyKwh: body.generationMonthlyKwh!, consumptionMonthlyKwh: body.consumptionMonthlyKwh!, basis: 'measured' as const, measuredMonths: 12 }
     : await buildEnergyProfile(supabase, system)
 
   const tariffRate = body.tariffRate ?? DEFAULT_TARIFF
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sys
 
   return NextResponse.json({
     profileBasis: prof.basis,
-    measuredDays: prof.measuredDays,
+    measuredMonths: prof.measuredMonths,
     current: current.annual,
     proposed: proposed.annual,
     deltaSavingR: Math.round(proposed.annual.savingR - current.annual.savingR),

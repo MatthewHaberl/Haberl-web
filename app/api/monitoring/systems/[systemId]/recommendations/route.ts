@@ -93,7 +93,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sys
 
   const validMonthly = (a?: number[]) => Array.isArray(a) && a.length === 12
   const profile = validMonthly(overrides.generationMonthlyKwh) && validMonthly(overrides.consumptionMonthlyKwh)
-    ? { generationMonthlyKwh: overrides.generationMonthlyKwh!, consumptionMonthlyKwh: overrides.consumptionMonthlyKwh!, basis: 'measured' as const, measuredDays: 0 }
+    ? { generationMonthlyKwh: overrides.generationMonthlyKwh!, consumptionMonthlyKwh: overrides.consumptionMonthlyKwh!, basis: 'measured' as const, measuredMonths: 12 }
     : await buildEnergyProfile(supabase, system)
 
   const result = buildRecommendations({
@@ -142,7 +142,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sys
     ok: true,
     baseline: result.baseline,
     profileBasis: profile.basis,
-    measuredDays: profile.measuredDays,
+    measuredMonths: profile.measuredMonths,
     recommendations: stored ?? [],
   })
 }
