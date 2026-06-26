@@ -31,6 +31,7 @@ export function CompatSelect({
   placeholder?: string
 }) {
   const [open, setOpen] = useState(false)
+  const [dropUp, setDropUp] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -48,7 +49,19 @@ export function CompatSelect({
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen((v) => {
+          const next = !v
+          // Flip the list upward when there's little room below, so its lower options
+          // stay reachable inside the scrollable design canvas.
+          if (next) {
+            const rect = ref.current?.getBoundingClientRect()
+            if (rect) {
+              const below = window.innerHeight - rect.bottom
+              setDropUp(below < 300 && rect.top > below)
+            }
+          }
+          return next
+        })}
         className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 text-left text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >
         <span className={cn('truncate', selected ? 'text-foreground' : 'text-muted-foreground')}>
@@ -58,7 +71,10 @@ export function CompatSelect({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-md border border-border bg-card py-1 shadow-md">
+        <div className={cn(
+          'absolute z-50 max-h-72 w-full overflow-auto rounded-md border border-border bg-card py-1 shadow-md',
+          dropUp ? 'bottom-full mb-1' : 'top-full mt-1',
+        )}>
           {options.map((o) => {
             const blocked = o.level === 'block'
             const warn = o.level === 'warn'

@@ -108,6 +108,8 @@ export function SearchableSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
+  const [dropUp, setDropUp] = useState(false)
+  const [listMax, setListMax] = useState(192)
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -129,8 +131,23 @@ export function SearchableSelect({
   }, [open])
 
   // Reset the query/highlight each time the menu opens, then focus the filter input.
+  // Also decide which way to open: inside the scrollable design canvas an absolute
+  // dropdown can't push page height, so when there's little room below we flip it
+  // upward and cap the list to the available space — otherwise lower options become
+  // unreachable (you can't scroll to them).
   useEffect(() => {
-    if (open) { setQuery(''); setActive(0); inputRef.current?.focus() }
+    if (!open) return
+    setQuery('')
+    setActive(0)
+    const rect = rootRef.current?.getBoundingClientRect()
+    if (rect) {
+      const below = window.innerHeight - rect.bottom - 8
+      const above = rect.top - 8
+      const up = below < 200 && above > below
+      setDropUp(up)
+      setListMax(Math.max(120, Math.min(256, (up ? above : below) - 48)))
+    }
+    inputRef.current?.focus()
   }, [open])
 
   function commit(v: string) {
@@ -172,7 +189,7 @@ export function SearchableSelect({
         <ChevronsUpDown className="h-3 w-3 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute left-0 right-0 z-20 mt-1 rounded-md border border-border bg-card shadow-md">
+        <div className={`absolute left-0 right-0 z-30 rounded-md border border-border bg-card shadow-md ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
           <input
             ref={inputRef}
             value={query}
@@ -181,7 +198,7 @@ export function SearchableSelect({
             placeholder="Search…"
             className="h-7 w-full rounded-t-md border-b border-border bg-background px-1.5 text-xs focus:outline-none"
           />
-          <ul className="max-h-48 overflow-auto py-0.5">
+          <ul className="overflow-auto py-0.5" style={{ maxHeight: listMax }}>
             {filtered.length === 0 ? (
               <li className="px-2 py-1.5 text-xs text-muted-foreground">No matches</li>
             ) : (
