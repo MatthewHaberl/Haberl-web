@@ -32,6 +32,10 @@ export interface CollectorResult {
   error?: string
 }
 
+/** Columns a poll needs, including the shared brand-account credentials fallback. */
+const SYSTEM_SELECT =
+  'id, site_id, brand, plant_id, device_sn, credentials, brand_account_id, brand_account:monitoring_brand_accounts(credentials), enabled'
+
 export async function runCollector(): Promise<CollectorResult[]> {
   // Use service role to bypass RLS for server-side collection
   const supabase = createClient(
@@ -41,7 +45,7 @@ export async function runCollector(): Promise<CollectorResult[]> {
 
   const { data: systems, error } = await supabase
     .from('monitoring_systems')
-    .select('id, site_id, brand, plant_id, device_sn, credentials, brand_account_id, brand_account:monitoring_brand_accounts(credentials), enabled')
+    .select(SYSTEM_SELECT)
     .eq('enabled', true)
 
   if (error) throw new Error(`Failed to fetch monitoring systems: ${error.message}`)
@@ -82,6 +86,37 @@ export async function runCollector(): Promise<CollectorResult[]> {
   }
 
   return results
+}
+
+/**
+ * Poll a single system on demand (e.g. the "Poll now" button), using whatever
+ * Supabase client the caller provides — typically the logged-in staff user's
+ * client, so it relies on RLS rather than the service-role key. Records the
+ * poll_error on the row if the fetch fails (mirroring the cron collector).
+ */
+export async function pollSystemNow(
+  supabase: AnySupabaseClient,
+  systemId: string
+): Promise<CollectorResult> {
+  const { data: system, error } = await supabase
+    .from('monitoring_systems')
+    .select(SYSTEM_SELECT)
+    .eq('id', systemId)
+    .single()
+
+  if (error || !system) throw new Error('System not found')
+
+  const typed = system as MonitoringSystem
+  try {
+    return await processSingleSystem(supabase, typed)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    await supabase
+      .from('monitoring_systems')
+      .update({ poll_error: message, last_polled_at: new Date().toISOString() })
+      .eq('id', systemId)
+    return { systemId, brand: typed.brand, ok: false, error: message }
+  }
 }
 
 async function processSingleSystem(

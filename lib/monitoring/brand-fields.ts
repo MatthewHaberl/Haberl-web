@@ -64,16 +64,15 @@ export const BRAND_CONNECT: Record<MonitoringBrand, BrandConnectSchema> = {
 
   sunsynk: {
     label: 'Sunsynk',
-    access: 'application',
+    access: 'self-serve',
     accessHelp:
-      'Sunsynk reports through the Solarman cloud. You need a Solarman Business API account — request an App ID + App Secret from Solarman (developer@solarmanpv.com or via your distributor; approval can take a few days). The email + password are the login for the Solarman / Sunsynk Connect app this plant sits under. The Station ID is shown in the app under the plant settings.',
-    docsUrl: 'https://doc.solarmanpv.com',
+      'Connects directly to Sunsynk Connect — no Solarman Business account needed. Use the same email + password you log into the Sunsynk Connect app with (the account that owns/manages this plant). The Station ID is the numeric plant ID shown in the app under Plant → Settings. If you know the inverter serial you can add it to skip the plant lookup; otherwise leave it blank.',
+    docsUrl: 'https://www.sunsynk.net',
     fields: [
-      { key: 'app_id', target: 'credential', label: 'Solarman App ID', required: true, help: 'Issued when your Solarman Business API account is approved.' },
-      { key: 'app_secret', target: 'credential', label: 'Solarman App Secret', type: 'password', required: true, help: 'Issued together with the App ID — keep it secret.' },
-      { key: 'username', target: 'credential', label: 'Account email', required: true, help: 'Login email for the Solarman / Sunsynk Connect app that owns this plant.' },
-      { key: 'password', target: 'credential', label: 'Account password', type: 'password', required: true, help: 'Password for that same app login.' },
+      { key: 'username', target: 'credential', label: 'Sunsynk Connect email', required: true, help: 'The email you log into the Sunsynk Connect app with.' },
+      { key: 'password', target: 'credential', label: 'Sunsynk Connect password', type: 'password', required: true, help: 'Password for that same Sunsynk Connect login.' },
       { key: 'plant_id', target: 'plant_id', label: 'Station ID', required: true, placeholder: 'e.g. 1234567', help: 'Numeric plant/station ID in the app (Plant → Settings).' },
+      { key: 'device_sn', target: 'device_sn', label: 'Inverter serial (optional)', required: false, help: 'Optional — the inverter SN. If set, reads it directly instead of looking up the station.' },
     ],
   },
 
@@ -81,7 +80,7 @@ export const BRAND_CONNECT: Record<MonitoringBrand, BrandConnectSchema> = {
     label: 'Deye',
     access: 'application',
     accessHelp:
-      'Deye reports through the Solarman cloud (same as Sunsynk). You need a Solarman Business API account — request an App ID + App Secret from Solarman (developer@solarmanpv.com or via your distributor). The email + password are the Solarman app login for this plant; the Station ID is in the plant settings.',
+      'Deye reports through the Solarman cloud. You need a Solarman Business API account — request an App ID + App Secret from Solarman (developer@solarmanpv.com or via your distributor). The email + password are the Solarman app login for this plant; the Station ID is in the plant settings.',
     docsUrl: 'https://doc.solarmanpv.com',
     fields: [
       { key: 'app_id', target: 'credential', label: 'Solarman App ID', required: true, help: 'Issued when your Solarman Business API account is approved.' },
@@ -201,6 +200,6 @@ export const BRAND_CONNECT: Record<MonitoringBrand, BrandConnectSchema> = {
 
 /** Display order for the brand picker: easiest access first. */
 export const BRAND_ORDER: MonitoringBrand[] = [
-  'victron', 'sigenergy', 'foxess', 'solax', 'solis', 'growatt',
-  'sunsynk', 'deye', 'goodwe', 'huawei', 'luxpower', 'local',
+  'victron', 'sunsynk', 'sigenergy', 'foxess', 'solax', 'solis', 'growatt',
+  'deye', 'goodwe', 'huawei', 'luxpower', 'local',
 ]

@@ -1,6 +1,7 @@
 import type { BrandAdapter, MonitoringBrand } from '../types'
 import { AdapterError } from '../types'
 import { solarmanAdapter } from './solarman'
+import { sunsynkAdapter }  from './sunsynk'
 import { sigenegyAdapter } from './sigenergy'
 import { foxessAdapter }   from './foxess'
 import { growattAdapter }  from './growatt'
@@ -20,8 +21,9 @@ function notImplemented(brand: MonitoringBrand): BrandAdapter {
 }
 
 const adapters: Record<MonitoringBrand, BrandAdapter> = {
-  // Solarman cloud backend — covers both Deye and Sunsynk
-  sunsynk:   solarmanAdapter,
+  // Sunsynk's own cloud (api.sunsynk.net) — app login only, no Solarman account
+  sunsynk:   sunsynkAdapter,
+  // Solarman cloud backend — Deye reports here
   deye:      solarmanAdapter,
   // Individual cloud APIs
   sigenergy: sigenegyAdapter,

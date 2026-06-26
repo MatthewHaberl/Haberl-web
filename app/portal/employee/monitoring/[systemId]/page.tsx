@@ -10,6 +10,7 @@ import { PageShell, PageHeader } from '@/components/layout/page'
 import { PowerGauges } from '@/components/monitoring/PowerGauges'
 import { EnergyChart } from '@/components/monitoring/EnergyChart'
 import { SystemActions } from '@/components/monitoring/SystemActions'
+import { PollNowButton } from '@/components/monitoring/PollNowButton'
 import type { DeviceState } from '@/lib/monitoring/types'
 
 export const metadata: Metadata = { title: 'Site Monitoring Detail' }
@@ -126,6 +127,7 @@ export default async function SystemDetailPage({ params }: { params: Promise<{ s
                 {lastPollAge < 1 ? 'just now' : `${lastPollAge}m ago`}
               </span>
             )}
+            <PollNowButton systemId={system.id} />
             <Link
               href={`/portal/employee/monitoring/${system.id}/edit`}
               className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"

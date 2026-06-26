@@ -1,6 +1,6 @@
 /**
- * Solarman adapter — covers Deye AND Sunsynk inverters.
- * Both brands use the Solarman WiFi data logger as their cloud backend.
+ * Solarman adapter — Deye inverters reporting via the Solarman WiFi logger.
+ * (Sunsynk now connects through its own cloud — see ./sunsynk.ts.)
  * API docs: https://doc.solarmanpv.com
  * Auth: AppID + AppSecret + SHA256-hashed password → OAuth access token
  * Rate limit: 50 requests / minute
