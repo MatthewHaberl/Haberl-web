@@ -9,6 +9,7 @@ import { customerAccountStatus, type Customer } from '@/types/database'
 import { CustomerPanel } from './CustomerPanel'
 import { AddSiteDialog } from './AddSiteDialog'
 import { SiteCard } from './SiteCard'
+import { ArchiveCustomerButton } from './ArchiveCustomerButton'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -35,6 +36,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const { data: profile } = await supabase
     .from('user_profiles').select('role').eq('id', user!.id).single()
   if (!['manager', 'admin'].includes(profile?.role ?? '')) redirect('/portal/employee/jobs')
+  const isAdmin = profile?.role === 'admin'
 
   const { data: customerRow } = await supabase
     .from('customers').select('*').eq('id', id).maybeSingle()
@@ -90,11 +92,19 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             <h1 className="text-2xl font-bold text-primary">{customer.full_name || 'Unknown'}</h1>
             <Badge variant={badge.variant}>{badge.label}</Badge>
             {customer.is_business && <Badge variant="default">Business</Badge>}
+            {customer.archived_at && <Badge variant="destructive">Archived</Badge>}
           </div>
           <p className="text-sm text-muted-foreground mt-1 capitalize">
             From {customer.source} · added {formatDate(customer.created_at)}
           </p>
         </div>
+        {isAdmin && (
+          <ArchiveCustomerButton
+            customerId={customer.id}
+            customerName={customer.full_name}
+            archived={!!customer.archived_at}
+          />
+        )}
       </div>
 
       {/* Interactive: editable contact details + invite */}

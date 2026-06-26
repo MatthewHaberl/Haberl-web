@@ -7,6 +7,7 @@ import { Users, MapPin, Mail, Phone, Building2, ChevronRight } from 'lucide-reac
 import { formatDate } from '@/lib/utils'
 import { customerAccountStatus, type Customer, type CustomerAccountStatus } from '@/types/database'
 import { AddCustomerDialog } from './AddCustomerDialog'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = { title: 'Customers' }
@@ -28,6 +29,7 @@ const FILTERS: { key: string; label: string }[] = [
   { key: 'prospect',   label: 'Prospects' },
   { key: 'invited',    label: 'Invited' },
   { key: 'registered', label: 'Registered' },
+  { key: 'archived',   label: 'Archived' },
 ]
 
 export default async function CustomersPage({
@@ -48,26 +50,32 @@ export default async function CustomersPage({
     .select('*, sites(count), quote_requests(count)')
     .order('created_at', { ascending: false })
 
-  const all = (data ?? []) as CustomerRow[]
-  const customers = statusFilter === 'all'
-    ? all
+  const rows = (data ?? []) as CustomerRow[]
+  // Archived customers are hidden everywhere except their own filter.
+  const all = rows.filter((c) => !c.archived_at)
+  const archived = rows.filter((c) => c.archived_at)
+  const customers =
+    statusFilter === 'archived' ? archived
+    : statusFilter === 'all'    ? all
     : all.filter((c) => customerAccountStatus(c) === statusFilter)
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Customers</h1>
-          <p className="text-muted-foreground mt-1">
-            {all.length} {all.length === 1 ? 'customer' : 'customers'} · leads, quotes & registered accounts
-          </p>
-        </div>
-        <AddCustomerDialog />
-      </div>
+    <PageShell width="wide">
+      <PageHeader
+        icon={Users}
+        title="Customers"
+        description={`${all.length} ${all.length === 1 ? 'customer' : 'customers'} · leads, quotes & registered accounts`}
+        actions={<AddCustomerDialog />}
+      />
 
       <div className="flex items-center gap-2 flex-wrap">
         {FILTERS.map((f) => {
-          const count = f.key === 'all' ? all.length : all.filter((c) => customerAccountStatus(c) === f.key).length
+          const count =
+            f.key === 'all'      ? all.length
+            : f.key === 'archived' ? archived.length
+            : all.filter((c) => customerAccountStatus(c) === f.key).length
+          // Hide the Archived chip entirely until something is archived.
+          if (f.key === 'archived' && count === 0) return null
           const active = statusFilter === f.key
           return (
             <Link
@@ -148,6 +156,6 @@ export default async function CustomersPage({
           })}
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

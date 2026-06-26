@@ -142,6 +142,8 @@ export interface Customer {
   registered_at: string | null
   created_by: string | null
   created_at: string
+  archived_at: string | null   // soft-delete: set = archived/hidden (migration 056)
+  archived_by: string | null
 }
 
 export type CustomerAccountStatus = 'prospect' | 'invited' | 'registered'
