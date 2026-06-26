@@ -116,6 +116,24 @@ function mapStatus(status: number | undefined): DeviceState {
 
 interface PvIv { pvNo?: number; vpv?: unknown; ipv?: unknown; ppv?: unknown }
 
+/**
+ * The energy-flow snapshot the Sunsynk Connect app itself renders. Magnitudes
+ * are positive; direction comes from the boolean flags. We use this to derive
+ * TOTAL house load (the inverter exposes no load meter — `output.pac` is only
+ * the backup/EPS output and understates load badly when the grid feeds it).
+ */
+interface FlowData {
+  pvPower?: unknown
+  battPower?: unknown
+  gridOrMeterPower?: unknown
+  loadOrEpsPower?: unknown
+  soc?: unknown
+  toBat?: boolean    // charging
+  batTo?: boolean    // discharging
+  toGrid?: boolean   // exporting
+  gridTo?: boolean   // importing
+}
+
 // ── Historical day chart ───────────────────────────────────────────────
 // Sunsynk Connect / SolArk cloud serves a day's power chart per PLANT at:
 //   GET /api/v1/plant/energy/{plantId}/day?date=YYYY-MM-DD&id={plantId}&lan=en
@@ -179,16 +197,17 @@ export const sunsynkAdapter: BrandAdapter = {
 
     for (const inv of inverters) {
       const sn = inv.sn
-      const [input, grid, battery, output] = await Promise.all([
+      const [flow, input, battery, output] = await Promise.all([
+        getJson<FlowData>(`${BASE_URL}/api/v1/inverter/${sn}/flow`, token),
         getJson<{ pac?: unknown; pvIV?: PvIv[] }>(`${BASE_URL}/api/v1/inverter/${sn}/realtime/input`, token),
-        getJson<{ pac?: unknown; fac?: unknown }>(`${BASE_URL}/api/v1/inverter/grid/${sn}/realtime?sn=${sn}`, token),
         getJson<{ power?: unknown; soc?: unknown; voltage?: unknown; temp?: unknown }>(`${BASE_URL}/api/v1/inverter/battery/${sn}/realtime?sn=${sn}&lan`, token),
-        getJson<{ pac?: unknown }>(`${BASE_URL}/api/v1/inverter/${sn}/realtime/output`, token),
+        getJson<{ pac?: unknown; fac?: unknown }>(`${BASE_URL}/api/v1/inverter/${sn}/realtime/output`, token),
       ])
+      const f = flow.data ?? {}
 
-      // PV: prefer summed per-string DC power, fall back to the input pac.
+      // Per-string detail (voltage / current / power) from the input endpoint.
       const ivs = input.data?.pvIV ?? []
-      let invPv = 0
+      let stringSum = 0
       let sawString = false
       for (const iv of ivs) {
         const v = num(iv.vpv)
@@ -197,7 +216,7 @@ export const sunsynkAdapter: BrandAdapter = {
         if (v === null && a === null && p === null) continue
         sawString = true
         stringIndex += 1
-        if (p !== null) invPv += p
+        if (p !== null) stringSum += p
         pvStrings.push({
           string: typeof iv.pvNo === 'number' ? iv.pvNo : stringIndex,
           voltage_v: v,
@@ -205,20 +224,44 @@ export const sunsynkAdapter: BrandAdapter = {
           power_w: p ?? (v !== null && a !== null ? Math.round(v * a) : null),
         })
       }
-      pvPower += sawString ? invPv : (num(input.data?.pac) ?? 0)
 
-      loadPower += num(output.data?.pac) ?? 0
-      gridPower += num(grid.data?.pac) ?? 0
-      batteryPower += num(battery.data?.power) ?? 0
+      // Magnitudes + directions from the flow snapshot.
+      const invPv   = num(f.pvPower) ?? (sawString ? stringSum : num(input.data?.pac)) ?? 0
+      const battMag = num(f.battPower) ?? 0
+      const gridMag = num(f.gridOrMeterPower) ?? 0
+      const charging    = f.toBat  === true
+      const discharging = f.batTo  === true
+      const importing   = f.gridTo === true
+      const exporting   = f.toGrid === true
 
-      const soc = num(battery.data?.soc)
+      // Signed to match the gauges: battery +charge / −discharge, grid +import / −export.
+      const battSigned = charging ? battMag : discharging ? -battMag : 0
+      const gridSigned = importing ? gridMag : exporting ? -gridMag : 0
+
+      // TOTAL household load via energy balance. The system has no load meter,
+      // so this — PV + battery discharge + grid import (minus charge/export) — is
+      // exactly what the Sunsynk app shows. `output.pac` (EPS output) is the
+      // fallback only when the flow snapshot is unavailable.
+      const haveFlow = num(f.pvPower) !== null || num(f.battPower) !== null || num(f.gridOrMeterPower) !== null
+      const invLoad = haveFlow
+        ? Math.max(0, invPv
+            + (discharging ? battMag : 0) - (charging ? battMag : 0)
+            + (importing   ? gridMag : 0) - (exporting ? gridMag : 0))
+        : (num(output.data?.pac) ?? 0)
+
+      pvPower      += invPv
+      batteryPower += battSigned
+      gridPower    += gridSigned
+      loadPower    += invLoad
+
+      const soc = num(f.soc) ?? num(battery.data?.soc)
       if (soc !== null) { socSum += soc; socCount += 1 }
       if (batteryVoltage === null) batteryVoltage = num(battery.data?.voltage)
       if (batteryTemp === null) batteryTemp = num(battery.data?.temp)
-      if (gridFreq === null) gridFreq = num(grid.data?.fac)
+      if (gridFreq === null) gridFreq = num(output.data?.fac)
 
       states.push(mapStatus(inv.status))
-      rawByInverter[sn] = { input: input.data, grid: grid.data, battery: battery.data, output: output.data }
+      rawByInverter[sn] = { flow: f, input: input.data, battery: battery.data, output: output.data }
     }
 
     // One device_state for the system: fault wins, else online if any online.

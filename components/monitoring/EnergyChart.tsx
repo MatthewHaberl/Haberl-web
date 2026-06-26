@@ -27,7 +27,8 @@ function formatTime(iso: string, hours: number) {
   return d.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-function kw(w: number | null) { return Math.round((w ?? 0) / 100) / 10 }
+/** Whole watts — no kW rounding, so small loads aren't lost to 0.1 kW steps. */
+function toW(w: number | null) { return Math.round(w ?? 0) }
 
 interface Props {
   systemId: string
@@ -53,10 +54,10 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
         setData(
           readings.map((r) => ({
             time: formatTime(r.recorded_at, hours),
-            solar:   kw(r.pv_power_w),
-            battery: kw(r.battery_power_w),
-            grid:    kw(r.grid_power_w),
-            load:    kw(r.load_power_w),
+            solar:   toW(r.pv_power_w),
+            battery: toW(r.battery_power_w),
+            grid:    toW(r.grid_power_w),
+            load:    toW(r.load_power_w),
           }))
         )
       })
@@ -111,10 +112,10 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-        <YAxis tick={{ fontSize: 10 }} unit=" kW" />
+        <YAxis tick={{ fontSize: 10 }} unit=" W" tickFormatter={(v) => Number(v).toLocaleString('en-ZA')} width={56} />
         <Tooltip
           contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: 12 }}
-          formatter={(val) => [`${String(val)} kW`]}
+          formatter={(val, name) => [`${Number(val).toLocaleString('en-ZA')} W`, name]}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Area type="monotone" dataKey="solar"   name="Solar"   stroke="#eab308" fill="url(#solar)"   strokeWidth={1.5} dot={false} />
