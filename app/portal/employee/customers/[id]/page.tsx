@@ -3,7 +3,9 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, MapPin, FileText, Wrench, Clock, ChevronRight } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { ArrowLeft, MapPin, FileText, Wrench, Clock, ChevronRight, Users, Trash2 } from 'lucide-react'
+import { PageShell, PageHeader } from '@/components/layout/page'
 import { formatDate } from '@/lib/utils'
 import { customerAccountStatus, type Customer } from '@/types/database'
 import { CustomerPanel } from './CustomerPanel'
@@ -53,7 +55,17 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     .from('quote_requests')
     .select('id, quote_number, status, total_amount, created_at, sent_at, accepted_at, declined_at')
     .eq('customer_id', id)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
+
+  // Soft-deleted documents for this customer (admin-only "Deleted documents" view).
+  const { count: deletedDocsCount } = isAdmin
+    ? await supabase
+        .from('quote_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('customer_id', id)
+        .not('deleted_at', 'is', null)
+    : { count: 0 }
 
   const siteIds = (sites ?? []).map((s) => s.id)
   const { data: jobs } = siteIds.length
@@ -81,31 +93,47 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   timeline.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
+    <PageShell width="content">
       <Link href="/portal/employee/customers" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground w-fit">
         <ArrowLeft className="h-4 w-4" /> All customers
       </Link>
 
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-primary">{customer.full_name || 'Unknown'}</h1>
+      <PageHeader
+        icon={Users}
+        title={
+          <span className="flex items-center gap-2 flex-wrap">
+            {customer.full_name || 'Unknown'}
             <Badge variant={badge.variant}>{badge.label}</Badge>
             {customer.is_business && <Badge variant="default">Business</Badge>}
             {customer.archived_at && <Badge variant="destructive">Archived</Badge>}
-          </div>
-          <p className="text-sm text-muted-foreground mt-1 capitalize">
+          </span>
+        }
+        description={
+          <span className="capitalize">
             From {customer.source} · added {formatDate(customer.created_at)}
-          </p>
-        </div>
-        {isAdmin && (
-          <ArchiveCustomerButton
-            customerId={customer.id}
-            customerName={customer.full_name}
-            archived={!!customer.archived_at}
-          />
-        )}
-      </div>
+          </span>
+        }
+        actions={
+          isAdmin && (
+            <div className="flex items-center gap-2">
+              {(deletedDocsCount ?? 0) > 0 && (
+                <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                  <Link href={`/portal/employee/customers/${customer.id}/deleted`}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Deleted documents
+                    <Badge variant="outline">{deletedDocsCount}</Badge>
+                  </Link>
+                </Button>
+              )}
+              <ArchiveCustomerButton
+                customerId={customer.id}
+                customerName={customer.full_name}
+                archived={!!customer.archived_at}
+              />
+            </div>
+          )
+        }
+      />
 
       {/* Interactive: editable contact details + invite */}
       <CustomerPanel customer={customer} accountStatus={status} />
@@ -211,6 +239,6 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           </CardContent>
         </Card>
       </section>
-    </div>
+    </PageShell>
   )
 }
