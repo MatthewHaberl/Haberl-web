@@ -115,6 +115,46 @@ function mapStatus(status: number | undefined): DeviceState {
 
 interface PvIv { pvNo?: number; vpv?: unknown; ipv?: unknown; ppv?: unknown }
 
+// ── Historical day chart ───────────────────────────────────────────────
+// Sunsynk Connect / SolArk cloud serves a day's power chart per PLANT at:
+//   GET /api/v1/plant/energy/{plantId}/day?date=YYYY-MM-DD&id={plantId}&lan=en
+// Response: data.infos[] — one series per metric, each with records[] at
+// ~5-minute steps. Record times are plant-local wall clock with no offset;
+// Haberl's fleet is all South Africa (SAST, fixed UTC+02:00, no DST), so we
+// anchor them at +02:00. Confirmed against judasgutenberg/SolArkMonitor.
+const SAST_OFFSET = '+02:00'
+
+interface DayRecord { time?: string; value?: unknown; updateTime?: string }
+interface DaySeries { label?: string; unit?: string; records?: DayRecord[] }
+
+/** Classify a series label into one of our reading fields. */
+function classifySeries(label: string): 'pv' | 'battery' | 'grid' | 'load' | 'soc' | null {
+  const l = label.toLowerCase()
+  if (l.includes('soc')) return 'soc'
+  if (l.includes('pv') || l.includes('solar') || l.includes('gen')) return 'pv'
+  if (l.includes('bat')) return 'battery'
+  if (l.includes('grid')) return 'grid'
+  if (l.includes('load') || l.includes('use') || l.includes('consum')) return 'load'
+  return null
+}
+
+/** Scale a series value to base units (W / %), honouring a kW unit. */
+function scaleValue(field: string, unit: string | undefined, raw: number): number {
+  if (field === 'soc') return raw
+  return /kw/i.test(unit ?? '') ? Math.round(raw * 1000) : Math.round(raw)
+}
+
+/** Build an empty normalised reading for a given timestamp. */
+function blankReading(recordedAt: string): NormalisedReading {
+  return {
+    recorded_at: recordedAt,
+    pv_power_w: null, battery_power_w: null, grid_power_w: null, load_power_w: null,
+    battery_soc_pct: null, battery_voltage_v: null, grid_frequency_hz: null,
+    inverter_temp_c: null, pv_strings: [], fault_codes: [],
+    device_state: 'unknown', raw_payload: {},
+  }
+}
+
 export const sunsynkAdapter: BrandAdapter = {
   async fetchReading(credentials: BrandCredentials, plantId: string | null, deviceSn: string | null): Promise<NormalisedReading> {
     const { username, password } = credentials
@@ -202,5 +242,58 @@ export const sunsynkAdapter: BrandAdapter = {
       device_state: deviceState,
       raw_payload: rawByInverter,
     }
+  },
+
+  async fetchHistory(
+    credentials: BrandCredentials,
+    plantId: string | null,
+    _deviceSn: string | null,
+    dayStartUtc: Date,
+  ): Promise<NormalisedReading[]> {
+    const { username, password } = credentials
+    if (!username || !password) {
+      throw new AdapterError('Sunsynk Connect credentials incomplete (need account email + password)', 'sunsynk', false)
+    }
+    if (!plantId) {
+      throw new AdapterError('Sunsynk history needs a plant/station ID', 'sunsynk', false)
+    }
+
+    const token = await login(username, password)
+
+    // The chart is keyed by the plant-local date. Derive that local date from
+    // the UTC day-start by shifting +2h (SAST), then formatting Y-M-D.
+    const local = new Date(dayStartUtc.getTime() + 2 * 60 * 60 * 1000)
+    const date = local.toISOString().slice(0, 10)
+
+    const res = await getJson<{ infos?: DaySeries[] }>(
+      `${BASE_URL}/api/v1/plant/energy/${plantId}/day?date=${date}&id=${plantId}&lan=en`,
+      token,
+    )
+    const infos = res.data?.infos ?? []
+    if (infos.length === 0) return []
+
+    // Merge all series into one reading per timestamp.
+    const byTime = new Map<string, NormalisedReading>()
+    for (const series of infos) {
+      const field = classifySeries(series.label ?? '')
+      if (!field) continue
+      for (const rec of series.records ?? []) {
+        const t = (rec.time ?? rec.updateTime ?? '').trim()
+        const v = num(rec.value)
+        if (!t || v === null) continue
+        const iso = new Date(`${t.replace(' ', 'T')}${SAST_OFFSET}`).toISOString()
+        let reading = byTime.get(iso)
+        if (!reading) { reading = blankReading(iso); byTime.set(iso, reading) }
+        const scaled = scaleValue(field, series.unit, v)
+        if (field === 'pv') reading.pv_power_w = scaled
+        else if (field === 'battery') reading.battery_power_w = scaled
+        else if (field === 'grid') reading.grid_power_w = scaled
+        else if (field === 'load') reading.load_power_w = scaled
+        else if (field === 'soc') reading.battery_soc_pct = scaled
+        reading.device_state = 'online'
+      }
+    }
+
+    return [...byTime.values()].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at))
   },
 }

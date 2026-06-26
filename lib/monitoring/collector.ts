@@ -183,10 +183,11 @@ async function processSingleSystem(
     system.device_sn
   )
 
-  // Persist reading
+  // Persist reading. Upsert on (system_id, recorded_at) so it can never collide
+  // with a backfilled/imported row at the same instant.
   const { error: insertError } = await supabase
     .from('monitoring_readings')
-    .insert({
+    .upsert({
       system_id:        system.id,
       recorded_at:      reading.recorded_at,
       pv_power_w:       reading.pv_power_w,
@@ -201,7 +202,8 @@ async function processSingleSystem(
       fault_codes:      reading.fault_codes,
       device_state:     reading.device_state,
       raw_payload:      reading.raw_payload,
-    })
+      reading_source:   'live',
+    }, { onConflict: 'system_id,recorded_at' })
 
   if (insertError) throw new Error(`Failed to insert reading: ${insertError.message}`)
 

@@ -32,6 +32,29 @@ function numOrNull(v: number | string | null | undefined): number | null {
   return null
 }
 
+// ── Historical stats ───────────────────────────────────────────────────
+// VRM serves a per-attribute time series at:
+//   GET /v2/installations/{id}/stats?type=custom&interval=15mins
+//        &start={epochSec}&end={epochSec}&attributeCodes[]=...
+// 15 minutes is the finest interval VRM exposes (the CSV data-download is the
+// same resolution); true 1-min/1-sec only lives on the on-site GX device.
+// stats attributeCodes share the data-attribute namespace as /diagnostics, so
+// we request the same consolidated codes the realtime adapter already reads.
+const HISTORY_CODES: Record<string, keyof Pick<
+  NormalisedReading,
+  'pv_power_w' | 'battery_power_w' | 'grid_power_w' | 'load_power_w' | 'battery_soc_pct' | 'battery_voltage_v'
+>> = {
+  Pdc: 'pv_power_w',
+  bp:  'battery_power_w',
+  g1:  'grid_power_w',
+  a1:  'load_power_w',
+  bs:  'battery_soc_pct',
+  bv:  'battery_voltage_v',
+}
+
+/** VRM stats records: { code: [[ts, value], ...] }. ts is epoch sec or ms. */
+type VrmStatsRecords = Record<string, Array<[number, number | null]> | undefined>
+
 export const victronAdapter: BrandAdapter = {
   async fetchReading(credentials: BrandCredentials, plantId: string | null): Promise<NormalisedReading> {
     const { access_token, vrm_installation_id } = credentials
@@ -120,5 +143,58 @@ export const victronAdapter: BrandAdapter = {
       device_state:      deviceState,
       raw_payload:       { source: 'diagnostics', system_overview: records.filter((x) => x.Device === 'System overview') } as Record<string, unknown>,
     }
+  },
+
+  async fetchHistory(
+    credentials: BrandCredentials,
+    plantId: string | null,
+    _deviceSn: string | null,
+    dayStartUtc: Date,
+  ): Promise<NormalisedReading[]> {
+    const { access_token, vrm_installation_id } = credentials
+    const installId = vrm_installation_id ?? plantId
+    if (!access_token || !installId) {
+      throw new AdapterError('Victron credentials incomplete (need access_token + installation id)', 'victron', false)
+    }
+
+    const startSec = Math.floor(dayStartUtc.getTime() / 1000)
+    const endSec = startSec + 24 * 60 * 60
+    const codeParams = Object.keys(HISTORY_CODES).map((c) => `attributeCodes[]=${c}`).join('&')
+    const url = `${BASE_URL}/installations/${installId}/stats?type=custom&interval=15mins&start=${startSec}&end=${endSec}&${codeParams}`
+
+    const res = await fetch(url, {
+      headers: { 'X-Authorization': `Token ${access_token}`, 'Content-Type': 'application/json' },
+    })
+    if (!res.ok) throw new AdapterError(`Victron stats fetch failed: ${res.status}`, 'victron')
+
+    const json = (await res.json()) as { success?: boolean; records?: VrmStatsRecords }
+    const records = json.records ?? {}
+
+    // Pivot per-attribute series into one reading per 15-min timestamp.
+    const byTime = new Map<number, NormalisedReading>()
+    for (const [code, field] of Object.entries(HISTORY_CODES)) {
+      const series = records[code]
+      if (!Array.isArray(series)) continue
+      for (const point of series) {
+        if (!Array.isArray(point)) continue
+        const [rawTs, value] = point
+        if (rawTs == null || value == null) continue
+        const ms = rawTs < 1e12 ? rawTs * 1000 : rawTs   // accept sec or ms
+        let reading = byTime.get(ms)
+        if (!reading) {
+          reading = {
+            recorded_at: new Date(ms).toISOString(),
+            pv_power_w: null, battery_power_w: null, grid_power_w: null, load_power_w: null,
+            battery_soc_pct: null, battery_voltage_v: null, grid_frequency_hz: null,
+            inverter_temp_c: null, pv_strings: [], fault_codes: [],
+            device_state: 'online', raw_payload: { source: 'stats' },
+          }
+          byTime.set(ms, reading)
+        }
+        reading[field] = typeof value === 'number' ? value : null
+      }
+    }
+
+    return [...byTime.values()].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at))
   },
 }

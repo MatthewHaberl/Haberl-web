@@ -34,7 +34,14 @@ interface Props {
   hours?: number
 }
 
-export function EnergyChart({ systemId, hours = 24 }: Props) {
+const RANGES: { label: string; hours: number }[] = [
+  { label: '24h', hours: 24 },
+  { label: '7d', hours: 24 * 7 },
+  { label: '30d', hours: 24 * 30 },
+]
+
+export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
+  const [hours, setHours] = useState(initialHours)
   const [data, setData] = useState<ChartPoint[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -56,19 +63,40 @@ export function EnergyChart({ systemId, hours = 24 }: Props) {
       .finally(() => setLoading(false))
   }, [systemId, hours])
 
+  const selector = (
+    <div className="mb-3 flex gap-1">
+      {RANGES.map((r) => (
+        <button
+          key={r.label}
+          onClick={() => setHours(r.hours)}
+          className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+            hours === r.hours ? 'bg-foreground text-background' : 'border border-border hover:bg-muted'
+          }`}
+        >
+          {r.label}
+        </button>
+      ))}
+    </div>
+  )
+
   if (loading) {
-    return <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">Loading chart…</div>
+    return <>{selector}<div className="flex h-48 items-center justify-center text-sm text-muted-foreground">Loading chart…</div></>
   }
 
   if (!data.length) {
     return (
-      <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
-        No readings yet for this time window.
-      </div>
+      <>
+        {selector}
+        <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
+          No readings in this window — import history below to fill it in.
+        </div>
+      </>
     )
   }
 
   return (
+    <>
+    {selector}
     <ResponsiveContainer width="100%" height={240}>
       <AreaChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
         <defs>
@@ -95,5 +123,6 @@ export function EnergyChart({ systemId, hours = 24 }: Props) {
         <Area type="monotone" dataKey="grid"    name="Grid"    stroke="#3b82f6" fill="none"          strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
       </AreaChart>
     </ResponsiveContainer>
+    </>
   )
 }

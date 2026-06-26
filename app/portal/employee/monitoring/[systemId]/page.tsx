@@ -11,6 +11,7 @@ import { PowerGauges } from '@/components/monitoring/PowerGauges'
 import { EnergyChart } from '@/components/monitoring/EnergyChart'
 import { SystemActions } from '@/components/monitoring/SystemActions'
 import { PollNowButton } from '@/components/monitoring/PollNowButton'
+import { HistoryPanel } from '@/components/monitoring/HistoryPanel'
 import type { DeviceState } from '@/lib/monitoring/types'
 
 export const metadata: Metadata = { title: 'Site Monitoring Detail' }
@@ -184,8 +185,8 @@ export default async function SystemDetailPage({ params }: { params: Promise<{ s
       {/* Energy chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Power history — last 24 hours</CardTitle>
-          <CardDescription>Polled every 5 minutes. Solar, load, battery, and grid.</CardDescription>
+          <CardTitle>Power history</CardTitle>
+          <CardDescription>Solar, load, battery, and grid. Switch the range to view backfilled history.</CardDescription>
         </CardHeader>
         <CardContent>
           <EnergyChart systemId={system.id} hours={24} />
@@ -282,6 +283,9 @@ export default async function SystemDetailPage({ params }: { params: Promise<{ s
           </CardContent>
         </Card>
       </div>
+
+      {/* Historical import */}
+      <HistoryPanel systemId={system.id} brand={system.brand} />
 
       {/* Manage system */}
       <Card>

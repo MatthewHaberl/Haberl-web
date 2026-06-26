@@ -62,8 +62,24 @@ export interface BrandCredentials {
   [key: string]: string | undefined
 }
 
+/** Where a stored reading came from. */
+export type ReadingSource = 'live' | 'backfill' | 'import'
+
 export interface BrandAdapter {
   fetchReading(credentials: BrandCredentials, plantId: string | null, deviceSn: string | null): Promise<NormalisedReading>
+  /**
+   * Optional historical pull for one UTC day [dayStart, dayStart+24h). Returns
+   * every timestep the brand cloud retains for that day (5-min for Sunsynk,
+   * 15-min for Victron), oldest-first. An empty array means "no data that day"
+   * — the backfill worker uses runs of empty days to detect the install date.
+   * Brands without a history endpoint simply omit this method.
+   */
+  fetchHistory?(
+    credentials: BrandCredentials,
+    plantId: string | null,
+    deviceSn: string | null,
+    dayStartUtc: Date,
+  ): Promise<NormalisedReading[]>
 }
 
 export class AdapterError extends Error {
