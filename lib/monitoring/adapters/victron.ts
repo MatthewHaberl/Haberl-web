@@ -4,25 +4,32 @@
  * Auth: Personal Access Token (generate in VRM portal: Preferences → Integrations)
  * Base URL: https://vrmapi.victronenergy.com/v2
  * Rate limit: ~2 req/sec (undocumented, be conservative)
+ *
+ * Live values come from the `/diagnostics` endpoint, whose "System overview"
+ * device exposes the consolidated flow values (PV, battery, grid, load, SOC) in
+ * one call. NOTE: the bare `GET /installations/{id}` endpoint does NOT exist —
+ * it returns HTTP 400 — so we must use a sub-resource like /diagnostics.
  */
 import type { BrandAdapter, BrandCredentials, NormalisedReading, PvString, DeviceState } from '../types'
 import { AdapterError } from '../types'
 
 const BASE_URL = 'https://vrmapi.victronenergy.com/v2'
 
-function mapVrmState(state: number | undefined): DeviceState {
-  // VRM connection state: 1=online, 0=offline
-  if (state === 1) return 'online'
-  if (state === 0) return 'offline'
-  return 'unknown'
+/** One row from VRM /diagnostics — the latest value of a single data attribute. */
+interface VrmDiagRecord {
+  Device: string
+  instance: number
+  code: string
+  description: string
+  rawValue: number | string | null
+  formattedValue: string | null
 }
 
-interface VrmAttribute {
-  idDataAttribute: number
-  description: string
-  formatWithUnit: string
-  rawValue: number | null
-  timestamp: number
+/** Coerce a VRM rawValue (number | numeric-string | other) to a number or null. */
+function numOrNull(v: number | string | null | undefined): number | null {
+  if (typeof v === 'number') return v
+  if (v != null && v !== '' && !isNaN(Number(v))) return Number(v)
+  return null
 }
 
 export const victronAdapter: BrandAdapter = {
@@ -42,85 +49,76 @@ export const victronAdapter: BrandAdapter = {
       'Content-Type': 'application/json',
     }
 
-    // Fetch installation overview (online status + site stats)
-    const [overviewRes, dataRes] = await Promise.all([
-      fetch(`${BASE_URL}/installations/${installId}`, { headers }),
-      fetch(`${BASE_URL}/installations/${installId}/widgets/Graph?attributeCodes[]=Pdc&attributeCodes[]=Pac&attributeCodes[]=SOC&attributeCodes[]=BatteryVoltage&attributeCodes[]=GridPower&attributeCodes[]=AcConsumption&attributeCodes[]=PvPower`, { headers }),
-    ])
-
-    if (!overviewRes.ok) throw new AdapterError(`Victron installation fetch failed: ${overviewRes.status}`, 'victron')
-    if (!dataRes.ok) throw new AdapterError(`Victron data fetch failed: ${dataRes.status}`, 'victron')
-
-    const overview = (await overviewRes.json()) as {
-      records?: {
-        idSite?: number
-        name?: string
-        current_time?: string
-        timezone?: string
-        alarm?: boolean
-        alarm_monitoring?: boolean
-        gs?: { last_timestamp?: number; relay?: number }
-        extended?: VrmAttribute[]
-      }
+    // Single call: the latest value of every data attribute for this site.
+    const res = await fetch(`${BASE_URL}/installations/${installId}/diagnostics?count=1000`, { headers })
+    if (!res.ok) {
+      throw new AdapterError(`Victron diagnostics fetch failed: ${res.status}`, 'victron')
     }
 
-    const data = (await dataRes.json()) as {
-      records?: {
-        data?: Record<string, { rawValue: number | null }[]>
-      }
+    const json = (await res.json()) as { success?: boolean; records?: VrmDiagRecord[] }
+    const records = json.records ?? []
+
+    /** Latest value of a System-overview attribute by its VRM code. */
+    function sysVal(code: string): number | null {
+      const r = records.find((x) => x.code === code && x.Device === 'System overview')
+      return r ? numOrNull(r.rawValue) : null
     }
 
-    const rec = overview.records
-    const connectionState = rec?.gs?.relay
+    // Consolidated flow values (System overview device, instance 0).
+    const pvPower   = sysVal('Pdc')  // PV - DC-coupled (total PV watts)
+    const batPower  = sysVal('bp')   // Battery Power: + charging, − discharging
+    const gridPower = sysVal('g1')   // Grid L1
+    const loadPower = sysVal('a1')   // AC Consumption L1
+    const soc       = sysVal('bs')   // Battery SOC %
+    const batVolt   = sysVal('bv')   // Battery voltage
 
-    // Extract latest values from the widget data
-    function latestVal(key: string): number | null {
-      const arr = data.records?.data?.[key]
-      if (!arr?.length) return null
-      const last = arr[arr.length - 1]
-      return last?.rawValue ?? null
-    }
+    // Grid frequency from VE.Bus output frequency, if reported.
+    const ofRec = records.find((x) => x.code === 'OF')
+    const gridFreq = ofRec ? numOrNull(ofRec.rawValue) : null
 
-    // Victron PV power breakdown — try to get per-MPPT data from extended attributes
+    // Per-MPPT PV strings from each Solar Charger (PVP power, PVV voltage, ScI current).
     const pvStrings: PvString[] = []
-    const extended = rec?.extended ?? []
-    let mpptIndex = 1
-    for (const attr of extended) {
-      if (attr.description?.toLowerCase().includes('pv power') && attr.rawValue != null) {
+    let stringIdx = 1
+    for (const r of records) {
+      if (r.code === 'PVP' && r.Device === 'Solar Charger' && r.rawValue != null) {
+        const volt = records.find((x) => x.code === 'PVV' && x.Device === 'Solar Charger' && x.instance === r.instance)
+        const curr = records.find((x) => x.code === 'ScI' && x.Device === 'Solar Charger' && x.instance === r.instance)
         pvStrings.push({
-          string: mpptIndex++,
-          voltage_v: null,  // VRM widget doesn't give per-MPPT voltage easily
-          current_a: null,
-          power_w: attr.rawValue,
+          string: stringIdx++,
+          voltage_v: volt ? numOrNull(volt.rawValue) : null,
+          current_a: curr ? numOrNull(curr.rawValue) : null,
+          power_w: numOrNull(r.rawValue),
         })
       }
     }
 
-    const pvPower   = latestVal('PvPower')
-    const acConsump = latestVal('AcConsumption')
-    const gridPower = latestVal('GridPower')
-    const soc       = latestVal('SOC')
-    const batVolt   = latestVal('BatteryVoltage')
-    // Battery power: positive = charging (from PV or grid), negative = discharging
-    const batPower  = latestVal('Pdc')
-
+    // Active alarms: numeric alarm attributes with a non-zero value.
     const faultCodes: string[] = []
-    if (rec?.alarm) faultCodes.push('ALARM')
+    for (const r of records) {
+      if (/alarm/i.test(r.description) && typeof r.rawValue === 'number' && r.rawValue > 0) {
+        faultCodes.push(r.description)
+      }
+    }
+
+    // We received live values → online. (VRM diagnostics returns last-known data,
+    // so treat "no consolidated values at all" as unknown rather than offline.)
+    const deviceState: DeviceState =
+      soc != null || pvPower != null || batPower != null ? 'online' : 'unknown'
 
     return {
       recorded_at:       new Date().toISOString(),
       pv_power_w:        pvPower,
       battery_power_w:   batPower,
       grid_power_w:      gridPower,
-      load_power_w:      acConsump,
+      load_power_w:      loadPower,
       battery_soc_pct:   soc,
       battery_voltage_v: batVolt,
-      grid_frequency_hz: null,  // not in standard VRM widget
-      inverter_temp_c:   null,
+      grid_frequency_hz: gridFreq,
+      inverter_temp_c:   null,  // not exposed as a clean inverter temp in diagnostics
       pv_strings:        pvStrings,
       fault_codes:       faultCodes,
-      device_state:      mapVrmState(connectionState),
-      raw_payload:       { overview: rec, data: data.records } as Record<string, unknown>,
+      device_state:      deviceState,
+      raw_payload:       { source: 'diagnostics', system_overview: records.filter((x) => x.Device === 'System overview') } as Record<string, unknown>,
     }
   },
 }
