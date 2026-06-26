@@ -6,6 +6,7 @@ import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { SystemStatusBadge } from '@/components/monitoring/SystemStatusBadge'
+import { PollAllButton } from '@/components/monitoring/PollAllButton'
 import type { DeviceState } from '@/lib/monitoring/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
 
@@ -138,6 +139,7 @@ export default async function MonitoringFleetPage() {
         description="All inverter systems across all sites"
         actions={
           <>
+            {totalSystems > 0 && <PollAllButton />}
             <Link
               href="/portal/employee/monitoring/map"
               className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted transition-colors"

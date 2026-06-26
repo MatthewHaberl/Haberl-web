@@ -119,6 +119,45 @@ export async function pollSystemNow(
   }
 }
 
+/**
+ * Poll every enabled system on demand (the fleet-page "Poll all" button), using
+ * the caller's Supabase client so it runs under the staff user's RLS rather than
+ * the service-role key. Batches to avoid hammering brand APIs at once. Each
+ * system records its own poll_error via pollSystemNow, so one failure never
+ * blocks the rest.
+ */
+export async function pollAllNow(supabase: AnySupabaseClient): Promise<CollectorResult[]> {
+  const { data: systems, error } = await supabase
+    .from('monitoring_systems')
+    .select('id, brand')
+    .eq('enabled', true)
+
+  if (error) throw new Error(`Failed to fetch monitoring systems: ${error.message}`)
+  if (!systems?.length) return []
+
+  const rows = systems as { id: string; brand: MonitoringBrand }[]
+  const results: CollectorResult[] = []
+  const batchSize = 5
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize)
+    const settled = await Promise.allSettled(batch.map((s) => pollSystemNow(supabase, s.id)))
+    for (let j = 0; j < batch.length; j++) {
+      const r = settled[j]
+      if (r.status === 'fulfilled') {
+        results.push(r.value)
+      } else {
+        results.push({
+          systemId: batch[j].id,
+          brand: batch[j].brand,
+          ok: false,
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        })
+      }
+    }
+  }
+  return results
+}
+
 async function processSingleSystem(
   supabase: AnySupabaseClient,
   system: MonitoringSystem
