@@ -25,7 +25,8 @@ function fmt(n: number | null, decimals = 1) {
   return n != null ? n.toFixed(decimals) : '—'
 }
 
-export default async function SystemDetailPage({ params }: { params: { systemId: string } }) {
+export default async function SystemDetailPage({ params }: { params: Promise<{ systemId: string }> }) {
+  const { systemId } = await params
   const user = await getUser()
   if (!user) redirect('/auth/login')
 
@@ -47,7 +48,7 @@ export default async function SystemDetailPage({ params }: { params: { systemId:
       last_polled_at, poll_error,
       sites ( id, name, address, customer:customers ( full_name, email, phone ) )
     `)
-    .eq('id', params.systemId)
+    .eq('id', systemId)
     .single()
 
   if (!system) notFound()

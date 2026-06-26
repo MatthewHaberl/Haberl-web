@@ -15,7 +15,8 @@ type SiteRow = {
   customer: { full_name: string | null } | { full_name: string | null }[] | null
 }
 
-export default async function EditMonitoringSystemPage({ params }: { params: { systemId: string } }) {
+export default async function EditMonitoringSystemPage({ params }: { params: Promise<{ systemId: string }> }) {
+  const { systemId } = await params
   const user = await getUser()
   if (!user) redirect('/auth/login')
 
@@ -34,7 +35,7 @@ export default async function EditMonitoringSystemPage({ params }: { params: { s
   const { data: system } = await supabase
     .from('monitoring_systems')
     .select('id, site_id, brand, label, plant_id, device_sn, capacity_kw, battery_kwh, brand_account_id')
-    .eq('id', params.systemId)
+    .eq('id', systemId)
     .single()
 
   if (!system) notFound()
