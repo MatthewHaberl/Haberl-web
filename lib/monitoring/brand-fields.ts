@@ -179,6 +179,20 @@ export const BRAND_CONNECT: Record<MonitoringBrand, BrandConnectSchema> = {
     ],
   },
 
+  dessmonitor: {
+    label: 'SmartESS (DessMonitor)',
+    access: 'self-serve',
+    accessHelp:
+      'For inverters monitored through the SmartESS app (also WatchPower / EnergyMate / the dessmonitor.com web portal) via an Eybond Wi-Fi Pro datalogger — common on SRNE, PowMr, MUST and similar hybrids. Use the same email + password you log into the SmartESS app with. Plant and inverter IDs are discovered automatically; only fill the Plant ID if the account has more than one plant. Company key can be left blank — the standard SmartESS key is used by default.',
+    docsUrl: 'https://www.dessmonitor.com',
+    fields: [
+      { key: 'username', target: 'credential', label: 'SmartESS email / username', required: true, help: 'The login you use in the SmartESS app.' },
+      { key: 'password', target: 'credential', label: 'SmartESS password', type: 'password', required: true, help: 'Password for that same SmartESS login.' },
+      { key: 'plant_id', target: 'plant_id', label: 'Plant ID (optional)', required: false, help: 'Only needed if the account owns more than one plant — otherwise auto-detected.' },
+      { key: 'company_key', target: 'credential', label: 'Company key (optional)', required: false, help: 'Leave blank unless your distributor gave you a custom SmartESS company key.' },
+    ],
+  },
+
   luxpower: {
     label: 'LuxPower',
     access: 'local-only',
@@ -201,5 +215,5 @@ export const BRAND_CONNECT: Record<MonitoringBrand, BrandConnectSchema> = {
 /** Display order for the brand picker: easiest access first. */
 export const BRAND_ORDER: MonitoringBrand[] = [
   'victron', 'sunsynk', 'sigenergy', 'foxess', 'solax', 'solis', 'growatt',
-  'deye', 'goodwe', 'huawei', 'luxpower', 'local',
+  'deye', 'dessmonitor', 'goodwe', 'huawei', 'luxpower', 'local',
 ]

@@ -15,7 +15,7 @@ const BRAND_LABELS: Record<string, string> = {
   sunsynk: 'Sunsynk', sigenergy: 'Sigenergy', foxess: 'FoxESS',
   deye: 'Deye', growatt: 'Growatt', victron: 'Victron',
   goodwe: 'GoodWe', solax: 'SolaX', solis: 'Solis',
-  huawei: 'Huawei', luxpower: 'LuxPower', local: 'Local',
+  huawei: 'Huawei', dessmonitor: 'SmartESS', luxpower: 'LuxPower', local: 'Local',
 }
 
 export default async function CustomerMonitoringPage() {

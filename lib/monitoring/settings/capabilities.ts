@@ -113,6 +113,13 @@ export const BRAND_SETTINGS_CAPABILITY: Record<MonitoringBrand, BrandSettingsCap
     note: 'FusionSolar Northbound is telemetry-only; settings control is local-Modbus-only (installer login). Capture manually for now.',
   }),
 
+  dessmonitor: C({
+    readImplemented: false, writeImplemented: false,
+    cloudReadPossible: true, cloudWritePossible: true, cloudWriteGated: false,
+    localModbusOnly: false,
+    note: 'SmartESS / Eybond cloud exposes parameters and a ctrlDevice write on the (unofficial) API — telemetry auto-reads now; settings read/write is a possible next step (verify per firmware).',
+  }),
+
   luxpower: C({
     readImplemented: false, writeImplemented: false,
     cloudReadPossible: false, cloudWritePossible: false, cloudWriteGated: false,

@@ -10,6 +10,7 @@ import { solaxAdapter }    from './solax'
 import { solisAdapter }    from './solis'
 import { goodweAdapter }   from './goodwe'
 import { huaweiAdapter }   from './huawei'
+import { dessmonitorAdapter } from './dessmonitor'
 import { luxpowerAdapter } from './luxpower'
 
 function notImplemented(brand: MonitoringBrand): BrandAdapter {
@@ -34,6 +35,8 @@ const adapters: Record<MonitoringBrand, BrandAdapter> = {
   solis:     solisAdapter,
   goodwe:    goodweAdapter,
   huawei:    huaweiAdapter,
+  // Eybond cloud (SmartESS / WatchPower apps) — reverse-engineered, login only
+  dessmonitor: dessmonitorAdapter,
   // Local RS485 only — no public cloud API
   luxpower:  luxpowerAdapter,
   // Local push endpoint (Pi/ESP device POSTs to /api/monitoring/local-push)

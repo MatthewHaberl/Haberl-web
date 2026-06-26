@@ -1,7 +1,7 @@
 export type MonitoringBrand =
   | 'sunsynk' | 'sigenergy' | 'foxess' | 'deye' | 'growatt'
   | 'victron'  | 'goodwe'   | 'solax'  | 'solis' | 'huawei'
-  | 'luxpower' | 'local'
+  | 'dessmonitor' | 'luxpower' | 'local'
 
 export type DeviceState = 'online' | 'offline' | 'fault' | 'standby' | 'unknown'
 
