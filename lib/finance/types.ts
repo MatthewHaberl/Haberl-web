@@ -6,6 +6,7 @@ export type FinDocType =
   | 'supplier_invoice'
   | 'receipt'
   | 'sales_invoice'
+  | 'credit_note'
   | 'bank_statement'
   | 'other'
 
@@ -13,6 +14,7 @@ export const FIN_DOC_TYPES: { value: FinDocType; label: string }[] = [
   { value: 'supplier_invoice', label: 'Supplier invoice' },
   { value: 'receipt', label: 'Receipt' },
   { value: 'sales_invoice', label: 'Sales invoice (to customer)' },
+  { value: 'credit_note', label: 'Credit note' },
   { value: 'bank_statement', label: 'Bank statement' },
   { value: 'other', label: 'Other' },
 ]
