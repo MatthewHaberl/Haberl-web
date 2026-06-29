@@ -34,6 +34,60 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.redirect(signed.signedUrl)
 }
 
+const DOC_TYPES = new Set(['supplier_invoice', 'receipt', 'sales_invoice', 'bank_statement', 'other'])
+
+/** Edit the document header fields (fix an incorrect import). Manager/admin only. */
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireStaff()
+  if (gate.error) return gate.error
+  const { id } = await params
+
+  let body: Record<string, unknown>
+  try { body = await req.json() } catch { return new Response('Invalid JSON', { status: 400 }) }
+
+  const update: Record<string, unknown> = {}
+  const setStr = (k: string) => {
+    if (k in body) {
+      const v = body[k]
+      update[k] = typeof v === 'string' && v.trim() ? v.trim() : null
+    }
+  }
+  setStr('supplier_name')
+  setStr('doc_number')
+  setStr('doc_date')   // 'YYYY-MM-DD' or null
+  setStr('notes')
+
+  if ('doc_type' in body) {
+    const t = String(body.doc_type)
+    if (!DOC_TYPES.has(t)) return new Response('Bad doc_type', { status: 400 })
+    update.doc_type = t
+  }
+  if ('status' in body) {
+    const s = String(body.status)
+    if (!['open', 'unsure', 'discarded'].includes(s)) return new Response('Bad status', { status: 400 })
+    update.status = s
+  }
+  if ('total_cents' in body) {
+    const v = body.total_cents
+    if (v === null || v === '') update.total_cents = null
+    else {
+      const n = Number(v)
+      if (!Number.isFinite(n)) return new Response('Bad total', { status: 400 })
+      update.total_cents = Math.round(n)
+    }
+  }
+
+  if (Object.keys(update).length === 0) return new Response('Nothing to update', { status: 400 })
+
+  const supabase = await createClient()
+  const { error } = await supabase.from('fin_documents').update(update).eq('id', id)
+  if (error) {
+    console.error('[finance/docs] patch', error)
+    return new Response('Could not save changes', { status: 500 })
+  }
+  return NextResponse.json({ ok: true })
+}
+
 /** Delete the file and its record. */
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireStaff()

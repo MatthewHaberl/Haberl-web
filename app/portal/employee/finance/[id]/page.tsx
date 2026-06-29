@@ -3,15 +3,17 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { Receipt, ExternalLink, ArrowLeft, FileText, AlertTriangle } from 'lucide-react'
+import { formatDate } from '@/lib/utils'
+import { Receipt, ArrowLeft, AlertTriangle, Users, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Metadata } from 'next'
 import { FIN_DOC_TYPE_LABEL, type FinDocument, type FinLineItem } from '@/lib/finance/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { DocAllocations, type DocAllocation } from './DocAllocations'
 import { DocViewer } from './DocViewer'
-import { Users } from 'lucide-react'
+import { DocSummaryEdit } from './DocSummaryEdit'
+import { DocLinesEdit } from './DocLinesEdit'
+import { DocStatus } from './DocStatus'
+import { BankMatchFinder } from './BankMatchFinder'
 
 export const metadata: Metadata = { title: 'Finance — Document' }
 
@@ -39,17 +41,22 @@ export default async function FinanceDocumentPage({
     .order('line_no', { ascending: true })
   const lines = (linesRaw ?? []) as unknown as FinLineItem[]
 
-  const [{ data: customersRaw }, { data: allocsRaw }] = await Promise.all([
+  const [{ data: customersRaw }, { data: allocsRaw }, { data: prevDoc }, { data: nextDoc }] = await Promise.all([
     supabase.from('customers').select('id, full_name').order('full_name'),
     supabase
       .from('fin_allocations')
-      .select('id, customer_id, direction, basis, percent, amount_cents, note, customer:customers(id, full_name)')
+      .select('id, target, customer_id, direction, category, basis, percent, amount_cents, note, customer:customers(id, full_name)')
       .eq('document_id', id)
       .order('created_at', { ascending: true }),
+    supabase.from('fin_documents').select('id').lt('created_at', doc.created_at)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('fin_documents').select('id').gt('created_at', doc.created_at)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle(),
   ])
   const customers = (customersRaw ?? []) as { id: string; full_name: string }[]
   const allocations: DocAllocation[] = ((allocsRaw ?? []) as unknown as Array<{
-    id: string; customer_id: string; direction: 'charge' | 'reimburse'
+    id: string; target: 'customer' | 'company'; customer_id: string | null
+    direction: 'charge' | 'reimburse' | null; category: string | null
     basis: 'whole' | 'percent' | 'items' | 'custom'; percent: number | null
     amount_cents: number; note: string | null
     customer?: { id: string; full_name: string } | { id: string; full_name: string }[] | null
@@ -57,8 +64,8 @@ export default async function FinanceDocumentPage({
     const c = Array.isArray(a.customer) ? a.customer[0] : a.customer
     return { ...a, customer_name: c?.full_name ?? null }
   })
+  const status = ((doc as unknown as { status?: string }).status ?? 'open') as 'open' | 'unsure' | 'discarded'
 
-  const lineSum = lines.reduce((s, l) => s + (l.line_total_cents ?? 0), 0)
   // notes carry the duplicate / non-purchase flags from ingest
   const flags = (doc.notes ?? '')
     .split('|')
@@ -85,42 +92,58 @@ export default async function FinanceDocumentPage({
         }
       />
 
-      <Link
-        href="/portal/employee/finance"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> All documents
-      </Link>
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          href="/portal/employee/finance"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> All documents
+        </Link>
+        <div className="flex items-center gap-1">
+          {prevDoc?.id ? (
+            <Link href={`/portal/employee/finance/${prevDoc.id}`}
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-sm hover:bg-muted">
+              <ChevronLeft className="h-4 w-4" /> Prev
+            </Link>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-sm text-muted-foreground/50">
+              <ChevronLeft className="h-4 w-4" /> Prev
+            </span>
+          )}
+          {nextDoc?.id ? (
+            <Link href={`/portal/employee/finance/${nextDoc.id}`}
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-sm hover:bg-muted">
+              Next <ChevronRight className="h-4 w-4" />
+            </Link>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-sm text-muted-foreground/50">
+              Next <ChevronRight className="h-4 w-4" />
+            </span>
+          )}
+        </div>
+        <div className="ml-auto">
+          <DocStatus documentId={doc.id} status={status} />
+        </div>
+      </div>
 
       <DocViewer
         previewUrl={`/api/finance/documents/${doc.id}`}
         kind={previewKind}
         fileName={doc.file_name}
       >
-      {/* Summary + original */}
-      <Card>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-6">
-          <Field label="Supplier" value={doc.supplier_name ?? '—'} />
-          <Field label="Document no." value={doc.doc_number ?? '—'} />
-          <Field label="Date" value={doc.doc_date ? formatDate(doc.doc_date) : '—'} />
-          <Field
-            label="Total (incl VAT)"
-            value={doc.total_cents != null ? formatCurrency(doc.total_cents) : '—'}
-          />
-          <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-3 pt-1">
-            <Badge variant="outline">{FIN_DOC_TYPE_LABEL[doc.doc_type] ?? doc.doc_type}</Badge>
-            {doc.customer?.full_name && <Badge variant="accent">{doc.customer.full_name}</Badge>}
-            <a
-              href={`/api/finance/documents/${doc.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
-            >
-              <ExternalLink className="h-4 w-4" /> Open original ({doc.file_name?.split('.').pop()?.toUpperCase() || 'file'})
-            </a>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Summary + original (editable) */}
+      <DocSummaryEdit
+        doc={{
+          id: doc.id,
+          supplier_name: doc.supplier_name,
+          doc_number: doc.doc_number,
+          doc_date: doc.doc_date,
+          doc_type: doc.doc_type,
+          total_cents: doc.total_cents,
+          file_name: doc.file_name,
+        }}
+        customerName={doc.customer?.full_name ?? null}
+      />
 
       {/* Flags / notes */}
       {hasWarning && (
@@ -159,76 +182,16 @@ export default async function FinanceDocumentPage({
         </CardContent>
       </Card>
 
-      {/* Simple transaction view */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileText className="h-4 w-4" /> Transaction lines
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {lines.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No itemised lines for this document — open the original to view it.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
-                    <th className="px-4 py-2 font-medium w-12 text-right">Qty</th>
-                    <th className="px-4 py-2 font-medium">Description</th>
-                    <th className="px-4 py-2 font-medium text-right w-32">Line total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {lines.map((l) => (
-                    <tr key={l.id} className="align-top">
-                      <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                        {l.qty != null ? Number(l.qty) : ''}
-                      </td>
-                      <td className="px-4 py-2">{l.description}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {formatCurrency(l.line_total_cents ?? 0)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-border font-medium">
-                    <td />
-                    <td className="px-4 py-2 text-right text-muted-foreground">
-                      Lines total {doc.total_cents != null && Math.abs(lineSum - cents(doc)) > 200 ? '(excl VAT)' : ''}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(lineSum)}</td>
-                  </tr>
-                  {doc.total_cents != null && (
-                    <tr className="text-muted-foreground">
-                      <td />
-                      <td className="px-4 py-1 text-right">Document total (incl VAT)</td>
-                      <td className="px-4 py-1 text-right tabular-nums">{formatCurrency(doc.total_cents)}</td>
-                    </tr>
-                  )}
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Transaction lines (editable) */}
+      <DocLinesEdit
+        documentId={doc.id}
+        lines={lines.map((l) => ({ id: l.id, description: l.description, qty: l.qty, line_total_cents: l.line_total_cents }))}
+        docTotalCents={doc.total_cents}
+      />
+
+      {/* Reconcile against the bank statement */}
+      <BankMatchFinder documentId={doc.id} />
       </DocViewer>
     </PageShell>
-  )
-}
-
-function cents(doc: { total_cents: number | null }) {
-  return doc.total_cents ?? 0
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs font-medium text-muted-foreground mb-0.5">{label}</p>
-      <p className="text-sm font-medium break-words">{value}</p>
-    </div>
   )
 }

@@ -28,11 +28,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   let body: Record<string, unknown>
   try { body = await req.json() } catch { return new Response('Invalid JSON', { status: 400 }) }
 
-  const customer_id = typeof body.customer_id === 'string' ? body.customer_id : ''
+  const target = body.target === 'company' ? 'company' : 'customer'
+  const customer_id = typeof body.customer_id === 'string' && body.customer_id ? body.customer_id : null
   const direction = String(body.direction || '')
   const basis = String(body.basis || '')
-  if (!customer_id) return new Response('Pick a customer', { status: 400 })
-  if (!DIRECTIONS.has(direction)) return new Response('Bad direction', { status: 400 })
+  const category = typeof body.category === 'string' && body.category.trim() ? body.category.trim() : null
+  if (target === 'customer') {
+    if (!customer_id) return new Response('Pick a customer', { status: 400 })
+    if (!DIRECTIONS.has(direction)) return new Response('Bad direction', { status: 400 })
+  }
   if (!BASES.has(basis)) return new Response('Bad basis', { status: 400 })
 
   // Load the document total and its lines to resolve the amount.
@@ -75,7 +79,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { data: row, error } = await supabase
     .from('fin_allocations')
     .insert({
-      document_id, customer_id, direction, basis, percent, line_item_ids, amount_cents, note,
+      document_id,
+      target,
+      customer_id: target === 'customer' ? customer_id : null,
+      direction: target === 'customer' ? direction : null,
+      category: target === 'company' ? category : null,
+      basis, percent, line_item_ids, amount_cents, note,
       created_by: user.id,
     })
     .select('id')

@@ -10,16 +10,23 @@ interface Line { id: string; description: string; line_total_cents: number }
 interface Customer { id: string; full_name: string }
 export interface DocAllocation {
   id: string
-  customer_id: string
+  target: 'customer' | 'company'
+  customer_id: string | null
   customer_name: string | null
-  direction: 'charge' | 'reimburse'
+  direction: 'charge' | 'reimburse' | null
   basis: 'whole' | 'percent' | 'items' | 'custom'
   percent: number | null
+  category: string | null
   amount_cents: number
   note: string | null
 }
 
 const DIR_LABEL = { charge: 'They owe us', reimburse: 'We owe them' } as const
+
+export const COMPANY_CATEGORIES = [
+  'Tools', 'Consumables', 'Materials & components', 'Vehicle & fuel',
+  'Office & admin', 'Refreshments', 'Subcontractor', 'Other',
+]
 
 export function DocAllocations({
   documentId, lines, customers, allocations,
@@ -34,10 +41,11 @@ export function DocAllocations({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // form state
+  const [target, setTarget] = useState<'customer' | 'company'>('customer')
   const [customerId, setCustomerId] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [direction, setDirection] = useState<'charge' | 'reimburse'>('reimburse')
+  const [category, setCategory] = useState(COMPANY_CATEGORIES[0])
   const [basis, setBasis] = useState<'whole' | 'percent' | 'items' | 'custom'>('whole')
   const [percent, setPercent] = useState('100')
   const [customRands, setCustomRands] = useState('')
@@ -45,8 +53,9 @@ export function DocAllocations({
   const [note, setNote] = useState('')
 
   function reset() {
-    setCustomerId(''); setCustomerName(''); setDirection('reimburse'); setBasis('whole')
-    setPercent('100'); setCustomRands(''); setSelectedLines(new Set()); setNote(''); setError(null)
+    setTarget('customer'); setCustomerId(''); setCustomerName(''); setDirection('reimburse')
+    setCategory(COMPANY_CATEGORIES[0]); setBasis('whole'); setPercent('100'); setCustomRands('')
+    setSelectedLines(new Set()); setNote(''); setError(null)
   }
 
   const itemsTotal = useMemo(
@@ -55,9 +64,11 @@ export function DocAllocations({
   )
 
   async function save() {
-    if (!customerId) { setError('Pick a customer'); return }
+    if (target === 'customer' && !customerId) { setError('Pick a customer'); return }
     setBusy(true); setError(null)
-    const payload: Record<string, unknown> = { customer_id: customerId, direction, basis, note }
+    const payload: Record<string, unknown> = { target, basis, note }
+    if (target === 'customer') { payload.customer_id = customerId; payload.direction = direction }
+    else { payload.category = category }
     if (basis === 'percent') payload.percent = Number(percent)
     if (basis === 'items') payload.line_item_ids = [...selectedLines]
     if (basis === 'custom') payload.custom_cents = Math.round(Number(customRands) * 100)
@@ -85,13 +96,23 @@ export function DocAllocations({
 
   return (
     <div className="space-y-3">
-      {/* Existing allocations */}
       {allocations.length > 0 && (
         <ul className="divide-y divide-border rounded-md border border-border">
           {allocations.map((a) => (
             <li key={a.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-              <Badge variant={a.direction === 'reimburse' ? 'success' : 'accent'}>{DIR_LABEL[a.direction]}</Badge>
-              <span className="font-medium">{a.customer_name ?? 'Customer'}</span>
+              {a.target === 'company' ? (
+                <>
+                  <Badge variant="default">Haberl</Badge>
+                  <span className="font-medium">{a.category ?? 'Business'}</span>
+                </>
+              ) : (
+                <>
+                  <Badge variant={a.direction === 'reimburse' ? 'success' : 'accent'}>
+                    {a.direction ? DIR_LABEL[a.direction] : ''}
+                  </Badge>
+                  <span className="font-medium">{a.customer_name ?? 'Customer'}</span>
+                </>
+              )}
               <span className="text-muted-foreground">
                 {a.basis === 'whole' ? 'whole invoice'
                   : a.basis === 'percent' ? `${a.percent}%`
@@ -123,23 +144,39 @@ export function DocAllocations({
             </button>
           </div>
 
-          {/* customer */}
+          {/* target */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground w-20">Customer</span>
-            <CustomerPicker customers={customers} selectedName={customerName}
-              onPick={(c) => { setCustomerId(c.id); setCustomerName(c.full_name) }} />
+            <span className="w-20 text-sm text-muted-foreground">Allocate to</span>
+            <Seg value={target} onChange={setTarget}
+              options={[{ v: 'customer', l: 'A customer' }, { v: 'company', l: 'Haberl (business)' }]} />
           </div>
 
-          {/* direction */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground w-20">Direction</span>
-            <Seg value={direction} onChange={setDirection}
-              options={[{ v: 'reimburse', l: 'They covered it (we owe them)' }, { v: 'charge', l: 'Bill them (they owe us)' }]} />
-          </div>
+          {target === 'customer' ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-20 text-sm text-muted-foreground">Customer</span>
+                <CustomerPicker customers={customers} selectedName={customerName}
+                  onPick={(c) => { setCustomerId(c.id); setCustomerName(c.full_name) }} />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-20 text-sm text-muted-foreground">Direction</span>
+                <Seg value={direction} onChange={setDirection}
+                  options={[{ v: 'reimburse', l: 'They covered it (we owe them)' }, { v: 'charge', l: 'Bill them (they owe us)' }]} />
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-20 text-sm text-muted-foreground">Category</span>
+              <select value={category} onChange={(e) => setCategory(e.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm">
+                {COMPANY_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* basis */}
           <div className="flex flex-wrap items-start gap-2">
-            <span className="text-sm text-muted-foreground w-20 pt-1.5">How much</span>
+            <span className="w-20 pt-1.5 text-sm text-muted-foreground">How much</span>
             <div className="flex-1 space-y-2">
               <Seg value={basis} onChange={setBasis}
                 options={[{ v: 'whole', l: 'Whole invoice' }, { v: 'percent', l: 'Percentage' }, { v: 'items', l: 'Specific items' }, { v: 'custom', l: 'Custom amount' }]} />
@@ -179,9 +216,8 @@ export function DocAllocations({
             </div>
           </div>
 
-          {/* note */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground w-20">Note</span>
+            <span className="w-20 text-sm text-muted-foreground">Note</span>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional"
               className="h-9 flex-1 rounded-md border border-border bg-background px-2 text-sm" />
           </div>

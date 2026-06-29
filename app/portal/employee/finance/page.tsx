@@ -58,6 +58,22 @@ export default async function FinanceDocumentsPage({
 
   const docs = (docsRaw ?? []) as unknown as FinDocumentWithCustomer[]
   const customers = (customersRaw ?? []) as unknown as { id: string; full_name: string }[]
+
+  // Allocations live in fin_allocations (not fin_documents.customer_id), so the
+  // list must look them up to show who each document is allocated to.
+  const docIds = docs.map((d) => d.id)
+  const { data: allocRows } = docIds.length
+    ? await supabase.from('fin_allocations')
+        .select('document_id, target, customer:customers(full_name)').in('document_id', docIds)
+    : { data: [] }
+  const allocMap = new Map<string, { names: Set<string>; company: boolean }>()
+  for (const r of (allocRows ?? []) as Array<{ document_id: string; target: string; customer?: { full_name: string } | { full_name: string }[] | null }>) {
+    const m = allocMap.get(r.document_id) ?? { names: new Set<string>(), company: false }
+    if (r.target === 'company') m.company = true
+    else { const c = Array.isArray(r.customer) ? r.customer[0] : r.customer; if (c?.full_name) m.names.add(c.full_name) }
+    allocMap.set(r.document_id, m)
+  }
+
   const total = count ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const base: SP = { q, type }
@@ -130,14 +146,19 @@ export default async function FinanceDocumentsPage({
                     <th className="px-4 py-3 font-medium">Type</th>
                     <th className="px-4 py-3 font-medium">Supplier</th>
                     <th className="px-4 py-3 font-medium">Date</th>
-                    <th className="px-4 py-3 font-medium">Customer</th>
+                    <th className="px-4 py-3 font-medium">Allocated to</th>
                     <th className="px-4 py-3 font-medium text-right">Total</th>
                     <th className="px-4 py-3 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {docs.map((d) => (
-                    <tr key={d.id} className="hover:bg-muted/40">
+                  {docs.map((d) => {
+                    const dStatus = (d as unknown as { status?: string }).status ?? 'open'
+                    const a = allocMap.get(d.id)
+                    const allocNames = a ? [...a.names] : []
+                    if (a?.company) allocNames.push('Haberl')
+                    return (
+                    <tr key={d.id} className={`hover:bg-muted/40 ${dStatus === 'discarded' ? 'opacity-50' : ''}`}>
                       <td className="px-4 py-3">
                         <Link
                           href={`/portal/employee/finance/${d.id}`}
@@ -151,11 +172,21 @@ export default async function FinanceDocumentsPage({
                         </Link>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant="outline">{FIN_DOC_TYPE_LABEL[d.doc_type] ?? d.doc_type}</Badge>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline">{FIN_DOC_TYPE_LABEL[d.doc_type] ?? d.doc_type}</Badge>
+                          {dStatus === 'unsure' && <Badge variant="warning">Unsure</Badge>}
+                          {dStatus === 'discarded' && <Badge variant="destructive">Discarded</Badge>}
+                        </div>
                       </td>
                       <td className="px-4 py-3">{d.supplier_name ?? '—'}</td>
                       <td className="px-4 py-3">{d.doc_date ? formatDate(d.doc_date) : '—'}</td>
-                      <td className="px-4 py-3">{d.customer?.full_name ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        {allocNames.length
+                          ? <Badge variant="accent">{allocNames.join(', ')}</Badge>
+                          : d.customer?.full_name
+                            ? d.customer.full_name
+                            : <span className="text-muted-foreground">—</span>}
+                      </td>
                       <td className="px-4 py-3 text-right font-medium">
                         {d.total_cents != null ? formatCurrency(d.total_cents) : '—'}
                       </td>
@@ -173,7 +204,8 @@ export default async function FinanceDocumentsPage({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
