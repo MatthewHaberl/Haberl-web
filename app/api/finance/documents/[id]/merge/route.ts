@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { PDFDocument } from 'pdf-lib'
+import { COMBINED_MARKER_RE } from '@/lib/finance/types'
 
 export const runtime = 'nodejs'
 
@@ -68,7 +69,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const admin = createAdminClient()
 
   const { data: primary } = await admin
-    .from('fin_documents').select('id, file_url, file_name, mime_type').eq('id', id).maybeSingle()
+    .from('fin_documents').select('id, file_url, file_name, mime_type, notes').eq('id', id).maybeSingle()
   if (!primary) return new Response('Primary document not found', { status: 404 })
 
   const { data: secsRaw } = await admin
@@ -104,6 +105,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Build the merged PDF in page order.
   let mergedBytes: Uint8Array
+  let pageCount = 0
   try {
     const out = await PDFDocument.create()
     for (const d of ordered) {
@@ -112,6 +114,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const bytes = new Uint8Array(await blob.arrayBuffer())
       await appendSource(out, bytes, kindOf(d))
     }
+    pageCount = out.getPageCount()
     mergedBytes = await out.save()
   } catch (e) {
     console.error('[finance/merge] build', e)
@@ -130,6 +133,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return new Response('Could not save the combined document', { status: 500 })
   }
 
+  // Rewrite the notes flags: the absorbed pages were the "duplicate", so drop
+  // any duplicate warning, and stamp a (single, refreshed) combined marker with
+  // the true page count. Other flags (e.g. low-confidence) are preserved.
+  const existingFlags = ((primary as { notes?: string | null }).notes ?? '')
+    .split('|').map((s) => s.trim()).filter(Boolean)
+  const keptFlags = existingFlags.filter(
+    (f) => !/duplicate/i.test(f) && !COMBINED_MARKER_RE.test(f),
+  )
+  const newNotes = [`📎 Combined — ${pageCount} pages`, ...keptFlags].join(' | ') || null
+
   const oldPrimaryPath = primary.file_url
   const { error: updErr } = await admin
     .from('fin_documents')
@@ -138,6 +151,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       file_name: mergedName,
       mime_type: 'application/pdf',
       file_size: mergedBytes.length,
+      notes: newNotes,
     })
     .eq('id', id)
   if (updErr) {

@@ -6,7 +6,7 @@ import { Receipt, Search } from 'lucide-react'
 import type { Metadata } from 'next'
 import { UploadForm } from './UploadForm'
 import { DocsTable, type DocRowVM } from './DocsTable'
-import { FIN_DOC_TYPES, FIN_DOC_TYPE_LABEL, type FinDocumentWithCustomer } from '@/lib/finance/types'
+import { FIN_DOC_TYPES, FIN_DOC_TYPE_LABEL, parseCombinedPages, type FinDocumentWithCustomer } from '@/lib/finance/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { FinanceTabs } from '@/components/finance/FinanceTabs'
 
@@ -129,6 +129,7 @@ export default async function FinanceDocumentsPage({
       alloc_names: allocNames,
       customer_name: d.customer?.full_name ?? null,
       total_cents: d.total_cents,
+      combined_pages: parseCombinedPages(d.notes),
     }
   })
 

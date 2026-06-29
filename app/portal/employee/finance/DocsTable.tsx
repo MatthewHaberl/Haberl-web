@@ -19,6 +19,7 @@ export interface DocRowVM {
   alloc_names: string[]
   customer_name: string | null
   total_cents: number | null
+  combined_pages: number | null
 }
 
 interface SortHeader { href: string; arrow: string }
@@ -144,6 +145,12 @@ export function DocsTable({
                       className="flex items-center gap-2 min-w-0 text-accent hover:underline" title="Open line-item view">
                       <FileText className="h-4 w-4 shrink-0" />
                       <span className="truncate max-w-[260px]">{d.file_name ?? d.doc_number ?? 'Document'}</span>
+                      {d.combined_pages != null && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                          title={`Combined from ${d.combined_pages} pages`}>
+                          <Layers className="h-3 w-3" /> {d.combined_pages}
+                        </span>
+                      )}
                     </Link>
                   </td>
                   <td className="px-4 py-3">

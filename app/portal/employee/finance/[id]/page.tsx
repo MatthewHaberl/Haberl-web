@@ -4,9 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDate } from '@/lib/utils'
-import { Receipt, ArrowLeft, AlertTriangle, Users, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Receipt, ArrowLeft, AlertTriangle, Users, ChevronLeft, ChevronRight, Layers } from 'lucide-react'
 import type { Metadata } from 'next'
-import { FIN_DOC_TYPE_LABEL, type FinDocument, type FinLineItem } from '@/lib/finance/types'
+import { FIN_DOC_TYPE_LABEL, COMBINED_MARKER_RE, parseCombinedPages, type FinDocument, type FinLineItem } from '@/lib/finance/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { DocAllocations, type DocAllocation } from './DocAllocations'
 import { DocViewer } from './DocViewer'
@@ -79,11 +79,15 @@ export default async function FinanceDocumentPage({
   })
   const status = ((doc as unknown as { status?: string }).status ?? 'open') as 'open' | 'unsure' | 'discarded'
 
-  // notes carry the duplicate / non-purchase flags from ingest
+  // notes carry the duplicate / non-purchase flags from ingest, plus a
+  // "combined" marker stamped by the merge route. Show the marker separately
+  // (neutral, not a warning) and keep it out of the amber flags list.
+  const combinedPages = parseCombinedPages(doc.notes)
   const flags = (doc.notes ?? '')
     .split('|')
     .map((s) => s.trim())
     .filter(Boolean)
+    .filter((f) => !COMBINED_MARKER_RE.test(f))
   const hasWarning = flags.some((f) => f.startsWith('⚠') || /duplicate|not a purchase|not a tax|statement|low confidence/i.test(f))
 
   const ext = (doc.file_name ?? '').split('.').pop()?.toLowerCase() ?? ''
@@ -144,6 +148,14 @@ export default async function FinanceDocumentPage({
         kind={previewKind}
         fileName={doc.file_name}
       >
+      {/* Combined-document marker — folded from separate page scans */}
+      {combinedPages && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-2 text-sm">
+          <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span>Combined document — {combinedPages} pages folded into one invoice.</span>
+        </div>
+      )}
+
       {/* Summary + original (editable) */}
       <DocSummaryEdit
         doc={{

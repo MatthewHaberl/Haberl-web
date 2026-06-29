@@ -23,6 +23,21 @@ export const FIN_DOC_TYPE_LABEL = Object.fromEntries(
   FIN_DOC_TYPES.map((t) => [t.value, t.label]),
 ) as Record<FinDocType, string>
 
+// When separate scans are folded into one multi-page PDF, the primary document
+// carries this marker in its `notes` (pipe-separated flags). Single source of
+// truth for writing it (merge route) and reading it (detail page + list).
+export const COMBINED_MARKER_RE = /📎\s*Combined\s*—\s*(\d+)\s*pages?/i
+
+/** Page count if the document is a combined multi-page scan, else null. */
+export function parseCombinedPages(notes: string | null | undefined): number | null {
+  if (!notes) return null
+  for (const flag of notes.split('|')) {
+    const m = flag.match(COMBINED_MARKER_RE)
+    if (m) return parseInt(m[1], 10)
+  }
+  return null
+}
+
 export type FinAllocation = 'unallocated' | 'customer' | 'company' | 'split'
 
 export type FinOcrStatus = 'none' | 'pending' | 'done' | 'failed' | 'manual'
