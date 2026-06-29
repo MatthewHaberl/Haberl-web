@@ -44,7 +44,7 @@ export function DocAllocations({
   const [target, setTarget] = useState<'customer' | 'company'>('customer')
   const [customerId, setCustomerId] = useState('')
   const [customerName, setCustomerName] = useState('')
-  const [direction, setDirection] = useState<'charge' | 'reimburse'>('reimburse')
+  const [direction, setDirection] = useState<'charge' | 'reimburse'>('charge')
   const [category, setCategory] = useState(COMPANY_CATEGORIES[0])
   const [basis, setBasis] = useState<'whole' | 'percent' | 'items' | 'custom'>('whole')
   const [percent, setPercent] = useState('100')
@@ -53,7 +53,7 @@ export function DocAllocations({
   const [note, setNote] = useState('')
 
   function reset() {
-    setTarget('customer'); setCustomerId(''); setCustomerName(''); setDirection('reimburse')
+    setTarget('customer'); setCustomerId(''); setCustomerName(''); setDirection('charge')
     setCategory(COMPANY_CATEGORIES[0]); setBasis('whole'); setPercent('100'); setCustomRands('')
     setSelectedLines(new Set()); setNote(''); setError(null)
   }

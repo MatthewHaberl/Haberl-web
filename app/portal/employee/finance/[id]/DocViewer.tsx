@@ -1,9 +1,12 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { PanelRightOpen, PanelRightClose, ExternalLink } from 'lucide-react'
+import { PanelRightOpen, PanelRightClose, ExternalLink, RotateCw } from 'lucide-react'
 
 const STORE_KEY = 'fin-doc-preview-open'
+// Per-document display rotation (0/90/180/270) for sideways or upside-down
+// scans, remembered per preview URL so it sticks when the doc is reopened.
+const ROTATE_KEY = 'fin-doc-rotate'
 
 type Kind = 'pdf' | 'image' | 'other'
 
@@ -23,16 +26,27 @@ export function DocViewer({
 }) {
   const [open, setOpen] = useState(false)
   const [ready, setReady] = useState(false)
+  const [rotation, setRotation] = useState(0)
 
   useEffect(() => {
     setOpen(localStorage.getItem(STORE_KEY) === '1')
+    const saved = parseInt(localStorage.getItem(`${ROTATE_KEY}:${previewUrl}`) ?? '0', 10)
+    if ([0, 90, 180, 270].includes(saved)) setRotation(saved)
     setReady(true)
-  }, [])
+  }, [previewUrl])
 
   function toggle() {
     setOpen((o) => {
       const n = !o
       localStorage.setItem(STORE_KEY, n ? '1' : '0')
+      return n
+    })
+  }
+
+  function rotate() {
+    setRotation((r) => {
+      const n = (r + 90) % 360
+      localStorage.setItem(`${ROTATE_KEY}:${previewUrl}`, String(n))
       return n
     })
   }
@@ -62,12 +76,24 @@ export function DocViewer({
                 <span className="truncate font-medium" title={fileName ?? 'Original'}>
                   {fileName ?? 'Original'}
                 </span>
-                <a
-                  href={previewUrl} target="_blank" rel="noopener noreferrer"
-                  className="ml-auto inline-flex items-center gap-1 text-accent hover:underline"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" /> Open
-                </a>
+                <div className="ml-auto flex items-center gap-3">
+                  {kind === 'image' && (
+                    <button
+                      type="button"
+                      onClick={rotate}
+                      title="Rotate 90° — remembered for this document"
+                      className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                    >
+                      <RotateCw className="h-3.5 w-3.5" /> Rotate
+                    </button>
+                  )}
+                  <a
+                    href={previewUrl} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-accent hover:underline"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Open
+                  </a>
+                </div>
               </div>
               {/* Only mount the heavy element once we're client-ready and open */}
               {ready && (
@@ -78,9 +104,16 @@ export function DocViewer({
                     className="h-[82vh] w-full rounded-b-lg bg-white"
                   />
                 ) : kind === 'image' ? (
-                  <div className="max-h-[82vh] overflow-auto rounded-b-lg">
+                  <div className="flex max-h-[82vh] justify-center overflow-auto rounded-b-lg p-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewUrl} alt={fileName ?? 'Original document'} className="w-full" />
+                    <img
+                      src={previewUrl}
+                      alt={fileName ?? 'Original document'}
+                      style={{ transform: `rotate(${rotation}deg)` }}
+                      className={`h-auto origin-center transition-transform duration-200 ${
+                        rotation % 180 === 0 ? 'w-full' : 'max-h-[78vh] w-auto'
+                      }`}
+                    />
                   </div>
                 ) : (
                   <div className="p-6 text-center text-sm text-muted-foreground">

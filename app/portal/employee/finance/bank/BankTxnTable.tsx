@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowDownLeft, ArrowUpRight, Search, X, Check, ChevronDown, User2, Crosshair, Split } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Search, X, Check, ChevronDown, User2, Crosshair, Split, CornerDownRight } from 'lucide-react'
 import { BankSplitEditor, type SplitTxn } from './BankSplitEditor'
 
 export interface BankSplit { target: 'customer' | 'company'; name: string | null; amount_cents: number }
@@ -18,6 +18,8 @@ export interface BankRow {
   txn_type: string
   allocated_customer_id: string | null
   allocated_name: string | null
+  matched_document_id: string | null
+  matched_supplier_name: string | null
   splits: BankSplit[]
 }
 
@@ -154,6 +156,16 @@ export function BankTxnTable({
                     <span className="block max-w-[380px] truncate" title={t.description}>
                       {t.description || <span className="text-muted-foreground">—</span>}
                     </span>
+                    {t.matched_document_id && (
+                      <Link
+                        href={`/portal/employee/finance/${t.matched_document_id}`}
+                        title="Matched to a supplier invoice — its allocation comes from the invoice, not this bank line, so it won't appear separately on a customer statement"
+                        className="mt-0.5 inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                      >
+                        <CornerDownRight className="h-3 w-3 shrink-0" />
+                        matched to invoice{t.matched_supplier_name ? ` · ${t.matched_supplier_name}` : ''}
+                      </Link>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     {t.splits.length > 0 ? (

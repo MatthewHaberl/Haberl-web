@@ -145,7 +145,7 @@ export default async function BankStatementsPage({
   // Paginated row listing for the table, plus the customer list for the picker.
   let rowQuery = supabase
     .from('bank_transactions')
-    .select('id, account_label, txn_date, description, amount_cents, txn_type, allocated_customer_id, allocated:customers!allocated_customer_id(id, full_name)')
+    .select('id, account_label, txn_date, description, amount_cents, txn_type, allocated_customer_id, matched_document_id, allocated:customers!allocated_customer_id(id, full_name), matched:fin_documents!matched_document_id(id, supplier_name)')
     .order('txn_date', { ascending: sort === 'asc' })
     .order('id', { ascending: true })
     .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
@@ -175,7 +175,9 @@ export default async function BankStatementsPage({
   type RawRow = {
     id: string; account_label: string | null; txn_date: string; description: string
     amount_cents: number; txn_type: string; allocated_customer_id: string | null
+    matched_document_id: string | null
     allocated?: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+    matched?: { id: string; supplier_name: string | null } | { id: string; supplier_name: string | null }[] | null
   }
   const baseRows = ((rowsRaw ?? []) as unknown as RawRow[])
 
@@ -202,10 +204,13 @@ export default async function BankStatementsPage({
 
   const rows: BankRow[] = baseRows.map((r) => {
     const a = Array.isArray(r.allocated) ? r.allocated[0] : r.allocated
+    const m = Array.isArray(r.matched) ? r.matched[0] : r.matched
     return {
       id: r.id, account_label: r.account_label, txn_date: r.txn_date, description: r.description,
       amount_cents: r.amount_cents, txn_type: r.txn_type, allocated_customer_id: r.allocated_customer_id,
       allocated_name: a?.full_name ?? null,
+      matched_document_id: r.matched_document_id,
+      matched_supplier_name: m?.supplier_name ?? null,
       splits: splitMap.get(r.id) ?? [],
     }
   })
