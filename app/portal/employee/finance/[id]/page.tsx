@@ -41,7 +41,7 @@ export default async function FinanceDocumentPage({
     .order('line_no', { ascending: true })
   const lines = (linesRaw ?? []) as unknown as FinLineItem[]
 
-  const [{ data: customersRaw }, { data: allocsRaw }, { data: prevDoc }, { data: nextDoc }] = await Promise.all([
+  const [{ data: customersRaw }, { data: allocsRaw }, { data: prevDoc }, { data: nextDoc }, { data: matchedRaw }] = await Promise.all([
     supabase.from('customers').select('id, full_name').order('full_name'),
     supabase
       .from('fin_allocations')
@@ -52,8 +52,14 @@ export default async function FinanceDocumentPage({
       .order('created_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('fin_documents').select('id').gt('created_at', doc.created_at)
       .order('created_at', { ascending: true }).limit(1).maybeSingle(),
+    supabase.from('bank_transactions')
+      .select('id, txn_date, description, amount_cents, account_label')
+      .eq('matched_document_id', id),
   ])
   const customers = (customersRaw ?? []) as { id: string; full_name: string }[]
+  const matchedLinked = (matchedRaw ?? []) as {
+    id: string; txn_date: string; description: string; amount_cents: number; account_label: string | null
+  }[]
   const allocations: DocAllocation[] = ((allocsRaw ?? []) as unknown as Array<{
     id: string; target: 'customer' | 'company'; customer_id: string | null
     direction: 'charge' | 'reimburse' | null; category: string | null
@@ -190,7 +196,7 @@ export default async function FinanceDocumentPage({
       />
 
       {/* Reconcile against the bank statement */}
-      <BankMatchFinder documentId={doc.id} hasAllocations={allocations.length > 0} />
+      <BankMatchFinder documentId={doc.id} hasAllocations={allocations.length > 0} initialLinked={matchedLinked} />
       </DocViewer>
     </PageShell>
   )

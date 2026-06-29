@@ -15,14 +15,20 @@ interface Txn {
   account_label: string | null
 }
 
-export function BankMatchFinder({ documentId, hasAllocations }: { documentId: string; hasAllocations: boolean }) {
+export function BankMatchFinder({
+  documentId, hasAllocations, initialLinked = [],
+}: {
+  documentId: string
+  hasAllocations: boolean
+  initialLinked?: Txn[]
+}) {
   const router = useRouter()
   const [days, setDays] = useState(7)
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<Txn[]>([])
-  const [linked, setLinked] = useState<Txn[]>([])
+  const [linked, setLinked] = useState<Txn[]>(initialLinked)
   const [total, setTotal] = useState<number | null>(null)
   const [reason, setReason] = useState<string | null>(null)
 
