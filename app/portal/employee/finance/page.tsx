@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent } from '@/components/ui/card'
+import { Pagination } from '@/components/ui/pagination'
 import { Receipt, Search } from 'lucide-react'
 import type { Metadata } from 'next'
 import { UploadForm } from './UploadForm'
@@ -13,10 +14,11 @@ import { FinanceTabs } from '@/components/finance/FinanceTabs'
 export const metadata: Metadata = { title: 'Finance — Documents' }
 export const dynamic = 'force-dynamic'
 
-const PAGE_SIZE = 50
+const PAGE_SIZES = [25, 50, 100, 200]
+const DEFAULT_PAGE_SIZE = 50
 const NIL = '00000000-0000-0000-0000-000000000000'
 
-type SP = { q?: string; type?: string; supplier?: string; from?: string; to?: string; alloc?: string; sort?: string; page?: string }
+type SP = { q?: string; type?: string; supplier?: string; from?: string; to?: string; alloc?: string; sort?: string; page?: string; per?: string }
 
 function buildHref(base: SP, override: Partial<SP>): string {
   const m = { ...base, ...override }
@@ -28,6 +30,7 @@ function buildHref(base: SP, override: Partial<SP>): string {
   if (m.to) p.set('to', m.to)
   if (m.alloc && m.alloc !== 'all') p.set('alloc', m.alloc)
   if (m.sort && m.sort !== 'newest') p.set('sort', m.sort)
+  if (m.per && m.per !== String(DEFAULT_PAGE_SIZE)) p.set('per', m.per)
   if (m.page && m.page !== '0') p.set('page', m.page)
   const qs = p.toString()
   return `/portal/employee/finance${qs ? `?${qs}` : ''}`
@@ -47,6 +50,7 @@ export default async function FinanceDocumentsPage({
   const to = sp.to ?? ''
   const alloc = sp.alloc ?? 'all'
   const sort = sp.sort ?? 'newest'
+  const per = PAGE_SIZES.includes(Number(sp.per)) ? Number(sp.per) : DEFAULT_PAGE_SIZE
   const page = Math.max(0, parseInt(sp.page ?? '0', 10) || 0)
 
   const supabase = await createClient()
@@ -79,7 +83,7 @@ export default async function FinanceDocumentsPage({
   else if (sort === 'total_asc') docsQuery = docsQuery.order('total_cents', { ascending: true, nullsFirst: false })
   else docsQuery = docsQuery.order('doc_date', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
 
-  docsQuery = docsQuery.range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+  docsQuery = docsQuery.range(page * per, page * per + per - 1)
 
   if (q) docsQuery = docsQuery.or(`file_name.ilike.%${q}%,supplier_name.ilike.%${q}%,doc_number.ilike.%${q}%`)
   if (type !== 'all') docsQuery = docsQuery.eq('doc_type', type)
@@ -134,8 +138,7 @@ export default async function FinanceDocumentsPage({
   })
 
   const total = count ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const base: SP = { q, type, supplier, from, to, alloc, sort }
+  const base: SP = { q, type, supplier, from, to, alloc, sort, per: String(per) }
   const dateSort = {
     href: buildHref(base, { sort: sort === 'oldest' ? 'newest' : 'oldest' }),
     arrow: sort === 'oldest' ? '↑' : sort === 'newest' ? '↓' : '',
@@ -144,8 +147,6 @@ export default async function FinanceDocumentsPage({
     href: buildHref(base, { sort: sort === 'total_desc' ? 'total_asc' : 'total_desc' }),
     arrow: sort === 'total_desc' ? '↓' : sort === 'total_asc' ? '↑' : '',
   }
-  const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1
-  const showingTo = Math.min(total, page * PAGE_SIZE + docs.length)
   const filtered = q || type !== 'all' || supplier !== 'all' || from || to || alloc !== 'all'
 
   const fieldCls = 'h-10 rounded-md border border-border bg-background px-3 text-sm'
@@ -166,6 +167,7 @@ export default async function FinanceDocumentsPage({
       <Card>
         <CardContent className="p-4">
           <form method="GET" className="flex flex-wrap items-end gap-3">
+            {per !== DEFAULT_PAGE_SIZE && <input type="hidden" name="per" value={String(per)} />}
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-muted-foreground">Search</label>
               <div className="relative">
@@ -246,22 +248,18 @@ export default async function FinanceDocumentsPage({
         </CardContent>
       </Card>
 
-      {total > 0 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>Showing {showingFrom.toLocaleString()}–{showingTo.toLocaleString()} of {total.toLocaleString()}</span>
-          <div className="flex items-center gap-2">
-            {page > 0 && (
-              <Link href={buildHref(base, { page: String(page - 1) })}
-                className="rounded-md border border-border px-3 py-1.5 hover:text-foreground">← Prev</Link>
-            )}
-            <span>Page {page + 1} of {totalPages}</span>
-            {page + 1 < totalPages && (
-              <Link href={buildHref(base, { page: String(page + 1) })}
-                className="rounded-md border border-border px-3 py-1.5 hover:text-foreground">Next →</Link>
-            )}
-          </div>
-        </div>
-      )}
+      <Pagination
+        page={page}
+        pageSize={per}
+        total={total}
+        sizeOptions={PAGE_SIZES}
+        makeHref={({ page: p, per: pr }) => {
+          const ov: Partial<SP> = {}
+          if (p != null) ov.page = String(p)
+          if (pr != null) ov.per = String(pr)
+          return buildHref(base, ov)
+        }}
+      />
     </PageShell>
   )
 }

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
+import { Pagination } from '@/components/ui/pagination'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Landmark, Search, Crosshair, X } from 'lucide-react'
 import type { Metadata } from 'next'
@@ -15,7 +16,8 @@ import { Inbox } from 'lucide-react'
 export const metadata: Metadata = { title: 'Finance — Bank Statements' }
 export const dynamic = 'force-dynamic'
 
-const PAGE_SIZE = 300
+const PAGE_SIZES = [50, 100, 200, 300]
+const DEFAULT_PAGE_SIZE = 300
 // When focused on one transaction, default to showing this many days either
 // side so surrounding activity (transfers, withdrawals) is visible at a glance.
 const FOCUS_WINDOW_DAYS = 14
@@ -54,6 +56,7 @@ type SP = {
   dir?: string
   sort?: string
   page?: string
+  per?: string
   focus?: string
   cust?: string
   min?: string
@@ -70,7 +73,8 @@ function buildHref(base: SP, override: Partial<SP>): string {
   const merged = { ...base, ...override }
   const params = new URLSearchParams()
   for (const [k, v] of Object.entries(merged)) {
-    if (v && v !== 'all' && !(k === 'sort' && v === 'asc') && k !== 'page') params.set(k, v)
+    if (v && v !== 'all' && !(k === 'sort' && v === 'asc')
+      && !(k === 'per' && v === String(DEFAULT_PAGE_SIZE)) && k !== 'page') params.set(k, v)
   }
   // page handled explicitly when needed
   if (override.page && override.page !== '0') params.set('page', override.page)
@@ -89,6 +93,7 @@ export default async function BankStatementsPage({
   const dir = sp.dir ?? 'all'
   const sort = sp.sort === 'desc' ? 'desc' : 'asc'
   const page = Math.max(0, parseInt(sp.page ?? '0', 10) || 0)
+  const per = PAGE_SIZES.includes(Number(sp.per)) ? Number(sp.per) : DEFAULT_PAGE_SIZE
   const focusId = sp.focus || ''
   const cust = sp.cust ?? 'all'           // 'all' | 'none' | <customer uuid>
   const minStr = sp.min ?? ''
@@ -148,7 +153,7 @@ export default async function BankStatementsPage({
     .select('id, account_label, txn_date, description, amount_cents, txn_type, allocated_customer_id, matched_document_id, allocated:customers!allocated_customer_id(id, full_name), matched:fin_documents!matched_document_id(id, supplier_name)')
     .order('txn_date', { ascending: sort === 'asc' })
     .order('id', { ascending: true })
-    .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+    .range(page * per, page * per + per - 1)
 
   if (account !== 'all') rowQuery = rowQuery.eq('account_label', account)
   if (q) rowQuery = rowQuery.ilike('description', `%${q}%`)
@@ -216,10 +221,7 @@ export default async function BankStatementsPage({
   })
   const customers = (customersRaw ?? []) as { id: string; full_name: string }[]
 
-  const base: SP = { account, q, from: urlFrom, to: urlTo, dir, sort, focus: focusId, cust, min: minStr, max: maxStr }
-  const totalPages = Math.max(1, Math.ceil(report.total_count / PAGE_SIZE))
-  const showingFrom = report.total_count === 0 ? 0 : page * PAGE_SIZE + 1
-  const showingTo = Math.min(report.total_count, page * PAGE_SIZE + rows.length)
+  const base: SP = { account, q, from: urlFrom, to: urlTo, dir, sort, focus: focusId, cust, min: minStr, max: maxStr, per: String(per) }
 
   // Card list: an "All accounts" pseudo-card + one per account (alphabetical).
   const allCard: AccountAgg = {
@@ -313,6 +315,7 @@ export default async function BankStatementsPage({
           <form method="GET" className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="sort" value={sort} />
             {focusId && <input type="hidden" name="focus" value={focusId} />}
+            {per !== DEFAULT_PAGE_SIZE && <input type="hidden" name="per" value={String(per)} />}
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-muted-foreground">Account</label>
               <select name="account" defaultValue={account}
@@ -415,28 +418,18 @@ export default async function BankStatementsPage({
       </Card>
 
       {/* Pagination */}
-      {report.total_count > 0 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Showing {showingFrom.toLocaleString()}–{showingTo.toLocaleString()} of {report.total_count.toLocaleString()}
-          </span>
-          <div className="flex items-center gap-2">
-            {page > 0 && (
-              <Link href={buildHref(base, { page: String(page - 1) })}
-                className="rounded-md border border-border px-3 py-1.5 hover:text-foreground">
-                ← Prev
-              </Link>
-            )}
-            <span>Page {page + 1} of {totalPages}</span>
-            {page + 1 < totalPages && (
-              <Link href={buildHref(base, { page: String(page + 1) })}
-                className="rounded-md border border-border px-3 py-1.5 hover:text-foreground">
-                Next →
-              </Link>
-            )}
-          </div>
-        </div>
-      )}
+      <Pagination
+        page={page}
+        pageSize={per}
+        total={report.total_count}
+        sizeOptions={PAGE_SIZES}
+        makeHref={({ page: p, per: pr }) => {
+          const ov: Partial<SP> = {}
+          if (p != null) ov.page = String(p)
+          if (pr != null) ov.per = String(pr)
+          return buildHref(base, ov)
+        }}
+      />
     </PageShell>
   )
 }
