@@ -281,9 +281,16 @@ export default async function MonitoringFleetPage() {
                     return (
                       <tr
                         key={row.id}
-                        className={`border-b border-border transition-colors hover:bg-muted/30 ${hasError ? 'bg-destructive/5' : ''}`}
+                        className={`group relative cursor-pointer border-b border-border transition-colors hover:bg-muted/30 ${hasError ? 'bg-destructive/5' : ''}`}
                       >
                         <td className="px-4 py-3">
+                          {/* Full-row overlay: clicking anywhere on the row opens the system */}
+                          <Link
+                            href={`/portal/employee/monitoring/${row.id}`}
+                            title="Open system"
+                            aria-label={`Open ${row.site_name ?? 'system'}`}
+                            className="absolute inset-0 z-0"
+                          />
                           <p className="font-medium">{row.site_name ?? '—'}</p>
                           {row.label && <p className="text-xs text-muted-foreground">{row.label}</p>}
                         </td>
@@ -320,7 +327,7 @@ export default async function MonitoringFleetPage() {
                           {row.customer_name ?? '—'}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
+                          <div className="relative z-10 flex items-center justify-end gap-1">
                             <Link
                               href={`/portal/employee/monitoring/${row.id}/edit`}
                               title="Edit connection"
