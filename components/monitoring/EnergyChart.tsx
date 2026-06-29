@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  AreaChart, Area, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, Brush,
 } from 'recharts'
 import {
@@ -36,6 +36,8 @@ interface DailyTotal {
   grid_export_kwh: number
   battery_charge_kwh: number
   battery_discharge_kwh: number
+  soc_min: number | null
+  soc_max: number | null
 }
 
 // Minimal shapes of the recharts callback payloads we read (avoids internals).
@@ -90,13 +92,19 @@ const LINE_SERIES: { key: string; name: string; color: string; axis: 'left' | 'r
   { key: 'soc',     name: 'SOC',     color: '#06b6d4', axis: 'right', fill: 'none' },
 ]
 
-const BAR_SERIES: { key: keyof Omit<DailyTotal, 'day'>; name: string; color: string }[] = [
+const BAR_SERIES: { key: string; name: string; color: string }[] = [
   { key: 'production_kwh',        name: 'Production',     color: '#eab308' },
   { key: 'consumption_kwh',       name: 'Consumption',   color: '#a855f7' },
   { key: 'grid_import_kwh',       name: 'Grid import',   color: '#3b82f6' },
   { key: 'grid_export_kwh',       name: 'Grid export',   color: '#06b6d4' },
   { key: 'battery_charge_kwh',    name: 'Batt charge',   color: '#22c55e' },
   { key: 'battery_discharge_kwh', name: 'Batt discharge', color: '#f97316' },
+]
+
+// Daily battery SoC range — plotted as lines on a right-hand % axis over the bars.
+const BAR_SOC_SERIES: { key: string; name: string; color: string; dash?: string }[] = [
+  { key: 'soc_max', name: 'Batt max %', color: '#0891b2' },
+  { key: 'soc_min', name: 'Batt min %', color: '#0ea5e9', dash: '4 2' },
 ]
 
 export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
@@ -313,21 +321,33 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
     : 'No readings in this window — import history below to fill it in.'
 
   const barChart = (
-    <BarChart data={daily} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onMouseMove={trackTip} onMouseLeave={clearTip}>
+    <ComposedChart data={daily} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onMouseMove={trackTip} onMouseLeave={clearTip}>
       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
       <XAxis dataKey="day" tickFormatter={formatDay} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-      <YAxis tick={{ fontSize: 10 }} unit=" kWh" width={56} />
+      <YAxis yAxisId="left" tick={{ fontSize: 10 }} unit=" kWh" width={56} />
+      <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 10 }} width={40} />
       <Tooltip
         {...tooltipCommon}
         labelFormatter={(d) => formatDay(String(d))}
-        formatter={(val, name) => [`${Number(val).toLocaleString('en-ZA')} kWh`, name]}
+        formatter={(val, name) =>
+          typeof name === 'string' && name.includes('%')
+            ? [`${Number(val).toLocaleString('en-ZA')}%`, name]
+            : [`${Number(val).toLocaleString('en-ZA')} kWh`, name]
+        }
       />
       <Legend {...legendCommon} />
       {BAR_SERIES.map((s) => (
-        <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={[2, 2, 0, 0]} hide={hidden.has(s.key)} />
+        <Bar key={s.key} yAxisId="left" dataKey={s.key} name={s.name} fill={s.color} radius={[2, 2, 0, 0]} hide={hidden.has(s.key)} />
+      ))}
+      {BAR_SOC_SERIES.map((s) => (
+        <Line
+          key={s.key} yAxisId="right" type="monotone" dataKey={s.key} name={s.name}
+          stroke={s.color} strokeWidth={1.5} dot={false} connectNulls
+          strokeDasharray={s.dash} hide={hidden.has(s.key)}
+        />
       ))}
       <Brush dataKey="day" height={16} travellerWidth={8} stroke="hsl(var(--muted-foreground))" tickFormatter={formatDay} />
-    </BarChart>
+    </ComposedChart>
   )
 
   const lineChart = (

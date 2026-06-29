@@ -80,6 +80,7 @@ interface AggReading {
   load_power_w: number | null
   grid_power_w: number | null
   battery_power_w: number | null
+  battery_soc_pct: number | null
 }
 
 interface DailyTotal {
@@ -90,7 +91,54 @@ interface DailyTotal {
   grid_export_kwh: number
   battery_charge_kwh: number
   battery_discharge_kwh: number
+  soc_min: number | null
+  soc_max: number | null
 }
+
+// One reading as the line chart consumes it (also the unit of downsampling).
+interface LineRow {
+  id?: unknown
+  recorded_at: string
+  pv_power_w: number | null
+  battery_power_w: number | null
+  grid_power_w: number | null
+  load_power_w: number | null
+  battery_soc_pct: number | null
+  device_state?: unknown
+}
+
+const LINE_NUM_KEYS = ['pv_power_w', 'battery_power_w', 'grid_power_w', 'load_power_w', 'battery_soc_pct'] as const
+
+/**
+ * Bucket-average a dense series down to ~`target` points so long ranges (7d/30d)
+ * render — and the cursor tooltip keeps up — without shipping ~8,600 points.
+ * Short ranges (≤ target) are returned untouched at full resolution.
+ */
+function downsampleLine(rows: LineRow[], target: number): LineRow[] {
+  if (rows.length <= target) return rows
+  const bucket = rows.length / target
+  const out: LineRow[] = []
+  for (let i = 0; i < target; i++) {
+    const start = Math.floor(i * bucket)
+    const end = Math.min(rows.length, Math.floor((i + 1) * bucket))
+    if (end <= start) continue
+    const slice = rows.slice(start, end)
+    const mid = slice[Math.floor(slice.length / 2)]
+    const agg: LineRow = {
+      id: mid.id, recorded_at: mid.recorded_at, device_state: mid.device_state,
+      pv_power_w: null, battery_power_w: null, grid_power_w: null, load_power_w: null, battery_soc_pct: null,
+    }
+    for (const k of LINE_NUM_KEYS) {
+      let sum = 0, n = 0
+      for (const r of slice) { const v = r[k]; if (typeof v === 'number') { sum += v; n++ } }
+      agg[k] = n ? (k === 'battery_soc_pct' ? Math.round((sum / n) * 10) / 10 : Math.round(sum / n)) : null
+    }
+    out.push(agg)
+  }
+  return out
+}
+
+const LINE_TARGET_POINTS = 800
 
 /**
  * Trapezoidally integrate the power samples into per-SAST-day energy totals.
@@ -104,7 +152,8 @@ function dailyTotals(rows: AggReading[]): DailyTotal[] {
     let d = byDay.get(day)
     if (!d) {
       d = { day, production_kwh: 0, consumption_kwh: 0, grid_import_kwh: 0,
-            grid_export_kwh: 0, battery_charge_kwh: 0, battery_discharge_kwh: 0 }
+            grid_export_kwh: 0, battery_charge_kwh: 0, battery_discharge_kwh: 0,
+            soc_min: null, soc_max: null }
       byDay.set(day, d)
     }
     return d
@@ -132,7 +181,16 @@ function dailyTotals(rows: AggReading[]): DailyTotal[] {
     d.battery_discharge_kwh += area(neg(a.battery_power_w), neg(b.battery_power_w))
   }
 
+  // Daily battery SoC range — separate pass so every reading counts (not just pairs).
+  for (const r of rows) {
+    if (r.battery_soc_pct == null) continue
+    const d = get(sastDay(new Date(r.recorded_at).getTime()))
+    d.soc_min = d.soc_min == null ? r.battery_soc_pct : Math.min(d.soc_min, r.battery_soc_pct)
+    d.soc_max = d.soc_max == null ? r.battery_soc_pct : Math.max(d.soc_max, r.battery_soc_pct)
+  }
+
   const round = (n: number) => Math.round(n * 100) / 100
+  const round1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10)
   return [...byDay.values()]
     .sort((x, y) => x.day.localeCompare(y.day))
     .map((d) => ({
@@ -143,6 +201,8 @@ function dailyTotals(rows: AggReading[]): DailyTotal[] {
       grid_export_kwh: round(d.grid_export_kwh),
       battery_charge_kwh: round(d.battery_charge_kwh),
       battery_discharge_kwh: round(d.battery_discharge_kwh),
+      soc_min: round1(d.soc_min),
+      soc_max: round1(d.soc_max),
     }))
 }
 
@@ -177,7 +237,7 @@ export async function GET(req: NextRequest) {
     try {
       const rows = await fetchAllReadings(
         supabase, systemId,
-        'recorded_at, pv_power_w, load_power_w, grid_power_w, battery_power_w',
+        'recorded_at, pv_power_w, load_power_w, grid_power_w, battery_power_w, battery_soc_pct',
         since, until,
       )
       return NextResponse.json(dailyTotals(rows as unknown as AggReading[]))
@@ -211,7 +271,7 @@ export async function GET(req: NextRequest) {
       'id, recorded_at, pv_power_w, battery_power_w, grid_power_w, load_power_w, battery_soc_pct, device_state',
       since, until,
     )
-    return NextResponse.json(rows)
+    return NextResponse.json(downsampleLine(rows as unknown as LineRow[], LINE_TARGET_POINTS))
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }
