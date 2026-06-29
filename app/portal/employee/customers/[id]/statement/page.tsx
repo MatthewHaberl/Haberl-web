@@ -4,14 +4,14 @@ import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { FileText, ArrowLeft, Landmark, Receipt } from 'lucide-react'
+import { FileText, ArrowLeft, Landmark, Receipt, Crosshair } from 'lucide-react'
 import type { Metadata } from 'next'
 import { PageShell, PageHeader } from '@/components/layout/page'
 
 export const metadata: Metadata = { title: 'Customer statement' }
 export const dynamic = 'force-dynamic'
 
-interface Entry { d: string; memo: string; amt: number; src: string; ref: string | null; doc_id: string | null }
+interface Entry { d: string; memo: string; amt: number; src: string; ref: string | null; doc_id: string | null; txn_id: string | null }
 interface Statement {
   credits: Entry[]   // in their favour: their payments + what we owe them
   debits: Entry[]    // owed to us: charges
@@ -141,9 +141,19 @@ function EntryTable({
                   <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{e.d ? formatDate(e.d) : '—'}</td>
                   <td className="px-4 py-2"><span className="block max-w-[420px] truncate" title={e.memo}>{e.memo}</span></td>
                   <td className="px-4 py-2">
-                    {e.doc_id
-                      ? <Link href={`/portal/employee/finance/${e.doc_id}`} className="text-accent hover:underline">{e.ref ?? 'Invoice'}</Link>
-                      : <Badge variant="outline">{e.ref ?? 'Bank'}</Badge>}
+                    {e.doc_id ? (
+                      <Link href={`/portal/employee/finance/${e.doc_id}`} className="text-accent hover:underline">{e.ref ?? 'Invoice'}</Link>
+                    ) : e.txn_id ? (
+                      <Link
+                        href={`/portal/employee/finance/bank?focus=${e.txn_id}`}
+                        title="View in bank statements, around this date, across all accounts"
+                        className="inline-flex items-center gap-1 text-accent hover:underline"
+                      >
+                        <Crosshair className="h-3.5 w-3.5" /> {e.ref ?? 'Bank'}
+                      </Link>
+                    ) : (
+                      <Badge variant="outline">{e.ref ?? 'Bank'}</Badge>
+                    )}
                   </td>
                   <td className={`whitespace-nowrap px-4 py-2 text-right font-medium tabular-nums ${
                     tone === 'in' ? 'text-green-600' : 'text-red-600'
