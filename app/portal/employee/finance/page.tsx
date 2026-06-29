@@ -2,12 +2,10 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { Receipt, Download, FileText, Search } from 'lucide-react'
+import { Receipt, Search } from 'lucide-react'
 import type { Metadata } from 'next'
 import { UploadForm } from './UploadForm'
-import { DeleteDocButton } from './DeleteDocButton'
+import { DocsTable, type DocRowVM } from './DocsTable'
 import { FIN_DOC_TYPES, FIN_DOC_TYPE_LABEL, type FinDocumentWithCustomer } from '@/lib/finance/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { FinanceTabs } from '@/components/finance/FinanceTabs'
@@ -115,9 +113,36 @@ export default async function FinanceDocumentsPage({
     allocMap.set(r.document_id, m)
   }
 
+  const rows: DocRowVM[] = docs.map((d) => {
+    const dStatus = (d as unknown as { status?: string }).status ?? 'open'
+    const a = allocMap.get(d.id)
+    const allocNames = a ? [...a.names] : []
+    if (a?.company) allocNames.push('Haberl')
+    return {
+      id: d.id,
+      file_name: d.file_name,
+      doc_number: d.doc_number,
+      doc_type_label: FIN_DOC_TYPE_LABEL[d.doc_type] ?? d.doc_type,
+      status: dStatus,
+      supplier_name: d.supplier_name,
+      doc_date: d.doc_date,
+      alloc_names: allocNames,
+      customer_name: d.customer?.full_name ?? null,
+      total_cents: d.total_cents,
+    }
+  })
+
   const total = count ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const base: SP = { q, type, supplier, from, to, alloc, sort }
+  const dateSort = {
+    href: buildHref(base, { sort: sort === 'oldest' ? 'newest' : 'oldest' }),
+    arrow: sort === 'oldest' ? '↑' : sort === 'newest' ? '↓' : '',
+  }
+  const totalSort = {
+    href: buildHref(base, { sort: sort === 'total_desc' ? 'total_asc' : 'total_desc' }),
+    arrow: sort === 'total_desc' ? '↓' : sort === 'total_asc' ? '↑' : '',
+  }
   const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1
   const showingTo = Math.min(total, page * PAGE_SIZE + docs.length)
   const filtered = q || type !== 'all' || supplier !== 'all' || from || to || alloc !== 'all'
@@ -215,76 +240,7 @@ export default async function FinanceDocumentsPage({
               {filtered ? 'No documents match this filter.' : 'No documents yet — upload your first receipt above.'}
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Document</th>
-                    <th className="px-4 py-3 font-medium">Type</th>
-                    <th className="px-4 py-3 font-medium">Supplier</th>
-                    <th className="px-4 py-3 font-medium">
-                      <Link href={buildHref(base, { sort: sort === 'oldest' ? 'newest' : 'oldest' })} className="hover:text-foreground">
-                        Date {sort === 'oldest' ? '↑' : sort === 'newest' ? '↓' : ''}
-                      </Link>
-                    </th>
-                    <th className="px-4 py-3 font-medium">Allocated to</th>
-                    <th className="px-4 py-3 font-medium text-right">
-                      <Link href={buildHref(base, { sort: sort === 'total_desc' ? 'total_asc' : 'total_desc' })} className="hover:text-foreground">
-                        Total {sort === 'total_desc' ? '↓' : sort === 'total_asc' ? '↑' : ''}
-                      </Link>
-                    </th>
-                    <th className="px-4 py-3 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {docs.map((d) => {
-                    const dStatus = (d as unknown as { status?: string }).status ?? 'open'
-                    const a = allocMap.get(d.id)
-                    const allocNames = a ? [...a.names] : []
-                    if (a?.company) allocNames.push('Haberl')
-                    return (
-                    <tr key={d.id} className={`hover:bg-muted/40 ${dStatus === 'discarded' ? 'opacity-50' : ''}`}>
-                      <td className="px-4 py-3">
-                        <Link href={`/portal/employee/finance/${d.id}`}
-                          className="flex items-center gap-2 min-w-0 text-accent hover:underline" title="Open line-item view">
-                          <FileText className="h-4 w-4 shrink-0" />
-                          <span className="truncate max-w-[260px]">{d.file_name ?? d.doc_number ?? 'Document'}</span>
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <Badge variant="outline">{FIN_DOC_TYPE_LABEL[d.doc_type] ?? d.doc_type}</Badge>
-                          {dStatus === 'unsure' && <Badge variant="warning">Unsure</Badge>}
-                          {dStatus === 'discarded' && <Badge variant="destructive">Discarded</Badge>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">{d.supplier_name ?? '—'}</td>
-                      <td className="px-4 py-3">{d.doc_date ? formatDate(d.doc_date) : '—'}</td>
-                      <td className="px-4 py-3">
-                        {allocNames.length
-                          ? <Badge variant="accent">{allocNames.join(', ')}</Badge>
-                          : d.customer?.full_name
-                            ? d.customer.full_name
-                            : <span className="text-muted-foreground">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {d.total_cents != null ? formatCurrency(d.total_cents) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-3">
-                          <a href={`/api/finance/documents/${d.id}`} target="_blank" rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-accent hover:underline">
-                            <Download className="h-4 w-4" /> Open
-                          </a>
-                          <DeleteDocButton id={d.id} name={d.file_name ?? 'this document'} />
-                        </div>
-                      </td>
-                    </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <DocsTable rows={rows} dateSort={dateSort} totalSort={totalSort} />
           )}
         </CardContent>
       </Card>

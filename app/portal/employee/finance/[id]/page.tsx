@@ -14,6 +14,7 @@ import { DocSummaryEdit } from './DocSummaryEdit'
 import { DocLinesEdit } from './DocLinesEdit'
 import { DocStatus } from './DocStatus'
 import { BankMatchFinder } from './BankMatchFinder'
+import { CombinePages, type CombineCandidate } from './CombinePages'
 
 export const metadata: Metadata = { title: 'Finance — Document' }
 
@@ -41,7 +42,7 @@ export default async function FinanceDocumentPage({
     .order('line_no', { ascending: true })
   const lines = (linesRaw ?? []) as unknown as FinLineItem[]
 
-  const [{ data: customersRaw }, { data: allocsRaw }, { data: prevDoc }, { data: nextDoc }, { data: matchedRaw }] = await Promise.all([
+  const [{ data: customersRaw }, { data: allocsRaw }, { data: prevDoc }, { data: nextDoc }, { data: matchedRaw }, { data: candidatesRaw }] = await Promise.all([
     supabase.from('customers').select('id, full_name').order('full_name'),
     supabase
       .from('fin_allocations')
@@ -55,8 +56,14 @@ export default async function FinanceDocumentPage({
     supabase.from('bank_transactions')
       .select('id, txn_date, description, amount_cents, account_label')
       .eq('matched_document_id', id),
+    supabase.from('fin_documents')
+      .select('id, file_name, supplier_name, doc_date, total_cents')
+      .neq('id', id)
+      .order('created_at', { ascending: false })
+      .limit(300),
   ])
   const customers = (customersRaw ?? []) as { id: string; full_name: string }[]
+  const combineCandidates = (candidatesRaw ?? []) as unknown as CombineCandidate[]
   const matchedLinked = (matchedRaw ?? []) as {
     id: string; txn_date: string; description: string; amount_cents: number; account_label: string | null
   }[]
@@ -194,6 +201,9 @@ export default async function FinanceDocumentPage({
         lines={lines.map((l) => ({ id: l.id, description: l.description, qty: l.qty, line_total_cents: l.line_total_cents }))}
         docTotalCents={doc.total_cents}
       />
+
+      {/* Combine separate scans (page 1 + page 2) into this one invoice */}
+      <CombinePages documentId={doc.id} candidates={combineCandidates} />
 
       {/* Reconcile against the bank statement */}
       <BankMatchFinder documentId={doc.id} hasAllocations={allocations.length > 0} initialLinked={matchedLinked} />
