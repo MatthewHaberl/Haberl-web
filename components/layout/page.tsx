@@ -5,11 +5,13 @@ import { cn } from '@/lib/utils'
  * Portal page scaffold — gives every page one congruent frame.
  *
  * Width tiers (the portal layout supplies the outer padding; PageShell only
- * centers and caps the content):
- *   - form    ~768px  · single-column forms & simple settings
- *   - content ~1024px · reading + list/detail pages (the default)
- *   - wide    ~1280px · data-dense dashboards & multi-column tables
- *   - full    no cap  · maps and diagram tools that need the whole screen
+ * centers and caps the content). All tiers are *max* widths — content shrinks
+ * to fit smaller screens, fills normal laptops/monitors, and is capped so it
+ * doesn't sprawl on ultra-wide displays:
+ *   - form    ~768px   · single-column forms & simple settings (kept narrow for readable inputs)
+ *   - content ~1600px  · reading + list/detail pages (the default)
+ *   - wide    ~2000px  · data-dense dashboards & multi-column tables
+ *   - full    ~2560px  · maps / diagram / split-pane tools; fills big screens, caps ultra-wide
  *
  * Vertical rhythm (gap-6) is baked in so pages don't each re-declare it.
  */
@@ -17,9 +19,9 @@ export type PageWidth = 'form' | 'content' | 'wide' | 'full'
 
 const WIDTHS: Record<PageWidth, string> = {
   form: 'max-w-3xl',
-  content: 'max-w-5xl',
-  wide: 'max-w-7xl',
-  full: 'max-w-none',
+  content: 'max-w-[1600px]',
+  wide: 'max-w-[2000px]',
+  full: 'max-w-[2560px]',
 }
 
 export function PageShell({

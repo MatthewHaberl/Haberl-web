@@ -10,6 +10,7 @@ import type { Metadata } from 'next'
 import { FIN_DOC_TYPE_LABEL, type FinDocument, type FinLineItem } from '@/lib/finance/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { DocAllocations, type DocAllocation } from './DocAllocations'
+import { DocViewer } from './DocViewer'
 import { Users } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Finance — Document' }
@@ -65,8 +66,15 @@ export default async function FinanceDocumentPage({
     .filter(Boolean)
   const hasWarning = flags.some((f) => f.startsWith('⚠') || /duplicate|not a purchase|not a tax|statement|low confidence/i.test(f))
 
+  const ext = (doc.file_name ?? '').split('.').pop()?.toLowerCase() ?? ''
+  const mime = doc.mime_type ?? ''
+  const previewKind: 'pdf' | 'image' | 'other' =
+    mime.includes('pdf') || ext === 'pdf' ? 'pdf'
+    : mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext) ? 'image'
+    : 'other'
+
   return (
-    <PageShell width="content">
+    <PageShell width="full">
       <PageHeader
         icon={Receipt}
         title={doc.supplier_name ?? 'Document'}
@@ -84,6 +92,11 @@ export default async function FinanceDocumentPage({
         <ArrowLeft className="h-4 w-4" /> All documents
       </Link>
 
+      <DocViewer
+        previewUrl={`/api/finance/documents/${doc.id}`}
+        kind={previewKind}
+        fileName={doc.file_name}
+      >
       {/* Summary + original */}
       <Card>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-6">
@@ -202,6 +215,7 @@ export default async function FinanceDocumentPage({
           )}
         </CardContent>
       </Card>
+      </DocViewer>
     </PageShell>
   )
 }
