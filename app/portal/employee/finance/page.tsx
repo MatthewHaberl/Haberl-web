@@ -16,14 +16,20 @@ export const metadata: Metadata = { title: 'Finance — Documents' }
 export const dynamic = 'force-dynamic'
 
 const PAGE_SIZE = 50
+const NIL = '00000000-0000-0000-0000-000000000000'
 
-type SP = { q?: string; type?: string; page?: string }
+type SP = { q?: string; type?: string; supplier?: string; from?: string; to?: string; alloc?: string; sort?: string; page?: string }
 
 function buildHref(base: SP, override: Partial<SP>): string {
   const m = { ...base, ...override }
   const p = new URLSearchParams()
   if (m.q) p.set('q', m.q)
   if (m.type && m.type !== 'all') p.set('type', m.type)
+  if (m.supplier && m.supplier !== 'all') p.set('supplier', m.supplier)
+  if (m.from) p.set('from', m.from)
+  if (m.to) p.set('to', m.to)
+  if (m.alloc && m.alloc !== 'all') p.set('alloc', m.alloc)
+  if (m.sort && m.sort !== 'newest') p.set('sort', m.sort)
   if (m.page && m.page !== '0') p.set('page', m.page)
   const qs = p.toString()
   return `/portal/employee/finance${qs ? `?${qs}` : ''}`
@@ -38,29 +44,64 @@ export default async function FinanceDocumentsPage({
   const sp = await searchParams
   const q = sp.q ?? ''
   const type = sp.type ?? 'all'
+  const supplier = sp.supplier ?? 'all'
+  const from = sp.from ?? ''
+  const to = sp.to ?? ''
+  const alloc = sp.alloc ?? 'all'
+  const sort = sp.sort ?? 'newest'
   const page = Math.max(0, parseInt(sp.page ?? '0', 10) || 0)
 
   const supabase = await createClient()
 
+  // Allocation filter needs the matching document ids first (allocations live
+  // in a separate table). 'none' = exclude any doc that has an allocation.
+  let restrictIds: string[] | null = null
+  let excludeIds: string[] | null = null
+  if (alloc !== 'all') {
+    if (alloc === 'none') {
+      const { data } = await supabase.from('fin_allocations').select('document_id')
+      excludeIds = [...new Set((data ?? []).map((r: { document_id: string }) => r.document_id))]
+    } else {
+      let aq = supabase.from('fin_allocations').select('document_id')
+      if (alloc === 'haberl') aq = aq.eq('target', 'company')
+      else if (alloc !== 'any') aq = aq.eq('customer_id', alloc) // a customer id
+      const { data } = await aq
+      restrictIds = [...new Set((data ?? []).map((r: { document_id: string }) => r.document_id))]
+      if (restrictIds.length === 0) restrictIds = [NIL] // force empty result
+    }
+  }
+
   let docsQuery = supabase
     .from('fin_documents')
     .select('*, customer:customers(id, full_name)', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+
+  // sorting
+  if (sort === 'oldest') docsQuery = docsQuery.order('doc_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true })
+  else if (sort === 'total_desc') docsQuery = docsQuery.order('total_cents', { ascending: false, nullsFirst: false })
+  else if (sort === 'total_asc') docsQuery = docsQuery.order('total_cents', { ascending: true, nullsFirst: false })
+  else docsQuery = docsQuery.order('doc_date', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
+
+  docsQuery = docsQuery.range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
 
   if (q) docsQuery = docsQuery.or(`file_name.ilike.%${q}%,supplier_name.ilike.%${q}%,doc_number.ilike.%${q}%`)
   if (type !== 'all') docsQuery = docsQuery.eq('doc_type', type)
+  if (supplier !== 'all') docsQuery = docsQuery.eq('supplier_name', supplier)
+  if (from) docsQuery = docsQuery.gte('doc_date', from)
+  if (to) docsQuery = docsQuery.lte('doc_date', to)
+  if (restrictIds) docsQuery = docsQuery.in('id', restrictIds)
+  if (excludeIds && excludeIds.length) docsQuery = docsQuery.not('id', 'in', `(${excludeIds.join(',')})`)
 
-  const [{ data: docsRaw, count }, { data: customersRaw }] = await Promise.all([
+  const [{ data: docsRaw, count }, { data: customersRaw }, { data: supplierRaw }] = await Promise.all([
     docsQuery,
     supabase.from('customers').select('id, full_name').order('full_name'),
+    supabase.from('fin_documents').select('supplier_name').not('supplier_name', 'is', null),
   ])
 
   const docs = (docsRaw ?? []) as unknown as FinDocumentWithCustomer[]
   const customers = (customersRaw ?? []) as unknown as { id: string; full_name: string }[]
+  const suppliers = [...new Set((supplierRaw ?? []).map((r: { supplier_name: string | null }) => r.supplier_name).filter(Boolean) as string[])].sort()
 
-  // Allocations live in fin_allocations (not fin_documents.customer_id), so the
-  // list must look them up to show who each document is allocated to.
+  // who each shown doc is allocated to (for the "Allocated to" column)
   const docIds = docs.map((d) => d.id)
   const { data: allocRows } = docIds.length
     ? await supabase.from('fin_allocations')
@@ -76,9 +117,12 @@ export default async function FinanceDocumentsPage({
 
   const total = count ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const base: SP = { q, type }
+  const base: SP = { q, type, supplier, from, to, alloc, sort }
   const showingFrom = total === 0 ? 0 : page * PAGE_SIZE + 1
   const showingTo = Math.min(total, page * PAGE_SIZE + docs.length)
+  const filtered = q || type !== 'all' || supplier !== 'all' || from || to || alloc !== 'all'
+
+  const fieldCls = 'h-10 rounded-md border border-border bg-background px-3 text-sm'
 
   return (
     <PageShell width="full">
@@ -100,25 +144,58 @@ export default async function FinanceDocumentsPage({
               <label className="text-xs font-medium text-muted-foreground">Search</label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text" name="q" defaultValue={q} placeholder="supplier, file name or doc number…"
-                  className="h-10 w-72 rounded-md border border-border bg-background pl-8 pr-3 text-sm"
-                />
+                <input type="text" name="q" defaultValue={q} placeholder="supplier, file or doc no…"
+                  className={`${fieldCls} w-60 pl-8`} />
               </div>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-muted-foreground">Type</label>
-              <select name="type" defaultValue={type}
-                className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+              <select name="type" defaultValue={type} className={fieldCls}>
                 <option value="all">All types</option>
                 {FIN_DOC_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Supplier</label>
+              <select name="supplier" defaultValue={supplier} className={`${fieldCls} max-w-[200px]`}>
+                <option value="all">All suppliers</option>
+                {suppliers.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Allocated to</label>
+              <select name="alloc" defaultValue={alloc} className={`${fieldCls} max-w-[200px]`}>
+                <option value="all">Anyone / any</option>
+                <option value="none">Not allocated</option>
+                <option value="any">Allocated (any)</option>
+                <option value="haberl">Haberl (business)</option>
+                <optgroup label="Customer">
+                  {customers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                </optgroup>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">From</label>
+              <input type="date" name="from" defaultValue={from} className={fieldCls} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">To</label>
+              <input type="date" name="to" defaultValue={to} className={fieldCls} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Sort</label>
+              <select name="sort" defaultValue={sort} className={fieldCls}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="total_desc">Total: high → low</option>
+                <option value="total_asc">Total: low → high</option>
               </select>
             </div>
             <button type="submit"
               className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90">
               Apply
             </button>
-            {(q || type !== 'all') && (
+            {filtered && (
               <Link href="/portal/employee/finance"
                 className="h-10 rounded-md border border-border px-4 text-sm font-medium leading-10 text-muted-foreground hover:text-foreground">
                 Reset
@@ -135,7 +212,7 @@ export default async function FinanceDocumentsPage({
         <CardContent className="p-0">
           {docs.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-10">
-              {q || type !== 'all' ? 'No documents match this filter.' : 'No documents yet — upload your first receipt above.'}
+              {filtered ? 'No documents match this filter.' : 'No documents yet — upload your first receipt above.'}
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -145,9 +222,17 @@ export default async function FinanceDocumentsPage({
                     <th className="px-4 py-3 font-medium">Document</th>
                     <th className="px-4 py-3 font-medium">Type</th>
                     <th className="px-4 py-3 font-medium">Supplier</th>
-                    <th className="px-4 py-3 font-medium">Date</th>
+                    <th className="px-4 py-3 font-medium">
+                      <Link href={buildHref(base, { sort: sort === 'oldest' ? 'newest' : 'oldest' })} className="hover:text-foreground">
+                        Date {sort === 'oldest' ? '↑' : sort === 'newest' ? '↓' : ''}
+                      </Link>
+                    </th>
                     <th className="px-4 py-3 font-medium">Allocated to</th>
-                    <th className="px-4 py-3 font-medium text-right">Total</th>
+                    <th className="px-4 py-3 font-medium text-right">
+                      <Link href={buildHref(base, { sort: sort === 'total_desc' ? 'total_asc' : 'total_desc' })} className="hover:text-foreground">
+                        Total {sort === 'total_desc' ? '↓' : sort === 'total_asc' ? '↑' : ''}
+                      </Link>
+                    </th>
                     <th className="px-4 py-3 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
@@ -160,15 +245,10 @@ export default async function FinanceDocumentsPage({
                     return (
                     <tr key={d.id} className={`hover:bg-muted/40 ${dStatus === 'discarded' ? 'opacity-50' : ''}`}>
                       <td className="px-4 py-3">
-                        <Link
-                          href={`/portal/employee/finance/${d.id}`}
-                          className="flex items-center gap-2 min-w-0 text-accent hover:underline"
-                          title="Open line-item view"
-                        >
+                        <Link href={`/portal/employee/finance/${d.id}`}
+                          className="flex items-center gap-2 min-w-0 text-accent hover:underline" title="Open line-item view">
                           <FileText className="h-4 w-4 shrink-0" />
-                          <span className="truncate max-w-[260px]">
-                            {d.file_name ?? d.doc_number ?? 'Document'}
-                          </span>
+                          <span className="truncate max-w-[260px]">{d.file_name ?? d.doc_number ?? 'Document'}</span>
                         </Link>
                       </td>
                       <td className="px-4 py-3">
@@ -192,12 +272,8 @@ export default async function FinanceDocumentsPage({
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-3">
-                          <a
-                            href={`/api/finance/documents/${d.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-accent hover:underline"
-                          >
+                          <a href={`/api/finance/documents/${d.id}`} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-accent hover:underline">
                             <Download className="h-4 w-4" /> Open
                           </a>
                           <DeleteDocButton id={d.id} name={d.file_name ?? 'this document'} />
