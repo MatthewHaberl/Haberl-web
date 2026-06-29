@@ -9,6 +9,7 @@ import { getSettingsCapability } from '@/lib/monitoring/settings/capabilities'
 import { parseSettings } from '@/lib/monitoring/settings/types'
 import type { MonitoringBrand } from '@/lib/monitoring/types'
 import { SettingsOptimiser } from '@/components/monitoring/SettingsOptimiser'
+import { AllSettingsPanel } from '@/components/monitoring/AllSettingsPanel'
 
 export const metadata: Metadata = { title: 'Settings & Optimisation' }
 
@@ -90,6 +91,8 @@ export default async function SettingsOptimisationPage({ params }: { params: Pro
         }
         initialRecommendations={recommendations ?? []}
       />
+
+      <AllSettingsPanel systemId={systemId} brand={brand} brandLabel={BRAND_LABELS[brand] ?? brand} />
     </PageShell>
   )
 }
