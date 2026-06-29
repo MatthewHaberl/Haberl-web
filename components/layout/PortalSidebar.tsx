@@ -6,7 +6,7 @@ import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
   BarChart2, Users, Zap, User, Menu, X, Settings, Activity,
   ClipboardList, PackageX, Search, Sunrise, PhoneIncoming, Sparkles,
-  PanelLeftClose, PanelLeftOpen, Receipt,
+  PanelLeftClose, PanelLeftOpen, Receipt, Ticket, UserCog,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -21,28 +21,33 @@ const customerLinks = [
   { label: 'Profile',     href: '/portal/customer/profile',      icon: User },
 ]
 
+// Links tagged with `section` are gated by the data-driven permissions matrix
+// (lib/auth/sections.ts + role_permissions). Links with `roles` use the legacy
+// inline role check; `Profile` (neither) is always shown to employees.
 const employeeLinks = [
-  { label: 'Dashboard', href: '/portal/employee',                  icon: Home,      roles: ['field_worker', 'manager', 'admin'] },
-  { label: 'Today',     href: '/portal/employee/briefing',         icon: Sunrise,   roles: ['manager', 'admin'] },
-  { label: 'Leads',     href: '/portal/employee/leads',            icon: PhoneIncoming, roles: ['manager', 'admin'] },
-  { label: 'Jobs',      href: '/portal/employee/jobs',             icon: Briefcase, roles: ['field_worker', 'manager', 'admin'] },
-  { label: 'Quotes',    href: '/portal/employee/quotes-v2',          icon: Sparkles,  roles: ['field_worker', 'manager', 'admin'] },
-  { label: 'Procurement', href: '/portal/employee/procurement',    icon: ClipboardList, roles: ['manager', 'admin'] },
-  { label: 'Customers', href: '/portal/employee/customers',        icon: Users,     roles: ['manager', 'admin'] },
-  { label: 'Monitoring', href: '/portal/employee/monitoring',        icon: Activity,  roles: ['manager', 'admin'] },
-  { label: 'Metrics',   href: '/portal/employee/metrics',          icon: BarChart2, roles: ['manager', 'admin'] },
-  { label: 'Lead Finder', href: '/portal/employee/lead-finder',     icon: Search,    roles: ['manager', 'admin'] },
-  { label: 'Wastage',   href: '/portal/employee/reports/wastage',  icon: PackageX,  roles: ['manager', 'admin'] },
-  { label: 'Finance',   href: '/portal/employee/finance',          icon: Receipt,   roles: ['manager', 'admin'] },
-  { label: 'Profile',   href: '/portal/employee/profile',          icon: User,      roles: ['field_worker', 'manager', 'admin'] },
-  { label: 'Shop Mgmt', href: '/portal/employee/shop',             icon: ShoppingBag, roles: ['admin'] },
-{ label: 'Settings',  href: '/portal/employee/settings/company', icon: Settings,  roles: ['admin'] },
+  { label: 'Dashboard', href: '/portal/employee',                  icon: Home,      section: 'dashboard' },
+  { label: 'Today',     href: '/portal/employee/briefing',         icon: Sunrise,   section: 'briefing' },
+  { label: 'Leads',     href: '/portal/employee/leads',            icon: PhoneIncoming, section: 'leads' },
+  { label: 'Jobs',      href: '/portal/employee/jobs',             icon: Briefcase, section: 'jobs' },
+  { label: 'Quotes',    href: '/portal/employee/quotes-v2',          icon: Sparkles,  section: 'quotes' },
+  { label: 'Procurement', href: '/portal/employee/procurement',    icon: ClipboardList, section: 'procurement' },
+  { label: 'Customers', href: '/portal/employee/customers',        icon: Users,     section: 'customers' },
+  { label: 'Monitoring', href: '/portal/employee/monitoring',        icon: Activity,  section: 'monitoring' },
+  { label: 'Metrics',   href: '/portal/employee/metrics',          icon: BarChart2, section: 'metrics' },
+  { label: 'Lead Finder', href: '/portal/employee/lead-finder',     icon: Search,    section: 'lead_finder' },
+  { label: 'Wastage',   href: '/portal/employee/reports/wastage',  icon: PackageX,  section: 'wastage' },
+  { label: 'Finance',   href: '/portal/employee/finance',          icon: Receipt,   section: 'finance' },
+  { label: 'Profile',   href: '/portal/employee/profile',          icon: User },
+  { label: 'Shop Mgmt', href: '/portal/employee/shop',             icon: ShoppingBag, section: 'shop' },
+  { label: 'Tickets',   href: '/portal/employee/tickets',          icon: Ticket,    section: 'tickets' },
+  { label: 'Users',     href: '/portal/employee/users',            icon: UserCog,   section: 'users' },
+  { label: 'Settings',  href: '/portal/employee/settings/company', icon: Settings,  section: 'settings' },
 ]
 
 type NavIcon = React.ComponentType<{ className?: string }>
 
 interface SidebarContentProps {
-  links: { label: string; href: string; icon: NavIcon; roles?: string[] }[]
+  links: { label: string; href: string; icon: NavIcon; roles?: string[]; section?: string }[]
   pathname: string
   name: string
   role: Role
@@ -153,11 +158,13 @@ function SidebarContent({
 interface Props {
   role: Role
   name: string
+  /** Section keys the user may access (from the permissions matrix). */
+  allowedSections?: string[]
 }
 
 const COLLAPSE_KEY = 'haberl.portal.sidebarCollapsed'
 
-export function PortalSidebar({ role, name }: Props) {
+export function PortalSidebar({ role, name, allowedSections = [] }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -179,7 +186,12 @@ export function PortalSidebar({ role, name }: Props) {
   const isCustomer = role === 'customer'
   const links = isCustomer
     ? customerLinks
-    : employeeLinks.filter((l) => (l.roles as string[]).includes(role))
+    : employeeLinks.filter((l) => {
+        const link = l as { section?: string; roles?: string[] }
+        if (link.section) return allowedSections.includes(link.section)
+        if (link.roles) return link.roles.includes(role)
+        return true // sectionless, role-less links (e.g. Profile) show for all employees
+      })
 
   async function handleSignOut() {
     const supabase = createClient()

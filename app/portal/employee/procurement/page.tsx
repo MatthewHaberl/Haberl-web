@@ -1,5 +1,5 @@
-import { createClient, getUser } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,15 +24,8 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 export default async function ProcurementPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('procurement')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('id', user.id).single()
-  if (!profile || !['manager', 'admin'].includes(profile.role)) {
-    redirect('/portal/employee')
-  }
 
   const { data: pos } = await supabase
     .from('purchase_orders')

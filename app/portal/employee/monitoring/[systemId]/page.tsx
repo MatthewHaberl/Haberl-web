@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { redirect, notFound } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { ArrowLeft, AlertTriangle, Info, RefreshCw, Activity, Settings2, SlidersHorizontal } from 'lucide-react'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { SystemStatusBadge } from '@/components/monitoring/SystemStatusBadge'
@@ -29,17 +30,8 @@ function fmt(n: number | null, decimals = 1) {
 
 export default async function SystemDetailPage({ params }: { params: Promise<{ systemId: string }> }) {
   const { systemId } = await params
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('monitoring')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile || !['manager', 'admin'].includes(profile.role)) redirect('/portal/employee')
 
   // Fetch the monitoring system
   const { data: system } = await supabase

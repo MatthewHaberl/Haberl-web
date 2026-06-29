@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
 import { ArrowLeft, KeyRound } from 'lucide-react'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { BrandAccountManager, type BrandAccount } from '@/components/monitoring/BrandAccountManager'
 import type { MonitoringBrand } from '@/lib/monitoring/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
@@ -10,17 +10,8 @@ import { PageShell, PageHeader } from '@/components/layout/page'
 export const metadata: Metadata = { title: 'Monitoring — Brand connections' }
 
 export default async function BrandConnectionsPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('monitoring')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile || !['manager', 'admin'].includes(profile.role)) redirect('/portal/employee')
 
   // Saved connections (never select credentials) + a usage tally per account.
   const { data: accountsRaw } = await supabase

@@ -1,4 +1,13 @@
 export type Role = 'customer' | 'field_worker' | 'manager' | 'admin'
+
+/** A single (role × portal-section) access flag — see migration 060. */
+export interface RolePermission {
+  role: Role
+  section: string
+  allowed: boolean
+  updated_at?: string
+}
+
 export type QuoteRequestStatus = 'pending' | 'generated' | 'sent' | 'accepted' | 'declined'
 export type BrandCategory = 'inverter' | 'battery' | 'panel'
 export type EquipmentCatalogCategory = 'inverter' | 'battery' | 'panel' | 'other'
@@ -633,6 +642,27 @@ export interface Lead {
   source: string
   created_at: string
   contacted_at: string | null
+}
+
+export type TicketCategory = 'issue' | 'idea' | 'question'
+export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed'
+
+/** In-portal "report an issue" submission (migration 060). */
+export interface PortalTicket {
+  id: string
+  created_at: string
+  message: string
+  category: TicketCategory
+  status: TicketStatus
+  page_url: string | null
+  user_agent: string | null
+  reported_by: string | null
+  reporter_name: string | null
+  reporter_email: string | null
+  reporter_role: string | null
+  resolved_at: string | null
+  resolved_by: string | null
+  admin_note: string | null
 }
 
 export interface CompanySettings {

@@ -1,6 +1,6 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,12 +12,8 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = { title: 'Price Lists — Shop' }
 
 export default async function PriceListsPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('shop')
   const supabase = await createClient()
-  const { data: profile } = await supabase.from('user_profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') redirect('/portal/employee')
 
   const [{ data: priceLists }, { data: customers }] = await Promise.all([
     supabase.from('price_lists').select(`

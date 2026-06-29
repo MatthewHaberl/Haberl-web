@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -9,17 +9,13 @@ import { UploadForm } from './UploadForm'
 import { DeleteDocButton } from './DeleteDocButton'
 import { FIN_DOC_TYPE_LABEL, type FinDocumentWithCustomer } from '@/lib/finance/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { FinanceTabs } from '@/components/finance/FinanceTabs'
 
 export const metadata: Metadata = { title: 'Finance — Documents' }
 
 export default async function FinanceDocumentsPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('finance')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('id', user.id).single()
-  if (!profile || !['manager', 'admin'].includes(profile.role)) redirect('/portal/employee')
 
   const [{ data: docsRaw }, { data: customersRaw }] = await Promise.all([
     supabase
@@ -40,6 +36,8 @@ export default async function FinanceDocumentsPage() {
         title="Finance — Documents"
         description="Upload receipts, invoices and statements. Extraction and per-line allocation come next."
       />
+
+      <FinanceTabs />
 
       <UploadForm customers={customers} />
 

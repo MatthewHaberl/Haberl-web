@@ -1,5 +1,5 @@
-import { createClient, getUser } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -38,12 +38,8 @@ export default async function CustomersPage({
   searchParams: Promise<{ status?: string }>
 }) {
   const { status: statusFilter = 'all' } = await searchParams
-  const user = await getUser()
+  await requireSection('customers')
   const supabase = await createClient()
-
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('id', user!.id).single()
-  if (!['manager', 'admin'].includes(profile?.role ?? '')) redirect('/portal/employee/jobs')
 
   const { data } = await supabase
     .from('customers')

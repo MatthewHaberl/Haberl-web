@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { redirect, notFound } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { ArrowLeft, Activity } from 'lucide-react'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { AddSystemForm, type SiteOption, type ExistingSystem, type BrandAccountOption } from '@/components/monitoring/AddSystemForm'
 import type { MonitoringBrand } from '@/lib/monitoring/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
@@ -17,17 +18,8 @@ type SiteRow = {
 
 export default async function EditMonitoringSystemPage({ params }: { params: Promise<{ systemId: string }> }) {
   const { systemId } = await params
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('monitoring')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile || !['manager', 'admin'].includes(profile.role)) redirect('/portal/employee')
 
   // Load the system being edited. Credentials are deliberately NOT selected —
   // they are never sent to the client; the form keeps them blank and the API

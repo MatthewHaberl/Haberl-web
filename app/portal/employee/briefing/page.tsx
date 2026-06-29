@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Send, FileText, Eye, Wallet, Sprout, PackageX, PhoneCall, Sunrise } from 'lucide-react'
@@ -11,15 +11,8 @@ import { PageShell, PageHeader } from '@/components/layout/page'
 export const dynamic = 'force-dynamic'
 
 export default async function BriefingPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('briefing')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('id', user.id).single()
-  if (!profile || !['manager', 'admin'].includes(profile.role)) {
-    redirect('/portal/employee')
-  }
 
   const b = await buildDailyBriefing(supabase)
 

@@ -1,5 +1,5 @@
-import { createClient, getUser } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -33,15 +33,8 @@ export default async function WastageReportPage({
 }: {
   searchParams: Promise<{ period?: string }>
 }) {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('wastage')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('id', user.id).single()
-  if (!profile || !['manager', 'admin'].includes(profile.role)) {
-    redirect('/portal/employee')
-  }
 
   const { period: periodParam } = await searchParams
   const period = PERIODS.find((p) => p.key === periodParam) ?? PERIODS[1]

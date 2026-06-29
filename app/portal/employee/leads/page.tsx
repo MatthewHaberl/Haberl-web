@@ -1,6 +1,6 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { normalizePhone } from '@/lib/customers/phone'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,15 +19,8 @@ export const dynamic = 'force-dynamic'
  * tally so the list stays focused on people who still need a call.
  */
 export default async function LeadsPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('leads')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('id', user.id).single()
-  if (!profile || !['manager', 'admin'].includes(profile.role)) {
-    redirect('/portal/employee')
-  }
 
   const { data: leadRows } = await supabase
     .from('leads')

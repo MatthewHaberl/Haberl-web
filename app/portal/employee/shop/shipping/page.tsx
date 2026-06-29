@@ -1,6 +1,6 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Truck } from 'lucide-react'
 import { ShippingManager } from './ShippingManager'
@@ -10,12 +10,8 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = { title: 'Shipping — Shop' }
 
 export default async function ShippingPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('shop')
   const supabase = await createClient()
-  const { data: profile } = await supabase.from('user_profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') redirect('/portal/employee')
 
   const { data: zones } = await supabase
     .from('shipping_zones')

@@ -1,6 +1,6 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Image as ImageIcon } from 'lucide-react'
 import { ProductImageManager } from './ProductImageManager'
@@ -11,12 +11,8 @@ import type { ProductImage } from '@/types/database'
 export const metadata: Metadata = { title: 'Product Images' }
 
 export default async function ProductImagesPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('shop')
   const supabase = await createClient()
-  const { data: profile } = await supabase.from('user_profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') redirect('/portal/employee')
 
   const { data: images } = await supabase
     .from('product_images')

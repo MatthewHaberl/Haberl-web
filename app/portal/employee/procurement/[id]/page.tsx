@@ -1,19 +1,13 @@
-import { createClient, getUser } from '@/lib/supabase/server'
-import { notFound, redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
+import { notFound } from 'next/navigation'
 import type { PurchaseOrder, PurchaseOrderLine, Supplier } from '@/types/database'
 import { PoDetail } from './PoDetail'
 
 export default async function PurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('procurement')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('id', user.id).single()
-  if (!profile || !['manager', 'admin'].includes(profile.role)) {
-    redirect('/portal/employee')
-  }
 
   const [{ data: po }, { data: lines }] = await Promise.all([
     supabase

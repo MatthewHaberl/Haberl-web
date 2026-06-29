@@ -127,6 +127,9 @@ interface FlowData {
   battPower?: unknown
   gridOrMeterPower?: unknown
   loadOrEpsPower?: unknown
+  homeLoadPower?: unknown   // load on the grid/home side
+  upsLoadPower?: unknown    // load on the backup/EPS side
+  smartLoadPower?: unknown  // load on the smart-load port
   soc?: unknown
   toBat?: boolean    // charging
   batTo?: boolean    // discharging
@@ -226,9 +229,16 @@ export const sunsynkAdapter: BrandAdapter = {
       }
 
       // Magnitudes + directions from the flow snapshot.
-      const invPv   = num(f.pvPower) ?? (sawString ? stringSum : num(input.data?.pac)) ?? 0
-      const battMag = num(f.battPower) ?? 0
-      const gridMag = num(f.gridOrMeterPower) ?? 0
+      // `f.pvPower` is unreliable on some firmwares (it reports 0 while the
+      // strings are producing kilowatts), so trust the per-string sum / input
+      // total first and only fall back to the flow's pvPower.
+      const flowPv  = num(f.pvPower)
+      const invPv   = (sawString && stringSum > 0) ? stringSum : (num(input.data?.pac) || flowPv || 0)
+      // `f.battPower` / `f.gridOrMeterPower` are already signed on some firmwares
+      // (e.g. negative while charging), so take the magnitude and let the
+      // direction flags decide the sign — firmware-independent.
+      const battMag = Math.abs(num(f.battPower) ?? 0)
+      const gridMag = Math.abs(num(f.gridOrMeterPower) ?? 0)
       const charging    = f.toBat  === true
       const discharging = f.batTo  === true
       const importing   = f.gridTo === true
@@ -238,16 +248,19 @@ export const sunsynkAdapter: BrandAdapter = {
       const battSigned = charging ? battMag : discharging ? -battMag : 0
       const gridSigned = importing ? gridMag : exporting ? -gridMag : 0
 
-      // TOTAL household load via energy balance. The system has no load meter,
-      // so this — PV + battery discharge + grid import (minus charge/export) — is
-      // exactly what the Sunsynk app shows. `output.pac` (EPS output) is the
-      // fallback only when the flow snapshot is unavailable.
-      const haveFlow = num(f.pvPower) !== null || num(f.battPower) !== null || num(f.gridOrMeterPower) !== null
-      const invLoad = haveFlow
-        ? Math.max(0, invPv
-            + (discharging ? battMag : 0) - (charging ? battMag : 0)
-            + (importing   ? gridMag : 0) - (exporting ? gridMag : 0))
-        : (num(output.data?.pac) ?? 0)
+      // TOTAL household load. Prefer the flow's own load fields (home + UPS/EPS +
+      // smart load), which the Sunsynk app sums. Fall back to an energy balance
+      // (PV + battery discharge + grid import − charge − export), then to the EPS
+      // output meter when no flow snapshot is available.
+      const flowLoad = (num(f.homeLoadPower) ?? 0) + (num(f.upsLoadPower) ?? 0) + (num(f.smartLoadPower) ?? 0)
+      const haveFlow = flowPv !== null || num(f.battPower) !== null || num(f.gridOrMeterPower) !== null
+      const invLoad = flowLoad > 0
+        ? flowLoad
+        : haveFlow
+          ? Math.max(0, invPv
+              + (discharging ? battMag : 0) - (charging ? battMag : 0)
+              + (importing   ? gridMag : 0) - (exporting ? gridMag : 0))
+          : (num(output.data?.pac) ?? 0)
 
       pvPower      += invPv
       batteryPower += battSigned

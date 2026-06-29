@@ -1,6 +1,6 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, BarChart2 } from 'lucide-react'
 import { RelationshipManager } from './RelationshipManager'
@@ -10,12 +10,8 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = { title: 'Product Relationships — Shop' }
 
 export default async function RelationshipsPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('shop')
   const supabase = await createClient()
-  const { data: profile } = await supabase.from('user_profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') redirect('/portal/employee')
 
   const [{ data: relationships }, { data: products }] = await Promise.all([
     supabase

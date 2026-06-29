@@ -1,6 +1,6 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Percent } from 'lucide-react'
 import { DiscountCodeManager } from './DiscountCodeManager'
@@ -10,12 +10,8 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = { title: 'Discount Codes — Shop' }
 
 export default async function DiscountsPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('shop')
   const supabase = await createClient()
-  const { data: profile } = await supabase.from('user_profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') redirect('/portal/employee')
 
   const { data: codes } = await supabase
     .from('discount_codes')

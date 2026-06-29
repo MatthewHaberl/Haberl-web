@@ -1,5 +1,6 @@
-import { createClient, getUser } from '@/lib/supabase/server'
-import { redirect, notFound } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
+import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -32,13 +33,9 @@ type TimelineItem = { at: string; label: string }
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const user = await getUser()
+  const { role } = await requireSection('customers')
   const supabase = await createClient()
-
-  const { data: profile } = await supabase
-    .from('user_profiles').select('role').eq('id', user!.id).single()
-  if (!['manager', 'admin'].includes(profile?.role ?? '')) redirect('/portal/employee/jobs')
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = role === 'admin'
 
   const { data: customerRow } = await supabase
     .from('customers').select('*').eq('id', id).maybeSingle()

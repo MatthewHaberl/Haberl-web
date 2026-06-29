@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { redirect } from 'next/navigation'
 import { AlertTriangle, Activity, Zap, BatteryCharging, Map, Bell, Settings2, ChevronRight, Clock, Plus, Pencil, KeyRound } from 'lucide-react'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { SystemStatusBadge } from '@/components/monitoring/SystemStatusBadge'
@@ -52,17 +52,8 @@ type SystemRow = {
 }
 
 export default async function MonitoringFleetPage() {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
-
+  await requireSection('monitoring')
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile || !['manager', 'admin'].includes(profile.role)) redirect('/portal/employee')
 
   // Fetch all monitoring systems with their latest reading
   const { data: systems } = await supabase
