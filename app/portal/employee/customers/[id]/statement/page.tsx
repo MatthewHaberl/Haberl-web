@@ -23,11 +23,15 @@ interface Statement {
 }
 
 export default async function CustomerStatementPage({
-  params,
+  params, searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ from?: string; to?: string }>
 }) {
   const { id } = await params
+  const sp = await searchParams
+  const from = sp.from || ''
+  const to = sp.to || ''
   const user = await getUser()
   if (!user) redirect('/auth/login')
 
@@ -45,25 +49,40 @@ export default async function CustomerStatementPage({
     credits: [], debits: [], total_credit: 0, total_debit: 0, credit_count: 0, debit_count: 0,
   }) as Statement
 
-  const net = s.total_debit - s.total_credit // >0 they owe us; <0 we owe them
   const empty = s.credit_count === 0 && s.debit_count === 0
 
-  // Combined chronological ledger (oldest first) with a running balance, and
-  // the period the statement covers. Balance is positive when they owe us.
+  // Every entry on one timeline (oldest first). ISO dates sort lexically;
+  // undated entries go last.
   const merged: (Entry & { kind: 'debit' | 'credit' })[] = [
     ...s.debits.map((e) => ({ ...e, kind: 'debit' as const })),
     ...s.credits.map((e) => ({ ...e, kind: 'credit' as const })),
   ]
-  // ISO dates sort lexically; undated entries go last.
   merged.sort((a, b) => (a.d || '9999-99-99').localeCompare(b.d || '9999-99-99'))
-  let running = 0
-  const ledger: LedgerRow[] = merged.map((e) => {
-    running += e.kind === 'debit' ? e.amt : -e.amt
+  const signed = (e: { kind: 'debit' | 'credit'; amt: number }) => (e.kind === 'debit' ? e.amt : -e.amt)
+
+  // Opening balance = net of everything dated strictly before `from`. The
+  // running total then continues accurately from there for the chosen window.
+  const opening = from ? merged.reduce((t, e) => (e.d && e.d < from ? t + signed(e) : t), 0) : 0
+
+  // Entries inside the window. Undated entries only show when no window is set.
+  const inRange = (e: Entry) => (!from || (!!e.d && e.d >= from)) && (!to || (!!e.d && e.d <= to))
+  const rangeEntries = merged.filter(inRange)
+
+  let running = opening
+  const ledger: LedgerRow[] = rangeEntries.map((e) => {
+    running += signed(e)
     return { ...e, balance: running }
   })
-  const dated = merged.map((e) => e.d).filter(Boolean).sort()
-  const periodFrom = dated[0] ?? null
-  const periodTo = dated[dated.length - 1] ?? null
+  const rangeDebits = rangeEntries.filter((e) => e.kind === 'debit')
+  const rangeCredits = rangeEntries.filter((e) => e.kind === 'credit')
+  const totalDebit = rangeDebits.reduce((t, e) => t + e.amt, 0)
+  const totalCredit = rangeCredits.reduce((t, e) => t + e.amt, 0)
+  const closing = opening + totalDebit - totalCredit // >0 they owe us; <0 we owe them
+  const filtered = !!from || !!to
+
+  const datedInRange = rangeEntries.map((e) => e.d).filter(Boolean).sort()
+  const shownFrom = from || datedInRange[0] || null
+  const shownTo = to || datedInRange[datedInRange.length - 1] || null
 
   return (
     <PageShell width="wide">
@@ -80,24 +99,53 @@ export default async function CustomerStatementPage({
         <ArrowLeft className="h-4 w-4" /> Back to customer
       </Link>
 
-      {periodFrom && periodTo && (
-        <p className="text-sm text-muted-foreground">
-          Statement period:{' '}
-          <span className="font-medium text-foreground">{formatDate(periodFrom)}</span> →{' '}
-          <span className="font-medium text-foreground">{formatDate(periodTo)}</span>
-          {' '}· {ledger.length} entr{ledger.length === 1 ? 'y' : 'ies'}
-        </p>
-      )}
+      {/* Date range selector — opening balance carries everything before "From" */}
+      <Card>
+        <CardContent className="p-4">
+          <form method="GET" className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">From</label>
+              <input type="date" name="from" defaultValue={from}
+                className="h-10 rounded-md border border-border bg-background px-3 text-sm" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">To</label>
+              <input type="date" name="to" defaultValue={to}
+                className="h-10 rounded-md border border-border bg-background px-3 text-sm" />
+            </div>
+            <button type="submit"
+              className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90">
+              Apply
+            </button>
+            {filtered && (
+              <Link href={`/portal/employee/customers/${id}/statement`}
+                className="h-10 rounded-md border border-border px-4 text-sm font-medium leading-10 text-muted-foreground hover:text-foreground">
+                Reset
+              </Link>
+            )}
+            {shownFrom && shownTo && (
+              <span className="ml-auto self-center text-sm text-muted-foreground">
+                {formatDate(shownFrom)} → {formatDate(shownTo)} · {ledger.length} entr{ledger.length === 1 ? 'y' : 'ies'}
+              </span>
+            )}
+          </form>
+        </CardContent>
+      </Card>
 
       {/* Headline */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat label="Charged to them" value={formatCurrency(s.total_debit)} sub={`${s.debit_count} item${s.debit_count === 1 ? '' : 's'}`} tone="out" />
-        <Stat label="In their favour" value={formatCurrency(s.total_credit)} sub={`${s.credit_count} item${s.credit_count === 1 ? '' : 's'}`} tone="in" />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
-          label={net > 0 ? `${customer.full_name} owes us` : net < 0 ? `We owe ${customer.full_name}` : 'Settled'}
-          value={formatCurrency(Math.abs(net))}
+          label={from ? `Opening (before ${formatDate(from)})` : 'Opening balance'}
+          value={formatCurrency(opening)}
+          tone={opening > 0 ? 'out' : opening < 0 ? 'in' : undefined}
+        />
+        <Stat label="Charged to them" value={formatCurrency(totalDebit)} sub={`${rangeDebits.length} item${rangeDebits.length === 1 ? '' : 's'}`} tone="out" />
+        <Stat label="In their favour" value={formatCurrency(totalCredit)} sub={`${rangeCredits.length} item${rangeCredits.length === 1 ? '' : 's'}`} tone="in" />
+        <Stat
+          label={closing > 0 ? `${customer.full_name} owes us` : closing < 0 ? `We owe ${customer.full_name}` : 'Settled'}
+          value={formatCurrency(Math.abs(closing))}
           big
-          tone={net > 0 ? 'out' : 'in'}
+          tone={closing > 0 ? 'out' : 'in'}
         />
       </div>
 
@@ -113,13 +161,24 @@ export default async function CustomerStatementPage({
         </Card>
       )}
 
-      {ledger.length > 0 && <LedgerTable rows={ledger} />}
-
-      {s.debit_count > 0 && (
-        <EntryTable title="Charged to them (owed to us)" icon={Receipt} entries={s.debits} tone="out" />
+      {!empty && rangeEntries.length === 0 && (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            No entries in this date range. Opening and closing balance:{' '}
+            <span className="font-medium text-foreground">{formatCurrency(opening)}</span>.
+          </CardContent>
+        </Card>
       )}
-      {s.credit_count > 0 && (
-        <EntryTable title="In their favour (payments + bills they covered)" icon={Landmark} entries={s.credits} tone="in" />
+
+      {ledger.length > 0 && (
+        <LedgerTable rows={ledger} opening={opening} closing={closing} from={from} />
+      )}
+
+      {rangeDebits.length > 0 && (
+        <EntryTable title="Charged to them (owed to us)" icon={Receipt} entries={rangeDebits} tone="out" />
+      )}
+      {rangeCredits.length > 0 && (
+        <EntryTable title="In their favour (payments + bills they covered)" icon={Landmark} entries={rangeCredits} tone="in" />
       )}
     </PageShell>
   )
@@ -160,7 +219,14 @@ function SourceCell({ e }: { e: Entry }) {
 // Combined chronological ledger: every entry, oldest first, with a running
 // balance (positive = they owe us). Charges and money-in-their-favour share one
 // timeline so the statement reads top-to-bottom like a bank statement.
-function LedgerTable({ rows }: { rows: LedgerRow[] }) {
+function balanceCls(v: number): string {
+  return `whitespace-nowrap px-4 py-2 text-right font-medium tabular-nums ${
+    v > 0 ? 'text-red-600' : v < 0 ? 'text-green-600' : 'text-muted-foreground'
+  }`
+}
+
+function LedgerTable({ rows, opening, closing, from }: { rows: LedgerRow[]; opening: number; closing: number; from: string }) {
+  const showOpening = !!from || opening !== 0
   return (
     <Card>
       <CardContent className="p-0">
@@ -181,6 +247,13 @@ function LedgerTable({ rows }: { rows: LedgerRow[] }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
+              {showOpening && (
+                <tr className="bg-muted/30">
+                  <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{from ? formatDate(from) : '—'}</td>
+                  <td className="px-4 py-2 font-medium" colSpan={4}>Opening balance</td>
+                  <td className={balanceCls(opening)}>{formatCurrency(opening)}</td>
+                </tr>
+              )}
               {rows.map((e, i) => (
                 <tr key={i} className="hover:bg-muted/40">
                   <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{e.d ? formatDate(e.d) : '—'}</td>
@@ -192,14 +265,16 @@ function LedgerTable({ rows }: { rows: LedgerRow[] }) {
                   <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-green-600">
                     {e.kind === 'credit' ? formatCurrency(e.amt) : ''}
                   </td>
-                  <td className={`whitespace-nowrap px-4 py-2 text-right font-medium tabular-nums ${
-                    e.balance > 0 ? 'text-red-600' : e.balance < 0 ? 'text-green-600' : 'text-muted-foreground'
-                  }`}>
-                    {formatCurrency(e.balance)}
-                  </td>
+                  <td className={balanceCls(e.balance)}>{formatCurrency(e.balance)}</td>
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-border bg-muted/30 font-semibold">
+                <td className="px-4 py-2" colSpan={5}>Closing balance</td>
+                <td className={balanceCls(closing)}>{formatCurrency(closing)}</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </CardContent>
