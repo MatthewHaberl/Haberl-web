@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Landmark, Search, Link2, Link2Off, Check } from 'lucide-react'
+import { Landmark, Search, Link2, Link2Off, Check, ExternalLink } from 'lucide-react'
 
 interface Txn {
   id: string
@@ -103,10 +104,23 @@ export function BankMatchFinder({
             </div>
             {linked.map((t) => (
               <div key={t.id} className="flex items-center gap-3 text-sm">
-                <span className="text-muted-foreground">{formatDate(t.txn_date)}</span>
-                <span className="truncate">{t.description}</span>
+                <Link
+                  href={`/portal/employee/finance/bank?focus=${t.id}`}
+                  title="Open this transaction in your bank statement list"
+                  className="flex min-w-0 flex-1 items-center gap-3 hover:underline"
+                >
+                  <span className="whitespace-nowrap text-muted-foreground">{formatDate(t.txn_date)}</span>
+                  <span className="min-w-0 truncate">{t.description}</span>
+                </Link>
                 <Badge variant="outline">{(t.account_label ?? '').replace(/^FNB\s+/, '')}</Badge>
-                <span className="ml-auto font-medium tabular-nums">{formatCurrency(t.amount_cents)}</span>
+                <span className="font-medium tabular-nums">{formatCurrency(t.amount_cents)}</span>
+                <Link
+                  href={`/portal/employee/finance/bank?focus=${t.id}`}
+                  title="View in bank statement"
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-accent hover:underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> View in bank statement
+                </Link>
                 <button type="button" onClick={unlink} disabled={loading}
                   className="inline-flex items-center gap-1 text-muted-foreground hover:text-red-600">
                   <Link2Off className="h-3.5 w-3.5" /> Unlink
