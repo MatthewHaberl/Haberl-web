@@ -15,6 +15,7 @@ import { DocLinesEdit } from './DocLinesEdit'
 import { DocStatus } from './DocStatus'
 import { BankMatchFinder } from './BankMatchFinder'
 import { CombinePages, type CombineCandidate } from './CombinePages'
+import { SwapFile } from './SwapFile'
 
 export const metadata: Metadata = { title: 'Finance — Document' }
 
@@ -216,6 +217,9 @@ export default async function FinanceDocumentPage({
 
       {/* Combine separate scans (page 1 + page 2) into this one invoice */}
       <CombinePages documentId={doc.id} candidates={combineCandidates} />
+
+      {/* Swap just the attached file with another document (details stay put) */}
+      <SwapFile documentId={doc.id} currentFileName={doc.file_name} candidates={combineCandidates} />
 
       {/* Reconcile against the bank statement */}
       <BankMatchFinder documentId={doc.id} hasAllocations={allocations.length > 0} initialLinked={matchedLinked} />
