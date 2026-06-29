@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { normalizePhone } from '@/lib/customers/phone'
@@ -15,10 +15,39 @@ import { UserPlus, Loader2, X, AlertTriangle } from 'lucide-react'
  * Create a customer by hand (a walk-in, a referral, an existing client). No
  * account email is sent — the customer lands as a Prospect until staff press
  * "Send invite" on their page.
+ *
+ * Split into three pieces so the trigger can live in the page header while the
+ * form opens full-width below it:
+ *   - <AddCustomerProvider>  shares the open state
+ *   - <AddCustomerTrigger />  the header button
+ *   - <AddCustomerPanel />    the full-width form
  */
-export function AddCustomerDialog() {
-  const router = useRouter()
+
+const OpenContext = createContext<{ open: boolean; setOpen: (v: boolean) => void } | null>(null)
+
+function useAddCustomer() {
+  const ctx = useContext(OpenContext)
+  if (!ctx) throw new Error('AddCustomer components must be inside <AddCustomerProvider>')
+  return ctx
+}
+
+export function AddCustomerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
+  return <OpenContext.Provider value={{ open, setOpen }}>{children}</OpenContext.Provider>
+}
+
+export function AddCustomerTrigger() {
+  const { open, setOpen } = useAddCustomer()
+  return (
+    <Button variant="accent" size="sm" onClick={() => setOpen(true)} disabled={open}>
+      <UserPlus className="h-4 w-4" /> Add customer
+    </Button>
+  )
+}
+
+export function AddCustomerPanel() {
+  const router = useRouter()
+  const { open, setOpen } = useAddCustomer()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Set when the typed number already belongs to someone. Staff can open that
@@ -36,6 +65,11 @@ export function AddCustomerDialog() {
   function reset() {
     setFullName(''); setEmail(''); setPhone(''); setAddress('')
     setIsBusiness(false); setContactName(''); setNotes(''); setError(null); setDupe(null)
+  }
+
+  function close() {
+    reset()
+    setOpen(false)
   }
 
   /** The actual insert — used by the normal path and by "Add anyway". */
@@ -90,27 +124,21 @@ export function AddCustomerDialog() {
     await insertCustomer()
   }
 
-  if (!open) {
-    return (
-      <Button variant="accent" size="sm" onClick={() => setOpen(true)}>
-        <UserPlus className="h-4 w-4" /> Add customer
-      </Button>
-    )
-  }
+  if (!open) return null
 
   return (
     <Card className="border-accent/40 w-full">
       <CardContent className="pt-4 pb-4">
         <div className="flex items-center justify-between mb-3">
           <p className="font-semibold text-sm">Add a customer</p>
-          <button type="button" onClick={() => { reset(); setOpen(false) }}
+          <button type="button" onClick={close}
             className="text-muted-foreground hover:text-foreground" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <FormField label="Name" htmlFor="customer-name" required>
               <Input id="customer-name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Customer / company name" autoFocus />
             </FormField>
@@ -167,7 +195,7 @@ export function AddCustomerDialog() {
             <Button type="submit" variant="accent" size="sm" disabled={busy}>
               {busy ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</> : <><UserPlus className="h-3.5 w-3.5" /> Add customer</>}
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => { reset(); setOpen(false) }} disabled={busy}>
+            <Button type="button" variant="ghost" size="sm" onClick={close} disabled={busy}>
               Cancel
             </Button>
           </div>

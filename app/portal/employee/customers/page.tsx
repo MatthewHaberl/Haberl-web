@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Users, MapPin, Mail, Phone, Building2, ChevronRight } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { customerAccountStatus, type Customer, type CustomerAccountStatus } from '@/types/database'
-import { AddCustomerDialog } from './AddCustomerDialog'
+import { AddCustomerProvider, AddCustomerTrigger, AddCustomerPanel } from './AddCustomerDialog'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import type { Metadata } from 'next'
 
@@ -57,12 +57,15 @@ export default async function CustomersPage({
 
   return (
     <PageShell width="wide">
+      <AddCustomerProvider>
       <PageHeader
         icon={Users}
         title="Customers"
         description={`${all.length} ${all.length === 1 ? 'customer' : 'customers'} · leads, quotes & registered accounts`}
-        actions={<AddCustomerDialog />}
+        actions={<AddCustomerTrigger />}
       />
+
+      <AddCustomerPanel />
 
       <div className="flex items-center gap-2 flex-wrap">
         {FILTERS.map((f) => {
@@ -152,6 +155,7 @@ export default async function CustomersPage({
           })}
         </div>
       )}
+      </AddCustomerProvider>
     </PageShell>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,8 +14,37 @@ import { MapPinPlus, Loader2, X } from 'lucide-react'
  * never came through the quote→accept flow (e.g. setting one up so it can be
  * attached to monitoring). A site needs a customer (customer_id is NOT NULL),
  * so this lives on the customer's page where that link is implicit.
+ *
+ * Split into three pieces so the trigger can live in the section header while
+ * the form opens full-width below it:
+ *   - <AddSiteProvider>  shares the open state
+ *   - <AddSiteTrigger />  the header button
+ *   - <AddSitePanel />    the full-width form
  */
-export function AddSiteDialog({
+
+const OpenContext = createContext<{ open: boolean; setOpen: (v: boolean) => void } | null>(null)
+
+function useAddSite() {
+  const ctx = useContext(OpenContext)
+  if (!ctx) throw new Error('AddSite components must be inside <AddSiteProvider>')
+  return ctx
+}
+
+export function AddSiteProvider({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return <OpenContext.Provider value={{ open, setOpen }}>{children}</OpenContext.Provider>
+}
+
+export function AddSiteTrigger() {
+  const { open, setOpen } = useAddSite()
+  return (
+    <Button variant="outline" size="sm" onClick={() => setOpen(true)} disabled={open}>
+      <MapPinPlus className="h-4 w-4" /> Add site
+    </Button>
+  )
+}
+
+export function AddSitePanel({
   customerId,
   defaultAddress,
 }: {
@@ -23,7 +52,7 @@ export function AddSiteDialog({
   defaultAddress?: string | null
 }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const { open, setOpen } = useAddSite()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,6 +64,11 @@ export function AddSiteDialog({
   function reset() {
     setName(''); setAddress(defaultAddress ?? ''); setSystemType('Solar PV')
     setSizeKw(''); setError(null)
+  }
+
+  function close() {
+    reset()
+    setOpen(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -65,27 +99,21 @@ export function AddSiteDialog({
     return data
   }
 
-  if (!open) {
-    return (
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <MapPinPlus className="h-4 w-4" /> Add site
-      </Button>
-    )
-  }
+  if (!open) return null
 
   return (
     <Card className="border-accent/40 w-full mb-3">
       <CardContent className="pt-4 pb-4">
         <div className="flex items-center justify-between mb-3">
           <p className="font-semibold text-sm">Add a site</p>
-          <button type="button" onClick={() => { reset(); setOpen(false) }}
+          <button type="button" onClick={close}
             className="text-muted-foreground hover:text-foreground" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <FormField label="Site name" htmlFor="site-name" required>
               <Input id="site-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Home / Main roof / Warehouse" autoFocus />
             </FormField>
@@ -106,7 +134,7 @@ export function AddSiteDialog({
             <Button type="submit" variant="accent" size="sm" disabled={busy}>
               {busy ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</> : <><MapPinPlus className="h-3.5 w-3.5" /> Add site</>}
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => { reset(); setOpen(false) }} disabled={busy}>
+            <Button type="button" variant="ghost" size="sm" onClick={close} disabled={busy}>
               Cancel
             </Button>
           </div>

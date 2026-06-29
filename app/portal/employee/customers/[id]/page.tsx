@@ -10,7 +10,7 @@ import { PageShell, PageHeader } from '@/components/layout/page'
 import { formatDate } from '@/lib/utils'
 import { customerAccountStatus, type Customer } from '@/types/database'
 import { CustomerPanel } from './CustomerPanel'
-import { AddSiteDialog } from './AddSiteDialog'
+import { AddSiteProvider, AddSiteTrigger, AddSitePanel } from './AddSiteDialog'
 import { SiteCard } from './SiteCard'
 import { ArchiveCustomerButton } from './ArchiveCustomerButton'
 import type { Metadata } from 'next'
@@ -156,13 +156,15 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       <CustomerPanel customer={customer} accountStatus={status} />
 
       {/* Sites */}
+      <AddSiteProvider>
       <section>
         <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
             <MapPin className="h-4 w-4" /> Sites ({sites?.length ?? 0})
           </h2>
-          <AddSiteDialog customerId={id} defaultAddress={customer.address} />
+          <AddSiteTrigger />
         </div>
+        <AddSitePanel customerId={id} defaultAddress={customer.address} />
         {!sites?.length ? (
           <p className="text-sm text-muted-foreground">
             No sites yet. A site is created automatically when a quote is accepted — or add one by hand
@@ -176,6 +178,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           </div>
         )}
       </section>
+      </AddSiteProvider>
 
       {/* Quotes */}
       <section>
