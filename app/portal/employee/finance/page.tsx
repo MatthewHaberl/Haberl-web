@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent } from '@/components/ui/card'
@@ -65,12 +66,16 @@ export default async function FinanceDocumentsPage() {
                   {docs.map((d) => (
                     <tr key={d.id} className="hover:bg-muted/40">
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate max-w-[220px]" title={d.file_name ?? ''}>
+                        <Link
+                          href={`/portal/employee/finance/${d.id}`}
+                          className="flex items-center gap-2 min-w-0 text-accent hover:underline"
+                          title="Open simple line-item view"
+                        >
+                          <FileText className="h-4 w-4 shrink-0" />
+                          <span className="truncate max-w-[220px]">
                             {d.file_name ?? d.doc_number ?? 'Document'}
                           </span>
-                        </div>
+                        </Link>
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline">{FIN_DOC_TYPE_LABEL[d.doc_type] ?? d.doc_type}</Badge>

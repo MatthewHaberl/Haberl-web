@@ -125,24 +125,30 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           </span>
         }
         actions={
-          isAdmin && (
-            <div className="flex items-center gap-2">
-              {(deletedDocsCount ?? 0) > 0 && (
-                <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-                  <Link href={`/portal/employee/customers/${customer.id}/deleted`}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Deleted documents
-                    <Badge variant="outline">{deletedDocsCount}</Badge>
-                  </Link>
-                </Button>
-              )}
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/portal/employee/customers/${customer.id}/statement`}>
+                <FileText className="h-3.5 w-3.5" />
+                Statement
+              </Link>
+            </Button>
+            {isAdmin && (deletedDocsCount ?? 0) > 0 && (
+              <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                <Link href={`/portal/employee/customers/${customer.id}/deleted`}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Deleted documents
+                  <Badge variant="outline">{deletedDocsCount}</Badge>
+                </Link>
+              </Button>
+            )}
+            {isAdmin && (
               <ArchiveCustomerButton
                 customerId={customer.id}
                 customerName={customer.full_name}
                 archived={!!customer.archived_at}
               />
-            </div>
-          )
+            )}
+          </div>
         }
       />
 

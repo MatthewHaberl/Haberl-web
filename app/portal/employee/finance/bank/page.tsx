@@ -2,29 +2,17 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { Landmark, ArrowDownLeft, ArrowUpRight, Search } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils'
+import { Landmark, Search } from 'lucide-react'
 import type { Metadata } from 'next'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { FinanceTabs } from '@/components/finance/FinanceTabs'
+import { BankTxnTable, type BankRow } from './BankTxnTable'
 
 export const metadata: Metadata = { title: 'Finance — Bank Statements' }
 export const dynamic = 'force-dynamic'
 
 const PAGE_SIZE = 300
-
-interface BankTxn {
-  id: string
-  account_label: string | null
-  txn_date: string
-  description: string
-  amount_cents: number
-  txn_type: string
-  reconciled: boolean
-  allocated_customer_id: string | null
-  notes: string | null
-}
 
 interface AccountAgg {
   label: string
@@ -44,14 +32,6 @@ interface Report {
   accounts: AccountAgg[]
 }
 
-const TXN_TYPE_LABEL: Record<string, string> = {
-  unallocated: 'Unallocated',
-  customer_payment: 'Customer payment',
-  supplier_payment: 'Supplier payment',
-  company_expense: 'Company expense',
-  transfer: 'Transfer',
-  other: 'Other',
-}
 
 type SP = {
   account?: string
@@ -109,10 +89,10 @@ export default async function BankStatementsPage({
     total_count: 0, money_in: 0, money_out: 0, net: 0, min_date: null, max_date: null, accounts: [],
   }) as Report
 
-  // Paginated row listing for the table.
+  // Paginated row listing for the table, plus the customer list for the picker.
   let rowQuery = supabase
     .from('bank_transactions')
-    .select('id, account_label, txn_date, description, amount_cents, txn_type, reconciled, allocated_customer_id, notes')
+    .select('id, account_label, txn_date, description, amount_cents, txn_type, allocated_customer_id, allocated:customers!allocated_customer_id(id, full_name)')
     .order('txn_date', { ascending: sort === 'asc' })
     .order('id', { ascending: true })
     .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
@@ -124,8 +104,25 @@ export default async function BankStatementsPage({
   if (dir === 'in') rowQuery = rowQuery.gt('amount_cents', 0)
   if (dir === 'out') rowQuery = rowQuery.lt('amount_cents', 0)
 
-  const { data: rowsRaw } = await rowQuery
-  const rows = (rowsRaw ?? []) as BankTxn[]
+  const [{ data: rowsRaw }, { data: customersRaw }] = await Promise.all([
+    rowQuery,
+    supabase.from('customers').select('id, full_name').order('full_name'),
+  ])
+
+  type RawRow = {
+    id: string; account_label: string | null; txn_date: string; description: string
+    amount_cents: number; txn_type: string; allocated_customer_id: string | null
+    allocated?: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+  }
+  const rows: BankRow[] = ((rowsRaw ?? []) as unknown as RawRow[]).map((r) => {
+    const a = Array.isArray(r.allocated) ? r.allocated[0] : r.allocated
+    return {
+      id: r.id, account_label: r.account_label, txn_date: r.txn_date, description: r.description,
+      amount_cents: r.amount_cents, txn_type: r.txn_type, allocated_customer_id: r.allocated_customer_id,
+      allocated_name: a?.full_name ?? null,
+    }
+  })
+  const customers = (customersRaw ?? []) as { id: string; full_name: string }[]
 
   const base: SP = { account, q, from, to, dir, sort }
   const totalPages = Math.max(1, Math.ceil(report.total_count / PAGE_SIZE))
@@ -231,65 +228,21 @@ export default async function BankStatementsPage({
         <SummaryStat label="Net" value={formatCurrency(report.net)} tone={report.net < 0 ? 'out' : 'in'} />
       </div>
 
-      {/* Transactions table */}
+      {/* Transactions table with selection + allocation */}
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="p-3">
           {rows.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
               No transactions match this filter.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">
-                      <Link href={buildHref(base, { sort: sort === 'asc' ? 'desc' : 'asc' })} className="hover:text-foreground">
-                        Date {sort === 'asc' ? '↑' : '↓'}
-                      </Link>
-                    </th>
-                    {account === 'all' && <th className="px-4 py-3 font-medium">Account</th>}
-                    <th className="px-4 py-3 font-medium">Description</th>
-                    <th className="px-4 py-3 font-medium">Type</th>
-                    <th className="px-4 py-3 text-right font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {rows.map((t) => (
-                    <tr key={t.id} className="hover:bg-muted/40">
-                      <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
-                        {formatDate(t.txn_date)}
-                      </td>
-                      {account === 'all' && (
-                        <td className="px-4 py-2.5">
-                          <span className="text-xs text-muted-foreground">{shortAccount(t.account_label)}</span>
-                        </td>
-                      )}
-                      <td className="px-4 py-2.5">
-                        <span className="block max-w-[420px] truncate" title={t.description}>
-                          {t.description || <span className="text-muted-foreground">—</span>}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {t.txn_type !== 'unallocated' && (
-                          <Badge variant="outline">{TXN_TYPE_LABEL[t.txn_type] ?? t.txn_type}</Badge>
-                        )}
-                      </td>
-                      <td className={`whitespace-nowrap px-4 py-2.5 text-right font-medium tabular-nums ${
-                        t.amount_cents < 0 ? 'text-red-600' : 'text-green-600'
-                      }`}>
-                        <span className="inline-flex items-center justify-end gap-1">
-                          {t.amount_cents < 0
-                            ? <ArrowUpRight className="h-3.5 w-3.5" />
-                            : <ArrowDownLeft className="h-3.5 w-3.5" />}
-                          {formatCurrency(t.amount_cents)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <BankTxnTable
+              rows={rows}
+              customers={customers}
+              showAccount={account === 'all'}
+              sort={sort}
+              sortHref={buildHref(base, { sort: sort === 'asc' ? 'desc' : 'asc' })}
+            />
           )}
         </CardContent>
       </Card>
@@ -332,10 +285,4 @@ function SummaryStat({ label, value, tone }: { label: string; value: string; ton
       </div>
     </div>
   )
-}
-
-// "FNB Fusion Premier (cheque)" → "Fusion Premier"; keeps the table compact.
-function shortAccount(label: string | null): string {
-  if (!label) return '—'
-  return label.replace(/^FNB\s+/, '').replace(/\s*\(.*\)$/, '')
 }
