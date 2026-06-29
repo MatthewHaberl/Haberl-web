@@ -34,7 +34,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.redirect(signed.signedUrl)
 }
 
-const DOC_TYPES = new Set(['supplier_invoice', 'receipt', 'sales_invoice', 'credit_note', 'bank_statement', 'other'])
+const DOC_TYPES = new Set(['supplier_invoice', 'receipt', 'sales_invoice', 'pro_forma', 'credit_note', 'bank_statement', 'other'])
 
 /** Edit the document header fields (fix an incorrect import). Manager/admin only. */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

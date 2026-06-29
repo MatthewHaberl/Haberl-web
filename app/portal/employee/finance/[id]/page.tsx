@@ -6,7 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDate } from '@/lib/utils'
 import { Receipt, ArrowLeft, AlertTriangle, Users, ChevronLeft, ChevronRight, Layers } from 'lucide-react'
 import type { Metadata } from 'next'
-import { FIN_DOC_TYPE_LABEL, COMBINED_MARKER_RE, parseCombinedPages, type FinDocument, type FinLineItem } from '@/lib/finance/types'
+import { FIN_DOC_TYPE_LABEL, COMBINED_MARKER_RE, parseCombinedPages, type FinDocType, type FinDocument, type FinLineItem } from '@/lib/finance/types'
+import { findSimilarTo, SIMILAR_DATE_DAYS, type DocLike } from '@/lib/finance/similar'
+import { SimilarDocsWarning, type SimilarDocVM } from './SimilarDocsWarning'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { DocAllocations, type DocAllocation } from './DocAllocations'
 import { DocViewer } from './DocViewer'
@@ -91,6 +93,39 @@ export default async function FinanceDocumentPage({
     .filter((f) => !COMBINED_MARKER_RE.test(f))
   const hasWarning = flags.some((f) => f.startsWith('⚠') || /duplicate|not a purchase|not a tax|statement|low confidence/i.test(f))
 
+  // Possible duplicate / double-billing detection: other documents that look
+  // like the same purchase (same customer or supplier, close date, total within
+  // tolerance). See lib/finance/similar.
+  let similarDocs: SimilarDocVM[] = []
+  if (doc.doc_date && doc.total_cents) {
+    const win = (days: number) => {
+      const d = new Date(`${doc.doc_date}T00:00:00Z`)
+      d.setUTCDate(d.getUTCDate() + days)
+      return d.toISOString().slice(0, 10)
+    }
+    const { data: poolRaw } = await supabase
+      .from('fin_documents')
+      .select('id, doc_type, supplier_name, customer_id, doc_date, total_cents, file_name')
+      .neq('id', id)
+      .neq('doc_type', 'bank_statement')
+      .gte('doc_date', win(-SIMILAR_DATE_DAYS))
+      .lte('doc_date', win(SIMILAR_DATE_DAYS))
+      .limit(200)
+    const matches = findSimilarTo(
+      { id, doc_type: doc.doc_type, supplier_name: doc.supplier_name, customer_id: doc.customer_id, doc_date: doc.doc_date, total_cents: doc.total_cents },
+      (poolRaw ?? []) as unknown as (DocLike & { file_name: string | null })[],
+    )
+    if (matches.length > 0) {
+      const { data: allocedRaw } = await supabase
+        .from('fin_allocations').select('document_id').in('document_id', matches.map((m) => m.id))
+      const allocated = new Set((allocedRaw ?? []).map((r: { document_id: string }) => r.document_id))
+      similarDocs = matches.map((m) => ({
+        id: m.id, file_name: m.file_name, doc_type: m.doc_type as FinDocType,
+        doc_date: m.doc_date, total_cents: m.total_cents, allocated: allocated.has(m.id),
+      }))
+    }
+  }
+
   const ext = (doc.file_name ?? '').split('.').pop()?.toLowerCase() ?? ''
   const mime = doc.mime_type ?? ''
   const previewKind: 'pdf' | 'image' | 'other' =
@@ -143,6 +178,9 @@ export default async function FinanceDocumentPage({
           <DocStatus documentId={doc.id} status={status} />
         </div>
       </div>
+
+      {/* Double-billing guard — similar pro forma / invoice nearby */}
+      <SimilarDocsWarning docs={similarDocs} thisAllocated={allocations.length > 0} />
 
       <DocViewer
         previewUrl={`/api/finance/documents/${doc.id}`}

@@ -6,7 +6,7 @@ export const runtime = 'nodejs'
 
 const MAX_BYTES = 25 * 1024 * 1024
 const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'pdf', 'csv', 'xls', 'xlsx'])
-const DOC_TYPES = new Set(['supplier_invoice', 'receipt', 'sales_invoice', 'credit_note', 'bank_statement', 'other'])
+const DOC_TYPES = new Set(['supplier_invoice', 'receipt', 'sales_invoice', 'pro_forma', 'credit_note', 'bank_statement', 'other'])
 
 /** Upload a financial document into the private financial-docs bucket. Manager/admin only. */
 export async function POST(req: Request) {
