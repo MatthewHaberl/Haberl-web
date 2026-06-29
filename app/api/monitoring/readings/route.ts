@@ -6,7 +6,9 @@ import { createClient, getUser } from '@/lib/supabase/server'
  * ?systemId=...&latest=true        → single latest reading
  * ?systemId=...&hours=24           → last N hours of readings (rolling window)
  * ?systemId=...&day=2026-03-01     → one SAST calendar day of readings
- * ?systemId=...&dailyTotals=1&days=7 → per-day kWh totals over the last N SAST days
+ * ?systemId=...&days=7&end=2026-03-07 → readings for an N-day SAST window ending on `end`
+ * ?systemId=...&dailyTotals=1&days=7&end=... → per-day kWh totals for that window
+ * All multi-row modes paginate past PostgREST's ~1,000-row response cap.
  */
 
 // Haberl's fleet is all South Africa: SAST is a fixed UTC+02:00, no DST.
@@ -15,6 +17,61 @@ const SAST_MS = 2 * 60 * 60 * 1000
 /** SAST calendar-day string (YYYY-MM-DD) for a UTC instant. */
 function sastDay(ms: number): string {
   return new Date(ms + SAST_MS).toISOString().slice(0, 10)
+}
+
+/** UTC instant of SAST 00:00 on the given date (or today when null/invalid). */
+function sastMidnightUtc(dateStr: string | null): number {
+  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return Date.parse(`${dateStr}T00:00:00+02:00`)
+  }
+  const nowSast = new Date(Date.now() + SAST_MS)
+  return Date.UTC(nowSast.getUTCFullYear(), nowSast.getUTCMonth(), nowSast.getUTCDate()) - SAST_MS
+}
+
+/** [since, until) covering `days` full SAST days ending on `end` (default today). */
+function windowFromDaysEnd(days: number, end: string | null): { since: string; until: string } {
+  const endMidnight = sastMidnightUtc(end)
+  return {
+    since: new Date(endMidnight - (days - 1) * 86_400_000).toISOString(),
+    until: new Date(endMidnight + 86_400_000).toISOString(),
+  }
+}
+
+type ReadingsClient = Awaited<ReturnType<typeof createClient>>
+
+/**
+ * Fetch every reading in [since, until) by paging through `.range()`.
+ * PostgREST caps a single response (~1,000 rows on this project), so a 30-day
+ * window (~8,640 rows at 5-min resolution) must be paginated, not just `.limit()`-ed.
+ * Advancing by the actual page length is safe whatever the server cap is.
+ */
+async function fetchAllReadings(
+  supabase: ReadingsClient,
+  systemId: string,
+  columns: string,
+  since: string,
+  until: string | null,
+): Promise<Record<string, unknown>[]> {
+  const PAGE = 1000
+  const all: Record<string, unknown>[] = []
+  let from = 0
+  for (;;) {
+    let q = supabase
+      .from('monitoring_readings')
+      .select(columns)
+      .eq('system_id', systemId)
+      .gte('recorded_at', since)
+      .order('recorded_at', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (until) q = q.lt('recorded_at', until)
+    const { data, error } = await q
+    if (error) throw new Error(error.message)
+    const rows = (data ?? []) as unknown as Record<string, unknown>[]
+    all.push(...rows)
+    if (rows.length === 0 || all.length >= 200_000) break
+    from += rows.length
+  }
+  return all
 }
 
 interface AggReading {
@@ -116,44 +173,46 @@ export async function GET(req: NextRequest) {
   // ── Per-day kWh totals (bar chart) ────────────────────────────────────
   if (searchParams.get('dailyTotals')) {
     const days = Math.min(Math.max(parseInt(searchParams.get('days') ?? '7', 10) || 7, 1), 90)
-    // Start at SAST midnight, `days` calendar days ago.
-    const nowSast = new Date(Date.now() + SAST_MS)
-    const todayStartUtc = Date.UTC(nowSast.getUTCFullYear(), nowSast.getUTCMonth(), nowSast.getUTCDate()) - SAST_MS
-    const since = new Date(todayStartUtc - (days - 1) * 86_400_000).toISOString()
-
-    const { data, error } = await supabase
-      .from('monitoring_readings')
-      .select('recorded_at, pv_power_w, load_power_w, grid_power_w, battery_power_w')
-      .eq('system_id', systemId)
-      .gte('recorded_at', since)
-      .order('recorded_at', { ascending: true })
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json(dailyTotals((data ?? []) as AggReading[]))
+    const { since, until } = windowFromDaysEnd(days, searchParams.get('end'))
+    try {
+      const rows = await fetchAllReadings(
+        supabase, systemId,
+        'recorded_at, pv_power_w, load_power_w, grid_power_w, battery_power_w',
+        since, until,
+      )
+      return NextResponse.json(dailyTotals(rows as unknown as AggReading[]))
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
+    }
   }
 
-  // ── One SAST calendar day, or a rolling N-hour window ─────────────────
+  // ── A single SAST day, an N-day SAST window, or a rolling N-hour window ─
   const day = searchParams.get('day')
+  const daysParam = searchParams.get('days')
   let since: string
   let until: string | null = null
   if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
-    const start = Date.parse(`${day}T00:00:00+02:00`)
+    const start = sastMidnightUtc(day)
     since = new Date(start).toISOString()
     until = new Date(start + 86_400_000).toISOString()
+  } else if (daysParam) {
+    const n = Math.min(Math.max(parseInt(daysParam, 10) || 1, 1), 90)
+    const w = windowFromDaysEnd(n, searchParams.get('end'))
+    since = w.since
+    until = w.until
   } else {
     const hours = parseInt(searchParams.get('hours') ?? '24', 10)
     since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
   }
 
-  let q = supabase
-    .from('monitoring_readings')
-    .select('id, recorded_at, pv_power_w, battery_power_w, grid_power_w, load_power_w, battery_soc_pct, device_state')
-    .eq('system_id', systemId)
-    .gte('recorded_at', since)
-    .order('recorded_at', { ascending: true })
-  if (until) q = q.lt('recorded_at', until)
-
-  const { data, error } = await q
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data ?? [])
+  try {
+    const rows = await fetchAllReadings(
+      supabase, systemId,
+      'id, recorded_at, pv_power_w, battery_power_w, grid_power_w, load_power_w, battery_soc_pct, device_state',
+      since, until,
+    )
+    return NextResponse.json(rows)
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
+  }
 }

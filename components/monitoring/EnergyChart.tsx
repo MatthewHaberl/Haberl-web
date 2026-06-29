@@ -3,9 +3,12 @@
 import { useEffect, useState } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  ResponsiveContainer, Legend, Brush,
 } from 'recharts'
-import { ChevronLeft, ChevronRight, LineChart as LineIcon, BarChart3 } from 'lucide-react'
+import {
+  ChevronLeft, ChevronRight, LineChart as LineIcon, BarChart3,
+  Maximize2, Minimize2,
+} from 'lucide-react'
 
 interface Reading {
   recorded_at: string
@@ -13,6 +16,7 @@ interface Reading {
   battery_power_w: number | null
   grid_power_w: number | null
   load_power_w: number | null
+  battery_soc_pct?: number | null
 }
 
 interface ChartPoint {
@@ -21,6 +25,7 @@ interface ChartPoint {
   battery: number
   grid: number
   load: number
+  soc: number | null
 }
 
 interface DailyTotal {
@@ -33,8 +38,9 @@ interface DailyTotal {
   battery_discharge_kwh: number
 }
 
-// Minimal shape of the recharts mouse-state we read (avoids importing internals).
+// Minimal shapes of the recharts callback payloads we read (avoids internals).
 interface ChartMouseState { activeCoordinate?: { x: number; y: number } }
+interface LegendPayload { dataKey?: unknown }
 
 const SAST_MS = 2 * 60 * 60 * 1000
 /** Today's date in SAST (the fleet's timezone), YYYY-MM-DD — browser-tz-independent. */
@@ -45,6 +51,8 @@ function addDays(day: string, delta: number) {
   d.setUTCDate(d.getUTCDate() + delta)
   return d.toISOString().slice(0, 10)
 }
+/** Never let a YYYY-MM-DD exceed `max` (string compare is valid for ISO dates). */
+function clampMax(day: string, max: string) { return day > max ? max : day }
 
 function formatTime(iso: string, hours: number) {
   const d = new Date(iso)
@@ -71,6 +79,17 @@ const RANGES: { label: string; hours: number }[] = [
   { label: '30d', hours: 24 * 30 },
 ]
 
+const SIZES = { S: 240, M: 380, L: 560 } as const
+type SizeKey = keyof typeof SIZES
+
+const LINE_SERIES: { key: string; name: string; color: string; axis: 'left' | 'right'; fill: string; dash?: string }[] = [
+  { key: 'solar',   name: 'Solar',   color: '#eab308', axis: 'left',  fill: 'url(#solar)' },
+  { key: 'load',    name: 'Load',    color: '#a855f7', axis: 'left',  fill: 'url(#load)' },
+  { key: 'battery', name: 'Battery', color: '#22c55e', axis: 'left',  fill: 'none', dash: '4 2' },
+  { key: 'grid',    name: 'Grid',    color: '#3b82f6', axis: 'left',  fill: 'none', dash: '4 2' },
+  { key: 'soc',     name: 'SOC',     color: '#06b6d4', axis: 'right', fill: 'none' },
+]
+
 const BAR_SERIES: { key: keyof Omit<DailyTotal, 'day'>; name: string; color: string }[] = [
   { key: 'production_kwh',        name: 'Production',     color: '#eab308' },
   { key: 'consumption_kwh',       name: 'Consumption',   color: '#a855f7' },
@@ -83,36 +102,60 @@ const BAR_SERIES: { key: keyof Omit<DailyTotal, 'day'>; name: string; color: str
 export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
   const [hours, setHours] = useState(initialHours)
   const [view, setView] = useState<'line' | 'bar'>('line')
-  const [day, setDay] = useState(todaySast)
+  const [anchor, setAnchor] = useState(todaySast)  // 24h: the day; 7d/30d: window end day
   const [data, setData] = useState<ChartPoint[]>([])
   const [daily, setDaily] = useState<DailyTotal[]>([])
   const [loading, setLoading] = useState(true)
   const [tipPos, setTipPos] = useState<{ x: number; y: number } | undefined>(undefined)
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
+  const [size, setSize] = useState<SizeKey>('M')
+  const [fullscreen, setFullscreen] = useState(false)
 
   const today = todaySast()
-  const isToday = day === today
+  const windowDays = Math.round(hours / 24)
+  const stepDays = hours === 24 ? 1 : windowDays
+  const atToday = anchor === today
   const showBars = hours > 24 && view === 'bar'
 
-  // Switch range: pick a sensible default view and reset the 24h day.
+  // Switch range: sensible default view, reset window to "latest".
   function selectRange(h: number) {
     setHours(h)
     setView(h >= 24 * 30 ? 'bar' : 'line')
-    setDay(today)
+    setAnchor(today)
   }
+
+  function toggleSeries(key: string) {
+    if (!key) return
+    setHidden((h) => {
+      const next = new Set(h)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  // Exit fullscreen on Escape.
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
 
   useEffect(() => {
     setLoading(true)
     if (showBars) {
-      fetch(`/api/monitoring/readings?systemId=${systemId}&dailyTotals=1&days=${Math.round(hours / 24)}`)
+      fetch(`/api/monitoring/readings?systemId=${systemId}&dailyTotals=1&days=${windowDays}&end=${anchor}`)
         .then((r) => r.json())
         .then((d: DailyTotal[]) => setDaily(Array.isArray(d) ? d : []))
         .finally(() => setLoading(false))
       return
     }
-    // Line view. For 24h, a past day uses ?day=; today keeps the rolling window.
-    const qs = hours === 24 && !isToday
-      ? `day=${day}`
-      : `hours=${hours}`
+    // Line view. 24h "today" keeps the live rolling window; otherwise anchor a
+    // single day (24h) or an N-day window ending on `anchor` (7d/30d).
+    const qs = hours === 24
+      ? (atToday ? `hours=24` : `day=${anchor}`)
+      : `days=${windowDays}&end=${anchor}`
     fetch(`/api/monitoring/readings?systemId=${systemId}&${qs}`)
       .then((r) => r.json())
       .then((readings: Reading[]) => {
@@ -123,11 +166,12 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
             battery: toW(r.battery_power_w),
             grid:    toW(r.grid_power_w),
             load:    toW(r.load_power_w),
+            soc:     r.battery_soc_pct ?? null,
           }))
         )
       })
       .finally(() => setLoading(false))
-  }, [systemId, hours, view, day, isToday, showBars])
+  }, [systemId, hours, view, anchor, atToday, showBars, windowDays])
 
   // ── Controls row ───────────────────────────────────────────────────────
   const rangeButtons = (
@@ -146,23 +190,23 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
     </div>
   )
 
-  const dateControls = hours === 24 && (
+  const dateControls = (
     <div className="flex items-center gap-1">
       <button
-        type="button" aria-label="Previous day"
-        onClick={() => setDay((d) => addDays(d, -1))}
+        type="button" aria-label="Earlier"
+        onClick={() => setAnchor((a) => addDays(a, -stepDays))}
         className="rounded-md border border-border p-1 hover:bg-muted"
       >
         <ChevronLeft className="h-4 w-4" />
       </button>
       <input
-        type="date" value={day} max={today}
-        onChange={(e) => { if (e.target.value) setDay(e.target.value) }}
+        type="date" value={anchor} max={today}
+        onChange={(e) => { if (e.target.value) setAnchor(clampMax(e.target.value, today)) }}
         className="h-8 rounded-md border border-border bg-background px-2 text-xs"
       />
       <button
-        type="button" aria-label="Next day" disabled={isToday}
-        onClick={() => setDay((d) => addDays(d, 1))}
+        type="button" aria-label="Later" disabled={atToday}
+        onClick={() => setAnchor((a) => clampMax(addDays(a, stepDays), today))}
         className="rounded-md border border-border p-1 hover:bg-muted disabled:opacity-40"
       >
         <ChevronRight className="h-4 w-4" />
@@ -191,33 +235,42 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
     </div>
   )
 
+  const sizeControl = !fullscreen && (
+    <div className="flex gap-1">
+      {(Object.keys(SIZES) as SizeKey[]).map((s) => (
+        <button
+          key={s} type="button" onClick={() => setSize(s)}
+          className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+            size === s ? 'bg-foreground text-background' : 'border border-border hover:bg-muted'
+          }`}
+        >
+          {s}
+        </button>
+      ))}
+    </div>
+  )
+
+  const fullscreenButton = (
+    <button
+      type="button" aria-label="Toggle fullscreen"
+      onClick={() => setFullscreen((f) => !f)}
+      className="rounded-md border border-border p-1.5 hover:bg-muted"
+    >
+      {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+    </button>
+  )
+
   const controls = (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
       {rangeButtons}
       <div className="flex flex-wrap items-center gap-2">
         {dateControls}
         {viewToggle}
+        {sizeControl}
+        {fullscreenButton}
       </div>
     </div>
   )
-
-  if (loading) {
-    return <>{controls}<div className="flex h-48 items-center justify-center text-sm text-muted-foreground">Loading chart…</div></>
-  }
-
-  const empty = showBars ? daily.length === 0 : data.length === 0
-  if (empty) {
-    return (
-      <>
-        {controls}
-        <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
-          {hours === 24 && !isToday
-            ? `No readings for ${formatDay(day)}.`
-            : 'No readings in this window — import history below to fill it in.'}
-        </div>
-      </>
-    )
-  }
 
   // Make the tooltip follow the cursor on both axes (x snaps to the point, y to
   // the pointer) so it doesn't stay pinned under the large filled areas.
@@ -229,65 +282,106 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
   const tooltipCommon = {
     position: tipPos,
     allowEscapeViewBox: { x: false as const, y: true as const },
-    contentStyle: { background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: 12 },
+    // Translucent + blurred so the labels stay readable but you can still see
+    // the graph trending behind the box.
+    contentStyle: {
+      background: 'hsl(var(--card) / 0.78)',
+      backdropFilter: 'blur(3px)',
+      WebkitBackdropFilter: 'blur(3px)',
+      border: '1px solid hsl(var(--border) / 0.6)',
+      borderRadius: '8px',
+      fontSize: 12,
+      boxShadow: '0 2px 10px hsl(var(--foreground) / 0.12)',
+    },
     wrapperStyle: { zIndex: 50 },
   }
 
-  // ── Bar view: per-day kWh totals ───────────────────────────────────────
-  if (showBars) {
-    return (
-      <>
-        {controls}
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={daily} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onMouseMove={trackTip} onMouseLeave={clearTip}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            <XAxis dataKey="day" tickFormatter={formatDay} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10 }} unit=" kWh" width={56} />
-            <Tooltip
-              {...tooltipCommon}
-              labelFormatter={(d) => formatDay(String(d))}
-              formatter={(val, name) => [`${Number(val).toLocaleString('en-ZA')} kWh`, name]}
-            />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            {BAR_SERIES.map((s) => (
-              <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={[2, 2, 0, 0]} />
-            ))}
-          </BarChart>
-        </ResponsiveContainer>
-      </>
-    )
+  // Click a legend entry to hide/show that series; hidden entries dim.
+  const legendCommon = {
+    wrapperStyle: { fontSize: 12, cursor: 'pointer' },
+    onClick: (o: LegendPayload) => toggleSeries(String(o?.dataKey ?? '')),
+    formatter: (value: string, entry: unknown) => {
+      const key = String((entry as LegendPayload)?.dataKey ?? '')
+      return <span style={{ opacity: hidden.has(key) ? 0.35 : 1 }}>{value}</span>
+    },
   }
 
-  // ── Line view: 5-minute power flow ─────────────────────────────────────
-  return (
-    <>
-    {controls}
-    <ResponsiveContainer width="100%" height={240}>
-      <AreaChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onMouseMove={trackTip} onMouseLeave={clearTip}>
-        <defs>
-          <linearGradient id="solar"   x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor="#eab308" stopOpacity={0.22} />
-            <stop offset="95%" stopColor="#eab308" stopOpacity={0}   />
-          </linearGradient>
-          <linearGradient id="load"    x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor="#a855f7" stopOpacity={0.18} />
-            <stop offset="95%" stopColor="#a855f7" stopOpacity={0}   />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-        <YAxis tick={{ fontSize: 10 }} unit=" W" tickFormatter={(v) => Number(v).toLocaleString('en-ZA')} width={56} />
-        <Tooltip
-          {...tooltipCommon}
-          formatter={(val, name) => [`${Number(val).toLocaleString('en-ZA')} W`, name]}
+  const chartHeight = fullscreen ? ('100%' as const) : SIZES[size]
+  const empty = showBars ? daily.length === 0 : data.length === 0
+  const emptyMsg = !atToday
+    ? (hours === 24 ? `No readings for ${formatDay(anchor)}.` : `No readings for this ${windowDays}-day window.`)
+    : 'No readings in this window — import history below to fill it in.'
+
+  const barChart = (
+    <BarChart data={daily} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onMouseMove={trackTip} onMouseLeave={clearTip}>
+      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+      <XAxis dataKey="day" tickFormatter={formatDay} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+      <YAxis tick={{ fontSize: 10 }} unit=" kWh" width={56} />
+      <Tooltip
+        {...tooltipCommon}
+        labelFormatter={(d) => formatDay(String(d))}
+        formatter={(val, name) => [`${Number(val).toLocaleString('en-ZA')} kWh`, name]}
+      />
+      <Legend {...legendCommon} />
+      {BAR_SERIES.map((s) => (
+        <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={[2, 2, 0, 0]} hide={hidden.has(s.key)} />
+      ))}
+      <Brush dataKey="day" height={16} travellerWidth={8} stroke="hsl(var(--muted-foreground))" tickFormatter={formatDay} />
+    </BarChart>
+  )
+
+  const lineChart = (
+    <AreaChart data={data} margin={{ top: 4, right: 4, left: -16, bottom: 0 }} onMouseMove={trackTip} onMouseLeave={clearTip}>
+      <defs>
+        <linearGradient id="solar" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%"  stopColor="#eab308" stopOpacity={0.22} />
+          <stop offset="95%" stopColor="#eab308" stopOpacity={0} />
+        </linearGradient>
+        <linearGradient id="load" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%"  stopColor="#a855f7" stopOpacity={0.18} />
+          <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+      <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+      <YAxis yAxisId="left" tick={{ fontSize: 10 }} unit=" W" tickFormatter={(v) => Number(v).toLocaleString('en-ZA')} width={56} />
+      <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 10 }} width={40} />
+      <Tooltip
+        {...tooltipCommon}
+        formatter={(val, name) =>
+          name === 'SOC'
+            ? [`${Number(val).toLocaleString('en-ZA')}%`, name]
+            : [`${Number(val).toLocaleString('en-ZA')} W`, name]
+        }
+      />
+      <Legend {...legendCommon} />
+      {LINE_SERIES.map((s) => (
+        <Area
+          key={s.key} yAxisId={s.axis} type="monotone" dataKey={s.key} name={s.name}
+          stroke={s.color} fill={s.fill} strokeWidth={1.5} dot={false}
+          strokeDasharray={s.dash} connectNulls={s.key === 'soc'} hide={hidden.has(s.key)}
         />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Area type="monotone" dataKey="solar"   name="Solar"   stroke="#eab308" fill="url(#solar)"   strokeWidth={1.5} dot={false} />
-        <Area type="monotone" dataKey="load"    name="Load"    stroke="#a855f7" fill="url(#load)"    strokeWidth={1.5} dot={false} />
-        <Area type="monotone" dataKey="battery" name="Battery" stroke="#22c55e" fill="none"          strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-        <Area type="monotone" dataKey="grid"    name="Grid"    stroke="#3b82f6" fill="none"          strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-      </AreaChart>
-    </ResponsiveContainer>
-    </>
+      ))}
+      <Brush dataKey="time" height={18} travellerWidth={8} stroke="hsl(var(--muted-foreground))" />
+    </AreaChart>
+  )
+
+  return (
+    <div className={fullscreen ? 'fixed inset-0 z-[60] flex flex-col gap-1 bg-background p-4' : ''}>
+      {controls}
+      {loading ? (
+        <div className="flex h-48 flex-1 items-center justify-center text-sm text-muted-foreground">Loading chart…</div>
+      ) : empty ? (
+        <div className="flex h-48 flex-1 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
+          {emptyMsg}
+        </div>
+      ) : (
+        <div className={fullscreen ? 'min-h-0 flex-1' : ''}>
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            {showBars ? barChart : lineChart}
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
   )
 }

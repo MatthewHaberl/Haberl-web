@@ -255,5 +255,44 @@ async function processSingleSystem(
   // Run alert checks for this system
   await runAlertEngine(supabase, system.id, reading)
 
+  // Once a day, also snapshot the inverter's settings so a config history
+  // accrues automatically (not only on manual "refresh from cloud"). Reads all
+  // settings in one adapter call. Best-effort: a settings failure (unsupported
+  // brand / creds / transient) must never affect the reading just stored.
+  await maybeCaptureSettings(supabase, system, credentials).catch(() => {})
+
   return { systemId: system.id, brand: system.brand, ok: true }
+}
+
+const SETTINGS_CAPTURE_INTERVAL_MS = 20 * 60 * 60 * 1000
+
+/** Capture a settings snapshot if the brand supports it and none is recent (<~20h). */
+async function maybeCaptureSettings(
+  supabase: AnySupabaseClient,
+  system: MonitoringSystem,
+  credentials: BrandCredentials,
+): Promise<void> {
+  const adapter = getAdapter(system.brand)
+  if (!adapter.fetchSettings) return
+
+  const { data: last } = await supabase
+    .from('monitoring_settings_snapshots')
+    .select('captured_at')
+    .eq('system_id', system.id)
+    .order('captured_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const ageMs = last?.captured_at ? Date.now() - new Date(last.captured_at).getTime() : Infinity
+  if (ageMs < SETTINGS_CAPTURE_INTERVAL_MS) return
+
+  const result = await adapter.fetchSettings(credentials, system.plant_id, system.device_sn)
+  await supabase.from('monitoring_settings_snapshots').insert({
+    system_id: system.id,
+    source: 'cloud',
+    settings: result.settings,
+    raw_payload: result.raw,
+    note: 'auto-captured',
+    captured_by: null,
+  })
 }
