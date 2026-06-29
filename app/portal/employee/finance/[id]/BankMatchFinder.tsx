@@ -15,7 +15,7 @@ interface Txn {
   account_label: string | null
 }
 
-export function BankMatchFinder({ documentId }: { documentId: string }) {
+export function BankMatchFinder({ documentId, hasAllocations }: { documentId: string; hasAllocations: boolean }) {
   const router = useRouter()
   const [days, setDays] = useState(7)
   const [loading, setLoading] = useState(false)
@@ -107,6 +107,11 @@ export function BankMatchFinder({ documentId }: { documentId: string }) {
                 </button>
               </div>
             ))}
+            <p className="mt-1.5 text-xs text-green-800/80 dark:text-green-300/80">
+              {hasAllocations
+                ? 'On customer statements this expense is counted from the invoice’s allocations above — not the bank transaction — so it isn’t double-counted.'
+                : 'Allocate the invoice above to put this on a customer’s statement. While linked, the bank transaction itself won’t be counted separately.'}
+            </p>
           </div>
         )}
 

@@ -190,7 +190,7 @@ export default async function FinanceDocumentPage({
       />
 
       {/* Reconcile against the bank statement */}
-      <BankMatchFinder documentId={doc.id} />
+      <BankMatchFinder documentId={doc.id} hasAllocations={allocations.length > 0} />
       </DocViewer>
     </PageShell>
   )
