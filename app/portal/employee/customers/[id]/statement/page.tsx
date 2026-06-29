@@ -4,21 +4,21 @@ import { createClient, getUser } from '@/lib/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { FileText, ArrowLeft, Landmark } from 'lucide-react'
+import { FileText, ArrowLeft, Landmark, Receipt } from 'lucide-react'
 import type { Metadata } from 'next'
 import { PageShell, PageHeader } from '@/components/layout/page'
 
 export const metadata: Metadata = { title: 'Customer statement' }
 export const dynamic = 'force-dynamic'
 
-interface Entry { d: string; memo: string; amt: number; src: string; ref: string | null }
+interface Entry { d: string; memo: string; amt: number; src: string; ref: string | null; doc_id: string | null }
 interface Statement {
-  payments: Entry[]
-  charges: Entry[]
-  total_paid: number
-  total_charged: number
-  payment_count: number
-  charge_count: number
+  credits: Entry[]   // in their favour: their payments + what we owe them
+  debits: Entry[]    // owed to us: charges
+  total_credit: number
+  total_debit: number
+  credit_count: number
+  debit_count: number
 }
 
 export default async function CustomerStatementPage({
@@ -41,17 +41,18 @@ export default async function CustomerStatementPage({
 
   const { data: stmtRaw } = await supabase.rpc('customer_statement', { p_customer_id: id })
   const s = (stmtRaw ?? {
-    payments: [], charges: [], total_paid: 0, total_charged: 0, payment_count: 0, charge_count: 0,
+    credits: [], debits: [], total_credit: 0, total_debit: 0, credit_count: 0, debit_count: 0,
   }) as Statement
 
-  const balance = s.total_charged - s.total_paid // positive = customer owes
+  const net = s.total_debit - s.total_credit // >0 they owe us; <0 we owe them
+  const empty = s.credit_count === 0 && s.debit_count === 0
 
   return (
     <PageShell width="wide">
       <PageHeader
         icon={FileText}
         title={`Statement — ${customer.full_name}`}
-        description="Charges (what was bought for them) minus payments (what they paid in). Allocate transactions on Bank Statements or invoices to populate this."
+        description="Charges owed to us minus money in their favour (their payments + bills they covered for us)."
       />
 
       <Link
@@ -63,40 +64,43 @@ export default async function CustomerStatementPage({
 
       {/* Headline */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat label="Charged" value={formatCurrency(s.total_charged)} sub={`${s.charge_count} item${s.charge_count === 1 ? '' : 's'}`} />
-        <Stat label="Paid" value={formatCurrency(s.total_paid)} sub={`${s.payment_count} payment${s.payment_count === 1 ? '' : 's'}`} tone="in" />
+        <Stat label="Charged to them" value={formatCurrency(s.total_debit)} sub={`${s.debit_count} item${s.debit_count === 1 ? '' : 's'}`} tone="out" />
+        <Stat label="In their favour" value={formatCurrency(s.total_credit)} sub={`${s.credit_count} item${s.credit_count === 1 ? '' : 's'}`} tone="in" />
         <Stat
-          label={balance > 0 ? 'Balance owing' : balance < 0 ? 'In credit' : 'Settled'}
-          value={formatCurrency(Math.abs(balance))}
-          tone={balance > 0 ? 'out' : 'in'}
+          label={net > 0 ? `${customer.full_name} owes us` : net < 0 ? `We owe ${customer.full_name}` : 'Settled'}
+          value={formatCurrency(Math.abs(net))}
+          big
+          tone={net > 0 ? 'out' : 'in'}
         />
       </div>
 
-      {s.payment_count === 0 && s.charge_count === 0 && (
+      {empty && (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Nothing allocated to {customer.full_name} yet. Go to{' '}
-            <Link href="/portal/employee/finance/bank" className="text-accent hover:underline">Bank Statements</Link>,
-            search their name, select the transactions and allocate them here.
+            Nothing allocated to {customer.full_name} yet. Allocate bank transactions on{' '}
+            <Link href="/portal/employee/finance/bank" className="text-accent hover:underline">Bank Statements</Link>{' '}
+            or open an invoice under{' '}
+            <Link href="/portal/employee/finance" className="text-accent hover:underline">Documents</Link>{' '}
+            and use &ldquo;Allocate to customer&rdquo;.
           </CardContent>
         </Card>
       )}
 
-      {s.charge_count > 0 && (
-        <EntryTable title="Charges" icon={FileText} entries={s.charges} tone="out" />
+      {s.debit_count > 0 && (
+        <EntryTable title="Charged to them (owed to us)" icon={Receipt} entries={s.debits} tone="out" />
       )}
-      {s.payment_count > 0 && (
-        <EntryTable title="Payments" icon={Landmark} entries={s.payments} tone="in" />
+      {s.credit_count > 0 && (
+        <EntryTable title="In their favour (payments + bills they covered)" icon={Landmark} entries={s.credits} tone="in" />
       )}
     </PageShell>
   )
 }
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'in' | 'out' }) {
+function Stat({ label, value, sub, tone, big }: { label: string; value: string; sub?: string; tone?: 'in' | 'out'; big?: boolean }) {
   return (
-    <div className="rounded-lg border border-border p-4">
+    <div className={`rounded-lg border p-4 ${big ? 'border-accent bg-accent/5' : 'border-border'}`}>
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-2xl font-bold tabular-nums ${
+      <div className={`mt-1 ${big ? 'text-3xl' : 'text-2xl'} font-bold tabular-nums ${
         tone === 'in' ? 'text-green-600' : tone === 'out' ? 'text-red-600' : 'text-primary'
       }`}>
         {value}
@@ -119,7 +123,7 @@ function EntryTable({
       <CardContent className="p-0">
         <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm font-semibold">
           <Icon className="h-4 w-4 text-muted-foreground" /> {title}
-          <span className="text-muted-foreground font-normal">({entries.length})</span>
+          <span className="font-normal text-muted-foreground">({entries.length})</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -137,7 +141,9 @@ function EntryTable({
                   <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{e.d ? formatDate(e.d) : '—'}</td>
                   <td className="px-4 py-2"><span className="block max-w-[420px] truncate" title={e.memo}>{e.memo}</span></td>
                   <td className="px-4 py-2">
-                    <Badge variant="outline">{e.src === 'bank' ? (e.ref ?? 'Bank') : (e.ref ?? 'Invoice')}</Badge>
+                    {e.doc_id
+                      ? <Link href={`/portal/employee/finance/${e.doc_id}`} className="text-accent hover:underline">{e.ref ?? 'Invoice'}</Link>
+                      : <Badge variant="outline">{e.ref ?? 'Bank'}</Badge>}
                   </td>
                   <td className={`whitespace-nowrap px-4 py-2 text-right font-medium tabular-nums ${
                     tone === 'in' ? 'text-green-600' : 'text-red-600'

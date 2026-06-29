@@ -9,6 +9,8 @@ import { Receipt, ExternalLink, ArrowLeft, FileText, AlertTriangle } from 'lucid
 import type { Metadata } from 'next'
 import { FIN_DOC_TYPE_LABEL, type FinDocument, type FinLineItem } from '@/lib/finance/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { DocAllocations, type DocAllocation } from './DocAllocations'
+import { Users } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Finance — Document' }
 
@@ -35,6 +37,25 @@ export default async function FinanceDocumentPage({
     .eq('document_id', id)
     .order('line_no', { ascending: true })
   const lines = (linesRaw ?? []) as unknown as FinLineItem[]
+
+  const [{ data: customersRaw }, { data: allocsRaw }] = await Promise.all([
+    supabase.from('customers').select('id, full_name').order('full_name'),
+    supabase
+      .from('fin_allocations')
+      .select('id, customer_id, direction, basis, percent, amount_cents, note, customer:customers(id, full_name)')
+      .eq('document_id', id)
+      .order('created_at', { ascending: true }),
+  ])
+  const customers = (customersRaw ?? []) as { id: string; full_name: string }[]
+  const allocations: DocAllocation[] = ((allocsRaw ?? []) as unknown as Array<{
+    id: string; customer_id: string; direction: 'charge' | 'reimburse'
+    basis: 'whole' | 'percent' | 'items' | 'custom'; percent: number | null
+    amount_cents: number; note: string | null
+    customer?: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+  }>).map((a) => {
+    const c = Array.isArray(a.customer) ? a.customer[0] : a.customer
+    return { ...a, customer_name: c?.full_name ?? null }
+  })
 
   const lineSum = lines.reduce((s, l) => s + (l.line_total_cents ?? 0), 0)
   // notes carry the duplicate / non-purchase flags from ingest
@@ -103,6 +124,27 @@ export default async function FinanceDocumentPage({
           </CardContent>
         </Card>
       )}
+
+      {/* Allocate to customer(s) — recon */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Users className="h-4 w-4" /> Allocate to customer
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Tag this invoice (whole, a %, or specific lines) to a customer. &ldquo;They covered it&rdquo; means
+            they paid and you owe them back; &ldquo;Bill them&rdquo; charges it to their account. It flows to their statement.
+          </p>
+          <DocAllocations
+            documentId={doc.id}
+            lines={lines.map((l) => ({ id: l.id, description: l.description, line_total_cents: l.line_total_cents ?? 0 }))}
+            customers={customers}
+            allocations={allocations}
+          />
+        </CardContent>
+      </Card>
 
       {/* Simple transaction view */}
       <Card>
