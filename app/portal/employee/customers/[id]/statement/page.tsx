@@ -12,6 +12,7 @@ export const metadata: Metadata = { title: 'Customer statement' }
 export const dynamic = 'force-dynamic'
 
 interface Entry { d: string; memo: string; amt: number; src: string; ref: string | null; doc_id: string | null; txn_id: string | null }
+interface LedgerRow extends Entry { kind: 'debit' | 'credit'; balance: number }
 interface Statement {
   credits: Entry[]   // in their favour: their payments + what we owe them
   debits: Entry[]    // owed to us: charges
@@ -47,6 +48,23 @@ export default async function CustomerStatementPage({
   const net = s.total_debit - s.total_credit // >0 they owe us; <0 we owe them
   const empty = s.credit_count === 0 && s.debit_count === 0
 
+  // Combined chronological ledger (oldest first) with a running balance, and
+  // the period the statement covers. Balance is positive when they owe us.
+  const merged: (Entry & { kind: 'debit' | 'credit' })[] = [
+    ...s.debits.map((e) => ({ ...e, kind: 'debit' as const })),
+    ...s.credits.map((e) => ({ ...e, kind: 'credit' as const })),
+  ]
+  // ISO dates sort lexically; undated entries go last.
+  merged.sort((a, b) => (a.d || '9999-99-99').localeCompare(b.d || '9999-99-99'))
+  let running = 0
+  const ledger: LedgerRow[] = merged.map((e) => {
+    running += e.kind === 'debit' ? e.amt : -e.amt
+    return { ...e, balance: running }
+  })
+  const dated = merged.map((e) => e.d).filter(Boolean).sort()
+  const periodFrom = dated[0] ?? null
+  const periodTo = dated[dated.length - 1] ?? null
+
   return (
     <PageShell width="wide">
       <PageHeader
@@ -61,6 +79,15 @@ export default async function CustomerStatementPage({
       >
         <ArrowLeft className="h-4 w-4" /> Back to customer
       </Link>
+
+      {periodFrom && periodTo && (
+        <p className="text-sm text-muted-foreground">
+          Statement period:{' '}
+          <span className="font-medium text-foreground">{formatDate(periodFrom)}</span> →{' '}
+          <span className="font-medium text-foreground">{formatDate(periodTo)}</span>
+          {' '}· {ledger.length} entr{ledger.length === 1 ? 'y' : 'ies'}
+        </p>
+      )}
 
       {/* Headline */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -86,6 +113,8 @@ export default async function CustomerStatementPage({
         </Card>
       )}
 
+      {ledger.length > 0 && <LedgerTable rows={ledger} />}
+
       {s.debit_count > 0 && (
         <EntryTable title="Charged to them (owed to us)" icon={Receipt} entries={s.debits} tone="out" />
       )}
@@ -107,6 +136,74 @@ function Stat({ label, value, sub, tone, big }: { label: string; value: string; 
       </div>
       {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
     </div>
+  )
+}
+
+function SourceCell({ e }: { e: Entry }) {
+  if (e.doc_id) {
+    return <Link href={`/portal/employee/finance/${e.doc_id}`} className="text-accent hover:underline">{e.ref ?? 'Invoice'}</Link>
+  }
+  if (e.txn_id) {
+    return (
+      <Link
+        href={`/portal/employee/finance/bank?focus=${e.txn_id}`}
+        title="View in bank statements, around this date, across all accounts"
+        className="inline-flex items-center gap-1 text-accent hover:underline"
+      >
+        <Crosshair className="h-3.5 w-3.5" /> {e.ref ?? 'Bank'}
+      </Link>
+    )
+  }
+  return <Badge variant="outline">{e.ref ?? 'Bank'}</Badge>
+}
+
+// Combined chronological ledger: every entry, oldest first, with a running
+// balance (positive = they owe us). Charges and money-in-their-favour share one
+// timeline so the statement reads top-to-bottom like a bank statement.
+function LedgerTable({ rows }: { rows: LedgerRow[] }) {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm font-semibold">
+          <FileText className="h-4 w-4 text-muted-foreground" /> Statement (chronological)
+          <span className="font-normal text-muted-foreground">({rows.length})</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="px-4 py-2 font-medium">Date</th>
+                <th className="px-4 py-2 font-medium">Description</th>
+                <th className="px-4 py-2 font-medium">Source</th>
+                <th className="px-4 py-2 text-right font-medium">Charge</th>
+                <th className="px-4 py-2 text-right font-medium">In their favour</th>
+                <th className="px-4 py-2 text-right font-medium">Balance</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((e, i) => (
+                <tr key={i} className="hover:bg-muted/40">
+                  <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{e.d ? formatDate(e.d) : '—'}</td>
+                  <td className="px-4 py-2"><span className="block max-w-[360px] truncate" title={e.memo}>{e.memo}</span></td>
+                  <td className="px-4 py-2"><SourceCell e={e} /></td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-red-600">
+                    {e.kind === 'debit' ? formatCurrency(e.amt) : ''}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums text-green-600">
+                    {e.kind === 'credit' ? formatCurrency(e.amt) : ''}
+                  </td>
+                  <td className={`whitespace-nowrap px-4 py-2 text-right font-medium tabular-nums ${
+                    e.balance > 0 ? 'text-red-600' : e.balance < 0 ? 'text-green-600' : 'text-muted-foreground'
+                  }`}>
+                    {formatCurrency(e.balance)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -140,21 +237,7 @@ function EntryTable({
                 <tr key={i} className="hover:bg-muted/40">
                   <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{e.d ? formatDate(e.d) : '—'}</td>
                   <td className="px-4 py-2"><span className="block max-w-[420px] truncate" title={e.memo}>{e.memo}</span></td>
-                  <td className="px-4 py-2">
-                    {e.doc_id ? (
-                      <Link href={`/portal/employee/finance/${e.doc_id}`} className="text-accent hover:underline">{e.ref ?? 'Invoice'}</Link>
-                    ) : e.txn_id ? (
-                      <Link
-                        href={`/portal/employee/finance/bank?focus=${e.txn_id}`}
-                        title="View in bank statements, around this date, across all accounts"
-                        className="inline-flex items-center gap-1 text-accent hover:underline"
-                      >
-                        <Crosshair className="h-3.5 w-3.5" /> {e.ref ?? 'Bank'}
-                      </Link>
-                    ) : (
-                      <Badge variant="outline">{e.ref ?? 'Bank'}</Badge>
-                    )}
-                  </td>
+                  <td className="px-4 py-2"><SourceCell e={e} /></td>
                   <td className={`whitespace-nowrap px-4 py-2 text-right font-medium tabular-nums ${
                     tone === 'in' ? 'text-green-600' : 'text-red-600'
                   }`}>
