@@ -20,6 +20,7 @@ export interface BankRow {
   allocated_name: string | null
   matched_document_id: string | null
   matched_supplier_name: string | null
+  matched_customer_names: string[]
   splits: BankSplit[]
 }
 
@@ -200,6 +201,17 @@ export function BankTxnTable({
                         >
                           <Split className="h-3.5 w-3.5" />
                         </button>
+                      </div>
+                    )}
+                    {t.matched_customer_names.length > 0 && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1" title="Assigned on the matched invoice">
+                        {t.matched_customer_names.map((name, k) => (
+                          <span key={k}
+                            className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 text-xs font-medium text-accent">
+                            {name}
+                            <span className="text-[10px] font-normal text-muted-foreground">via invoice</span>
+                          </span>
+                        ))}
                       </div>
                     )}
                   </td>

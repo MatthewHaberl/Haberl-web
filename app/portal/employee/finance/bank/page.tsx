@@ -207,6 +207,28 @@ export default async function BankStatementsPage({
     }
   }
 
+  // For transactions matched to an invoice, the customer assignment lives on
+  // the invoice (its fin_allocations) — the bank txn's own allocation is
+  // suppressed on statements (migration 072). Surface that "via invoice"
+  // assignment here so a matched payment doesn't look unassigned.
+  const matchedDocIds = [...new Set(baseRows.map((r) => r.matched_document_id).filter(Boolean) as string[])]
+  const matchedCustMap = new Map<string, string[]>()
+  if (matchedDocIds.length > 0) {
+    type AllocRaw = { document_id: string; customer?: { full_name: string } | { full_name: string }[] | null }
+    const { data: allocRaw } = await supabase
+      .from('fin_allocations')
+      .select('document_id, customer:customers(full_name)')
+      .eq('target', 'customer')
+      .in('document_id', matchedDocIds)
+    for (const al of (allocRaw ?? []) as unknown as AllocRaw[]) {
+      const c = Array.isArray(al.customer) ? al.customer[0] : al.customer
+      if (!c?.full_name) continue
+      const list = matchedCustMap.get(al.document_id) ?? []
+      if (!list.includes(c.full_name)) list.push(c.full_name)
+      matchedCustMap.set(al.document_id, list)
+    }
+  }
+
   const rows: BankRow[] = baseRows.map((r) => {
     const a = Array.isArray(r.allocated) ? r.allocated[0] : r.allocated
     const m = Array.isArray(r.matched) ? r.matched[0] : r.matched
@@ -216,6 +238,7 @@ export default async function BankStatementsPage({
       allocated_name: a?.full_name ?? null,
       matched_document_id: r.matched_document_id,
       matched_supplier_name: m?.supplier_name ?? null,
+      matched_customer_names: r.matched_document_id ? (matchedCustMap.get(r.matched_document_id) ?? []) : [],
       splits: splitMap.get(r.id) ?? [],
     }
   })
