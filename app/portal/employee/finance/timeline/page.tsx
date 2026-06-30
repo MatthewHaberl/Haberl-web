@@ -85,11 +85,18 @@ export default async function FinanceTimelinePage({
   const wantBank = source !== 'docs'
   const wantDocs = source !== 'bank'
 
+  // Fetch in the same direction as the chosen display order. Each source is
+  // capped at SOURCE_CAP, so this makes the cap drop the *far* end (the one the
+  // user is scrolling away from) and keep the end they're looking at — otherwise
+  // an "Oldest first" view over a wide window shows only documents up top
+  // because the oldest bank lines were truncated by a newest-first fetch.
+  const fetchAsc = sort === 'oldest'
+
   let bankQuery = supabase
     .from('bank_transactions')
     .select('id, account_label, txn_date, description, amount_cents, allocated_customer_id, allocated:customers!allocated_customer_id(id, full_name)')
-    .order('txn_date', { ascending: false })
-    .order('id', { ascending: false })
+    .order('txn_date', { ascending: fetchAsc })
+    .order('id', { ascending: fetchAsc })
     .limit(SOURCE_CAP)
   if (q) bankQuery = bankQuery.ilike('description', `%${q}%`)
   if (from) bankQuery = bankQuery.gte('txn_date', from)
@@ -102,7 +109,7 @@ export default async function FinanceTimelinePage({
     .select('id, doc_type, supplier_name, doc_number, doc_date, total_cents, file_name')
     .not('doc_type', 'in', `(${EXCLUDED_DOC_TYPES.join(',')})`)
     .not('doc_date', 'is', null)
-    .order('doc_date', { ascending: false })
+    .order('doc_date', { ascending: fetchAsc })
     .limit(SOURCE_CAP)
   if (q) docsQuery = docsQuery.or(`file_name.ilike.%${q}%,supplier_name.ilike.%${q}%,doc_number.ilike.%${q}%`)
   if (from) docsQuery = docsQuery.gte('doc_date', from)
@@ -310,7 +317,7 @@ export default async function FinanceTimelinePage({
 
       {(bankTruncated || docsTruncated) && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Showing the most recent {SOURCE_CAP.toLocaleString()}{' '}
+          Showing the {sort === 'oldest' ? 'oldest' : 'most recent'} {SOURCE_CAP.toLocaleString()}{' '}
           {bankTruncated && docsTruncated ? 'bank lines and documents' : bankTruncated ? 'bank lines' : 'documents'}.
           Narrow with a date range or search to see everything in a period.
         </div>
