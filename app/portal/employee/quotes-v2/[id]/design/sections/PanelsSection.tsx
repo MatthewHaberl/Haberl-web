@@ -1,7 +1,8 @@
 'use client'
 
-import { Plus, Trash2, Sun } from 'lucide-react'
-import { PSH_GAUTENG, SYSTEM_EFFICIENCY } from '@/lib/solar/quote-calculator'
+import { Plus, Trash2, Sun, Zap } from 'lucide-react'
+import { PSH_GAUTENG, SYSTEM_EFFICIENCY, parseInverterSizingSpec } from '@/lib/solar/quote-calculator'
+import { VOC_COLD_FACTOR, EDGE_OF_CLOUD_FACTOR } from '@/lib/solar/compliance'
 import { panelGroupKwp, DIRECTIONS, ROOF_TYPES } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
@@ -11,6 +12,13 @@ export function PanelsSection() {
   const { design, dispatch } = useDesign()
   const { items, loading } = useCatalog()
   const panels = byCategory(items, 'panel')
+
+  // Inverter max DC input voltage — the ceiling the worst-case string Voc is checked
+  // against. Pulled from the selected inverter's notes (same source the compliance
+  // engine uses); null when no inverter is set or its notes lack the spec.
+  const inverterCatalogId = design.inverters[0]?.catalogId
+  const inverterItem = inverterCatalogId ? items.find((i) => i.id === inverterCatalogId) : undefined
+  const maxDcVoltage = parseInverterSizingSpec(inverterItem?.notes)?.maxDcVoltage ?? null
 
   function addGroup() {
     const first = panels[0]
@@ -45,6 +53,17 @@ export function PanelsSection() {
             const dailyKwh = kwp * PSH_GAUTENG * SYSTEM_EFFICIENCY
             // Catalog panel selected → its watts come from the product (item 24).
             const locked = !!g.catalogId
+
+            // Worst-case string voltage: every panel in the group in series, lifted for
+            // a cold morning (−10 °C, ×1.10) then the edge-of-cloud overshoot (×1.20) —
+            // the exact value the compliance engine checks against the inverter's max DC
+            // input. Needs the panel's datasheet Voc; blank for custom/spec-less panels.
+            const selectedPanel = g.catalogId ? panels.find((p) => p.id === g.catalogId) : undefined
+            const panelVoc = selectedPanel?.voc_volts != null ? Number(selectedPanel.voc_volts) : null
+            const series = g.panelCount || 0
+            const coldVoc = panelVoc && series > 0 ? panelVoc * series * VOC_COLD_FACTOR : null
+            const worstCaseVoc = coldVoc != null ? coldVoc * EDGE_OF_CLOUD_FACTOR : null
+            const overLimit = worstCaseVoc != null && maxDcVoltage != null && worstCaseVoc > maxDcVoltage
             return (
               <div key={g.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between mb-2">
@@ -123,6 +142,19 @@ export function PanelsSection() {
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span><strong className="text-foreground">{kwp.toFixed(2)}</strong> kWp</span>
                   <span>≈ <strong className="text-foreground">{dailyKwh.toFixed(1)}</strong> kWh/day</span>
+                  {worstCaseVoc != null ? (
+                    <span
+                      className={`inline-flex items-center gap-1 ${overLimit ? 'font-semibold text-destructive' : ''}`}
+                      title={`Worst case = ${series} panels in series × ${panelVoc}V Voc × ${VOC_COLD_FACTOR} (cold morning, −10 °C) × ${EDGE_OF_CLOUD_FACTOR} (edge-of-cloud overshoot). Cold Voc alone ≈ ${Math.round(coldVoc!)}V.${maxDcVoltage != null ? ` Inverter max DC input = ${maxDcVoltage}V.` : ' No inverter max DC voltage set — pick an inverter to check against.'}`}
+                    >
+                      <Zap className="h-3 w-3" />
+                      Worst-case Voc ≈{' '}
+                      <strong className={overLimit ? 'text-destructive' : 'text-foreground'}>{Math.round(worstCaseVoc)}</strong> V
+                      {overLimit && maxDcVoltage != null && <> &gt; {maxDcVoltage}V max — shorten string</>}
+                    </span>
+                  ) : g.catalogId && series > 0 ? (
+                    <span className="italic">Worst-case Voc — add datasheet Voc to this panel in the catalog</span>
+                  ) : null}
                   <details className="ml-auto">
                     <summary className="cursor-pointer hover:text-foreground">More (optional)</summary>
                     <div className="mt-2 grid grid-cols-2 gap-2">
