@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { CheckCircle2, Loader2, Phone } from 'lucide-react'
 
 export function LeadForm() {
@@ -70,8 +71,8 @@ export function LeadForm() {
         />
       </label>
       <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">Suburb</span>
-        <Input value={suburb} onChange={(e) => setSuburb(e.target.value)} placeholder="e.g. Midrand" />
+        <span className="text-sm font-medium">Suburb or address</span>
+        <AddressAutocomplete value={suburb} onChange={setSuburb} placeholder="e.g. Midrand" />
       </label>
       <label className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">Anything we should know?</span>

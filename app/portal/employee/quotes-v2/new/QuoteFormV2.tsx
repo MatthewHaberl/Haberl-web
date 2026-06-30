@@ -337,7 +337,7 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
                 <Input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="082 000 0000" />
               </Field>
               <Field label="Customer Address">
-                <Input value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} placeholder="Billing / home address" />
+                <AddressAutocomplete value={customerAddress} onChange={setCustomerAddress} placeholder="Billing / home address" />
               </Field>
             </div>
             <div className="flex items-center gap-3">

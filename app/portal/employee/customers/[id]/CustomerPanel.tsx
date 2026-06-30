@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { Mail, Phone, MapPin, Pencil, Send, Loader2, Check, Link2 } from 'lucide-react'
 import type { Customer, CustomerAccountStatus } from '@/types/database'
 
@@ -139,7 +140,7 @@ export function CustomerPanel({
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Address</label>
-                <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+                <AddressAutocomplete value={address} onChange={setAddress} />
               </div>
               {customer.is_business && (
                 <div>

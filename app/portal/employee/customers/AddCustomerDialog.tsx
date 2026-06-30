@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { FormField } from '@/components/ui/form-field'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { UserPlus, Loader2, X, AlertTriangle } from 'lucide-react'
 
 /**
@@ -149,7 +150,7 @@ export function AddCustomerPanel() {
               <Input id="customer-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="082 123 4567" inputMode="tel" />
             </FormField>
             <FormField label="Address" htmlFor="customer-address">
-              <Input id="customer-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Suburb / street" />
+              <AddressAutocomplete id="customer-address" value={address} onChange={setAddress} placeholder="Suburb / street" />
             </FormField>
           </div>
 

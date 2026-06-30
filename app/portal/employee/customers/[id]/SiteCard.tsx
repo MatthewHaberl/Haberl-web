@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { Pencil, Loader2, X, Save, Activity, ChevronRight } from 'lucide-react'
 
 export interface SiteCardData {
@@ -147,7 +148,7 @@ export function SiteCard({
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Address</label>
-            <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, suburb" />
+            <AddressAutocomplete value={address} onChange={setAddress} placeholder="Street, suburb" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>

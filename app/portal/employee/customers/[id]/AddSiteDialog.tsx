@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { MapPinPlus, Loader2, X } from 'lucide-react'
 
 /**
@@ -118,7 +119,7 @@ export function AddSitePanel({
               <Input id="site-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Home / Main roof / Warehouse" autoFocus />
             </FormField>
             <FormField label="Address" htmlFor="site-address">
-              <Input id="site-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, suburb" />
+              <AddressAutocomplete id="site-address" value={address} onChange={setAddress} placeholder="Street, suburb" />
             </FormField>
             <FormField label="System type" htmlFor="site-type">
               <Input id="site-type" value={systemType} onChange={(e) => setSystemType(e.target.value)} placeholder="Solar PV" />

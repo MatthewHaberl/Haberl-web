@@ -7,12 +7,14 @@ import { Zap } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 
 export default function RegisterPage() {
   const router = useRouter()
 
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
+  const [address, setAddress] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -32,6 +34,7 @@ export default function RegisterPage() {
         data: {
           full_name: fullName,
           phone,
+          address,
           role: 'customer',  // default — admin can promote in Supabase dashboard
         },
       },
@@ -98,6 +101,17 @@ export default function RegisterPage() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 autoComplete="tel"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="address" className="text-sm font-medium">Address</label>
+              <AddressAutocomplete
+                id="address"
+                value={address}
+                onChange={setAddress}
+                placeholder="Street, suburb"
+                autoComplete="street-address"
               />
             </div>
 

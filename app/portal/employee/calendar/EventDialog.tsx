@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { FormField } from '@/components/ui/form-field'
+import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
 import { Loader2, X, Trash2, Save, Mail } from 'lucide-react'
 import { CREATABLE_TYPES, KIND_META, STATUS_LABEL } from '@/lib/calendar/events'
 import type { CalendarEvent, CalendarEventType, CalendarEventStatus } from '@/types/database'
@@ -20,6 +21,8 @@ export interface LinkTarget {
   name: string
   email: string | null
   phone: string | null
+  /** Customer's address on file (or a lead's suburb) — pre-fills the location. */
+  address: string | null
 }
 
 const STATUSES: CalendarEventStatus[] = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show']
@@ -103,6 +106,7 @@ export function EventDialog({
     setContactName((prev) => prev || target.name)
     setContactPhone((prev) => prev || target.phone || '')
     setContactEmail((prev) => prev || target.email || '')
+    setLocation((prev) => prev || target.address || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link])
 
@@ -250,7 +254,7 @@ export function EventDialog({
           </FormField>
 
           <FormField label="Location / address" htmlFor="ev-loc">
-            <Input id="ev-loc" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Where is it?" />
+            <AddressAutocomplete id="ev-loc" value={location} onChange={setLocation} placeholder="Where is it?" />
           </FormField>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
