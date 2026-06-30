@@ -18,6 +18,48 @@ async function guard() {
   return { supabase, user }
 }
 
+/**
+ * Lines + existing allocations for a document, for the inline allocation editor
+ * used off the detail page (e.g. the Finance Timeline). Manager/admin only.
+ */
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id: document_id } = await params
+  const g = await guard()
+  if (g.error) return g.error
+  const { supabase } = g
+
+  const [{ data: linesRaw }, { data: allocsRaw }] = await Promise.all([
+    supabase.from('fin_line_items')
+      .select('id, description, line_total_cents')
+      .eq('document_id', document_id)
+      .order('line_no', { ascending: true }),
+    supabase.from('fin_allocations')
+      .select('id, target, customer_id, direction, category, basis, percent, amount_cents, note, customer:customers(id, full_name)')
+      .eq('document_id', document_id)
+      .order('created_at', { ascending: true }),
+  ])
+
+  const lines = ((linesRaw ?? []) as { id: string; description: string | null; line_total_cents: number | null }[])
+    .map((l) => ({ id: l.id, description: l.description ?? '', line_total_cents: l.line_total_cents ?? 0 }))
+
+  const allocations = ((allocsRaw ?? []) as unknown as Array<{
+    id: string; target: 'customer' | 'company'; customer_id: string | null
+    direction: 'charge' | 'reimburse' | null; category: string | null
+    basis: 'whole' | 'percent' | 'items' | 'custom'; percent: number | null
+    amount_cents: number; note: string | null
+    customer?: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+  }>).map((a) => {
+    const c = Array.isArray(a.customer) ? a.customer[0] : a.customer
+    return {
+      id: a.id, target: a.target, customer_id: a.customer_id, customer_name: c?.full_name ?? null,
+      direction: a.direction, basis: a.basis, percent: a.percent, category: a.category,
+      amount_cents: a.amount_cents, note: a.note,
+    }
+  })
+
+  return NextResponse.json({ lines, allocations })
+}
+
 /** Create an allocation on a document. Amount is resolved server-side from the basis. */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: document_id } = await params

@@ -29,12 +29,15 @@ export const COMPANY_CATEGORIES = [
 ]
 
 export function DocAllocations({
-  documentId, lines, customers, allocations,
+  documentId, lines, customers, allocations, onChanged,
 }: {
   documentId: string
   lines: Line[]
   customers: Customer[]
   allocations: DocAllocation[]
+  // Optional: called after a successful save/remove, so an embedding component
+  // (e.g. the Timeline's inline modal) can re-fetch its own copy of the data.
+  onChanged?: () => void
 }) {
   const router = useRouter()
   const [adding, setAdding] = useState(false)
@@ -77,7 +80,7 @@ export function DocAllocations({
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       })
       if (!res.ok) throw new Error(await res.text())
-      setAdding(false); reset(); router.refresh()
+      setAdding(false); reset(); router.refresh(); onChanged?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save')
     } finally { setBusy(false) }
@@ -88,7 +91,7 @@ export function DocAllocations({
     try {
       const res = await fetch(`/api/finance/documents/${documentId}/allocate?allocation_id=${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error(await res.text())
-      router.refresh()
+      router.refresh(); onChanged?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to remove')
     } finally { setBusy(false) }

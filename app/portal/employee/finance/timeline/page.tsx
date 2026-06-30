@@ -9,6 +9,7 @@ import { PageShell, PageHeader } from '@/components/layout/page'
 import { FinanceTabs } from '@/components/finance/FinanceTabs'
 import { FIN_DOC_TYPE_LABEL, type FinDocType } from '@/lib/finance/types'
 import { TimelineAllocate, type TimelineSplit } from './TimelineAllocate'
+import { TimelineDocAllocate, type DocAllocSummary } from './TimelineDocAllocate'
 import { COMPANY_CATEGORIES } from '../[id]/DocAllocations'
 
 export const metadata: Metadata = { title: 'Finance — Timeline' }
@@ -38,10 +39,12 @@ interface TimelineItem {
   doc_cents: number | null
   href: string
   badge: string
-  // Allocation state — bank lines only (documents allocate on their own page).
+  // Allocation state — bank lines carry customer/split; documents carry their
+  // own fin_allocations summary. Both drive the inline allocate widgets.
   allocCustomerId?: string | null
   allocName?: string | null
   splits?: TimelineSplit[]
+  docAllocs?: DocAllocSummary[]
 }
 
 function buildHref(base: SP, override: Partial<SP>): string {
@@ -145,6 +148,27 @@ export default async function FinanceTimelinePage({
     }
   }
 
+  // Existing allocations for the visible invoices (one round-trip), summarised
+  // into pills the row shows without opening the editor.
+  type DocAllocRaw = {
+    document_id: string; target: 'customer' | 'company'; category: string | null; amount_cents: number
+    customer?: { full_name: string } | { full_name: string }[] | null
+  }
+  const docAllocMap = new Map<string, DocAllocSummary[]>()
+  if (docRows.length > 0) {
+    const { data: docAllocsRaw } = await supabase
+      .from('fin_allocations')
+      .select('document_id, target, category, amount_cents, customer:customers(full_name)')
+      .in('document_id', docRows.map((d) => d.id))
+    for (const a of (docAllocsRaw ?? []) as unknown as DocAllocRaw[]) {
+      const c = Array.isArray(a.customer) ? a.customer[0] : a.customer
+      const lbl = a.target === 'company' ? (a.category ?? 'Company') : (c?.full_name ?? 'Customer')
+      const list = docAllocMap.get(a.document_id) ?? []
+      list.push({ target: a.target, label: lbl, amount_cents: a.amount_cents })
+      docAllocMap.set(a.document_id, list)
+    }
+  }
+
   const items: TimelineItem[] = [
     ...bankRows.map((r): TimelineItem => {
       const a = Array.isArray(r.allocated) ? r.allocated[0] : r.allocated
@@ -173,6 +197,7 @@ export default async function FinanceTimelinePage({
       doc_cents: d.total_cents,
       href: `/portal/employee/finance/${d.id}`,
       badge: FIN_DOC_TYPE_LABEL[d.doc_type] ?? d.doc_type,
+      docAllocs: docAllocMap.get(d.id) ?? [],
     })),
   ]
 
@@ -362,9 +387,11 @@ export default async function FinanceTimelinePage({
                             <Crosshair className="h-4 w-4 shrink-0 text-muted-foreground" />
                           )}
                         </Link>
-                        {/* Inline allocation — bank lines only. Sits outside the
-                            navigation Link so opening it never leaves the page. */}
-                        {it.kind === 'bank' && (
+                        {/* Inline allocation — sits outside the navigation Link
+                            so opening it never leaves the page. Bank lines get
+                            the customer/split picker; invoices get the full
+                            DocAllocations editor in a modal. */}
+                        {it.kind === 'bank' ? (
                           <TimelineAllocate
                             txnId={it.id}
                             description={it.title}
@@ -374,6 +401,13 @@ export default async function FinanceTimelinePage({
                             splits={it.splits ?? []}
                             customers={customers}
                             categories={COMPANY_CATEGORIES}
+                          />
+                        ) : (
+                          <TimelineDocAllocate
+                            documentId={it.id}
+                            label={it.title}
+                            allocs={it.docAllocs ?? []}
+                            customers={customers}
                           />
                         )}
                       </li>
