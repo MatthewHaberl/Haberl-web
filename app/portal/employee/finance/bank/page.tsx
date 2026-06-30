@@ -207,31 +207,46 @@ export default async function BankStatementsPage({
     }
   }
 
-  // For transactions matched to an invoice, the customer assignment lives on
-  // the invoice (its fin_allocations) — the bank txn's own allocation is
-  // suppressed on statements (migration 072). Surface that "via invoice"
-  // assignment here so a matched payment doesn't look unassigned.
+  // For transactions matched to an invoice, the assignment lives on the invoice
+  // (its fin_allocations) — the bank txn's own allocation is suppressed on
+  // statements (migration 072). Surface that "via invoice" assignment here —
+  // both customer and company (Haberl) parts — so a matched payment doesn't look
+  // unassigned. We also track which matched docs have NO allocation at all, to
+  // flag those transactions as "to confirm".
   const matchedDocIds = [...new Set(baseRows.map((r) => r.matched_document_id).filter(Boolean) as string[])]
   const matchedCustMap = new Map<string, string[]>()
+  const matchedCompanyMap = new Map<string, string[]>()
+  const matchedHasAlloc = new Set<string>()
   if (matchedDocIds.length > 0) {
-    type AllocRaw = { document_id: string; customer?: { full_name: string } | { full_name: string }[] | null }
+    type AllocRaw = {
+      document_id: string; target: 'customer' | 'company'; category: string | null
+      customer?: { full_name: string } | { full_name: string }[] | null
+    }
     const { data: allocRaw } = await supabase
       .from('fin_allocations')
-      .select('document_id, customer:customers(full_name)')
-      .eq('target', 'customer')
+      .select('document_id, target, category, customer:customers(full_name)')
       .in('document_id', matchedDocIds)
     for (const al of (allocRaw ?? []) as unknown as AllocRaw[]) {
-      const c = Array.isArray(al.customer) ? al.customer[0] : al.customer
-      if (!c?.full_name) continue
-      const list = matchedCustMap.get(al.document_id) ?? []
-      if (!list.includes(c.full_name)) list.push(c.full_name)
-      matchedCustMap.set(al.document_id, list)
+      matchedHasAlloc.add(al.document_id)
+      if (al.target === 'company') {
+        const label = al.category?.trim() || 'Company'
+        const list = matchedCompanyMap.get(al.document_id) ?? []
+        if (!list.includes(label)) list.push(label)
+        matchedCompanyMap.set(al.document_id, list)
+      } else {
+        const c = Array.isArray(al.customer) ? al.customer[0] : al.customer
+        if (!c?.full_name) continue
+        const list = matchedCustMap.get(al.document_id) ?? []
+        if (!list.includes(c.full_name)) list.push(c.full_name)
+        matchedCustMap.set(al.document_id, list)
+      }
     }
   }
 
   const rows: BankRow[] = baseRows.map((r) => {
     const a = Array.isArray(r.allocated) ? r.allocated[0] : r.allocated
     const m = Array.isArray(r.matched) ? r.matched[0] : r.matched
+    const splits = splitMap.get(r.id) ?? []
     return {
       id: r.id, account_label: r.account_label, txn_date: r.txn_date, description: r.description,
       amount_cents: r.amount_cents, txn_type: r.txn_type, allocated_customer_id: r.allocated_customer_id,
@@ -239,7 +254,12 @@ export default async function BankStatementsPage({
       matched_document_id: r.matched_document_id,
       matched_supplier_name: m?.supplier_name ?? null,
       matched_customer_names: r.matched_document_id ? (matchedCustMap.get(r.matched_document_id) ?? []) : [],
-      splits: splitMap.get(r.id) ?? [],
+      matched_company_labels: r.matched_document_id ? (matchedCompanyMap.get(r.matched_document_id) ?? []) : [],
+      // Linked to an invoice that nobody has assigned yet, and not allocated on
+      // the bank side either → needs a decision.
+      matched_unallocated: !!r.matched_document_id && !matchedHasAlloc.has(r.matched_document_id)
+        && r.allocated_customer_id == null && splits.length === 0,
+      splits,
     }
   })
   const customers = (customersRaw ?? []) as { id: string; full_name: string }[]

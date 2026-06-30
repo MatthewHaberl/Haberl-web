@@ -21,6 +21,8 @@ export interface BankRow {
   matched_document_id: string | null
   matched_supplier_name: string | null
   matched_customer_names: string[]
+  matched_company_labels: string[]
+  matched_unallocated: boolean
   splits: BankSplit[]
 }
 
@@ -203,7 +205,10 @@ export function BankTxnTable({
                         </button>
                       </div>
                     )}
-                    {t.matched_customer_names.length > 0 && (
+                    {/* Customer assigned on the matched invoice. Hidden when the
+                        txn already carries that customer (migration 080 mirrors
+                        a single-customer invoice), to avoid showing it twice. */}
+                    {t.matched_customer_names.length > 0 && !t.allocated_customer_id && (
                       <div className="mt-1 flex flex-wrap items-center gap-1" title="Assigned on the matched invoice">
                         {t.matched_customer_names.map((name, k) => (
                           <span key={k}
@@ -212,6 +217,28 @@ export function BankTxnTable({
                             <span className="text-[10px] font-normal text-muted-foreground">via invoice</span>
                           </span>
                         ))}
+                      </div>
+                    )}
+                    {/* Company (Haberl) part assigned on the matched invoice. */}
+                    {t.matched_company_labels.length > 0 && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1" title="Booked to Haberl on the matched invoice">
+                        {t.matched_company_labels.map((label, k) => (
+                          <span key={k}
+                            className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                            Haberl · {label}
+                            <span className="text-[10px] font-normal text-muted-foreground/70">via invoice</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {/* Linked to an invoice nobody has assigned yet. */}
+                    {t.matched_unallocated && (
+                      <div className="mt-1">
+                        <span
+                          title="Linked to an invoice that hasn't been assigned to a customer or to Haberl yet"
+                          className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                          To confirm
+                        </span>
                       </div>
                     )}
                   </td>
