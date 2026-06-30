@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import type { EquipmentCatalogItem, QuoteTierConfig } from '@/types/database'
 import { Loader2, Pencil, Plus, X } from 'lucide-react'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { fetchAllRows } from '@/lib/supabase/fetch-all'
 
 type FormState = {
   id?: string
@@ -74,7 +75,8 @@ export default function TierConfigsPage() {
     setLoading(true)
     setError('')
     const [{ data: equipmentRows, error: equipmentError }, { data: configRows, error: configError }] = await Promise.all([
-      supabase.from('equipment_catalog').select('*').eq('active', true).order('brand').order('description'),
+      fetchAllRows<EquipmentCatalogItem>((from, to) =>
+        supabase.from('equipment_catalog').select('*').eq('active', true).order('brand').order('description').range(from, to)),
       supabase.from('quote_tier_configs').select('*').order('min_inverter_kw').order('sort_order'),
     ])
 
@@ -94,7 +96,8 @@ export default function TierConfigsPage() {
 
     ;(async () => {
       const [{ data: equipmentRows, error: equipmentError }, { data: configRows, error: configError }] = await Promise.all([
-        supabase.from('equipment_catalog').select('*').eq('active', true).order('brand').order('description'),
+        fetchAllRows<EquipmentCatalogItem>((from, to) =>
+          supabase.from('equipment_catalog').select('*').eq('active', true).order('brand').order('description').range(from, to)),
         supabase.from('quote_tier_configs').select('*').order('min_inverter_kw').order('sort_order'),
       ])
 

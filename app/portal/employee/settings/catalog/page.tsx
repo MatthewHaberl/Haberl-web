@@ -18,6 +18,7 @@ import {
 import { Loader2, Pencil, Plus, Search, X } from 'lucide-react'
 import OffersPanel from './OffersPanel'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { fetchAllRows } from '@/lib/supabase/fetch-all'
 
 type CategoryTab =
   | 'inverter' | 'battery' | 'panel' | 'enclosure'
@@ -158,6 +159,25 @@ function coerceNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+// The catalog now exceeds the ~1000-row PostgREST cap (1500+ items), so a single
+// query — ordered by category — silently dropped every row past ~1000 (panels, rccb,
+// spd, other, tail of mounting). Page through so every category loads regardless of size.
+async function fetchAllCatalog(
+  supabase: ReturnType<typeof createClient>,
+): Promise<{ data: EquipmentCatalogItem[]; error: string | null }> {
+  const { data, error } = await fetchAllRows<EquipmentCatalogItem>((from, to) =>
+    supabase
+      .from('equipment_catalog')
+      .select('*')
+      .order('category')
+      .order('sort_order')
+      .order('brand')
+      .order('description')
+      .range(from, to),
+  )
+  return { data, error: error?.message ?? null }
+}
+
 function formatRands(value: number) {
   return `R${value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
@@ -219,21 +239,13 @@ export default function CatalogPage() {
   async function loadItems() {
     setLoading(true)
     setError('')
-    const { data, error: dbError } = await supabase
-      .from('equipment_catalog')
-      .select('*')
-      .order('category')
-      .order('sort_order')
-      .order('brand')
-      .order('description')
-
+    const { data, error: dbError } = await fetchAllCatalog(supabase)
     if (dbError) {
-      setError(dbError.message)
+      setError(dbError)
       setLoading(false)
       return
     }
-
-    setItems((data ?? []) as EquipmentCatalogItem[])
+    setItems(data)
     setLoading(false)
   }
 
@@ -241,23 +253,14 @@ export default function CatalogPage() {
     let active = true
 
     ;(async () => {
-      const { data, error: dbError } = await supabase
-        .from('equipment_catalog')
-        .select('*')
-        .order('category')
-        .order('sort_order')
-        .order('brand')
-        .order('description')
-
+      const { data, error: dbError } = await fetchAllCatalog(supabase)
       if (!active) return
-
       if (dbError) {
-        setError(dbError.message)
+        setError(dbError)
         setLoading(false)
         return
       }
-
-      setItems((data ?? []) as EquipmentCatalogItem[])
+      setItems(data)
       setLoading(false)
     })()
 

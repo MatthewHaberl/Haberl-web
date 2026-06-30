@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { fetchAllRows } from '@/lib/supabase/fetch-all'
 import { requireSection } from '@/lib/auth/permissions'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -29,10 +30,10 @@ export default async function ShopProductsPage() {
     .order('brand')
     .order('name')
 
-  // Get cost from equipment_catalog for margin calculation
-  const { data: catalog } = await supabase
-    .from('equipment_catalog')
-    .select('id, cost_rands')
+  // Get cost from equipment_catalog for margin calculation. Page through — the catalog
+  // exceeds the ~1000-row cap, which would otherwise leave ~500 products with no cost/margin.
+  const { data: catalog } = await fetchAllRows<{ id: string; cost_rands: number }>((from, to) =>
+    supabase.from('equipment_catalog').select('id, cost_rands').range(from, to))
 
   const costMap = new Map((catalog ?? []).map(c => [c.id, c.cost_rands]))
 

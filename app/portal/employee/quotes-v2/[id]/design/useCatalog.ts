@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { fetchAllRows } from '@/lib/supabase/fetch-all'
 import type { EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 
 /** Loads the active equipment catalog once (same source as the legacy selector). */
@@ -13,17 +14,21 @@ export function useCatalog() {
   useEffect(() => {
     let active = true
     const supabase = createClient()
-    supabase
-      .from('equipment_catalog')
-      .select('*')
-      .eq('active', true)
-      .order('sort_order').order('brand').order('description')
-      .then(({ data, error }) => {
-        if (!active) return
-        if (error) setError(error.message)
-        else setItems((data ?? []) as EquipmentCatalogItem[])
-        setLoading(false)
-      })
+    // Page through — the active catalog exceeds the ~1000-row PostgREST cap, which
+    // would otherwise silently drop selectable equipment from the designer.
+    fetchAllRows<EquipmentCatalogItem>((from, to) =>
+      supabase
+        .from('equipment_catalog')
+        .select('*')
+        .eq('active', true)
+        .order('sort_order').order('brand').order('description')
+        .range(from, to),
+    ).then(({ data, error }) => {
+      if (!active) return
+      if (error) setError(error.message)
+      else setItems(data)
+      setLoading(false)
+    })
     return () => { active = false }
   }, [])
 
