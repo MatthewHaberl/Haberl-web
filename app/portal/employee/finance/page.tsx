@@ -18,12 +18,27 @@ const PAGE_SIZES = [25, 50, 100, 200]
 const DEFAULT_PAGE_SIZE = 50
 const NIL = '00000000-0000-0000-0000-000000000000'
 
-type SP = { q?: string; type?: string; supplier?: string; from?: string; to?: string; alloc?: string; books?: string; sort?: string; page?: string; per?: string }
+type SP = { q?: string; amount?: string; type?: string; supplier?: string; from?: string; to?: string; alloc?: string; books?: string; sort?: string; page?: string; per?: string }
+
+/**
+ * Parse a free-typed Rand amount into a cents filter. A whole number ("1500")
+ * matches any document totalling R1500.xx; a decimal ("1500.50") matches that
+ * exact cent value. Returns nulls for blank/invalid input.
+ */
+function parseAmountCents(input: string): { exact: number | null; lo: number | null; hi: number | null } {
+  const cleaned = input.replace(/[^0-9.]/g, '')
+  const val = Number(cleaned)
+  if (!cleaned || !isFinite(val) || val < 0) return { exact: null, lo: null, hi: null }
+  if (cleaned.includes('.')) return { exact: Math.round(val * 100), lo: null, hi: null }
+  const cents = Math.round(val) * 100
+  return { exact: null, lo: cents, hi: cents + 99 }
+}
 
 function buildHref(base: SP, override: Partial<SP>): string {
   const m = { ...base, ...override }
   const p = new URLSearchParams()
   if (m.q) p.set('q', m.q)
+  if (m.amount) p.set('amount', m.amount)
   if (m.type && m.type !== 'all') p.set('type', m.type)
   if (m.supplier && m.supplier !== 'all') p.set('supplier', m.supplier)
   if (m.from) p.set('from', m.from)
@@ -45,6 +60,7 @@ export default async function FinanceDocumentsPage({
   await requireSection('finance')
   const sp = await searchParams
   const q = sp.q ?? ''
+  const amount = sp.amount ?? ''
   const type = sp.type ?? 'all'
   const supplier = sp.supplier ?? 'all'
   const from = sp.from ?? ''
@@ -88,6 +104,9 @@ export default async function FinanceDocumentsPage({
   docsQuery = docsQuery.range(page * per, page * per + per - 1)
 
   if (q) docsQuery = docsQuery.or(`file_name.ilike.%${q}%,supplier_name.ilike.%${q}%,doc_number.ilike.%${q}%`)
+  const amt = parseAmountCents(amount)
+  if (amt.exact != null) docsQuery = docsQuery.eq('total_cents', amt.exact)
+  else if (amt.lo != null) docsQuery = docsQuery.gte('total_cents', amt.lo).lte('total_cents', amt.hi as number)
   if (type !== 'all') docsQuery = docsQuery.eq('doc_type', type)
   if (books === 'on') docsQuery = docsQuery.eq('on_books', true)
   else if (books === 'reference') docsQuery = docsQuery.eq('on_books', false)
@@ -144,7 +163,7 @@ export default async function FinanceDocumentsPage({
   })
 
   const total = count ?? 0
-  const base: SP = { q, type, supplier, from, to, alloc, books, sort, per: String(per) }
+  const base: SP = { q, amount, type, supplier, from, to, alloc, books, sort, per: String(per) }
   const dateSort = {
     href: buildHref(base, { sort: sort === 'oldest' ? 'newest' : 'oldest' }),
     arrow: sort === 'oldest' ? '↑' : sort === 'newest' ? '↓' : '',
@@ -153,7 +172,7 @@ export default async function FinanceDocumentsPage({
     href: buildHref(base, { sort: sort === 'total_desc' ? 'total_asc' : 'total_desc' }),
     arrow: sort === 'total_desc' ? '↓' : sort === 'total_asc' ? '↑' : '',
   }
-  const filtered = q || type !== 'all' || supplier !== 'all' || from || to || alloc !== 'all' || books !== 'all'
+  const filtered = q || amount || type !== 'all' || supplier !== 'all' || from || to || alloc !== 'all' || books !== 'all'
 
   const fieldCls = 'h-10 rounded-md border border-border bg-background px-3 text-sm'
 
@@ -181,6 +200,11 @@ export default async function FinanceDocumentsPage({
                 <input type="text" name="q" defaultValue={q} placeholder="supplier, file or doc no…"
                   className={`${fieldCls} w-60 pl-8`} />
               </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Amount (R)</label>
+              <input type="text" name="amount" inputMode="decimal" defaultValue={amount} placeholder="e.g. 1500 or 1500.50"
+                className={`${fieldCls} w-40`} title="Whole number matches R____.xx; add cents for an exact match" />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-muted-foreground">Type</label>
