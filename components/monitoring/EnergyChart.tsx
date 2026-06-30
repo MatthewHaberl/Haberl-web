@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import {
   ChevronLeft, ChevronRight, LineChart as LineIcon, BarChart3,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, Sun, BatteryCharging, Plug, Home,
 } from 'lucide-react'
 
 interface Reading {
@@ -84,8 +84,34 @@ function toW(w: number | null) { return Math.round(w ?? 0) }
 function fmtW(v: number | null) { return v == null ? '—' : `${v.toLocaleString('en-ZA')} W` }
 function fmtPct(v: number | null) { return v == null ? '—' : `${v}%` }
 function fmtKwh(v: number) { return `${v.toLocaleString('en-ZA', { maximumFractionDigits: 1 })} kWh` }
-function Dot({ color }: { color: string }) {
-  return <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: color }} />
+
+/** Range-summary block, styled to match the live-flow gauges: big total up top,
+ * min (bottom-left) and max (bottom-right) along the footer. */
+function SummaryCard({
+  label, icon: Icon, color, children, min, max, unit = 'W',
+}: {
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  color: string
+  children: React.ReactNode
+  min: number | null
+  max: number | null
+  unit?: 'W' | '%'
+}) {
+  const fmt = unit === '%' ? fmtPct : fmtW
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+        <Icon className={`h-4 w-4 ${color}`} />
+      </div>
+      <div className={`tabular-nums ${color}`}>{children}</div>
+      <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/60 pt-2 text-xs text-muted-foreground">
+        <span>Min <span className="font-semibold tabular-nums text-foreground">{fmt(min)}</span></span>
+        <span>Max <span className="font-semibold tabular-nums text-foreground">{fmt(max)}</span></span>
+      </div>
+    </div>
+  )
 }
 
 interface Props {
@@ -421,66 +447,36 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
     </AreaChart>
   )
 
-  // Totals + peaks for the selected window, mirroring the live-flow sections.
-  const summaryTable = summary && summary.count > 0 && (
-    <div className="mt-4">
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Range summary</h3>
-        <span className="text-[11px] text-muted-foreground">{summary.count.toLocaleString('en-ZA')} readings</span>
-      </div>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border bg-muted/40 text-muted-foreground">
-              <th className="px-3 py-2 text-left font-medium">Section</th>
-              <th className="px-3 py-2 text-right font-medium">Min</th>
-              <th className="px-3 py-2 text-right font-medium">Max</th>
-              <th className="px-3 py-2 text-right font-medium">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b border-border/50">
-              <td className="px-3 py-2 font-medium"><Dot color="#eab308" />Solar</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.solar.min)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.solar.max)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtKwh(summary.solar.total_kwh)} <span className="text-muted-foreground">produced</span></td>
-            </tr>
-            <tr className="border-b border-border/50">
-              <td className="px-3 py-2 font-medium"><Dot color="#a855f7" />Load</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.load.min)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.load.max)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtKwh(summary.load.total_kwh)} <span className="text-muted-foreground">consumed</span></td>
-            </tr>
-            <tr className="border-b border-border/50">
-              <td className="px-3 py-2 font-medium"><Dot color="#22c55e" />Battery</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.battery.min)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.battery.max)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                <div>{fmtKwh(summary.battery.charge_kwh)} <span className="text-muted-foreground">charged</span></div>
-                <div>{fmtKwh(summary.battery.discharge_kwh)} <span className="text-muted-foreground">discharged</span></div>
-              </td>
-            </tr>
-            <tr className="border-b border-border/50">
-              <td className="px-3 py-2 font-medium"><Dot color="#3b82f6" />Grid</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.grid.min)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.grid.max)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                <div>{fmtKwh(summary.grid.import_kwh)} <span className="text-muted-foreground">imported</span></div>
-                <div>{fmtKwh(summary.grid.export_kwh)} <span className="text-muted-foreground">exported</span></div>
-              </td>
-            </tr>
-            <tr>
-              <td className="px-3 py-2 font-medium"><Dot color="#06b6d4" />Battery SOC</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtPct(summary.soc.min)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtPct(summary.soc.max)}</td>
-              <td className="px-3 py-2 text-right text-muted-foreground">—</td>
-            </tr>
-          </tbody>
-        </table>
+  // Totals + peaks for the selected range, as gauge-style blocks mirroring the
+  // live power flow above. Total up top; min/max along the footer.
+  const summaryCards = summary && summary.count > 0 && (
+    <div className="mb-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard label="Solar generation" icon={Sun} color="text-yellow-500" min={summary.solar.min} max={summary.solar.max}>
+          <span className="text-2xl font-bold">{fmtKwh(summary.solar.total_kwh)}</span>
+          <span className="ml-1 text-xs font-medium text-muted-foreground">produced</span>
+        </SummaryCard>
+
+        <SummaryCard label="Battery" icon={BatteryCharging} color="text-green-500" min={summary.battery.min} max={summary.battery.max}>
+          <div className="text-lg font-bold leading-tight">{fmtKwh(summary.battery.charge_kwh)} <span className="text-xs font-medium text-muted-foreground">charged</span></div>
+          <div className="text-lg font-bold leading-tight">{fmtKwh(summary.battery.discharge_kwh)} <span className="text-xs font-medium text-muted-foreground">discharged</span></div>
+          {(summary.soc.min != null || summary.soc.max != null) && (
+            <div className="text-xs font-medium text-muted-foreground">SOC {fmtPct(summary.soc.min)} – {fmtPct(summary.soc.max)}</div>
+          )}
+        </SummaryCard>
+
+        <SummaryCard label="Grid" icon={Plug} color="text-blue-500" min={summary.grid.min} max={summary.grid.max}>
+          <div className="text-lg font-bold leading-tight">{fmtKwh(summary.grid.import_kwh)} <span className="text-xs font-medium text-muted-foreground">imported</span></div>
+          <div className="text-lg font-bold leading-tight">{fmtKwh(summary.grid.export_kwh)} <span className="text-xs font-medium text-muted-foreground">exported</span></div>
+        </SummaryCard>
+
+        <SummaryCard label="Load consumption" icon={Home} color="text-purple-500" min={summary.load.min} max={summary.load.max}>
+          <span className="text-2xl font-bold">{fmtKwh(summary.load.total_kwh)}</span>
+          <span className="ml-1 text-xs font-medium text-muted-foreground">consumed</span>
+        </SummaryCard>
       </div>
       <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-        Min/max are instantaneous power peaks over the range. Battery and grid min/max are signed —
-        negative is export (grid) or discharge (battery).
+        Totals and peaks for the selected range. Min/max are instantaneous power; negative is export (grid) or discharge (battery).
       </p>
     </div>
   )
@@ -488,6 +484,7 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
   return (
     <div className={fullscreen ? 'fixed inset-0 z-[60] flex flex-col gap-1 bg-background p-4' : ''}>
       {controls}
+      {!fullscreen && summaryCards}
       {loading ? (
         <div className="flex h-48 flex-1 items-center justify-center text-sm text-muted-foreground">Loading chart…</div>
       ) : empty ? (
@@ -501,7 +498,6 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
           </ResponsiveContainer>
         </div>
       )}
-      {!fullscreen && summaryTable}
     </div>
   )
 }
