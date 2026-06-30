@@ -208,8 +208,12 @@ export default async function FinanceDocumentPage({
           file_name: doc.file_name,
           on_books: doc.on_books,
           belongs_to: doc.belongs_to,
+          customer_id: doc.customer_id,
+          customer_label: doc.customer_label,
+          visible_to_customer: doc.visible_to_customer,
         }}
         customerName={doc.customer?.full_name ?? null}
+        customers={customers}
       />
 
       {/* Flags / notes */}

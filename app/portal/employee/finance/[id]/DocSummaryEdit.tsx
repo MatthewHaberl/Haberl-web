@@ -18,9 +18,20 @@ export interface DocHeader {
   file_name: string | null
   on_books: boolean
   belongs_to: string | null
+  customer_id: string | null
+  customer_label: string | null
+  visible_to_customer: boolean
 }
 
-export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customerName: string | null }) {
+const ONE_OFF = '__oneoff__'
+
+export function DocSummaryEdit({
+  doc, customerName, customers,
+}: {
+  doc: DocHeader
+  customerName: string | null
+  customers: { id: string; full_name: string }[]
+}) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -33,13 +44,20 @@ export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customer
   const [total, setTotal] = useState(doc.total_cents != null ? (doc.total_cents / 100).toFixed(2) : '')
   const [onBooks, setOnBooks] = useState(doc.on_books)
   const [belongsTo, setBelongsTo] = useState(doc.belongs_to ?? '')
+  const [custChoice, setCustChoice] = useState(doc.customer_id ?? (doc.customer_label ? ONE_OFF : ''))
+  const [custLabel, setCustLabel] = useState(doc.customer_label ?? '')
+  const [visible, setVisible] = useState(doc.visible_to_customer)
 
   function reset() {
     setSupplier(doc.supplier_name ?? ''); setDocNo(doc.doc_number ?? ''); setDate(doc.doc_date ?? '')
     setType(doc.doc_type); setTotal(doc.total_cents != null ? (doc.total_cents / 100).toFixed(2) : '')
     setOnBooks(doc.on_books); setBelongsTo(doc.belongs_to ?? '')
+    setCustChoice(doc.customer_id ?? (doc.customer_label ? ONE_OFF : ''))
+    setCustLabel(doc.customer_label ?? ''); setVisible(doc.visible_to_customer)
     setError(null)
   }
+
+  const realCustomer = !!custChoice && custChoice !== ONE_OFF
 
   async function save() {
     setBusy(true); setError(null)
@@ -50,6 +68,9 @@ export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customer
           supplier_name: supplier, doc_number: docNo, doc_date: date || null,
           doc_type: type, total_cents: total === '' ? null : Math.round(Number(total) * 100),
           on_books: onBooks, belongs_to: onBooks ? null : (belongsTo || null),
+          customer_id: realCustomer ? custChoice : null,
+          customer_label: custChoice === ONE_OFF ? (custLabel || null) : null,
+          visible_to_customer: realCustomer ? visible : false,
         }),
       })
       if (!res.ok) throw new Error(await res.text())
@@ -69,7 +90,14 @@ export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customer
           <Field label="Total (incl VAT)" value={doc.total_cents != null ? formatCurrency(doc.total_cents) : '—'} />
           <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap items-center gap-3 pt-1">
             <Badge variant="outline">{FIN_DOC_TYPE_LABEL[doc.doc_type] ?? doc.doc_type}</Badge>
-            {customerName && <Badge variant="accent">{customerName}</Badge>}
+            {customerName && (
+              <Badge variant="accent">
+                {customerName}{doc.visible_to_customer ? ' · in portal' : ''}
+              </Badge>
+            )}
+            {!customerName && doc.customer_label && (
+              <Badge variant="outline">One-off: {doc.customer_label}</Badge>
+            )}
             {!doc.on_books && (
               <Badge variant="warning">
                 Reference only{doc.belongs_to ? ` — ${doc.belongs_to}` : ''}
@@ -119,6 +147,26 @@ export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customer
         {!onBooks && (
           <EditField label="Belongs to">
             <input value={belongsTo} onChange={(e) => setBelongsTo(e.target.value)} placeholder="e.g. Solza" className={inputCls} />
+          </EditField>
+        )}
+        <EditField label="Customer">
+          <select value={custChoice} onChange={(e) => setCustChoice(e.target.value)} className={inputCls}>
+            <option value="">— none —</option>
+            {customers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+            <option value={ONE_OFF}>Other (one-off — type a name)</option>
+          </select>
+        </EditField>
+        {custChoice === ONE_OFF && (
+          <EditField label="One-off customer">
+            <input value={custLabel} onChange={(e) => setCustLabel(e.target.value)} placeholder="Name for this transaction" className={inputCls} />
+          </EditField>
+        )}
+        {realCustomer && (
+          <EditField label="Customer portal">
+            <label className="flex h-9 items-center gap-2 text-sm">
+              <input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
+              Show this document in their portal
+            </label>
           </EditField>
         )}
         <div className="sm:col-span-2 lg:col-span-4 -mt-2">

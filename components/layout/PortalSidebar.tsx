@@ -17,6 +17,7 @@ const customerLinks = [
   { label: 'Dashboard',   href: '/portal/customer',              icon: Home },
   { label: 'My Sites',    href: '/portal/customer/sites',        icon: MapPin },
   { label: 'Monitoring',  href: '/portal/customer/monitoring',   icon: Activity },
+  { label: 'Documents',   href: '/portal/customer/documents',    icon: Receipt },
   { label: 'Orders',      href: '/portal/customer/orders',       icon: ShoppingBag },
   { label: 'Profile',     href: '/portal/customer/profile',      icon: User },
 ]

@@ -57,9 +57,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   setStr('doc_date')   // 'YYYY-MM-DD' or null
   setStr('notes')
   setStr('belongs_to') // free-text owner label, e.g. 'Solza'
+  setStr('customer_label') // free-text one-off customer for random transactions
 
   if ('on_books' in body) {
     update.on_books = !!body.on_books
+  }
+  if ('customer_id' in body) {
+    const v = body.customer_id
+    update.customer_id = typeof v === 'string' && v ? v : null
+  }
+  if ('visible_to_customer' in body) {
+    update.visible_to_customer = !!body.visible_to_customer
   }
 
   if ('doc_type' in body) {

@@ -63,6 +63,7 @@ export interface FinDocument {
   mime_type: string | null
   file_size: number | null
   visible_to_customer: boolean
+  customer_label: string | null
   on_books: boolean
   belongs_to: string | null
   ocr_status: FinOcrStatus
