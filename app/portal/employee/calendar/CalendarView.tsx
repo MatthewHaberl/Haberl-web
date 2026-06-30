@@ -2,9 +2,9 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { KIND_META, kindLabel, timeLabel, type CalendarItem } from '@/lib/calendar/events'
 import type { CalendarEvent } from '@/types/database'
@@ -51,6 +51,7 @@ export function CalendarView({
   const [dialog, setDialog] = useState<
     { event: CalendarEvent | null; defaultDate: string | null } | null
   >(prefill ? { event: null, defaultDate: null } : null)
+  const [dragItem, setDragItem] = useState<CalendarItem | null>(null)
 
   // Reload from the server when navigation steps outside the loaded window.
   useEffect(() => {
@@ -94,6 +95,24 @@ export function CalendarView({
   function openItem(it: CalendarItem) {
     if (it.source === 'event' && it.event) setDialog({ event: it.event, defaultDate: null })
     else if (it.href) router.push(it.href)
+  }
+
+  // Drag an event onto another day to reschedule it (time-of-day + duration kept).
+  // Jobs are read-only here — they're rescheduled on the job itself.
+  async function reschedule(item: CalendarItem, targetDayKey: string) {
+    if (item.source !== 'event' || !item.event) return
+    if (localKey(item.start) === targetDayKey) return
+    const [ty, tm, td] = targetDayKey.split('-').map(Number)
+    const s = new Date(item.start)
+    const e = new Date(item.end)
+    const newStart = new Date(ty, tm - 1, td, s.getHours(), s.getMinutes())
+    const newEnd = new Date(newStart.getTime() + (e.getTime() - s.getTime()))
+    const supabase = createClient()
+    await supabase
+      .from('calendar_events')
+      .update({ starts_at: newStart.toISOString(), ends_at: newEnd.toISOString() })
+      .eq('id', item.event.id)
+    router.refresh()
   }
 
   const heading = view === 'month'
@@ -182,7 +201,17 @@ export function CalendarView({
       </div>
 
       {view === 'month' && (
-        <MonthGrid cursor={cursor} byDay={byDay} onDay={(d) => { setCursor(d); setView('day') }} onItem={openItem} onAdd={(d) => setDialog({ event: null, defaultDate: dateKey(d) })} />
+        <MonthGrid
+          cursor={cursor}
+          byDay={byDay}
+          onDay={(d) => { setCursor(d); setView('day') }}
+          onItem={openItem}
+          onAdd={(d) => setDialog({ event: null, defaultDate: dateKey(d) })}
+          dragItem={dragItem}
+          onItemDragStart={setDragItem}
+          onItemDragEnd={() => setDragItem(null)}
+          onDropDay={(dayKey) => { if (dragItem) reschedule(dragItem, dayKey); setDragItem(null) }}
+        />
       )}
       {view === 'week' && (
         <WeekAgenda cursor={cursor} byDay={byDay} onItem={openItem} onAdd={(d) => setDialog({ event: null, defaultDate: dateKey(d) })} />
@@ -206,15 +235,31 @@ export function CalendarView({
   )
 }
 
-function ItemChip({ it, onClick }: { it: CalendarItem; onClick: () => void }) {
+function ItemChip({
+  it, onClick, draggable, onDragStart, onDragEnd,
+}: {
+  it: CalendarItem
+  onClick: () => void
+  draggable?: boolean
+  onDragStart?: () => void
+  onDragEnd?: () => void
+}) {
   const meta = KIND_META[it.kind]
+  const canDrag = draggable && it.source === 'event'
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick() }}
-      title={`${kindLabel(it.kind)} · ${it.title}${it.assigneeName ? ` · ${it.assigneeName}` : ''}`}
+      draggable={canDrag}
+      onDragStart={canDrag ? (e) => { e.stopPropagation(); onDragStart?.() } : undefined}
+      onDragEnd={canDrag ? onDragEnd : undefined}
+      title={
+        `${kindLabel(it.kind)} · ${it.title}${it.assigneeName ? ` · ${it.assigneeName}` : ''}` +
+        (canDrag ? ' · drag to reschedule' : '')
+      }
       className={cn(
         'flex w-full items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left text-[11px] leading-tight transition-opacity hover:opacity-80',
         meta.block,
+        canDrag && 'cursor-grab active:cursor-grabbing',
         (it.status === 'cancelled' || it.status === 'no_show') && 'line-through opacity-60',
       )}
     >
@@ -225,13 +270,17 @@ function ItemChip({ it, onClick }: { it: CalendarItem; onClick: () => void }) {
 }
 
 function MonthGrid({
-  cursor, byDay, onDay, onItem, onAdd,
+  cursor, byDay, onDay, onItem, onAdd, dragItem, onItemDragStart, onItemDragEnd, onDropDay,
 }: {
   cursor: Date
   byDay: Map<string, CalendarItem[]>
   onDay: (d: Date) => void
   onItem: (it: CalendarItem) => void
   onAdd: (d: Date) => void
+  dragItem: CalendarItem | null
+  onItemDragStart: (it: CalendarItem) => void
+  onItemDragEnd: () => void
+  onDropDay: (dayKey: string) => void
 }) {
   const year = cursor.getFullYear(); const month = cursor.getMonth()
   const first = new Date(year, month, 1)
@@ -255,10 +304,13 @@ function MonthGrid({
             <div
               key={i}
               onClick={() => onAdd(d)}
+              onDragOver={dragItem ? (e) => e.preventDefault() : undefined}
+              onDrop={dragItem ? (e) => { e.preventDefault(); onDropDay(dateKey(d)) } : undefined}
               className={cn(
                 'group min-h-[104px] cursor-pointer border-b border-r border-border p-1 transition-colors hover:bg-muted/30',
                 i % 7 === 6 && 'border-r-0',
                 !inMonth && 'bg-muted/20 text-muted-foreground',
+                dragItem && localKey(dragItem.start) !== dateKey(d) && 'hover:bg-accent/10 hover:ring-1 hover:ring-accent/40',
               )}
             >
               <div className="mb-1 flex items-center justify-between">
@@ -271,7 +323,16 @@ function MonthGrid({
                 </span>
               </div>
               <div className="flex flex-col gap-0.5">
-                {list.slice(0, 3).map((it) => <ItemChip key={it.id} it={it} onClick={() => onItem(it)} />)}
+                {list.slice(0, 3).map((it) => (
+                  <ItemChip
+                    key={it.id}
+                    it={it}
+                    onClick={() => onItem(it)}
+                    draggable
+                    onDragStart={() => onItemDragStart(it)}
+                    onDragEnd={onItemDragEnd}
+                  />
+                ))}
                 {list.length > 3 && (
                   <button
                     onClick={(e) => { e.stopPropagation(); onDay(d) }}
