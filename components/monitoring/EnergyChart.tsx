@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import {
   AreaChart, Area, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, Brush,
@@ -109,6 +109,42 @@ function SummaryCard({
       <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/60 pt-2 text-xs text-muted-foreground">
         <span>Min <span className="font-semibold tabular-nums text-foreground">{fmt(min)}</span></span>
         <span>Max <span className="font-semibold tabular-nums text-foreground">{fmt(max)}</span></span>
+      </div>
+    </div>
+  )
+}
+
+interface TipEntry { name?: string; value?: number | string | null; color?: string; dataKey?: string }
+
+/** High-contrast hover tooltip: solid card, a colour dot per series, and labels
+ * + values in the normal foreground colour so legibility doesn't depend on each
+ * series' (often pale) line colour. */
+function ChartTooltip({ active, payload, label, unit, dayLabel }: {
+  active?: boolean
+  payload?: TipEntry[]
+  label?: string | number
+  unit: 'W' | 'kWh'
+  dayLabel?: boolean
+}) {
+  if (!active || !payload || payload.length === 0) return null
+  const rows = payload.filter((e) => e.value != null)
+  if (rows.length === 0) return null
+  const heading = dayLabel ? formatDay(String(label)) : String(label ?? '')
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-lg">
+      <div className="mb-1.5 font-semibold text-foreground">{heading}</div>
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1">
+        {rows.map((e, i) => {
+          const isPct = (e.name ?? '').includes('%') || e.name === 'SOC'
+          const num = Number(e.value).toLocaleString('en-ZA')
+          return (
+            <Fragment key={i}>
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: e.color }} />
+              <span className="text-muted-foreground">{e.name}</span>
+              <span className="text-right font-semibold tabular-nums text-foreground">{isPct ? `${num}%` : `${num} ${unit}`}</span>
+            </Fragment>
+          )
+        })}
       </div>
     </div>
   )
@@ -351,17 +387,6 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
   const tooltipCommon = {
     position: tipPos,
     allowEscapeViewBox: { x: false as const, y: true as const },
-    // Translucent + blurred so the labels stay readable but you can still see
-    // the graph trending behind the box.
-    contentStyle: {
-      background: 'hsl(var(--card) / 0.78)',
-      backdropFilter: 'blur(3px)',
-      WebkitBackdropFilter: 'blur(3px)',
-      border: '1px solid hsl(var(--border) / 0.6)',
-      borderRadius: '8px',
-      fontSize: 12,
-      boxShadow: '0 2px 10px hsl(var(--foreground) / 0.12)',
-    },
     wrapperStyle: { zIndex: 50 },
   }
 
@@ -389,12 +414,7 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
       <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 10 }} width={40} />
       <Tooltip
         {...tooltipCommon}
-        labelFormatter={(d) => formatDay(String(d))}
-        formatter={(val, name) =>
-          typeof name === 'string' && name.includes('%')
-            ? [`${Number(val).toLocaleString('en-ZA')}%`, name]
-            : [`${Number(val).toLocaleString('en-ZA')} kWh`, name]
-        }
+        content={(p) => <ChartTooltip active={p.active} payload={p.payload as unknown as TipEntry[]} label={p.label} unit="kWh" dayLabel />}
       />
       <Legend {...legendCommon} />
       {BAR_SERIES.map((s) => (
@@ -429,11 +449,7 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
       <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 10 }} width={40} />
       <Tooltip
         {...tooltipCommon}
-        formatter={(val, name) =>
-          name === 'SOC'
-            ? [`${Number(val).toLocaleString('en-ZA')}%`, name]
-            : [`${Number(val).toLocaleString('en-ZA')} W`, name]
-        }
+        content={(p) => <ChartTooltip active={p.active} payload={p.payload as unknown as TipEntry[]} label={p.label} unit="W" />}
       />
       <Legend {...legendCommon} />
       {LINE_SERIES.map((s) => (
