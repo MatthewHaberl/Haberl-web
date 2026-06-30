@@ -206,6 +206,73 @@ function dailyTotals(rows: AggReading[]): DailyTotal[] {
     }))
 }
 
+interface SeriesStat { min: number | null; max: number | null }
+interface RangeSummary {
+  count: number
+  solar: SeriesStat & { total_kwh: number }
+  load: SeriesStat & { total_kwh: number }
+  battery: SeriesStat & { charge_kwh: number; discharge_kwh: number }
+  grid: SeriesStat & { import_kwh: number; export_kwh: number }
+  soc: SeriesStat
+}
+
+/**
+ * Whole-window roll-up for the range-summary table: peak min/max (W) per series
+ * plus total energy (kWh). Energy is trapezoidally integrated at full resolution
+ * (same gap-aware method as `dailyTotals`) so totals and peaks are exact — this
+ * runs on the raw rows, before the line chart's 800-point downsample.
+ * Sign convention: grid +import/−export, battery +charge/−discharge; min/max are
+ * over the signed series, so grid.max = peak import and grid.min = peak export.
+ */
+function windowSummary(rows: AggReading[]): RangeSummary {
+  const solar: SeriesStat = { min: null, max: null }
+  const load: SeriesStat = { min: null, max: null }
+  const battery: SeriesStat = { min: null, max: null }
+  const grid: SeriesStat = { min: null, max: null }
+  const soc: SeriesStat = { min: null, max: null }
+  const upd = (s: SeriesStat, v: number | null) => {
+    if (v == null) return
+    s.min = s.min == null ? v : Math.min(s.min, v)
+    s.max = s.max == null ? v : Math.max(s.max, v)
+  }
+  for (const r of rows) {
+    upd(solar, r.pv_power_w)
+    upd(load, r.load_power_w)
+    upd(battery, r.battery_power_w)
+    upd(grid, r.grid_power_w)
+    upd(soc, r.battery_soc_pct)
+  }
+
+  let production = 0, consumption = 0, gridImport = 0, gridExport = 0, battCharge = 0, battDischarge = 0
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1]
+    const b = rows[i]
+    const dtH = (new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()) / 3_600_000
+    if (!(dtH > 0) || dtH > 1) continue // skip zero/negative steps and >1h gaps
+    const area = (v1: number, v2: number) => ((v1 + v2) / 2) * dtH / 1000
+    const pos = (v: number | null) => Math.max(v ?? 0, 0)
+    const neg = (v: number | null) => Math.max(-(v ?? 0), 0)
+    production    += area(pos(a.pv_power_w),      pos(b.pv_power_w))
+    consumption   += area(pos(a.load_power_w),    pos(b.load_power_w))
+    gridImport    += area(pos(a.grid_power_w),    pos(b.grid_power_w))
+    gridExport    += area(neg(a.grid_power_w),    neg(b.grid_power_w))
+    battCharge    += area(pos(a.battery_power_w), pos(b.battery_power_w))
+    battDischarge += area(neg(a.battery_power_w), neg(b.battery_power_w))
+  }
+
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const rW = (n: number | null) => (n == null ? null : Math.round(n))
+  const r1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10)
+  return {
+    count: rows.length,
+    solar:   { min: rW(solar.min),   max: rW(solar.max),   total_kwh: r2(production) },
+    load:    { min: rW(load.min),    max: rW(load.max),    total_kwh: r2(consumption) },
+    battery: { min: rW(battery.min), max: rW(battery.max), charge_kwh: r2(battCharge), discharge_kwh: r2(battDischarge) },
+    grid:    { min: rW(grid.min),    max: rW(grid.max),    import_kwh: r2(gridImport), export_kwh: r2(gridExport) },
+    soc:     { min: r1(soc.min),     max: r1(soc.max) },
+  }
+}
+
 export async function GET(req: NextRequest) {
   const user = await getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -263,6 +330,20 @@ export async function GET(req: NextRequest) {
   } else {
     const hours = parseInt(searchParams.get('hours') ?? '24', 10)
     since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+  }
+
+  // ── Whole-window roll-up (range-summary table) ────────────────────────
+  if (searchParams.get('summary')) {
+    try {
+      const rows = await fetchAllReadings(
+        supabase, systemId,
+        'recorded_at, pv_power_w, battery_power_w, grid_power_w, load_power_w, battery_soc_pct',
+        since, until,
+      )
+      return NextResponse.json(windowSummary(rows as unknown as AggReading[]))
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
+    }
   }
 
   try {

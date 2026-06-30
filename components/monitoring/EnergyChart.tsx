@@ -40,6 +40,16 @@ interface DailyTotal {
   soc_max: number | null
 }
 
+interface SeriesStat { min: number | null; max: number | null }
+interface RangeSummary {
+  count: number
+  solar: SeriesStat & { total_kwh: number }
+  load: SeriesStat & { total_kwh: number }
+  battery: SeriesStat & { charge_kwh: number; discharge_kwh: number }
+  grid: SeriesStat & { import_kwh: number; export_kwh: number }
+  soc: SeriesStat
+}
+
 // Minimal shapes of the recharts callback payloads we read (avoids internals).
 interface ChartMouseState { activeCoordinate?: { x: number; y: number } }
 interface LegendPayload { dataKey?: unknown }
@@ -69,6 +79,14 @@ function formatDay(day: string) {
 
 /** Whole watts — no kW rounding, so small loads aren't lost to 0.1 kW steps. */
 function toW(w: number | null) { return Math.round(w ?? 0) }
+
+/** Summary-table cell formatters. */
+function fmtW(v: number | null) { return v == null ? '—' : `${v.toLocaleString('en-ZA')} W` }
+function fmtPct(v: number | null) { return v == null ? '—' : `${v}%` }
+function fmtKwh(v: number) { return `${v.toLocaleString('en-ZA', { maximumFractionDigits: 1 })} kWh` }
+function Dot({ color }: { color: string }) {
+  return <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: color }} />
+}
 
 interface Props {
   systemId: string
@@ -113,6 +131,7 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
   const [anchor, setAnchor] = useState(todaySast)  // 24h: the day; 7d/30d: window end day
   const [data, setData] = useState<ChartPoint[]>([])
   const [daily, setDaily] = useState<DailyTotal[]>([])
+  const [summary, setSummary] = useState<RangeSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [tipPos, setTipPos] = useState<{ x: number; y: number } | undefined>(undefined)
   const [hidden, setHidden] = useState<Set<string>>(new Set())
@@ -180,6 +199,22 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
       })
       .finally(() => setLoading(false))
   }, [systemId, hours, view, anchor, atToday, showBars, windowDays])
+
+  // Range-summary roll-up (totals + peaks for the selected window). View-independent:
+  // the same figures back both the line and totals views.
+  useEffect(() => {
+    const qs = hours === 24
+      ? (atToday ? `hours=24` : `day=${anchor}`)
+      : `days=${windowDays}&end=${anchor}`
+    let cancelled = false
+    fetch(`/api/monitoring/readings?systemId=${systemId}&summary=1&${qs}`)
+      .then((r) => r.json())
+      .then((s: RangeSummary | { error: string }) => {
+        if (!cancelled) setSummary('count' in s ? s : null)
+      })
+      .catch(() => { if (!cancelled) setSummary(null) })
+    return () => { cancelled = true }
+  }, [systemId, hours, anchor, atToday, windowDays])
 
   // ── Controls row ───────────────────────────────────────────────────────
   const rangeButtons = (
@@ -386,6 +421,70 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
     </AreaChart>
   )
 
+  // Totals + peaks for the selected window, mirroring the live-flow sections.
+  const summaryTable = summary && summary.count > 0 && (
+    <div className="mt-4">
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Range summary</h3>
+        <span className="text-[11px] text-muted-foreground">{summary.count.toLocaleString('en-ZA')} readings</span>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border bg-muted/40 text-muted-foreground">
+              <th className="px-3 py-2 text-left font-medium">Section</th>
+              <th className="px-3 py-2 text-right font-medium">Min</th>
+              <th className="px-3 py-2 text-right font-medium">Max</th>
+              <th className="px-3 py-2 text-right font-medium">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-border/50">
+              <td className="px-3 py-2 font-medium"><Dot color="#eab308" />Solar</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.solar.min)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.solar.max)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtKwh(summary.solar.total_kwh)} <span className="text-muted-foreground">produced</span></td>
+            </tr>
+            <tr className="border-b border-border/50">
+              <td className="px-3 py-2 font-medium"><Dot color="#a855f7" />Load</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.load.min)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.load.max)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtKwh(summary.load.total_kwh)} <span className="text-muted-foreground">consumed</span></td>
+            </tr>
+            <tr className="border-b border-border/50">
+              <td className="px-3 py-2 font-medium"><Dot color="#22c55e" />Battery</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.battery.min)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.battery.max)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                <div>{fmtKwh(summary.battery.charge_kwh)} <span className="text-muted-foreground">charged</span></div>
+                <div>{fmtKwh(summary.battery.discharge_kwh)} <span className="text-muted-foreground">discharged</span></div>
+              </td>
+            </tr>
+            <tr className="border-b border-border/50">
+              <td className="px-3 py-2 font-medium"><Dot color="#3b82f6" />Grid</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.grid.min)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtW(summary.grid.max)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                <div>{fmtKwh(summary.grid.import_kwh)} <span className="text-muted-foreground">imported</span></div>
+                <div>{fmtKwh(summary.grid.export_kwh)} <span className="text-muted-foreground">exported</span></div>
+              </td>
+            </tr>
+            <tr>
+              <td className="px-3 py-2 font-medium"><Dot color="#06b6d4" />Battery SOC</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtPct(summary.soc.min)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmtPct(summary.soc.max)}</td>
+              <td className="px-3 py-2 text-right text-muted-foreground">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+        Min/max are instantaneous power peaks over the range. Battery and grid min/max are signed —
+        negative is export (grid) or discharge (battery).
+      </p>
+    </div>
+  )
+
   return (
     <div className={fullscreen ? 'fixed inset-0 z-[60] flex flex-col gap-1 bg-background p-4' : ''}>
       {controls}
@@ -402,6 +501,7 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
           </ResponsiveContainer>
         </div>
       )}
+      {!fullscreen && summaryTable}
     </div>
   )
 }
