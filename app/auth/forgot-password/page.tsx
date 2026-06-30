@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { Zap, ArrowLeft } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -18,13 +17,22 @@ export default function ForgotPasswordPage() {
     setError('')
     setLoading(true)
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    })
-
-    if (error) {
-      setError(error.message)
+    // Goes through our own Resend-backed endpoint (mints the recovery link
+    // server-side) rather than Supabase's rate-limited built-in auth email.
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      if (!res.ok && res.status !== 429) throw new Error('Request failed')
+      if (res.status === 429) {
+        setError('Too many attempts — please wait a minute and try again.')
+        setLoading(false)
+        return
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
       setLoading(false)
       return
     }

@@ -68,18 +68,33 @@ export function SetPasswordForm({ title = 'Set your password' }: { title?: strin
 
     setLoading(true)
     const { error: updateError } = await supabase.auth.updateUser({ password })
-    if (updateError) {
+
+    // `same_password` is NOT a failure here. The invite/recovery link already
+    // signs the customer in, so if they re-submit (or re-open the link) with the
+    // password they just chose, Supabase reports it as already set. They are
+    // authenticated with exactly the password they want — finish onboarding
+    // instead of dead-ending them on a "wrong password" screen.
+    const alreadySet =
+      updateError?.code === 'same_password' ||
+      /different from the old password/i.test(updateError?.message ?? '')
+
+    if (updateError && !alreadySet) {
       setError(updateError.message)
       setLoading(false)
       return
     }
 
     // Mark the customer record as registered/verified. Best-effort — never
-    // block the customer from reaching the portal if this hiccups.
-    try {
-      await fetch('/api/customers/me/confirm', { method: 'POST' })
-    } catch {
-      // ignore — RLS/trigger linking still applies
+    // block the customer from reaching the portal if this hiccups — but retry
+    // once, because a silent failure leaves them stuck as "Invited" and invites
+    // a re-invite loop. RLS/trigger linking still applies if both attempts fail.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const res = await fetch('/api/customers/me/confirm', { method: 'POST' })
+        if (res.ok) break
+      } catch {
+        // network hiccup — fall through to the retry
+      }
     }
 
     router.push(next)
