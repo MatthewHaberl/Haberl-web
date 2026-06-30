@@ -22,7 +22,7 @@ export interface LinkTarget {
   email: string | null
   phone: string | null
   /** Customer's address on file (or a lead's suburb) — pre-fills the location. */
-  address: string | null
+  address?: string | null
 }
 
 const STATUSES: CalendarEventStatus[] = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show']
