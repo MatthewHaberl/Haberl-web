@@ -66,12 +66,12 @@ export default async function CalendarPage({
   // Link targets for the "New event" dialog (small-business sized lists).
   const { data: customerRows } = await supabase
     .from('customers')
-    .select('id, full_name, email, phone')
+    .select('id, full_name, email, phone, address')
     .is('archived_at', null)
     .order('full_name')
   const { data: leadRows } = await supabase
     .from('leads')
-    .select('id, name, phone')
+    .select('id, name, phone, suburb')
     .in('status', ['new', 'contacted'])
     .order('created_at', { ascending: false })
 
@@ -82,6 +82,7 @@ export default async function CalendarPage({
       name: (c.full_name as string) || 'Unnamed',
       email: (c.email as string | null) ?? null,
       phone: (c.phone as string | null) ?? null,
+      address: (c.address as string | null) ?? null,
     })),
     ...(leadRows ?? []).map((l) => ({
       kind: 'lead' as const,
@@ -89,6 +90,8 @@ export default async function CalendarPage({
       name: (l.name as string) || 'Lead',
       email: null,
       phone: (l.phone as string | null) ?? null,
+      // Leads have no full address — use the suburb as a location hint.
+      address: (l.suburb as string | null) ?? null,
     })),
   ]
 
