@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
-import { ClipboardList, Loader2, Phone, Trash2, UserCheck, UserCog, Check, X } from 'lucide-react'
+import { ClipboardList, Loader2, Phone, Trash2, UserCheck, UserCog, Check, X, CalendarPlus } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { Lead } from '@/types/database'
 
@@ -235,6 +235,14 @@ export function LeadCard({
                     <UserCheck className="h-3.5 w-3.5" /> Convert to customer
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push(`/portal/employee/calendar?leadId=${lead.id}`)}
+                  title="Book a site meeting, inspection or follow-up with this lead"
+                >
+                  <CalendarPlus className="h-3.5 w-3.5" /> Schedule
+                </Button>
                 <Button
                   variant="accent"
                   size="sm"

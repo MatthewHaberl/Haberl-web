@@ -6,7 +6,7 @@ import {
   Home, MapPin, ShoppingBag, LogOut, Briefcase,
   BarChart2, Users, Zap, User, Menu, X, Settings, Activity,
   ClipboardList, PackageX, Search, Sunrise, PhoneIncoming, Sparkles,
-  PanelLeftClose, PanelLeftOpen, Receipt, Ticket, UserCog,
+  PanelLeftClose, PanelLeftOpen, Receipt, Ticket, UserCog, CalendarDays,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -30,6 +30,7 @@ const employeeLinks = [
   { label: 'Today',     href: '/portal/employee/briefing',         icon: Sunrise,   section: 'briefing' },
   { label: 'Leads',     href: '/portal/employee/leads',            icon: PhoneIncoming, section: 'leads' },
   { label: 'Jobs',      href: '/portal/employee/jobs',             icon: Briefcase, section: 'jobs' },
+  { label: 'Calendar',  href: '/portal/employee/calendar',         icon: CalendarDays, section: 'calendar' },
   { label: 'Quotes',    href: '/portal/employee/quotes-v2',          icon: Sparkles,  section: 'quotes' },
   { label: 'Procurement', href: '/portal/employee/procurement',    icon: ClipboardList, section: 'procurement' },
   { label: 'Customers', href: '/portal/employee/customers',        icon: Users,     section: 'customers' },

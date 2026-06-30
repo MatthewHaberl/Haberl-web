@@ -1,7 +1,7 @@
 import {
   Home, Briefcase, Sparkles, Sunrise, PhoneIncoming, ClipboardList,
   Users, Activity, BarChart2, Search, PackageX, Receipt, ShoppingBag,
-  Settings, UserCog, Ticket,
+  Settings, UserCog, Ticket, CalendarDays,
 } from 'lucide-react'
 import type { Role } from '@/types/database'
 
@@ -40,6 +40,7 @@ export const PORTAL_SECTIONS = [
   { key: 'briefing',    label: 'Today',       description: 'Daily briefing — what needs attention and what is auto-sending.', href: '/portal/employee/briefing',        match: '/portal/employee/briefing',       icon: Sunrise,       defaultRoles: MANAGER_UP },
   { key: 'leads',       label: 'Leads',       description: 'Incoming quote requests and lead follow-up.',                    href: '/portal/employee/leads',           match: '/portal/employee/leads',          icon: PhoneIncoming, defaultRoles: MANAGER_UP },
   { key: 'jobs',        label: 'Jobs',        description: 'Installation jobs and field checklists.',                        href: '/portal/employee/jobs',            match: '/portal/employee/jobs',           icon: Briefcase,     defaultRoles: ALL_EMPLOYEE },
+  { key: 'calendar',    label: 'Calendar',    description: 'Team schedule — site meetings, inspections, installs and follow-ups.', href: '/portal/employee/calendar',  match: '/portal/employee/calendar',       icon: CalendarDays,  defaultRoles: ALL_EMPLOYEE },
   { key: 'quotes',      label: 'Quotes',      description: 'The quote builder and quote list.',                              href: '/portal/employee/quotes-v2',       match: '/portal/employee/quotes-v2',      icon: Sparkles,      defaultRoles: ALL_EMPLOYEE },
   { key: 'procurement', label: 'Procurement', description: 'Purchase orders and supplier receiving.',                        href: '/portal/employee/procurement',     match: '/portal/employee/procurement',    icon: ClipboardList, defaultRoles: MANAGER_UP },
   { key: 'customers',   label: 'Customers',   description: 'Lead, quote and registered-customer directory.',                 href: '/portal/employee/customers',       match: '/portal/employee/customers',      icon: Users,         defaultRoles: MANAGER_UP },

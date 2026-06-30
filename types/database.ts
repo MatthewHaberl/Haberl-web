@@ -8,6 +8,14 @@ export interface RolePermission {
   updated_at?: string
 }
 
+/** Per-user override of section access; absent ⇒ follow the role (migration 084). */
+export interface UserSectionPermission {
+  user_id: string
+  section: string
+  allowed: boolean
+  updated_at?: string
+}
+
 /** Record-level visibility scope for a user within one section (migration 071). */
 export type RecordScope = 'own' | 'all'
 
@@ -751,4 +759,44 @@ export interface PlanItem {
   user_status: PlanItemUserStatus | null
   responded_at: string | null
   response_handled: boolean
+}
+
+/** Scheduling calendar event — see migration 085. */
+export type CalendarEventType =
+  | 'site_meeting'
+  | 'inspection'
+  | 'quote_appointment'
+  | 'service'
+  | 'follow_up'
+  | 'other'
+
+export type CalendarEventStatus =
+  | 'scheduled'
+  | 'confirmed'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show'
+
+export interface CalendarEvent {
+  id: string
+  type: CalendarEventType
+  title: string
+  starts_at: string
+  ends_at: string
+  all_day: boolean
+  status: CalendarEventStatus
+  assigned_to: string | null
+  lead_id: string | null
+  customer_id: string | null
+  site_id: string | null
+  job_id: string | null
+  location: string | null
+  contact_name: string | null
+  contact_phone: string | null
+  contact_email: string | null
+  notes: string | null
+  owner_id: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
 }
