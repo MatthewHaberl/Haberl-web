@@ -206,7 +206,10 @@ function dailyTotals(rows: AggReading[]): DailyTotal[] {
     }))
 }
 
-interface SeriesStat { min: number | null; max: number | null }
+interface SeriesStat {
+  min: number | null; max: number | null
+  min_at: string | null; max_at: string | null  // recorded_at when the peak occurred
+}
 interface RangeSummary {
   count: number
   solar: SeriesStat & { total_kwh: number }
@@ -225,22 +228,19 @@ interface RangeSummary {
  * over the signed series, so grid.max = peak import and grid.min = peak export.
  */
 function windowSummary(rows: AggReading[]): RangeSummary {
-  const solar: SeriesStat = { min: null, max: null }
-  const load: SeriesStat = { min: null, max: null }
-  const battery: SeriesStat = { min: null, max: null }
-  const grid: SeriesStat = { min: null, max: null }
-  const soc: SeriesStat = { min: null, max: null }
-  const upd = (s: SeriesStat, v: number | null) => {
+  const blank = (): SeriesStat => ({ min: null, max: null, min_at: null, max_at: null })
+  const solar = blank(), load = blank(), battery = blank(), grid = blank(), soc = blank()
+  const upd = (s: SeriesStat, v: number | null, at: string) => {
     if (v == null) return
-    s.min = s.min == null ? v : Math.min(s.min, v)
-    s.max = s.max == null ? v : Math.max(s.max, v)
+    if (s.min == null || v < s.min) { s.min = v; s.min_at = at }
+    if (s.max == null || v > s.max) { s.max = v; s.max_at = at }
   }
   for (const r of rows) {
-    upd(solar, r.pv_power_w)
-    upd(load, r.load_power_w)
-    upd(battery, r.battery_power_w)
-    upd(grid, r.grid_power_w)
-    upd(soc, r.battery_soc_pct)
+    upd(solar, r.pv_power_w, r.recorded_at)
+    upd(load, r.load_power_w, r.recorded_at)
+    upd(battery, r.battery_power_w, r.recorded_at)
+    upd(grid, r.grid_power_w, r.recorded_at)
+    upd(soc, r.battery_soc_pct, r.recorded_at)
   }
 
   let production = 0, consumption = 0, gridImport = 0, gridExport = 0, battCharge = 0, battDischarge = 0
@@ -263,13 +263,16 @@ function windowSummary(rows: AggReading[]): RangeSummary {
   const r2 = (n: number) => Math.round(n * 100) / 100
   const rW = (n: number | null) => (n == null ? null : Math.round(n))
   const r1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10)
+  // Round the magnitudes but carry the peak timestamps through untouched.
+  const stat = (s: SeriesStat, round: (n: number | null) => number | null): SeriesStat =>
+    ({ min: round(s.min), max: round(s.max), min_at: s.min_at, max_at: s.max_at })
   return {
     count: rows.length,
-    solar:   { min: rW(solar.min),   max: rW(solar.max),   total_kwh: r2(production) },
-    load:    { min: rW(load.min),    max: rW(load.max),    total_kwh: r2(consumption) },
-    battery: { min: rW(battery.min), max: rW(battery.max), charge_kwh: r2(battCharge), discharge_kwh: r2(battDischarge) },
-    grid:    { min: rW(grid.min),    max: rW(grid.max),    import_kwh: r2(gridImport), export_kwh: r2(gridExport) },
-    soc:     { min: r1(soc.min),     max: r1(soc.max) },
+    solar:   { ...stat(solar, rW),   total_kwh: r2(production) },
+    load:    { ...stat(load, rW),    total_kwh: r2(consumption) },
+    battery: { ...stat(battery, rW), charge_kwh: r2(battCharge), discharge_kwh: r2(battDischarge) },
+    grid:    { ...stat(grid, rW),    import_kwh: r2(gridImport), export_kwh: r2(gridExport) },
+    soc:     stat(soc, r1),
   }
 }
 

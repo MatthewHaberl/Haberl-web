@@ -40,7 +40,10 @@ interface DailyTotal {
   soc_max: number | null
 }
 
-interface SeriesStat { min: number | null; max: number | null }
+interface SeriesStat {
+  min: number | null; max: number | null
+  min_at: string | null; max_at: string | null
+}
 interface RangeSummary {
   count: number
   solar: SeriesStat & { total_kwh: number }
@@ -84,21 +87,30 @@ function toW(w: number | null) { return Math.round(w ?? 0) }
 function fmtW(v: number | null) { return v == null ? '—' : `${v.toLocaleString('en-ZA')} W` }
 function fmtPct(v: number | null) { return v == null ? '—' : `${v}%` }
 function fmtKwh(v: number) { return `${v.toLocaleString('en-ZA', { maximumFractionDigits: 1 })} kWh` }
+/** A peak's recorded_at as SAST wall-clock, e.g. "12 Jun, 14:35". */
+function fmtAt(iso: string | null) {
+  if (!iso) return null
+  const d = new Date(new Date(iso).getTime() + SAST_MS) // shift, then read as UTC
+  const day = d.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', timeZone: 'UTC' })
+  const time = d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
+  return `${day}, ${time}`
+}
 
 /** Range-summary block, styled to match the live-flow gauges: big total up top,
  * min (bottom-left) and max (bottom-right) along the footer. */
 function SummaryCard({
-  label, icon: Icon, color, children, min, max, unit = 'W',
+  label, icon: Icon, color, children, stat, unit = 'W',
 }: {
   label: string
   icon: React.ComponentType<{ className?: string }>
   color: string
   children: React.ReactNode
-  min: number | null
-  max: number | null
+  stat: SeriesStat
   unit?: 'W' | '%'
 }) {
   const fmt = unit === '%' ? fmtPct : fmtW
+  const minAt = fmtAt(stat.min_at)
+  const maxAt = fmtAt(stat.max_at)
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
       <div className="flex items-center justify-between">
@@ -107,8 +119,12 @@ function SummaryCard({
       </div>
       <div className={`tabular-nums ${color}`}>{children}</div>
       <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/60 pt-2 text-xs text-muted-foreground">
-        <span>Min <span className="font-semibold tabular-nums text-foreground">{fmt(min)}</span></span>
-        <span>Max <span className="font-semibold tabular-nums text-foreground">{fmt(max)}</span></span>
+        <span className={minAt ? 'cursor-help' : undefined} title={minAt ? `Lowest at ${minAt}` : undefined}>
+          Min <span className={`font-semibold tabular-nums text-foreground ${minAt ? 'underline decoration-dotted decoration-muted-foreground/60 underline-offset-2' : ''}`}>{fmt(stat.min)}</span>
+        </span>
+        <span className={maxAt ? 'cursor-help' : undefined} title={maxAt ? `Peaked at ${maxAt}` : undefined}>
+          Max <span className={`font-semibold tabular-nums text-foreground ${maxAt ? 'underline decoration-dotted decoration-muted-foreground/60 underline-offset-2' : ''}`}>{fmt(stat.max)}</span>
+        </span>
       </div>
     </div>
   )
@@ -468,31 +484,35 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
   const summaryCards = summary && summary.count > 0 && (
     <div className="mb-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Solar generation" icon={Sun} color="text-yellow-500" min={summary.solar.min} max={summary.solar.max}>
+        <SummaryCard label="Solar generation" icon={Sun} color="text-yellow-500" stat={summary.solar}>
           <span className="text-2xl font-bold">{fmtKwh(summary.solar.total_kwh)}</span>
           <span className="ml-1 text-xs font-medium text-muted-foreground">produced</span>
         </SummaryCard>
 
-        <SummaryCard label="Battery" icon={BatteryCharging} color="text-green-500" min={summary.battery.min} max={summary.battery.max}>
+        <SummaryCard label="Battery" icon={BatteryCharging} color="text-green-500" stat={summary.battery}>
           <div className="text-lg font-bold leading-tight">{fmtKwh(summary.battery.charge_kwh)} <span className="text-xs font-medium text-muted-foreground">charged</span></div>
           <div className="text-lg font-bold leading-tight">{fmtKwh(summary.battery.discharge_kwh)} <span className="text-xs font-medium text-muted-foreground">discharged</span></div>
           {(summary.soc.min != null || summary.soc.max != null) && (
-            <div className="text-xs font-medium text-muted-foreground">SOC {fmtPct(summary.soc.min)} – {fmtPct(summary.soc.max)}</div>
+            <div className="text-xs font-medium text-muted-foreground">
+              SOC <span className={summary.soc.min_at ? 'cursor-help' : undefined} title={summary.soc.min_at ? `Lowest at ${fmtAt(summary.soc.min_at)}` : undefined}>{fmtPct(summary.soc.min)}</span>
+              {' – '}
+              <span className={summary.soc.max_at ? 'cursor-help' : undefined} title={summary.soc.max_at ? `Peaked at ${fmtAt(summary.soc.max_at)}` : undefined}>{fmtPct(summary.soc.max)}</span>
+            </div>
           )}
         </SummaryCard>
 
-        <SummaryCard label="Grid" icon={Plug} color="text-blue-500" min={summary.grid.min} max={summary.grid.max}>
+        <SummaryCard label="Grid" icon={Plug} color="text-blue-500" stat={summary.grid}>
           <div className="text-lg font-bold leading-tight">{fmtKwh(summary.grid.import_kwh)} <span className="text-xs font-medium text-muted-foreground">imported</span></div>
           <div className="text-lg font-bold leading-tight">{fmtKwh(summary.grid.export_kwh)} <span className="text-xs font-medium text-muted-foreground">exported</span></div>
         </SummaryCard>
 
-        <SummaryCard label="Load consumption" icon={Home} color="text-purple-500" min={summary.load.min} max={summary.load.max}>
+        <SummaryCard label="Load consumption" icon={Home} color="text-purple-500" stat={summary.load}>
           <span className="text-2xl font-bold">{fmtKwh(summary.load.total_kwh)}</span>
           <span className="ml-1 text-xs font-medium text-muted-foreground">consumed</span>
         </SummaryCard>
       </div>
       <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-        Totals and peaks for the selected range. Min/max are instantaneous power; negative is export (grid) or discharge (battery).
+        Totals and peaks for the selected range. Hover Min/Max for when it occurred. Min/max are instantaneous power; negative is export (grid) or discharge (battery).
       </p>
     </div>
   )
