@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -22,14 +22,46 @@ const SOURCES = [
 ]
 
 /**
+ * Open/closed state is shared so the trigger can sit in the page header
+ * (top-right) while the form renders as a full-width panel below it — see
+ * AddLeadTrigger and AddLeadForm. Wrap both in AddLeadProvider.
+ */
+const AddLeadContext = createContext<{ open: boolean; setOpen: (v: boolean) => void } | null>(null)
+
+function useAddLead() {
+  const ctx = useContext(AddLeadContext)
+  if (!ctx) throw new Error('AddLead components must be used within <AddLeadProvider>')
+  return ctx
+}
+
+export function AddLeadProvider({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return <AddLeadContext.Provider value={{ open, setOpen }}>{children}</AddLeadContext.Provider>
+}
+
+/** The "Add lead" button — lives in the page header actions slot. */
+export function AddLeadTrigger() {
+  const { open, setOpen } = useAddLead()
+  if (open) return null
+  return (
+    <Button variant="accent" size="sm" onClick={() => setOpen(true)}>
+      <UserPlus className="h-4 w-4" /> Add lead
+    </Button>
+  )
+}
+
+/**
  * Log a lead that came in off-platform (a WhatsApp message, a phone call, a
  * referral) so it joins the same pipeline as website enquiries — appears on
  * this tab, in the daily email, and can be converted to a survey. Catch-all
  * until the Meta/WhatsApp integration captures those automatically.
+ *
+ * Renders as a full-width panel so the form fills the screen rather than
+ * being cramped into the header's top-right corner.
  */
-export function AddLeadDialog() {
+export function AddLeadForm() {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const { open, setOpen } = useAddLead()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -41,6 +73,10 @@ export function AddLeadDialog() {
 
   function reset() {
     setName(''); setPhone(''); setSuburb(''); setSource('whatsapp'); setNote(''); setError(null)
+  }
+
+  function close() {
+    reset(); setOpen(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -70,13 +106,7 @@ export function AddLeadDialog() {
     router.refresh()
   }
 
-  if (!open) {
-    return (
-      <Button variant="accent" size="sm" onClick={() => setOpen(true)}>
-        <UserPlus className="h-4 w-4" /> Add lead
-      </Button>
-    )
-  }
+  if (!open) return null
 
   return (
     <Card className="border-accent/40 w-full">
@@ -85,7 +115,7 @@ export function AddLeadDialog() {
           <p className="font-semibold text-sm">Add a lead</p>
           <button
             type="button"
-            onClick={() => { reset(); setOpen(false) }}
+            onClick={close}
             className="text-muted-foreground hover:text-foreground"
             aria-label="Close"
           >
@@ -94,7 +124,7 @@ export function AddLeadDialog() {
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <FormField label="Name" htmlFor="lead-name" required>
               <Input id="lead-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name" autoFocus />
             </FormField>
@@ -126,7 +156,7 @@ export function AddLeadDialog() {
             <Button type="submit" variant="accent" size="sm" disabled={busy}>
               {busy ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</> : <><UserPlus className="h-3.5 w-3.5" /> Add lead</>}
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => { reset(); setOpen(false) }} disabled={busy}>
+            <Button type="button" variant="ghost" size="sm" onClick={close} disabled={busy}>
               Cancel
             </Button>
           </div>

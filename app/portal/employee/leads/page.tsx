@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { PhoneIncoming, CheckCircle2 } from 'lucide-react'
 import type { Lead } from '@/types/database'
-import { AddLeadDialog } from './AddLeadDialog'
+import { AddLeadProvider, AddLeadTrigger, AddLeadForm } from './AddLeadDialog'
 import { LeadsInbox } from './LeadsInbox'
 import type { LeadCardData, StaffMember } from './LeadCard'
 import { PageShell, PageHeader } from '@/components/layout/page'
@@ -95,6 +95,7 @@ export default async function LeadsPage() {
 
   return (
     <PageShell width="content">
+      <AddLeadProvider>
       <PageHeader
         icon={PhoneIncoming}
         title="Leads"
@@ -103,8 +104,10 @@ export default async function LeadsPage() {
             ? `${toContact} ${toContact === 1 ? 'person' : 'people'} to contact`
             : 'No one waiting on a call right now'
         }
-        actions={<AddLeadDialog />}
+        actions={<AddLeadTrigger />}
       />
+
+      <AddLeadForm />
 
       {toContact === 0 ? (
         <Card>
@@ -126,7 +129,7 @@ export default async function LeadsPage() {
       )}
 
       {(convertedCount > 0 || discardedCount > 0) && (
-        <p className="text-xs text-muted-foreground">
+        <div className="flex items-center text-xs text-muted-foreground">
           {convertedCount > 0 && (
             <>
               <Badge variant="success" className="mr-1">{convertedCount}</Badge>
@@ -134,9 +137,10 @@ export default async function LeadsPage() {
             </>
           )}
           {convertedCount > 0 && discardedCount > 0 && <span className="mx-2">·</span>}
-          {discardedCount > 0 && <>{discardedCount} discarded</>}
-        </p>
+          {discardedCount > 0 && <span>{discardedCount} discarded</span>}
+        </div>
       )}
+      </AddLeadProvider>
     </PageShell>
   )
 }
