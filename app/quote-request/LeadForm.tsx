@@ -10,6 +10,7 @@ export function LeadForm() {
   const [phone, setPhone] = useState('')
   const [suburb, setSuburb] = useState('')
   const [note, setNote] = useState('')
+  const [referrer, setReferrer] = useState('') // optional staff email who sent them
   const [website, setWebsite] = useState('') // honeypot — humans never see it
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -23,7 +24,7 @@ export function LeadForm() {
       const res = await fetch('/api/public/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, suburb, note, website }),
+        body: JSON.stringify({ name, phone, suburb, note, referrer_email: referrer, website }),
       })
       if (!res.ok) {
         setError(await res.text() || 'Something went wrong — please call us instead.')
@@ -80,6 +81,17 @@ export function LeadForm() {
           rows={3}
           placeholder="e.g. monthly bill around R3,500, interested in backup power"
           className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium">Referred by</span>
+        <Input
+          value={referrer}
+          onChange={(e) => setReferrer(e.target.value)}
+          type="email"
+          autoComplete="off"
+          placeholder="If a Haberl team member sent you, their email"
         />
       </label>
 

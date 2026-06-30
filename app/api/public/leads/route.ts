@@ -31,7 +31,7 @@ function checkIpRateLimit(ip: string) {
 
 /** Public lead capture (name/phone/suburb). Honeypot-guarded, service-role insert. */
 export async function POST(req: Request) {
-  let body: { name?: string; phone?: string; suburb?: string; note?: string; website?: string }
+  let body: { name?: string; phone?: string; suburb?: string; note?: string; referrer_email?: string; website?: string }
   try {
     body = await req.json()
   } catch {
@@ -71,7 +71,27 @@ export async function POST(req: Request) {
     return new Response('We already have your request - we will contact you shortly', { status: 429 })
   }
 
-  const { error } = await supabase.from('leads').insert({ name, phone, suburb, note, source: 'website' })
+  // Referral: if a known staff member's email is given, the lead is theirs from
+  // the start (lands directly in their list, source 'referral'); otherwise it
+  // falls into the unassigned pool that managers/admins triage.
+  const referrerEmail = String(body.referrer_email ?? '').trim().toLowerCase().slice(0, 200) || null
+  let ownerId: string | null = null
+  if (referrerEmail) {
+    const { data: referrer } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .ilike('email', referrerEmail)
+      .in('role', ['field_worker', 'manager', 'admin'])
+      .maybeSingle()
+    ownerId = referrer?.id ?? null
+  }
+
+  const { error } = await supabase.from('leads').insert({
+    name, phone, suburb, note,
+    source: ownerId ? 'referral' : 'website',
+    referrer_email: referrerEmail,
+    owner_id: ownerId,
+  })
   if (error) {
     console.error('[public/leads]', error)
     return new Response('Could not save your request - please call us instead', { status: 500 })

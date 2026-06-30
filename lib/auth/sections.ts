@@ -59,6 +59,21 @@ export type PortalSectionKey = (typeof PORTAL_SECTIONS)[number]['key']
 /** Editable roles in the permissions matrix (admin is locked all-on, customer is excluded). */
 export const EDITABLE_ROLES: Role[] = ['field_worker', 'manager']
 
+/**
+ * Sections wired for **record-level** visibility (migration 071): their table
+ * has an `owner_id` and a `can_see_record` RLS policy, so a per-user Own/All
+ * scope actually changes what rows the user sees. Add a section here ONLY once
+ * it's wired — otherwise the Users dial would show a control that does nothing.
+ */
+export const SCOPEABLE_SECTIONS: { key: PortalSectionKey; label: string }[] = [
+  { key: 'leads', label: 'Leads' },
+]
+
+/** A role's default record scope when the user has no explicit per-user override. */
+export function defaultRecordScope(role: Role): 'own' | 'all' {
+  return role === 'manager' || role === 'admin' ? 'all' : 'own'
+}
+
 export function sectionDefaultAllowed(key: string, role: Role): boolean {
   const section = PORTAL_SECTIONS.find((s) => s.key === key)
   return section ? section.defaultRoles.includes(role) : false

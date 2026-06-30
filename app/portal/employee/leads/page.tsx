@@ -4,22 +4,25 @@ import { requireSection } from '@/lib/auth/permissions'
 import { normalizePhone } from '@/lib/customers/phone'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { PhoneIncoming, PhoneCall, CheckCircle2 } from 'lucide-react'
+import { PhoneIncoming, CheckCircle2 } from 'lucide-react'
 import type { Lead } from '@/types/database'
-import { LeadCard } from './LeadCard'
 import { AddLeadDialog } from './AddLeadDialog'
+import { LeadsInbox } from './LeadsInbox'
+import type { LeadCardData, StaffMember } from './LeadCard'
 import { PageShell, PageHeader } from '@/components/layout/page'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * Leads inbox — "who do I need to contact". Website enquiries land here as soon
- * as someone fills the form at /quote-request. New leads are the call-now list;
- * contacted-not-converted are the follow-ups. Converted/discarded are kept as a
- * tally so the list stays focused on people who still need a call.
+ * as someone fills the form at /quote-request. Record-level visibility
+ * (migration 071) means each viewer only receives the leads they own, the
+ * unassigned pool (managers/admins), or leads shared to them — RLS does the
+ * filtering, so this page just renders whatever it's allowed to read.
  */
 export default async function LeadsPage() {
-  await requireSection('leads')
+  const { user, role } = await requireSection('leads')
+  const canManage = role === 'manager' || role === 'admin'
   const supabase = await createClient()
 
   const { data: leadRows } = await supabase
@@ -39,16 +42,56 @@ export default async function LeadsPage() {
       customersByPhone.set(c.phone_normalized, { id: c.id, full_name: c.full_name })
     }
   }
-  const matchedCustomer = (lead: Lead) => {
+  const phoneMatch = (lead: Lead) => {
     const key = normalizePhone(lead.phone)
     return key ? customersByPhone.get(key) ?? null : null
   }
 
-  const newLeads = leads.filter((l) => l.status === 'new')
-  const contacted = leads.filter((l) => l.status === 'contacted')
+  // Staff directory powers the owner picker + owner/share name labels. Only
+  // managers/admins can read other profiles (RLS); restricted users get just
+  // their own row, which is all the picker (hidden for them) would need anyway.
+  const { data: staffRows } = await supabase
+    .from('user_profiles')
+    .select('id, full_name, role')
+    .in('role', ['field_worker', 'manager', 'admin'])
+    .order('full_name')
+  const staff: StaffMember[] = (staffRows ?? []).map((s) => ({
+    id: s.id as string,
+    full_name: (s.full_name as string) || 'Unnamed',
+  }))
+  const nameById = new Map(staff.map((s) => [s.id, s.full_name]))
+
+  // Share grants for the visible leads, grouped per lead.
+  const { data: grantRows } = await supabase
+    .from('record_grants')
+    .select('record_id, user_id')
+    .eq('section', 'leads')
+  const sharesByLead = new Map<string, StaffMember[]>()
+  for (const g of (grantRows ?? []) as { record_id: string; user_id: string }[]) {
+    const list = sharesByLead.get(g.record_id) ?? []
+    list.push({ id: g.user_id, full_name: nameById.get(g.user_id) ?? 'Someone' })
+    sharesByLead.set(g.record_id, list)
+  }
+
+  const actionable = leads.filter((l) => l.status === 'new' || l.status === 'contacted')
+  const cards: LeadCardData[] = actionable.map((lead) => {
+    const match = phoneMatch(lead)
+    // Staff can mark a phone match as wrong (two people sharing a number) — when
+    // they have, drop it from `customer` so the lead behaves normally, but keep
+    // it as `dismissedCustomer` so the card can offer an Undo.
+    const dismissed = !!match && lead.not_duplicate_customer_id === match.id
+    return {
+      lead,
+      customer: dismissed ? null : match,
+      dismissedCustomer: dismissed ? match : null,
+      ownerName: lead.owner_id ? nameById.get(lead.owner_id) ?? 'Assigned' : null,
+      sharedWith: sharesByLead.get(lead.id) ?? [],
+    }
+  })
+
   const convertedCount = leads.filter((l) => l.status === 'converted').length
   const discardedCount = leads.filter((l) => l.status === 'discarded').length
-  const toContact = newLeads.length + contacted.length
+  const toContact = actionable.length
 
   return (
     <PageShell width="content">
@@ -74,39 +117,12 @@ export default async function LeadsPage() {
           </CardContent>
         </Card>
       ) : (
-        <>
-          {newLeads.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <PhoneIncoming className="h-4 w-4 text-accent" />
-                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                  New — call these ({newLeads.length})
-                </h2>
-              </div>
-              <div className="flex flex-col gap-2">
-                {newLeads.map((lead) => (
-                  <LeadCard key={lead.id} lead={lead} customer={matchedCustomer(lead)} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {contacted.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <PhoneCall className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                  Contacted — follow up ({contacted.length})
-                </h2>
-              </div>
-              <div className="flex flex-col gap-2">
-                {contacted.map((lead) => (
-                  <LeadCard key={lead.id} lead={lead} customer={matchedCustomer(lead)} />
-                ))}
-              </div>
-            </div>
-          )}
-        </>
+        <LeadsInbox
+          cards={cards}
+          staff={staff}
+          currentUserId={user.id}
+          canManage={canManage}
+        />
       )}
 
       {(convertedCount > 0 || discardedCount > 0) && (

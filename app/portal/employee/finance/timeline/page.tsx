@@ -8,6 +8,8 @@ import type { Metadata } from 'next'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { FinanceTabs } from '@/components/finance/FinanceTabs'
 import { FIN_DOC_TYPE_LABEL, type FinDocType } from '@/lib/finance/types'
+import { TimelineAllocate, type TimelineSplit } from './TimelineAllocate'
+import { COMPANY_CATEGORIES } from '../[id]/DocAllocations'
 
 export const metadata: Metadata = { title: 'Finance — Timeline' }
 export const dynamic = 'force-dynamic'
@@ -21,7 +23,7 @@ const SOURCE_CAP = 600
 // individual transactions — excluding them keeps the stream to real events.
 const EXCLUDED_DOC_TYPES = ['bank_statement', 'supplier_statement']
 
-type SP = { q?: string; from?: string; to?: string; source?: string; dir?: string }
+type SP = { q?: string; from?: string; to?: string; source?: string; dir?: string; sort?: string }
 
 // A single thing that happened on a date — a bank movement or a document.
 interface TimelineItem {
@@ -36,6 +38,10 @@ interface TimelineItem {
   doc_cents: number | null
   href: string
   badge: string
+  // Allocation state — bank lines only (documents allocate on their own page).
+  allocCustomerId?: string | null
+  allocName?: string | null
+  splits?: TimelineSplit[]
 }
 
 function buildHref(base: SP, override: Partial<SP>): string {
@@ -46,6 +52,7 @@ function buildHref(base: SP, override: Partial<SP>): string {
   if (m.to) p.set('to', m.to)
   if (m.source && m.source !== 'all') p.set('source', m.source)
   if (m.dir && m.dir !== 'all') p.set('dir', m.dir)
+  if (m.sort && m.sort !== 'newest') p.set('sort', m.sort)
   const qs = p.toString()
   return `/portal/employee/finance/timeline${qs ? `?${qs}` : ''}`
 }
@@ -61,6 +68,7 @@ export default async function FinanceTimelinePage({
   const to = sp.to ?? ''
   const source = sp.source ?? 'all'   // 'all' | 'bank' | 'docs'
   const dir = sp.dir ?? 'all'         // 'all' | 'in' | 'out'  (bank only)
+  const sort = sp.sort === 'oldest' ? 'oldest' : 'newest'  // display order only
 
   // Bank data is manager/admin only — mirror the Bank Statements guard.
   const user = await getUser()
@@ -76,7 +84,7 @@ export default async function FinanceTimelinePage({
 
   let bankQuery = supabase
     .from('bank_transactions')
-    .select('id, account_label, txn_date, description, amount_cents')
+    .select('id, account_label, txn_date, description, amount_cents, allocated_customer_id, allocated:customers!allocated_customer_id(id, full_name)')
     .order('txn_date', { ascending: false })
     .order('id', { ascending: false })
     .limit(SOURCE_CAP)
@@ -97,31 +105,64 @@ export default async function FinanceTimelinePage({
   if (from) docsQuery = docsQuery.gte('doc_date', from)
   if (to) docsQuery = docsQuery.lte('doc_date', to)
 
-  const [{ data: bankRaw }, { data: docsRaw }] = await Promise.all([
+  const [{ data: bankRaw }, { data: docsRaw }, { data: customersRaw }] = await Promise.all([
     wantBank ? bankQuery : Promise.resolve({ data: [] }),
     wantDocs ? docsQuery : Promise.resolve({ data: [] }),
+    supabase.from('customers').select('id, full_name').order('full_name'),
   ])
 
-  type BankRaw = { id: string; account_label: string | null; txn_date: string; description: string | null; amount_cents: number }
+  type BankRaw = {
+    id: string; account_label: string | null; txn_date: string; description: string | null; amount_cents: number
+    allocated_customer_id: string | null
+    allocated?: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+  }
   type DocRaw = { id: string; doc_type: FinDocType; supplier_name: string | null; doc_number: string | null; doc_date: string; total_cents: number | null; file_name: string | null }
 
   const bankRows = (bankRaw ?? []) as unknown as BankRaw[]
   const docRows = (docsRaw ?? []) as unknown as DocRaw[]
+  const customers = (customersRaw ?? []) as { id: string; full_name: string }[]
   const bankTruncated = bankRows.length >= SOURCE_CAP
   const docsTruncated = docRows.length >= SOURCE_CAP
 
+  // Company/customer splits for the visible bank lines (one round-trip), so a
+  // split transaction shows its parts inline instead of a single allocation.
+  type SplitRaw = {
+    txn_id: string; target: 'customer' | 'company'; category: string | null; amount_cents: number
+    allocated?: { full_name: string } | { full_name: string }[] | null
+  }
+  const splitMap = new Map<string, TimelineSplit[]>()
+  if (bankRows.length > 0) {
+    const { data: splitsRaw } = await supabase
+      .from('bank_txn_allocations')
+      .select('txn_id, target, category, amount_cents, allocated:customers!customer_id(full_name)')
+      .in('txn_id', bankRows.map((r) => r.id))
+    for (const s of (splitsRaw ?? []) as unknown as SplitRaw[]) {
+      const a = Array.isArray(s.allocated) ? s.allocated[0] : s.allocated
+      const name = s.target === 'company' ? (s.category ?? 'Company') : (a?.full_name ?? 'Customer')
+      const list = splitMap.get(s.txn_id) ?? []
+      list.push({ target: s.target, name, amount_cents: s.amount_cents })
+      splitMap.set(s.txn_id, list)
+    }
+  }
+
   const items: TimelineItem[] = [
-    ...bankRows.map((r): TimelineItem => ({
-      kind: 'bank',
-      id: r.id,
-      date: r.txn_date,
-      title: r.description || '—',
-      subtitle: shortAccount(r.account_label),
-      cash_cents: r.amount_cents,
-      doc_cents: null,
-      href: `/portal/employee/finance/bank?focus=${r.id}`,
-      badge: r.amount_cents < 0 ? 'Money out' : 'Money in',
-    })),
+    ...bankRows.map((r): TimelineItem => {
+      const a = Array.isArray(r.allocated) ? r.allocated[0] : r.allocated
+      return {
+        kind: 'bank',
+        id: r.id,
+        date: r.txn_date,
+        title: r.description || '—',
+        subtitle: shortAccount(r.account_label),
+        cash_cents: r.amount_cents,
+        doc_cents: null,
+        href: `/portal/employee/finance/bank?focus=${r.id}`,
+        badge: r.amount_cents < 0 ? 'Money out' : 'Money in',
+        allocCustomerId: r.allocated_customer_id,
+        allocName: a?.full_name ?? null,
+        splits: splitMap.get(r.id) ?? [],
+      }
+    }),
     ...docRows.map((d): TimelineItem => ({
       kind: 'doc',
       id: d.id,
@@ -135,9 +176,12 @@ export default async function FinanceTimelinePage({
     })),
   ]
 
-  // Newest first, bank lines before documents on the same day.
+  // Order by date per the chosen display sort (the DB fetch always pulls the
+  // most recent SOURCE_CAP, so "oldest" still shows recent data, just flipped).
+  // Bank lines come before documents on the same day either way.
+  const dateDir = sort === 'oldest' ? -1 : 1
   items.sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? 1 : -1
+    if (a.date !== b.date) return a.date < b.date ? dateDir : -dateDir
     if (a.kind !== b.kind) return a.kind === 'bank' ? -1 : 1
     return 0
   })
@@ -160,8 +204,8 @@ export default async function FinanceTimelinePage({
 
   const totalIn = bankRows.reduce((s, r) => s + (r.amount_cents > 0 ? r.amount_cents : 0), 0)
   const totalOut = bankRows.reduce((s, r) => s + (r.amount_cents < 0 ? r.amount_cents : 0), 0)
-  const filtered = !!(q || from || to || source !== 'all' || dir !== 'all')
-  const base: SP = { q, from, to, source, dir }
+  const filtered = !!(q || from || to || source !== 'all' || dir !== 'all' || sort !== 'newest')
+  const base: SP = { q, from, to, source, dir, sort }
   const fieldCls = 'h-10 rounded-md border border-border bg-background px-3 text-sm'
 
   return (
@@ -208,6 +252,13 @@ export default async function FinanceTimelinePage({
                 <option value="all">All</option>
                 <option value="in">Money in</option>
                 <option value="out">Money out</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Order</label>
+              <select name="sort" defaultValue={sort} className={fieldCls}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
               </select>
             </div>
             <button type="submit"
@@ -273,8 +324,8 @@ export default async function FinanceTimelinePage({
                   </div>
                   <ul className="divide-y divide-border">
                     {day.items.map((it) => (
-                      <li key={`${it.kind}-${it.id}`}>
-                        <Link href={it.href} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40">
+                      <li key={`${it.kind}-${it.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40">
+                        <Link href={it.href} className="flex min-w-0 flex-1 items-center gap-3">
                           <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
                             it.kind === 'bank'
                               ? it.cash_cents! < 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'
@@ -311,6 +362,20 @@ export default async function FinanceTimelinePage({
                             <Crosshair className="h-4 w-4 shrink-0 text-muted-foreground" />
                           )}
                         </Link>
+                        {/* Inline allocation — bank lines only. Sits outside the
+                            navigation Link so opening it never leaves the page. */}
+                        {it.kind === 'bank' && (
+                          <TimelineAllocate
+                            txnId={it.id}
+                            description={it.title}
+                            amountCents={it.cash_cents!}
+                            allocatedCustomerId={it.allocCustomerId ?? null}
+                            allocatedName={it.allocName ?? null}
+                            splits={it.splits ?? []}
+                            customers={customers}
+                            categories={COMPANY_CATEGORIES}
+                          />
+                        )}
                       </li>
                     ))}
                   </ul>

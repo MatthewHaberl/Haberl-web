@@ -8,6 +8,27 @@ export interface RolePermission {
   updated_at?: string
 }
 
+/** Record-level visibility scope for a user within one section (migration 071). */
+export type RecordScope = 'own' | 'all'
+
+/** Per-user override of record visibility for a section; absent ⇒ role default. */
+export interface UserSectionVisibility {
+  user_id: string
+  section: string
+  scope: RecordScope
+  updated_at?: string
+}
+
+/** Generic "also let this user see/act on (section, record)" share (migration 071). */
+export interface RecordGrant {
+  id: string
+  section: string
+  record_id: string
+  user_id: string        // recipient
+  granted_by: string | null
+  created_at: string
+}
+
 export type QuoteRequestStatus = 'pending' | 'generated' | 'sent' | 'accepted' | 'declined'
 export type BrandCategory = 'inverter' | 'battery' | 'panel'
 export type EquipmentCatalogCategory = 'inverter' | 'battery' | 'panel' | 'other'
@@ -639,7 +660,10 @@ export interface Lead {
   status: LeadStatus
   quote_request_id: string | null
   customer_id: string | null   // FK to public.customers once converted
+  not_duplicate_customer_id: string | null   // customer staff confirmed is NOT this lead — suppresses the phone match (migration 079)
   source: string
+  owner_id: string | null      // capturer / assignee; null = unassigned pool (migration 071)
+  referrer_email: string | null // staff email captured at intake, resolved → owner_id
   created_at: string
   contacted_at: string | null
 }

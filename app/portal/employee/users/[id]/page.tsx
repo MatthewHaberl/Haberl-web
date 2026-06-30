@@ -2,17 +2,19 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import {
-  ArrowLeft, Mail, Phone, MapPin, FileText, Briefcase, UserRound, ChevronRight, ExternalLink,
+  ArrowLeft, Mail, Phone, MapPin, FileText, Briefcase, UserRound, ChevronRight, ExternalLink, Eye,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
+import { SCOPEABLE_SECTIONS, defaultRecordScope } from '@/lib/auth/sections'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import { RoleSelect } from '../RoleSelect'
+import { VisibilitySelect } from '../VisibilitySelect'
 import { ROLE_META } from '../shared'
-import type { Role } from '@/types/database'
+import type { Role, RecordScope } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = { title: 'User' }
@@ -31,6 +33,18 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
 
   const role = profile.role as Role
   const meta = ROLE_META[role]
+  const isStaff = role !== 'customer'
+
+  // Per-user record-visibility overrides (migration 071), keyed by section.
+  const { data: visRows } = isStaff
+    ? await supabase
+        .from('user_section_visibility')
+        .select('section, scope')
+        .eq('user_id', id)
+    : { data: [] }
+  const scopeBySection = new Map<string, RecordScope>(
+    (visRows ?? []).map((v) => [v.section as string, v.scope as RecordScope]),
+  )
 
   // Linked CRM customer (this login is also a customer) + their sites/quotes.
   const { data: customer } = await supabase
@@ -116,6 +130,36 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           </div>
         </CardContent>
       </Card>
+
+      {/* Record visibility — what this person sees inside each section */}
+      {isStaff && (
+        <Card>
+          <CardContent className="pt-5">
+            <div className="mb-1 flex items-center gap-2">
+              <Eye className="h-4 w-4 text-muted-foreground" />
+              <h2 className="font-semibold">Record visibility</h2>
+            </div>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Inside each section, choose whether this person sees <strong>all</strong> records or
+              <strong> only their own</strong> (the ones they captured, were referred, or were shared
+              with). Leave on <em>Default</em> to follow their role.
+            </p>
+            <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
+              {SCOPEABLE_SECTIONS.map((s) => (
+                <li key={s.key} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <span className="text-sm font-medium">{s.label}</span>
+                  <VisibilitySelect
+                    userId={profile.id}
+                    section={s.key}
+                    current={scopeBySection.get(s.key) ?? null}
+                    defaultScope={defaultRecordScope(role)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Customer connection */}
       {customer && (
