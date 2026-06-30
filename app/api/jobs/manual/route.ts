@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { JobPriority } from '@/types/database'
+import { PIPELINE_STAGES } from '@/lib/jobs/stages'
+import type { JobPriority, JobStage } from '@/types/database'
 
 export const runtime = 'nodejs'
 
 const PRIORITIES = new Set<JobPriority>(['low', 'medium', 'high', 'urgent'])
+const STAGES = new Set<JobStage>(PIPELINE_STAGES)
 const INSTALL_CHECKLIST = [
   'Deposit invoice sent to customer',
   'Deposit received & reconciled',
@@ -42,8 +44,11 @@ export async function POST(req: Request) {
   const title = String(body.title ?? '').trim()
   const description = String(body.description ?? '').trim()
   const assignedTo = String(body.assignedTo ?? user.id)
+  const customerId = String(body.customerId ?? '').trim()
+  const siteIdInput = String(body.siteId ?? '').trim()
   const scheduledDate = String(body.scheduledDate ?? '').trim()
   const priority = PRIORITIES.has(body.priority) ? body.priority as JobPriority : 'medium'
+  const stage = STAGES.has(body.stage) ? body.stage as JobStage : 'scheduled'
 
   if (!title) return new Response('Job title is required', { status: 400 })
 
@@ -56,15 +61,68 @@ export async function POST(req: Request) {
     .maybeSingle()
   if (!assignee) return new Response('Choose a valid employee assignee', { status: 400 })
 
+  // Resolve the site to link the job to a customer. If a specific site was
+  // chosen, validate it belongs to that customer; otherwise find-or-create one
+  // so the job shows up in the customer's portal.
+  let siteId: string | null = null
+  if (customerId) {
+    const { data: customer } = await admin
+      .from('customers')
+      .select('id, full_name')
+      .eq('id', customerId)
+      .is('archived_at', null)
+      .maybeSingle()
+    if (!customer) return new Response('Choose a valid customer', { status: 400 })
+
+    if (siteIdInput) {
+      const { data: site } = await admin
+        .from('sites')
+        .select('id')
+        .eq('id', siteIdInput)
+        .eq('customer_id', customerId)
+        .maybeSingle()
+      if (!site) return new Response('Chosen site does not belong to that customer', { status: 400 })
+      siteId = site.id
+    } else {
+      const { data: existingSite } = await admin
+        .from('sites')
+        .select('id')
+        .eq('customer_id', customerId)
+        .order('created_at')
+        .limit(1)
+        .maybeSingle()
+      if (existingSite) {
+        siteId = existingSite.id
+      } else {
+        const { data: newSite, error: siteError } = await admin
+          .from('sites')
+          .insert({
+            customer_id: customerId,
+            name: `${customer.full_name} - Site 1`,
+            address: '',
+            system_type: 'Solar PV',
+            status: 'pending',
+          })
+          .select('id')
+          .single()
+        if (siteError || !newSite) {
+          return new Response(`Could not create site: ${siteError?.message ?? 'unknown error'}`, { status: 500 })
+        }
+        siteId = newSite.id
+      }
+    }
+  }
+
   const { data: job, error: jobError } = await admin
     .from('jobs')
     .insert({
       assigned_to: assignee.id,
       created_by: user.id,
+      site_id: siteId,
       title,
       description: description || null,
       scheduled_date: scheduledDate || null,
-      stage: 'scheduled',
+      stage,
       priority,
     })
     .select('id')

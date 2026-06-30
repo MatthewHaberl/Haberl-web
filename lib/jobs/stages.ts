@@ -87,3 +87,9 @@ export function nextStage(stage: JobStage): JobStage | null {
   if (index === -1 || index >= PIPELINE_STAGES.length - 1) return null
   return PIPELINE_STAGES[index + 1]
 }
+
+export function prevStage(stage: JobStage): JobStage | null {
+  const index = stageIndex(stage)
+  if (index <= 0) return null
+  return PIPELINE_STAGES[index - 1]
+}

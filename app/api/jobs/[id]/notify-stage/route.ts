@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendJobStageEmail } from '@/lib/email/jobs'
+import { sendJobStageEmail, jobStageEmailsEnabled } from '@/lib/email/jobs'
 
 export const runtime = 'nodejs'
 
@@ -11,6 +11,10 @@ export const runtime = 'nodejs'
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+
+  // Master kill-switch: stage emails are off unless explicitly enabled.
+  if (!jobStageEmailsEnabled()) return NextResponse.json({ ok: true, sent: false, disabled: true })
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new Response('Unauthorized', { status: 401 })

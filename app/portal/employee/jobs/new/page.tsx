@@ -12,6 +12,12 @@ type Assignee = {
   role: string
 }
 
+type CustomerOption = {
+  id: string
+  full_name: string
+  sites: { id: string; name: string; address: string }[]
+}
+
 export default async function NewJobPage() {
   const user = await getUser()
   if (!user) redirect('/auth/login')
@@ -26,11 +32,18 @@ export default async function NewJobPage() {
   const role = profile?.role ?? 'field_worker'
   if (!['manager', 'admin'].includes(role)) redirect('/portal/employee/jobs')
 
-  const { data: assignees } = await supabase
-    .from('user_profiles')
-    .select('id, full_name, role')
-    .in('role', ['field_worker', 'manager', 'admin'])
-    .order('full_name')
+  const [{ data: assignees }, { data: customers }] = await Promise.all([
+    supabase
+      .from('user_profiles')
+      .select('id, full_name, role')
+      .in('role', ['field_worker', 'manager', 'admin'])
+      .order('full_name'),
+    supabase
+      .from('customers')
+      .select('id, full_name, sites(id, name, address)')
+      .is('archived_at', null)
+      .order('full_name'),
+  ])
 
   return (
     <PageShell width="form">
@@ -42,7 +55,11 @@ export default async function NewJobPage() {
       </Button>
       <PageHeader icon={Plus} title="New job" />
 
-      <NewJobForm assignees={(assignees ?? []) as Assignee[]} currentUserId={user.id} />
+      <NewJobForm
+        assignees={(assignees ?? []) as Assignee[]}
+        customers={(customers ?? []) as CustomerOption[]}
+        currentUserId={user.id}
+      />
     </PageShell>
   )
 }

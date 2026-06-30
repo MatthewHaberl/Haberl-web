@@ -8,10 +8,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useConfirm } from '@/components/ui/confirm-dialog'
-import { PIPELINE_STAGES, STAGE_META, nextStage, stageIndex } from '@/lib/jobs/stages'
+import { PIPELINE_STAGES, STAGE_META, nextStage, prevStage, stageIndex } from '@/lib/jobs/stages'
 import type { Job, JobStage, JobStatusHistory } from '@/types/database'
 import {
-  ArrowRight, Check, Eye, EyeOff, Loader2, MessageSquarePlus, PauseCircle, PlayCircle, XCircle,
+  ArrowLeft, ArrowRight, Check, Eye, EyeOff, Loader2, MessageSquarePlus, PauseCircle, PlayCircle, XCircle,
 } from 'lucide-react'
 
 interface Props {
@@ -38,6 +38,7 @@ export function StagePipeline({ job, history, canAdvance }: Props) {
   const isCancelled = stage === 'cancelled'
   const currentIndex = stageIndex(stage)
   const next = nextStage(stage)
+  const prev = prevStage(stage)
 
   // Stage to return to when resuming a hold: last linear stage in history
   const resumeStage: JobStage = (() => {
@@ -60,8 +61,10 @@ export function StagePipeline({ job, history, canAdvance }: Props) {
       .eq('id', job.id)
     if (dbError) setError(dbError.message)
     else {
-      // Fire-and-forget customer notification for the stages that warrant one.
-      if (nextValue === 'scheduled' || nextValue === 'installation' || nextValue === 'handover') {
+      // Fire-and-forget customer notification for the stages that warrant one —
+      // only when moving forward, never on a backward correction.
+      const movingForward = stageIndex(nextValue) > currentIndex
+      if (movingForward && (nextValue === 'scheduled' || nextValue === 'installation' || nextValue === 'handover')) {
         fetch(`/api/jobs/${job.id}/notify-stage`, { method: 'POST' }).catch(() => {})
       }
       router.refresh()
@@ -137,6 +140,11 @@ export function StagePipeline({ job, history, canAdvance }: Props) {
               {!busy && isOnHold && (
                 <Button variant="accent" size="sm" onClick={() => setStage(resumeStage)}>
                   <PlayCircle className="h-3.5 w-3.5" /> Resume — {STAGE_META[resumeStage].label}
+                </Button>
+              )}
+              {!busy && !isOnHold && prev && (
+                <Button variant="outline" size="sm" onClick={() => setStage(prev)}>
+                  <ArrowLeft className="h-3.5 w-3.5" /> Back to {STAGE_META[prev].label}
                 </Button>
               )}
               {!busy && !isOnHold && next && (

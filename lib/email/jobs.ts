@@ -6,6 +6,16 @@ import { emailButton, emailLayout, sendEmail, type SendResult } from './send'
  */
 const NOTIFY_STAGES = new Set(['scheduled', 'installation', 'handover'])
 
+/**
+ * Master kill-switch for automatic job-stage emails. OFF by default — these
+ * emails stay silent until someone deliberately sets JOB_STAGE_EMAILS_ENABLED
+ * to "true" in the environment (Vercel). Flip the env var to turn them on; no
+ * code change needed.
+ */
+export function jobStageEmailsEnabled(): boolean {
+  return process.env.JOB_STAGE_EMAILS_ENABLED === 'true'
+}
+
 export function jobStageEmailEnabled(stage: string): boolean {
   return NOTIFY_STAGES.has(stage)
 }
@@ -37,6 +47,7 @@ export async function sendJobStageEmail(
   job: JobStageEmailFields,
   baseUrl: string,
 ): Promise<SendResult> {
+  if (!jobStageEmailsEnabled()) return { sent: false }
   if (!NOTIFY_STAGES.has(stage)) return { sent: false }
   if (!job.customer_email) return { sent: false, error: 'No customer email on this job' }
 
