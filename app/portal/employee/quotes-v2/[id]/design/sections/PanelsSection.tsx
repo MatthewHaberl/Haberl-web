@@ -142,6 +142,11 @@ export function PanelsSection() {
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span><strong className="text-foreground">{kwp.toFixed(2)}</strong> kWp</span>
                   <span>≈ <strong className="text-foreground">{dailyKwh.toFixed(1)}</strong> kWh/day</span>
+                  {panelVoc != null && (
+                    <span title="Panel open-circuit voltage (Voc) at STC, from the catalog datasheet.">
+                      Voc <strong className="text-foreground">{panelVoc}</strong> V/panel
+                    </span>
+                  )}
                   {worstCaseVoc != null ? (
                     <span
                       className={`inline-flex items-center gap-1 ${overLimit ? 'font-semibold text-destructive' : ''}`}
