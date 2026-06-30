@@ -9,6 +9,8 @@ import { ArrowLeft, MapPin, FileText, Wrench, Clock, ChevronRight, Users, Trash2
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { formatDate } from '@/lib/utils'
 import { customerAccountStatus, type Customer } from '@/types/database'
+import { getSharingContext } from '@/lib/records/sharing'
+import { RecordShareControl } from '@/components/records/RecordShareControl'
 import { CustomerPanel } from './CustomerPanel'
 import { AddSiteProvider, AddSiteTrigger, AddSitePanel } from './AddSiteDialog'
 import { SiteCard } from './SiteCard'
@@ -33,14 +35,19 @@ type TimelineItem = { at: string; label: string }
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { role } = await requireSection('customers')
+  const { user, role } = await requireSection('customers')
   const supabase = await createClient()
   const isAdmin = role === 'admin'
+  const isManager = role === 'manager' || role === 'admin'
 
   const { data: customerRow } = await supabase
     .from('customers').select('*').eq('id', id).maybeSingle()
   if (!customerRow) notFound()
   const customer = customerRow as Customer
+
+  // Ownership/sharing (migration 072): staff directory + grants for this record.
+  const { staff, nameById, sharedWith } = await getSharingContext(supabase, 'customers', id)
+  const ownerName = customer.created_by ? nameById.get(customer.created_by) ?? 'Assigned' : null
 
   const { data: sites } = await supabase
     .from('sites')
@@ -154,6 +161,22 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
       {/* Interactive: editable contact details + invite */}
       <CustomerPanel customer={customer} accountStatus={status} />
+
+      {/* Ownership & sharing — who this customer belongs to / is shared with */}
+      <RecordShareControl
+        section="customers"
+        recordId={customer.id}
+        table="customers"
+        ownerColumn="created_by"
+        ownerId={customer.created_by}
+        ownerName={ownerName}
+        staff={staff}
+        sharedWith={sharedWith}
+        currentUserId={user.id}
+        canAssignOwner={isManager}
+        canShare={isManager}
+        ownerNoun="No owner set"
+      />
 
       {/* Sites */}
       <AddSiteProvider>

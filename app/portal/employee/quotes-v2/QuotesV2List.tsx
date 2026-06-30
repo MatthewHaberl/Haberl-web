@@ -12,10 +12,12 @@ import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils'
 import {
   FileText, Plus, ChevronRight, Clock, Sparkles, Map as MapIcon,
-  MapPin, Copy, Pencil, Check, X, Loader2, Trash2,
+  MapPin, Copy, Pencil, Check, X, Loader2, Trash2, UserCog,
 } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { RecordShareControl } from '@/components/records/RecordShareControl'
+import type { StaffMember } from '@/lib/records/sharing'
 
 const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success'> = {
   pending: 'warning',
@@ -40,6 +42,7 @@ export type QuoteRow = {
   created_at: string
   status: QuoteRequestStatus
   total_amount: number | null
+  submitted_by: string | null
   submitter?: { full_name: string } | null
 }
 
@@ -106,13 +109,26 @@ function buildGroups(rows: QuoteRow[]): CustomerGroup[] {
     .sort((a, b) => b.latest - a.latest)
 }
 
-export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows: QuoteRow[]; isManager: boolean; isAdmin: boolean; deletedCount: number }) {
+export function QuotesV2List({
+  rows, isManager, isAdmin, deletedCount,
+  staff, sharesByQuote, nameById, currentUserId,
+}: {
+  rows: QuoteRow[]
+  isManager: boolean
+  isAdmin: boolean
+  deletedCount: number
+  staff: StaffMember[]
+  sharesByQuote: Record<string, { id: string; full_name: string }[]>
+  nameById: Record<string, string>
+  currentUserId: string
+}) {
   const router = useRouter()
   const confirm = useConfirm()
   const groups = buildGroups(rows)
 
   const [editingSite, setEditingSite] = useState<string | null>(null)
   const [editingOption, setEditingOption] = useState<string | null>(null)
+  const [sharingOption, setSharingOption] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -289,7 +305,8 @@ export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows:
 
                       <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
                         {site.options.map((option, i) => (
-                          <div key={option.id} className="flex items-center">
+                          <div key={option.id} className="flex flex-col">
+                           <div className="flex items-center">
                             <div
                               className="flex-1 flex items-center justify-between gap-3 px-4 py-3 min-w-0 cursor-pointer hover:bg-muted/40 transition-colors"
                               onClick={() => { if (editingOption !== option.id) router.push(`/portal/employee/quotes-v2/${option.id}`) }}
@@ -358,6 +375,21 @@ export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows:
                             {isManager && (
                               <button
                                 type="button"
+                                onClick={() => setSharingOption((cur) => (cur === option.id ? null : option.id))}
+                                className={
+                                  'shrink-0 flex items-center justify-center px-2.5 py-1.5 text-xs rounded-md transition-colors ' +
+                                  (sharingOption === option.id
+                                    ? 'text-foreground bg-muted'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60')
+                                }
+                                title="Owner & sharing"
+                              >
+                                <UserCog className="h-3 w-3" />
+                              </button>
+                            )}
+                            {isManager && (
+                              <button
+                                type="button"
                                 disabled={saving}
                                 onClick={() => deleteOption(option.id, optionDisplay(option, i))}
                                 className="shrink-0 flex items-center justify-center px-2.5 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50"
@@ -366,6 +398,25 @@ export function QuotesV2List({ rows, isManager, isAdmin, deletedCount }: { rows:
                                 <Trash2 className="h-3 w-3" />
                               </button>
                             )}
+                           </div>
+                           {isManager && sharingOption === option.id && (
+                             <div className="px-3 pb-3">
+                               <RecordShareControl
+                                 section="quotes"
+                                 recordId={option.id}
+                                 table="quote_requests"
+                                 ownerColumn="submitted_by"
+                                 ownerId={option.submitted_by}
+                                 ownerName={option.submitted_by ? nameById[option.submitted_by] ?? 'Assigned' : null}
+                                 staff={staff}
+                                 sharedWith={sharesByQuote[option.id] ?? []}
+                                 currentUserId={currentUserId}
+                                 canAssignOwner={isAdmin}
+                                 canShare={isManager}
+                                 ownerNoun="No owner set"
+                               />
+                             </div>
+                           )}
                           </div>
                         ))}
                       </div>

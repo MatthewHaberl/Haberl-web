@@ -60,18 +60,28 @@ export type PortalSectionKey = (typeof PORTAL_SECTIONS)[number]['key']
 export const EDITABLE_ROLES: Role[] = ['field_worker', 'manager']
 
 /**
- * Sections wired for **record-level** visibility (migration 071): their table
- * has an `owner_id` and a `can_see_record` RLS policy, so a per-user Own/All
- * scope actually changes what rows the user sees. Add a section here ONLY once
- * it's wired — otherwise the Users dial would show a control that does nothing.
+ * Sections wired for **record-level** visibility (migrations 071/072): their
+ * table has an owner column and a `can_see_record` RLS policy, so a per-user
+ * Own/All scope actually changes what rows the user sees. Add a section here
+ * ONLY once it's wired — otherwise the Users dial would show a dead control.
+ *
+ * `fieldDefault` is the scope a non-manager gets with no override, and MUST
+ * match the section's historical RLS so day-one behaviour is unchanged:
+ *   • leads/quotes        → 'own'  (field workers only ever saw their own)
+ *   • customers/procurement → 'all' (every staff member saw every record)
+ * Managers/admins always default to 'all'.
  */
-export const SCOPEABLE_SECTIONS: { key: PortalSectionKey; label: string }[] = [
-  { key: 'leads', label: 'Leads' },
+export const SCOPEABLE_SECTIONS: { key: PortalSectionKey; label: string; fieldDefault: 'own' | 'all' }[] = [
+  { key: 'leads', label: 'Leads', fieldDefault: 'own' },
+  { key: 'quotes', label: 'Quotes', fieldDefault: 'own' },
+  { key: 'customers', label: 'Customers', fieldDefault: 'all' },
+  { key: 'procurement', label: 'Procurement', fieldDefault: 'all' },
 ]
 
-/** A role's default record scope when the user has no explicit per-user override. */
-export function defaultRecordScope(role: Role): 'own' | 'all' {
-  return role === 'manager' || role === 'admin' ? 'all' : 'own'
+/** A role's default record scope for a section when there's no per-user override. */
+export function defaultRecordScope(role: Role, section?: string): 'own' | 'all' {
+  if (role === 'manager' || role === 'admin') return 'all'
+  return SCOPEABLE_SECTIONS.find((s) => s.key === section)?.fieldDefault ?? 'own'
 }
 
 export function sectionDefaultAllowed(key: string, role: Role): boolean {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -32,9 +32,10 @@ interface Props {
   supplier: Supplier | null
   job: { id: string; title: string } | null
   initialLines: PurchaseOrderLine[]
+  shareControl?: ReactNode
 }
 
-export function PoDetail({ po, supplier, job, initialLines }: Props) {
+export function PoDetail({ po, supplier, job, initialLines, shareControl }: Props) {
   const router = useRouter()
   const confirm = useConfirm()
   const [status, setStatus] = useState<PurchaseOrderStatus>(po.status)
@@ -171,6 +172,8 @@ export function PoDetail({ po, supplier, job, initialLines }: Props) {
           </Button>
         )}
       />
+
+      {shareControl}
 
       {/* Actions */}
       <div className="flex items-center gap-2 flex-wrap">

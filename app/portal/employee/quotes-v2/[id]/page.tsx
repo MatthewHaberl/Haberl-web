@@ -34,7 +34,8 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
 
   if (!req) notFound()
   if (req.deleted_at) redirect(isAdmin ? '/portal/employee/quotes-v2/deleted' : '/portal/employee/quotes-v2')
-  if (!isManager && req.submitted_by !== user!.id) redirect('/portal/employee/quotes-v2')
+  // Visibility is enforced by RLS (migration 072): if the row came back, this
+  // user is allowed to see it — as submitter, manager/admin, or via a share.
 
   const photoUrls    = (req.photo_urls ?? []) as string[]
   const nextQuoteNum = isAdmin ? await getNextQuoteNumber(supabase) : ''

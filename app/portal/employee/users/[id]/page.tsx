@@ -152,7 +152,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                     userId={profile.id}
                     section={s.key}
                     current={scopeBySection.get(s.key) ?? null}
-                    defaultScope={defaultRecordScope(role)}
+                    defaultScope={defaultRecordScope(role, s.key)}
                   />
                 </li>
               ))}
