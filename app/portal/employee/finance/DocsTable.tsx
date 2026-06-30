@@ -20,6 +20,8 @@ export interface DocRowVM {
   customer_name: string | null
   total_cents: number | null
   combined_pages: number | null
+  on_books: boolean
+  belongs_to: string | null
 }
 
 interface SortHeader { href: string; arrow: string }
@@ -154,10 +156,15 @@ export function DocsTable({
                     </Link>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <Badge variant="outline">{d.doc_type_label}</Badge>
                       {d.status === 'unsure' && <Badge variant="warning">Unsure</Badge>}
                       {d.status === 'discarded' && <Badge variant="destructive">Discarded</Badge>}
+                      {!d.on_books && (
+                        <Badge variant="warning" title={d.belongs_to ?? 'Belongs to someone else'}>
+                          Reference{d.belongs_to ? ` · ${d.belongs_to}` : ''}
+                        </Badge>
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-3">{d.supplier_name ?? '—'}</td>

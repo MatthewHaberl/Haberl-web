@@ -18,7 +18,7 @@ const PAGE_SIZES = [25, 50, 100, 200]
 const DEFAULT_PAGE_SIZE = 50
 const NIL = '00000000-0000-0000-0000-000000000000'
 
-type SP = { q?: string; type?: string; supplier?: string; from?: string; to?: string; alloc?: string; sort?: string; page?: string; per?: string }
+type SP = { q?: string; type?: string; supplier?: string; from?: string; to?: string; alloc?: string; books?: string; sort?: string; page?: string; per?: string }
 
 function buildHref(base: SP, override: Partial<SP>): string {
   const m = { ...base, ...override }
@@ -29,6 +29,7 @@ function buildHref(base: SP, override: Partial<SP>): string {
   if (m.from) p.set('from', m.from)
   if (m.to) p.set('to', m.to)
   if (m.alloc && m.alloc !== 'all') p.set('alloc', m.alloc)
+  if (m.books && m.books !== 'all') p.set('books', m.books)
   if (m.sort && m.sort !== 'newest') p.set('sort', m.sort)
   if (m.per && m.per !== String(DEFAULT_PAGE_SIZE)) p.set('per', m.per)
   if (m.page && m.page !== '0') p.set('page', m.page)
@@ -49,6 +50,7 @@ export default async function FinanceDocumentsPage({
   const from = sp.from ?? ''
   const to = sp.to ?? ''
   const alloc = sp.alloc ?? 'all'
+  const books = sp.books ?? 'all'
   const sort = sp.sort ?? 'newest'
   const per = PAGE_SIZES.includes(Number(sp.per)) ? Number(sp.per) : DEFAULT_PAGE_SIZE
   const page = Math.max(0, parseInt(sp.page ?? '0', 10) || 0)
@@ -87,6 +89,8 @@ export default async function FinanceDocumentsPage({
 
   if (q) docsQuery = docsQuery.or(`file_name.ilike.%${q}%,supplier_name.ilike.%${q}%,doc_number.ilike.%${q}%`)
   if (type !== 'all') docsQuery = docsQuery.eq('doc_type', type)
+  if (books === 'on') docsQuery = docsQuery.eq('on_books', true)
+  else if (books === 'reference') docsQuery = docsQuery.eq('on_books', false)
   if (supplier !== 'all') docsQuery = docsQuery.eq('supplier_name', supplier)
   if (from) docsQuery = docsQuery.gte('doc_date', from)
   if (to) docsQuery = docsQuery.lte('doc_date', to)
@@ -134,11 +138,13 @@ export default async function FinanceDocumentsPage({
       customer_name: d.customer?.full_name ?? null,
       total_cents: d.total_cents,
       combined_pages: parseCombinedPages(d.notes),
+      on_books: d.on_books,
+      belongs_to: d.belongs_to,
     }
   })
 
   const total = count ?? 0
-  const base: SP = { q, type, supplier, from, to, alloc, sort, per: String(per) }
+  const base: SP = { q, type, supplier, from, to, alloc, books, sort, per: String(per) }
   const dateSort = {
     href: buildHref(base, { sort: sort === 'oldest' ? 'newest' : 'oldest' }),
     arrow: sort === 'oldest' ? '↑' : sort === 'newest' ? '↓' : '',
@@ -147,7 +153,7 @@ export default async function FinanceDocumentsPage({
     href: buildHref(base, { sort: sort === 'total_desc' ? 'total_asc' : 'total_desc' }),
     arrow: sort === 'total_desc' ? '↓' : sort === 'total_asc' ? '↑' : '',
   }
-  const filtered = q || type !== 'all' || supplier !== 'all' || from || to || alloc !== 'all'
+  const filtered = q || type !== 'all' || supplier !== 'all' || from || to || alloc !== 'all' || books !== 'all'
 
   const fieldCls = 'h-10 rounded-md border border-border bg-background px-3 text-sm'
 
@@ -200,6 +206,14 @@ export default async function FinanceDocumentsPage({
                 <optgroup label="Customer">
                   {customers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
                 </optgroup>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">Books</label>
+              <select name="books" defaultValue={books} className={fieldCls}>
+                <option value="all">All</option>
+                <option value="on">On my books</option>
+                <option value="reference">Reference only</option>
               </select>
             </div>
             <div className="flex flex-col gap-1">

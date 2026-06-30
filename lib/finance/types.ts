@@ -8,6 +8,7 @@ export type FinDocType =
   | 'sales_invoice'
   | 'pro_forma'
   | 'credit_note'
+  | 'supplier_statement'
   | 'bank_statement'
   | 'other'
 
@@ -17,6 +18,7 @@ export const FIN_DOC_TYPES: { value: FinDocType; label: string }[] = [
   { value: 'sales_invoice', label: 'Sales invoice (to customer)' },
   { value: 'pro_forma', label: 'Pro forma' },
   { value: 'credit_note', label: 'Credit note' },
+  { value: 'supplier_statement', label: 'Supplier statement' },
   { value: 'bank_statement', label: 'Bank statement' },
   { value: 'other', label: 'Other' },
 ]
@@ -61,6 +63,8 @@ export interface FinDocument {
   mime_type: string | null
   file_size: number | null
   visible_to_customer: boolean
+  on_books: boolean
+  belongs_to: string | null
   ocr_status: FinOcrStatus
   uploaded_by: string | null
   created_at: string

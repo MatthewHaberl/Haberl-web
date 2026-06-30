@@ -97,7 +97,7 @@ export default async function FinanceDocumentPage({
   // like the same purchase (same customer or supplier, close date, total within
   // tolerance). See lib/finance/similar.
   let similarDocs: SimilarDocVM[] = []
-  if (doc.doc_date && doc.total_cents) {
+  if (doc.doc_date && doc.total_cents && doc.on_books) {
     const win = (days: number) => {
       const d = new Date(`${doc.doc_date}T00:00:00Z`)
       d.setUTCDate(d.getUTCDate() + days)
@@ -108,6 +108,7 @@ export default async function FinanceDocumentPage({
       .select('id, doc_type, supplier_name, customer_id, doc_date, total_cents, file_name')
       .neq('id', id)
       .neq('doc_type', 'bank_statement')
+      .eq('on_books', true)
       .gte('doc_date', win(-SIMILAR_DATE_DAYS))
       .lte('doc_date', win(SIMILAR_DATE_DAYS))
       .limit(200)
@@ -205,6 +206,8 @@ export default async function FinanceDocumentPage({
           doc_type: doc.doc_type,
           total_cents: doc.total_cents,
           file_name: doc.file_name,
+          on_books: doc.on_books,
+          belongs_to: doc.belongs_to,
         }}
         customerName={doc.customer?.full_name ?? null}
       />

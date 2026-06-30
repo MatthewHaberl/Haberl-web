@@ -34,7 +34,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.redirect(signed.signedUrl)
 }
 
-const DOC_TYPES = new Set(['supplier_invoice', 'receipt', 'sales_invoice', 'pro_forma', 'credit_note', 'bank_statement', 'other'])
+const DOC_TYPES = new Set(['supplier_invoice', 'receipt', 'sales_invoice', 'pro_forma', 'credit_note', 'supplier_statement', 'bank_statement', 'other'])
 
 /** Edit the document header fields (fix an incorrect import). Manager/admin only. */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -56,6 +56,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   setStr('doc_number')
   setStr('doc_date')   // 'YYYY-MM-DD' or null
   setStr('notes')
+  setStr('belongs_to') // free-text owner label, e.g. 'Solza'
+
+  if ('on_books' in body) {
+    update.on_books = !!body.on_books
+  }
 
   if ('doc_type' in body) {
     const t = String(body.doc_type)

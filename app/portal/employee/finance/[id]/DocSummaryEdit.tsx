@@ -16,6 +16,8 @@ export interface DocHeader {
   doc_type: FinDocType
   total_cents: number | null
   file_name: string | null
+  on_books: boolean
+  belongs_to: string | null
 }
 
 export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customerName: string | null }) {
@@ -29,10 +31,13 @@ export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customer
   const [date, setDate] = useState(doc.doc_date ?? '')
   const [type, setType] = useState<FinDocType>(doc.doc_type)
   const [total, setTotal] = useState(doc.total_cents != null ? (doc.total_cents / 100).toFixed(2) : '')
+  const [onBooks, setOnBooks] = useState(doc.on_books)
+  const [belongsTo, setBelongsTo] = useState(doc.belongs_to ?? '')
 
   function reset() {
     setSupplier(doc.supplier_name ?? ''); setDocNo(doc.doc_number ?? ''); setDate(doc.doc_date ?? '')
     setType(doc.doc_type); setTotal(doc.total_cents != null ? (doc.total_cents / 100).toFixed(2) : '')
+    setOnBooks(doc.on_books); setBelongsTo(doc.belongs_to ?? '')
     setError(null)
   }
 
@@ -44,6 +49,7 @@ export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customer
         body: JSON.stringify({
           supplier_name: supplier, doc_number: docNo, doc_date: date || null,
           doc_type: type, total_cents: total === '' ? null : Math.round(Number(total) * 100),
+          on_books: onBooks, belongs_to: onBooks ? null : (belongsTo || null),
         }),
       })
       if (!res.ok) throw new Error(await res.text())
@@ -64,6 +70,11 @@ export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customer
           <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap items-center gap-3 pt-1">
             <Badge variant="outline">{FIN_DOC_TYPE_LABEL[doc.doc_type] ?? doc.doc_type}</Badge>
             {customerName && <Badge variant="accent">{customerName}</Badge>}
+            {!doc.on_books && (
+              <Badge variant="warning">
+                Reference only{doc.belongs_to ? ` — ${doc.belongs_to}` : ''}
+              </Badge>
+            )}
             <button
               type="button" onClick={() => setEditing(true)}
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
@@ -99,6 +110,23 @@ export function DocSummaryEdit({ doc, customerName }: { doc: DocHeader; customer
             {FIN_DOC_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </EditField>
+        <EditField label="Books">
+          <select value={onBooks ? 'on' : 'ref'} onChange={(e) => setOnBooks(e.target.value === 'on')} className={inputCls}>
+            <option value="on">On my books (counts in recon)</option>
+            <option value="ref">Reference only (someone else&rsquo;s)</option>
+          </select>
+        </EditField>
+        {!onBooks && (
+          <EditField label="Belongs to">
+            <input value={belongsTo} onChange={(e) => setBelongsTo(e.target.value)} placeholder="e.g. Solza" className={inputCls} />
+          </EditField>
+        )}
+        <div className="sm:col-span-2 lg:col-span-4 -mt-2">
+          <p className="text-xs text-muted-foreground">
+            &ldquo;Reference only&rdquo; keeps the document here but excludes it from your statements, recon
+            totals and duplicate checks. Switch it back to &ldquo;On my books&rdquo; any time (e.g. if Haberl paid it).
+          </p>
+        </div>
         <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-2 pt-1">
           {error && <span className="text-sm text-red-600">{error}</span>}
           <button type="button" disabled={busy} onClick={save}

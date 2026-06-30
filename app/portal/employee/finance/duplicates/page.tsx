@@ -38,6 +38,7 @@ export default async function DuplicatesPage() {
     .from('fin_documents')
     .select('id, doc_type, supplier_name, customer_id, doc_date, total_cents, file_name, customer:customers(full_name)')
     .neq('doc_type', 'bank_statement')
+    .eq('on_books', true)
     .not('doc_date', 'is', null)
     .not('total_cents', 'is', null)
     .order('doc_date', { ascending: false })
