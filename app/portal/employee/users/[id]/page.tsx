@@ -2,16 +2,17 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import {
-  ArrowLeft, Mail, Phone, MapPin, FileText, Briefcase, UserRound, ChevronRight, ExternalLink, Eye,
+  ArrowLeft, Mail, Phone, MapPin, FileText, Briefcase, UserRound, ChevronRight, ExternalLink, Eye, Lock,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
-import { SCOPEABLE_SECTIONS, defaultRecordScope } from '@/lib/auth/sections'
+import { SCOPEABLE_SECTIONS, defaultRecordScope, PORTAL_SECTIONS, sectionDefaultAllowed } from '@/lib/auth/sections'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import { RoleSelect } from '../RoleSelect'
+import { AccessSelect } from '../AccessSelect'
 import { VisibilitySelect } from '../VisibilitySelect'
 import { ROLE_META } from '../shared'
 import type { Role, RecordScope } from '@/types/database'
@@ -44,6 +45,32 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     : { data: [] }
   const scopeBySection = new Map<string, RecordScope>(
     (visRows ?? []).map((v) => [v.section as string, v.scope as RecordScope]),
+  )
+
+  // Per-user SECTION-ACCESS overrides (migration 084) + the role-level default
+  // each one diverges from (so the dial can show "Default (On/Off)").
+  const { data: accessRows } = isStaff
+    ? await supabase
+        .from('user_section_permissions')
+        .select('section, allowed')
+        .eq('user_id', id)
+    : { data: [] }
+  const accessBySection = new Map<string, boolean>(
+    (accessRows ?? []).map((a) => [a.section as string, a.allowed as boolean]),
+  )
+
+  let roleAllows: (key: string) => boolean = () => true // admin ⇒ all sections
+  if (isStaff && role !== 'admin') {
+    const { data: rolePerms } = await supabase
+      .from('role_permissions').select('section, allowed').eq('role', role)
+    const roleMap = new Map<string, boolean>(
+      (rolePerms ?? []).map((p) => [p.section as string, p.allowed as boolean]),
+    )
+    roleAllows = (key) => (roleMap.has(key) ? !!roleMap.get(key) : sectionDefaultAllowed(key, role))
+  }
+  // Everyone needs their home; access control stays role-driven — see migration 084.
+  const overridableSections = PORTAL_SECTIONS.filter(
+    (s) => s.key !== 'dashboard' && s.key !== 'users',
   )
 
   // Linked CRM customer (this login is also a customer) + their sites/quotes.
@@ -130,6 +157,40 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           </div>
         </CardContent>
       </Card>
+
+      {/* Section access — which sections this person can open at all */}
+      {isStaff && (
+        <Card>
+          <CardContent className="pt-5">
+            <div className="mb-1 flex items-center gap-2">
+              <Lock className="h-4 w-4 text-muted-foreground" />
+              <h2 className="font-semibold">Section access</h2>
+            </div>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Turn individual sections on or off for this person, overriding{' '}
+              {role === 'admin' ? 'their admin access (everything)' : 'their role'}. Leave on{' '}
+              <em>Default</em> to follow the role. (Access control stays role-driven, so admins can
+              never be locked out.)
+            </p>
+            <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
+              {overridableSections.map((s) => (
+                <li key={s.key} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{s.label}</span>
+                    <span className="block text-xs text-muted-foreground">{s.description}</span>
+                  </span>
+                  <AccessSelect
+                    userId={profile.id}
+                    section={s.key}
+                    current={accessBySection.has(s.key) ? (accessBySection.get(s.key) ? 'allow' : 'block') : null}
+                    defaultAllowed={roleAllows(s.key)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Record visibility — what this person sees inside each section */}
       {isStaff && (

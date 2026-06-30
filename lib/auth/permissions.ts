@@ -16,9 +16,12 @@ export interface UserAccess {
 /**
  * The current user's role + the set of portal sections they may access.
  *
- * Admins always get every section (hard-coded — they can never be locked out).
- * Everyone else is resolved from the `role_permissions` table; if that table is
- * empty/unseeded we fall back to the registry defaults so the portal still works.
+ * Resolution: the ROLE default (admin = all sections; everyone else from the
+ * `role_permissions` matrix, or the registry defaults if it's unseeded) is then
+ * adjusted by any PER-USER overrides in `user_section_permissions` (migration
+ * 084) — so an admin can force a single section on or off for one person
+ * (e.g. block Finance for Byron). An admin always keeps the `users` section so
+ * access control can never be lost and the portal stays recoverable.
  *
  * Request-cached: the portal layout, the employee layout, and every page guard
  * can call this freely without extra DB round-trips.
@@ -37,12 +40,15 @@ export const getUserAccess = cache(async (): Promise<UserAccess | null> => {
   const role = (profile?.role ?? 'customer') as Role
   const name = profile?.full_name || user.email || 'User'
 
-  if (role === 'admin') {
-    return { user, role, name, sections: new Set(PORTAL_SECTIONS.map((s) => s.key)) }
+  const sections = new Set<string>()
+  if (role === 'customer') {
+    return { user, role, name, sections }
   }
 
-  const sections = new Set<string>()
-  if (role !== 'customer') {
+  // 1. Role default.
+  if (role === 'admin') {
+    for (const s of PORTAL_SECTIONS) sections.add(s.key)
+  } else {
     const { data: perms } = await supabase
       .from('role_permissions')
       .select('section, allowed')
@@ -55,6 +61,21 @@ export const getUserAccess = cache(async (): Promise<UserAccess | null> => {
       for (const s of PORTAL_SECTIONS) if (s.defaultRoles.includes(role)) sections.add(s.key)
     }
   }
+
+  // 2. Per-user overrides (force a section on/off for this person specifically).
+  const { data: overrides } = await supabase
+    .from('user_section_permissions')
+    .select('section, allowed')
+    .eq('user_id', user.id)
+  if (overrides) {
+    for (const o of overrides) {
+      if (o.allowed) sections.add(o.section)
+      else sections.delete(o.section)
+    }
+  }
+
+  // 3. Safety: an admin never loses access control, so the portal is recoverable.
+  if (role === 'admin') sections.add('users')
 
   return { user, role, name, sections }
 })
