@@ -7,6 +7,8 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { FileText, ArrowLeft, Landmark, Receipt, Crosshair } from 'lucide-react'
 import type { Metadata } from 'next'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { OpeningBalanceEditor } from './OpeningBalanceEditor'
+import { StatementEntries, type ManualEntry } from './StatementEntries'
 
 export const metadata: Metadata = { title: 'Customer statement' }
 export const dynamic = 'force-dynamic'
@@ -41,28 +43,53 @@ export default async function CustomerStatementPage({
   if (!profile || !['manager', 'admin'].includes(profile.role)) redirect('/portal/employee')
 
   const { data: customer } = await supabase
-    .from('customers').select('id, full_name').eq('id', id).maybeSingle()
+    .from('customers').select('id, full_name, opening_balance_cents, opening_balance_date').eq('id', id).maybeSingle()
   if (!customer) notFound()
+  const manualOpening = customer.opening_balance_cents ?? 0   // signed: >0 owes us
+  const openingDate = customer.opening_balance_date ?? null
 
   const { data: stmtRaw } = await supabase.rpc('customer_statement', { p_customer_id: id })
   const s = (stmtRaw ?? {
     credits: [], debits: [], total_credit: 0, total_debit: 0, credit_count: 0, debit_count: 0,
   }) as Statement
 
-  const empty = s.credit_count === 0 && s.debit_count === 0
+  // Hand-entered statement lines (migration 082) — folded in alongside the
+  // derived bank + invoice entries.
+  const { data: manualRaw } = await supabase
+    .from('fin_manual_entries')
+    .select('id, entry_date, direction, amount_cents, memo, reference')
+    .eq('customer_id', id)
+    .order('entry_date', { ascending: true })
+  const manualList = (manualRaw ?? []) as ManualEntry[]
+
+  const empty = s.credit_count === 0 && s.debit_count === 0 && manualList.length === 0
 
   // Every entry on one timeline (oldest first). ISO dates sort lexically;
   // undated entries go last.
+  const manualEntries: (Entry & { kind: 'debit' | 'credit' })[] = manualList.map((m) => ({
+    d: m.entry_date,
+    memo: m.memo || (m.direction === 'charge' ? 'Manual charge' : 'Manual credit'),
+    amt: m.amount_cents,
+    src: 'manual',
+    ref: m.reference?.trim() || 'Manual',
+    doc_id: null,
+    txn_id: null,
+    kind: m.direction === 'charge' ? ('debit' as const) : ('credit' as const),
+  }))
+
   const merged: (Entry & { kind: 'debit' | 'credit' })[] = [
     ...s.debits.map((e) => ({ ...e, kind: 'debit' as const })),
     ...s.credits.map((e) => ({ ...e, kind: 'credit' as const })),
+    ...manualEntries,
   ]
   merged.sort((a, b) => (a.d || '9999-99-99').localeCompare(b.d || '9999-99-99'))
   const signed = (e: { kind: 'debit' | 'credit'; amt: number }) => (e.kind === 'debit' ? e.amt : -e.amt)
 
-  // Opening balance = net of everything dated strictly before `from`. The
-  // running total then continues accurately from there for the chosen window.
-  const opening = from ? merged.reduce((t, e) => (e.d && e.d < from ? t + signed(e) : t), 0) : 0
+  // Opening balance = the manual brought-forward figure (migration 081) plus the
+  // net of everything dated strictly before `from`. The running total then
+  // continues accurately from there for the chosen window.
+  const preFromNet = from ? merged.reduce((t, e) => (e.d && e.d < from ? t + signed(e) : t), 0) : 0
+  const opening = manualOpening + preFromNet
 
   // Entries inside the window. Undated entries only show when no window is set.
   const inRange = (e: Entry) => (!from || (!!e.d && e.d >= from)) && (!to || (!!e.d && e.d <= to))
@@ -92,12 +119,17 @@ export default async function CustomerStatementPage({
         description="Charges owed to us minus money in their favour (their payments + bills they covered for us)."
       />
 
-      <Link
-        href={`/portal/employee/customers/${id}`}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to customer
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href={`/portal/employee/customers/${id}`}
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to customer
+        </Link>
+        <OpeningBalanceEditor customerId={id} cents={manualOpening} date={openingDate} />
+      </div>
+
+      <StatementEntries customerId={id} entries={manualList} />
 
       {/* Date range selector — opening balance carries everything before "From" */}
       <Card>
@@ -171,7 +203,7 @@ export default async function CustomerStatementPage({
       )}
 
       {ledger.length > 0 && (
-        <LedgerTable rows={ledger} opening={opening} closing={closing} from={from} />
+        <LedgerTable rows={ledger} opening={opening} closing={closing} from={from} openingDate={openingDate} />
       )}
 
       {rangeDebits.length > 0 && (
@@ -225,7 +257,7 @@ function balanceCls(v: number): string {
   }`
 }
 
-function LedgerTable({ rows, opening, closing, from }: { rows: LedgerRow[]; opening: number; closing: number; from: string }) {
+function LedgerTable({ rows, opening, closing, from, openingDate }: { rows: LedgerRow[]; opening: number; closing: number; from: string; openingDate?: string | null }) {
   const showOpening = !!from || opening !== 0
   return (
     <Card>
@@ -249,7 +281,7 @@ function LedgerTable({ rows, opening, closing, from }: { rows: LedgerRow[]; open
             <tbody className="divide-y divide-border">
               {showOpening && (
                 <tr className="bg-muted/30">
-                  <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{from ? formatDate(from) : '—'}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{from ? formatDate(from) : openingDate ? formatDate(openingDate) : '—'}</td>
                   <td className="px-4 py-2 font-medium" colSpan={4}>Opening balance</td>
                   <td className={balanceCls(opening)}>{formatCurrency(opening)}</td>
                 </tr>

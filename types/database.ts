@@ -174,6 +174,10 @@ export interface Customer {
   created_at: string
   archived_at: string | null   // soft-delete: set = archived/hidden (migration 056)
   archived_by: string | null
+  // Manual brought-forward statement balance (migration 081). Signed cents:
+  // >0 = they owe us; <0 = in credit. Date is the "as at" display date.
+  opening_balance_cents?: number
+  opening_balance_date?: string | null
 }
 
 export type CustomerAccountStatus = 'prospect' | 'invited' | 'registered'
