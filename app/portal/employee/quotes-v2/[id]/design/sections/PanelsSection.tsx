@@ -2,8 +2,8 @@
 
 import { Plus, Trash2, Sun, Zap } from 'lucide-react'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY, parseInverterSizingSpec } from '@/lib/solar/quote-calculator'
-import { VOC_COLD_FACTOR, EDGE_OF_CLOUD_FACTOR } from '@/lib/solar/compliance'
-import { panelGroupKwp, DIRECTIONS, ROOF_TYPES } from '@/lib/solar/system-design'
+import { stringVoltageProfile, type StringVoltageProfile } from '@/lib/solar/compliance'
+import { panelGroupKwp, DIRECTIONS, ROOF_TYPES, DEFAULT_SITE_CONDITIONS, type SiteConditions } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
 import { SectionCard, EmptyHint, LockNote, LOCKED_FIELD, SearchableSelect } from '../section-ui'
@@ -13,12 +13,14 @@ export function PanelsSection() {
   const { items, loading } = useCatalog()
   const panels = byCategory(items, 'panel')
 
-  // Inverter max DC input voltage — the ceiling the worst-case string Voc is checked
-  // against. Pulled from the selected inverter's notes (same source the compliance
-  // engine uses); null when no inverter is set or its notes lack the spec.
+  // Selected inverter's voltage window (max DC input + MPPT range) — the string
+  // voltages are checked against it. Same source the compliance engine uses.
   const inverterCatalogId = design.inverters[0]?.catalogId
   const inverterItem = inverterCatalogId ? items.find((i) => i.id === inverterCatalogId) : undefined
-  const maxDcVoltage = parseInverterSizingSpec(inverterItem?.notes)?.maxDcVoltage ?? null
+  const inverterSpec = parseInverterSizingSpec(inverterItem?.notes)
+
+  // Site climate + edge-of-cloud margin driving the temperature-corrected voltages.
+  const conditions = design.site ?? DEFAULT_SITE_CONDITIONS
 
   function addGroup() {
     const first = panels[0]
@@ -48,22 +50,25 @@ export function PanelsSection() {
         <EmptyHint>No panels yet. Add a group to start sizing the array.</EmptyHint>
       ) : (
         <div className="flex flex-col gap-3">
+          <ConditionsBar
+            conditions={conditions}
+            hotCellC={Math.round(conditions.maxAmbientC + ((45 - 20) / 800) * 1000)}
+            onChange={(patch) => dispatch({ type: 'setSite', patch })}
+          />
           {design.panels.map((g, idx) => {
             const kwp = panelGroupKwp(g)
             const dailyKwh = kwp * PSH_GAUTENG * SYSTEM_EFFICIENCY
             // Catalog panel selected → its watts come from the product (item 24).
             const locked = !!g.catalogId
 
-            // Worst-case string voltage: every panel in the group in series, lifted for
-            // a cold morning (−10 °C, ×1.10) then the edge-of-cloud overshoot (×1.20) —
-            // the exact value the compliance engine checks against the inverter's max DC
-            // input. Needs the panel's datasheet Voc; blank for custom/spec-less panels.
+            // Temperature-corrected string voltages (OpenSolar-style): every panel in
+            // the group is one series string. The profile gives the cold-morning Voc
+            // (max), the hot-cell Vmp (min) and pass/fail vs the inverter window.
             const selectedPanel = g.catalogId ? panels.find((p) => p.id === g.catalogId) : undefined
-            const panelVoc = selectedPanel?.voc_volts != null ? Number(selectedPanel.voc_volts) : null
             const series = g.panelCount || 0
-            const coldVoc = panelVoc && series > 0 ? panelVoc * series * VOC_COLD_FACTOR : null
-            const worstCaseVoc = coldVoc != null ? coldVoc * EDGE_OF_CLOUD_FACTOR : null
-            const overLimit = worstCaseVoc != null && maxDcVoltage != null && worstCaseVoc > maxDcVoltage
+            const profile = selectedPanel
+              ? stringVoltageProfile({ seriesPanels: series, panel: selectedPanel, spec: inverterSpec, conditions })
+              : null
             return (
               <div key={g.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between mb-2">
@@ -139,27 +144,16 @@ export function PanelsSection() {
                   </label>
                 </div>
 
+                {profile && <StringVoltageTable profile={profile} />}
+                {!profile && g.catalogId && series > 0 && (
+                  <p className="mt-2 text-xs italic text-muted-foreground">
+                    String voltages — add a datasheet Voc to this panel in the catalog to enable the check.
+                  </p>
+                )}
+
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span><strong className="text-foreground">{kwp.toFixed(2)}</strong> kWp</span>
                   <span>≈ <strong className="text-foreground">{dailyKwh.toFixed(1)}</strong> kWh/day</span>
-                  {panelVoc != null && (
-                    <span title="Panel open-circuit voltage (Voc) at STC, from the catalog datasheet.">
-                      Voc <strong className="text-foreground">{panelVoc}</strong> V/panel
-                    </span>
-                  )}
-                  {worstCaseVoc != null ? (
-                    <span
-                      className={`inline-flex items-center gap-1 ${overLimit ? 'font-semibold text-destructive' : ''}`}
-                      title={`Worst case = ${series} panels in series × ${panelVoc}V Voc × ${VOC_COLD_FACTOR} (cold morning, −10 °C) × ${EDGE_OF_CLOUD_FACTOR} (edge-of-cloud overshoot). Cold Voc alone ≈ ${Math.round(coldVoc!)}V.${maxDcVoltage != null ? ` Inverter max DC input = ${maxDcVoltage}V.` : ' No inverter max DC voltage set — pick an inverter to check against.'}`}
-                    >
-                      <Zap className="h-3 w-3" />
-                      Worst-case Voc ≈{' '}
-                      <strong className={overLimit ? 'text-destructive' : 'text-foreground'}>{Math.round(worstCaseVoc)}</strong> V
-                      {overLimit && maxDcVoltage != null && <> &gt; {maxDcVoltage}V max — shorten string</>}
-                    </span>
-                  ) : g.catalogId && series > 0 ? (
-                    <span className="italic">Worst-case Voc — add datasheet Voc to this panel in the catalog</span>
-                  ) : null}
                   <details className="ml-auto">
                     <summary className="cursor-pointer hover:text-foreground">More (optional)</summary>
                     <div className="mt-2 grid grid-cols-2 gap-2">
@@ -213,5 +207,103 @@ export function PanelsSection() {
         </div>
       )}
     </SectionCard>
+  )
+}
+
+// Editable site climate + edge-of-cloud margin that drive the string-voltage checks.
+function ConditionsBar({ conditions, hotCellC, onChange }: {
+  conditions: SiteConditions
+  hotCellC: number
+  onChange: (patch: Partial<SiteConditions>) => void
+}) {
+  const field = (label: string, value: number, set: (v: number) => void, suffix: string, min?: number) => (
+    <label className="flex flex-col gap-0.5">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="flex items-center gap-1">
+        <input
+          type="number" step={1} min={min}
+          value={Number.isFinite(value) ? value : ''}
+          onChange={(ev) => set(Number(ev.target.value))}
+          className="h-8 w-16 rounded border border-border bg-background px-1.5 text-xs"
+        />
+        <span className="text-[11px] text-muted-foreground">{suffix}</span>
+      </span>
+    </label>
+  )
+  return (
+    <div className="flex flex-wrap items-end gap-3 rounded-md border border-dashed border-border bg-muted/20 p-2.5 text-xs">
+      <span className="self-center font-medium text-foreground">Site conditions</span>
+      {field('Min temp', conditions.minAmbientC, (v) => onChange({ minAmbientC: v }), '°C')}
+      {field('Max temp', conditions.maxAmbientC, (v) => onChange({ maxAmbientC: v }), '°C')}
+      {field('Edge-of-cloud', conditions.edgeOfCloudPct, (v) => onChange({ edgeOfCloudPct: Math.max(0, v) }), '%', 0)}
+      <span className="self-center text-[11px] text-muted-foreground">
+        Hot cell ≈ {hotCellC}°C · cold morning sets max Voc, hot cell sets min Vmp.
+      </span>
+    </div>
+  )
+}
+
+// OpenSolar-style per-string voltage table: Voc/Vmp at the cold and hot corners,
+// with pass/fail ticks against the inverter's DC-input and MPPT window.
+function StringVoltageTable({ profile }: { profile: StringVoltageProfile }) {
+  const { conditions } = profile
+  const tick = (ok: boolean) =>
+    ok ? <span className="text-emerald-600 dark:text-emerald-400">✓</span>
+       : <span className="font-semibold text-destructive">✗</span>
+  return (
+    <div className="mt-2 rounded-md border border-border bg-muted/30 p-2.5 text-xs">
+      <div className="mb-1.5 flex items-center gap-1.5 font-medium text-foreground">
+        <Zap className="h-3 w-3" /> String voltages ({profile.seriesPanels} in series)
+      </div>
+      <table className="w-full tabular-nums">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="text-left font-normal" />
+            <th className="text-right font-normal">{conditions.minAmbientC}°C cold</th>
+            <th className="text-right font-normal">{profile.hotCellC}°C cell</th>
+            <th className="text-right font-normal">Limit</th>
+          </tr>
+        </thead>
+        <tbody className="text-foreground">
+          <tr>
+            <td className="text-muted-foreground">Voc</td>
+            <td className="text-right">{profile.vocCold} V</td>
+            <td className="text-right">{profile.vocHot} V</td>
+            <td className="text-right text-muted-foreground">{profile.maxDcVoltage != null ? `≤ ${profile.maxDcVoltage} V` : '—'}</td>
+          </tr>
+          <tr className={profile.overMaxDc ? 'text-destructive' : ''}>
+            <td className="text-muted-foreground">+{conditions.edgeOfCloudPct}% edge-of-cloud</td>
+            <td className="text-right font-semibold">
+              {profile.vocColdEdge} V {profile.maxDcVoltage != null && tick(!profile.overMaxDc)}
+            </td>
+            <td />
+            <td className="text-right text-muted-foreground">{profile.maxDcVoltage != null ? `≤ ${profile.maxDcVoltage} V` : '—'}</td>
+          </tr>
+          <tr>
+            <td className="text-muted-foreground">Vmp</td>
+            <td className={`text-right ${profile.overMpptMax ? 'font-semibold text-destructive' : ''}`}>
+              {profile.vmpCold != null ? `${profile.vmpCold} V` : '—'}
+            </td>
+            <td className={`text-right ${profile.underMpptMin ? 'font-semibold text-destructive' : ''}`}>
+              {profile.vmpHot != null ? `${profile.vmpHot} V` : '—'}{' '}
+              {profile.mpptMinVoltage != null && profile.vmpHot != null && tick(!profile.underMpptMin)}
+            </td>
+            <td className="text-right text-muted-foreground">
+              {profile.mpptMinVoltage != null ? `${profile.mpptMinVoltage}–${profile.mpptMaxVoltage ?? '?'} V` : '—'}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {(profile.overMaxDc || profile.underMpptMin || profile.overMpptMax) && (
+        <p className="mt-1.5 text-destructive">
+          {profile.overMaxDc && `Cold Voc exceeds the inverter's ${profile.maxDcVoltage}V max DC input — shorten the string. `}
+          {profile.underMpptMin && `Hot Vmp is below the ${profile.mpptMinVoltage}V MPPT minimum — add panels in series. `}
+          {profile.overMpptMax && `Cold Vmp exceeds the ${profile.mpptMaxVoltage}V MPPT maximum. `}
+        </p>
+      )}
+      {profile.maxDcVoltage == null && (
+        <p className="mt-1.5 text-muted-foreground">Select an inverter with a max-DC-voltage spec to check these against its window.</p>
+      )}
+    </div>
   )
 }

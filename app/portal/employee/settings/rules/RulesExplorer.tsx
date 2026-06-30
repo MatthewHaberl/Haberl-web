@@ -17,7 +17,6 @@ import {
   estimateDcVoltageDropPct,
   parseBatteryClass,
   MAX_DC_VOLTAGE_DROP_PCT,
-  VOC_COLD_FACTOR,
 } from '@/lib/solar/compliance'
 import {
   parseInverterSizingSpec,
@@ -209,7 +208,7 @@ function StringDesigner({ inverters, panels, batteries }: Props) {
       verdicts.push({
         label: 'Cold-weather string voltage (+ edge-of-cloud)',
         status: ok ? 'pass' : 'fail',
-        detail: `${layout.panelsPerString} × ${panel.voc_volts}V × ${VOC_COLD_FACTOR} ≈ ${layout.stringVocColdV}V → ≈ ${layout.stringVocDesignV}V with edge-of-cloud margin vs ${spec.maxDcVoltage}V max input${layout.maxSeriesAllowed != null ? ` (max ${layout.maxSeriesAllowed}/string)` : ''}`,
+        detail: `${layout.panelsPerString} × ${panel.voc_volts}V at ${layout.conditions.minAmbientC}°C ≈ ${layout.stringVocColdV}V → ≈ ${layout.stringVocDesignV}V with +${layout.conditions.edgeOfCloudPct}% edge-of-cloud vs ${spec.maxDcVoltage}V max input${layout.maxSeriesAllowed != null ? ` (max ${layout.maxSeriesAllowed}/string)` : ''}`,
       })
     } else {
       verdicts.push({

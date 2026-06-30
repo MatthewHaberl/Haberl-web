@@ -11,7 +11,6 @@ import {
   computeStringLayout,
   parseBatteryClass,
   runComplianceChecks,
-  EDGE_OF_CLOUD_FACTOR,
   type ComplianceCheck,
   type StringLayout,
 } from './compliance'
@@ -901,7 +900,7 @@ export function verifyPanelString(
       notes.push(`Cold string Voc ≈ ${layout.stringVocColdV}V (≈ ${layout.stringVocDesignV}V with edge-of-cloud margin) — within the ${spec.maxDcVoltage}V limit.`)
     }
     if (layout.maxSeriesAllowed != null) {
-      notes.push(`Max ${layout.maxSeriesAllowed} panels per string before the ${spec.maxDcVoltage}V limit (cold Voc ×${EDGE_OF_CLOUD_FACTOR} edge-of-cloud).`)
+      notes.push(`Max ${layout.maxSeriesAllowed} panels per string before the ${spec.maxDcVoltage}V limit (cold Voc at ${layout.conditions.minAmbientC}°C + ${layout.conditions.edgeOfCloudPct}% edge-of-cloud).`)
     }
   } else {
     notes.push(`Add "max_dc_voltage" to ${inverter.brand}'s notes for full string-voltage validation.`)

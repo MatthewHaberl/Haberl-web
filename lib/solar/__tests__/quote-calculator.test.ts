@@ -273,20 +273,20 @@ test('battery voltage class mismatch is a blocker (RULE-INV-06)', () => {
   assert.equal(check?.status, 'blocker', check?.detail)
 })
 
-test('string verdict: edge-of-cloud caps the Aiko 500W string at 8 panels, splits 41 honestly', () => {
+test('string verdict: temperature model caps the Aiko 500W string at 9 panels, splits 41 honestly', () => {
   const verdict = verifyPanelString(sunsynk16k(), aiko500(), 41)
   assert.ok(verdict)
-  // 500V ÷ (45.02 × 1.10 cold × 1.20 edge-of-cloud) → max 8 panels per string
-  assert.ok(verdict!.notes.some((n) => /Max 8 panels per string/.test(n)), verdict!.notes.join(' | '))
+  // 500V ÷ (45.02V → ≈48.7V cold at −2°C → ≈53.5V with +10% edge-of-cloud) → max 9 panels/string
+  assert.ok(verdict!.notes.some((n) => /Max 9 panels per string/.test(n)), verdict!.notes.join(' | '))
   // 41 doesn't divide into equal strings — surfaced honestly, not "6 × 7 = 42"
-  assert.match(verdict!.summary, /6 strings × 6–7 in series · 2 parallel per MPPT/)
-  assert.ok(verdict!.notes.some((n) => /5×7 \+ 1×6/.test(n)), verdict!.notes.join(' | '))
+  assert.match(verdict!.summary, /5 strings × 8–9 in series · 2 parallel per MPPT/)
+  assert.ok(verdict!.notes.some((n) => /1×9 \+ 4×8/.test(n)), verdict!.notes.join(' | '))
   assert.equal(verdict!.level, 'warn') // uneven split, but inside both voltage limits
 })
 
-test('string verdict: 9 in series trips the edge-of-cloud ceiling (blocker)', () => {
-  // Force a single 9-panel string; cold Voc 445.7V × 1.20 = 534.8V > 500V
-  const verdict = verifyPanelString(sunsynk16k({ max_strings: 1 }), aiko500(), 9)
+test('string verdict: 10 in series trips the max-DC-voltage ceiling (blocker)', () => {
+  // Force a single 10-panel string; cold Voc ≈486.7V + 10% edge-of-cloud ≈535V > 500V
+  const verdict = verifyPanelString(sunsynk16k({ max_strings: 1 }), aiko500(), 10)
   assert.ok(verdict)
   assert.equal(verdict!.level, 'block')
   assert.ok(verdict!.notes.some((n) => /edge-of-cloud margin .* over the inverter's 500V/.test(n)),

@@ -16,19 +16,36 @@ import type { SupplierBomItem } from './render-quote'
 import type { EquipmentCatalogItem, InverterSizingSpec } from './quote-calculator'
 
 // ── Physics constants ─────────────────────────────────────────────────────────
-// Voc rises as temperature falls. Gauteng design minimum ≈ -10 °C; typical
-// crystalline βVoc ≈ -0.28 %/°C → (25 - (-10)) × 0.28 % ≈ +10 %.
-export const VOC_COLD_FACTOR = 1.10
-// Edge-of-cloud (cloud-edge irradiance overshoot): reflected light off the edge
-// of a passing cloud briefly drives irradiance — and string Voc — above STC.
-// Haberl design rule: the cold-weather string Voc, lifted a further 20 % for
-// this transient, must still sit under the inverter's max DC input. So a string
-// is only "safe" when  panels × Voc × VOC_COLD_FACTOR × EDGE_OF_CLOUD_FACTOR ≤ Vmax.
-export const EDGE_OF_CLOUD_FACTOR = 1.20
-// Vmp ≈ 0.82 × Voc for crystalline modules; at ~65 °C cell temperature Vmp
-// derates a further ~14 %. Used for the MPPT minimum-voltage check.
+// String voltage uses a temperature-corrected model (OpenSolar / PVsyst / IEC 62548
+// / NEC 690.7 style): Voc rises as the cell cools, so the worst case for the
+// inverter's max-DC-input check is the coldest expected morning. We apply each
+// panel's own datasheet βVoc to the site's cold design temperature, then add a
+// configurable edge-of-cloud margin for the cloud-edge over-irradiance transient
+// that coincides with cold cells. (Research note: a cloud-edge irradiance spike
+// physically lifts Voc only ~1–2 % — Voc is logarithmic in irradiance — so the
+// edge-of-cloud % is a tunable house safety margin, not a physical multiplier;
+// the dominant ~8–10 % rise comes from the cold temperature.)
+
+/** Site climate + safety conditions that drive string-voltage sizing. */
+export interface StringDesignConditions {
+  /** Coldest expected ambient (°C) — sets the maximum Voc. */
+  minAmbientC: number
+  /** Hottest expected ambient (°C) — drives the hot cell temp → minimum Vmp. */
+  maxAmbientC: number
+  /** Edge-of-cloud over-irradiance margin (%) added to the cold Voc for the
+   *  inverter max-DC-input check. */
+  edgeOfCloudPct: number
+}
+
+// Gauteng / Highveld defaults. minAmbient −2 °C ≈ OpenSolar's −1.5 °C for the area
+// and ASHRAE's extreme-minimum band for Johannesburg; editable per project.
+export const DEFAULT_CONDITIONS: StringDesignConditions = { minAmbientC: -2, maxAmbientC: 35, edgeOfCloudPct: 10 }
+
+// Fallbacks when a panel's datasheet specs are missing.
+export const DEFAULT_BETA_VOC_PCT = -0.30   // %/°C, typical c-Si Voc temperature coefficient
+export const DEFAULT_NOCT_C = 45            // °C, nominal operating cell temperature
+// Vmp ≈ 0.82 × Voc when a datasheet Vmp isn't recorded.
 export const VMP_FROM_VOC = 0.82
-export const VMP_HOT_DERATE = 0.86
 // Imp ≈ 0.93 × Isc for crystalline modules (used for voltage drop).
 export const IMP_FROM_ISC = 0.93
 // Copper resistivity 0.0183 Ω·mm²/m
@@ -37,6 +54,89 @@ const COPPER_RESISTIVITY = 0.0183
 export const MAX_DC_VOLTAGE_DROP_PCT = 3
 // Without an inverter voltage spec we cap series panels at a conservative count.
 const DEFAULT_MAX_SERIES_PANELS = 10
+
+// Hot cell temperature from ambient via the NOCT model at 1000 W/m²:
+//   Tcell = Tambient + (NOCT − 20)/800 × 1000
+export function hotCellTempC(maxAmbientC: number, noctC: number = DEFAULT_NOCT_C): number {
+  return maxAmbientC + ((noctC - 20) / 800) * 1000
+}
+
+// Linear temperature correction of a voltage from its STC (25 °C) value.
+export function voltageAtTempC(vStc: number, betaPctPerC: number, cellTempC: number): number {
+  return vStc * (1 + (betaPctPerC / 100) * (cellTempC - 25))
+}
+
+// Pull the thermal/electrical specs we need off a catalog panel, with fallbacks.
+export function panelThermal(panel: Pick<EquipmentCatalogItem, 'voc_volts' | 'specs'>) {
+  const specs = (panel.specs ?? {}) as Record<string, unknown>
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  const voc = panel.voc_volts != null ? Number(panel.voc_volts) : null
+  const vmp = n(specs.vmp_volts) ?? (voc != null ? voc * VMP_FROM_VOC : null)
+  const betaVocPct = n(specs.voc_temp_coeff_pct) ?? DEFAULT_BETA_VOC_PCT
+  const noctC = n(specs.noct) ?? DEFAULT_NOCT_C
+  return { voc, vmp, betaVocPct, noctC }
+}
+
+/** Temperature-corner Voc/Vmp for one series string + its inverter-window checks. */
+export interface StringVoltageProfile {
+  seriesPanels: number
+  hotCellC: number
+  conditions: StringDesignConditions
+  /** Maximum Voc (cold morning) — per string. */
+  vocCold: number
+  /** Cold Voc + edge-of-cloud margin — the value checked vs the inverter max DC input. */
+  vocColdEdge: number
+  vocHot: number
+  vmpCold: number | null
+  /** Minimum Vmp (hot cell) — checked vs the MPPT minimum. */
+  vmpHot: number | null
+  maxDcVoltage: number | null
+  mpptMinVoltage: number | null
+  mpptMaxVoltage: number | null
+  overMaxDc: boolean
+  underMpptMin: boolean
+  overMpptMax: boolean
+}
+
+// Compute the four temperature-corner string voltages for a single series string
+// of `seriesPanels` panels, plus pass/fail against the inverter's voltage window.
+// Returns null when the panel has no Voc (custom/spec-less panel).
+export function stringVoltageProfile(opts: {
+  seriesPanels: number
+  panel: Pick<EquipmentCatalogItem, 'voc_volts' | 'specs'>
+  spec: InverterSizingSpec | null
+  conditions?: StringDesignConditions
+}): StringVoltageProfile | null {
+  const { seriesPanels, panel, spec } = opts
+  if (seriesPanels <= 0) return null
+  const conditions = opts.conditions ?? DEFAULT_CONDITIONS
+  const { voc, vmp, betaVocPct, noctC } = panelThermal(panel)
+  if (voc == null) return null
+
+  const hotCell = hotCellTempC(conditions.maxAmbientC, noctC)
+  const r = (v: number) => Math.round(v * 10) / 10
+  const vocColdEdgePanel = voltageAtTempC(voc, betaVocPct, conditions.minAmbientC) * (1 + conditions.edgeOfCloudPct / 100)
+  const vmpColdPanel = vmp != null ? voltageAtTempC(vmp, betaVocPct, conditions.minAmbientC) : null
+  const vmpHotPanel = vmp != null ? voltageAtTempC(vmp, betaVocPct, hotCell) : null
+
+  const vocCold = r(seriesPanels * voltageAtTempC(voc, betaVocPct, conditions.minAmbientC))
+  const vocColdEdge = r(seriesPanels * vocColdEdgePanel)
+  const vocHot = r(seriesPanels * voltageAtTempC(voc, betaVocPct, hotCell))
+  const vmpCold = vmpColdPanel != null ? r(seriesPanels * vmpColdPanel) : null
+  const vmpHot = vmpHotPanel != null ? r(seriesPanels * vmpHotPanel) : null
+
+  const maxDcVoltage = spec?.maxDcVoltage ?? null
+  const mpptMinVoltage = spec?.mpptMinVoltage ?? null
+  const mpptMaxVoltage = spec?.mpptMaxVoltage ?? null
+  return {
+    seriesPanels, hotCellC: r(hotCell), conditions,
+    vocCold, vocColdEdge, vocHot, vmpCold, vmpHot,
+    maxDcVoltage, mpptMinVoltage, mpptMaxVoltage,
+    overMaxDc: maxDcVoltage != null && vocColdEdge > maxDcVoltage,
+    underMpptMin: mpptMinVoltage != null && vmpHot != null && vmpHot < mpptMinVoltage,
+    overMpptMax: mpptMaxVoltage != null && vmpCold != null && vmpCold > mpptMaxVoltage,
+  }
+}
 
 export type ComplianceStatus = 'pass' | 'info' | 'warning' | 'blocker'
 
@@ -66,6 +166,14 @@ export interface StringLayout {
   stringVocDesignV: number | null
   /** Hot-weather Vmp of the shortest string — checked against the MPPT minimum. */
   stringVmpHotV: number | null
+  /** Hot-cell Voc of the longest string (display). */
+  stringVocHotV: number | null
+  /** Cold-weather Vmp of the longest string — checked against the MPPT maximum. */
+  stringVmpColdV: number | null
+  /** Conditions used for the temperature correction (display + notes). */
+  conditions: StringDesignConditions
+  /** Hot cell temperature used for the min-Vmp corner (°C). */
+  hotCellC: number | null
   /** true when derived from defaults because the inverter notes lack voltage specs */
   assumed: boolean
 }
@@ -76,16 +184,26 @@ export function computeStringLayout(opts: {
   panelCount: number
   panel: EquipmentCatalogItem
   spec: InverterSizingSpec | null
+  conditions?: StringDesignConditions
 }): StringLayout {
   const { panelCount, panel, spec } = opts
-  const voc = panel.voc_volts ?? null
+  const conditions = opts.conditions ?? DEFAULT_CONDITIONS
+  const { voc, vmp, betaVocPct, noctC } = panelThermal(panel)
 
-  // Max panels in series limited by inverter max DC voltage at the coldest Voc,
-  // INCLUDING the edge-of-cloud overshoot margin — that combined headroom is the
-  // real ceiling, not just the −10 °C cold rise.
+  // Per-panel temperature-corrected voltages (OpenSolar-style). Cold morning sets
+  // the max Voc; the hot cell temperature sets the min Vmp.
+  const hotCellC = hotCellTempC(conditions.maxAmbientC, noctC)
+  const vocColdPanel = voc != null ? voltageAtTempC(voc, betaVocPct, conditions.minAmbientC) : null
+  const vocDesignPanel = vocColdPanel != null ? vocColdPanel * (1 + conditions.edgeOfCloudPct / 100) : null
+  const vocHotPanel = voc != null ? voltageAtTempC(voc, betaVocPct, hotCellC) : null
+  const vmpColdPanel = vmp != null ? voltageAtTempC(vmp, betaVocPct, conditions.minAmbientC) : null
+  const vmpHotPanel = vmp != null ? voltageAtTempC(vmp, betaVocPct, hotCellC) : null
+
+  // Max panels in series before the cold design Voc (incl. edge-of-cloud) exceeds
+  // the inverter's max DC input.
   let maxSeriesAllowed: number | null = null
-  if (spec?.maxDcVoltage && voc) {
-    maxSeriesAllowed = Math.max(1, Math.floor(spec.maxDcVoltage / (voc * VOC_COLD_FACTOR * EDGE_OF_CLOUD_FACTOR)))
+  if (spec?.maxDcVoltage && vocDesignPanel) {
+    maxSeriesAllowed = Math.max(1, Math.floor(spec.maxDcVoltage / vocDesignPanel))
   }
   if (spec?.seriesPanelsPerString) {
     maxSeriesAllowed = Math.floor(spec.seriesPanelsPerString)
@@ -119,7 +237,7 @@ export function computeStringLayout(opts: {
       ? Math.max(1, Math.ceil(stringCount / mpptCount))
       : 1
 
-  const stringVocColdV = voc ? Math.round(panelsPerString * voc * VOC_COLD_FACTOR * 10) / 10 : null
+  const round1 = (v: number) => Math.round(v * 10) / 10
 
   return {
     stringCount,
@@ -128,9 +246,13 @@ export function computeStringLayout(opts: {
     evenStrings,
     parallelStringsPerMppt: Math.max(1, parallelStringsPerMppt),
     maxSeriesAllowed,
-    stringVocColdV,
-    stringVocDesignV: stringVocColdV != null ? Math.round(stringVocColdV * EDGE_OF_CLOUD_FACTOR * 10) / 10 : null,
-    stringVmpHotV: voc ? Math.round(panelsPerStringMin * voc * VMP_FROM_VOC * VMP_HOT_DERATE * 10) / 10 : null,
+    stringVocColdV: vocColdPanel != null ? round1(panelsPerString * vocColdPanel) : null,
+    stringVocDesignV: vocDesignPanel != null ? round1(panelsPerString * vocDesignPanel) : null,
+    stringVmpHotV: vmpHotPanel != null ? round1(panelsPerStringMin * vmpHotPanel) : null,
+    stringVocHotV: vocHotPanel != null ? round1(panelsPerString * vocHotPanel) : null,
+    stringVmpColdV: vmpColdPanel != null ? round1(panelsPerString * vmpColdPanel) : null,
+    conditions,
+    hotCellC: round1(hotCellC),
     assumed,
   }
 }
@@ -243,7 +365,7 @@ export function runComplianceChecks(ctx: ComplianceContext): ComplianceCheck[] {
   if (layout.stringVocDesignV != null && layout.stringVocColdV != null && spec?.maxDcVoltage) {
     if (layout.stringVocDesignV > spec.maxDcVoltage) {
       add('string-voc', 'String voltage vs inverter max DC input', 'Physics / RULE-STR-02', 'blocker',
-        `Cold-weather string Voc ≈ ${layout.stringVocColdV}V (${layout.panelsPerString} × ${panel.voc_volts}V × ${VOC_COLD_FACTOR}) rises to ≈ ${layout.stringVocDesignV}V with the ×${EDGE_OF_CLOUD_FACTOR} edge-of-cloud margin — over the inverter's ${spec.maxDcVoltage}V max input. Shorten the string.`)
+        `Cold-weather string Voc ≈ ${layout.stringVocColdV}V (${layout.panelsPerString} × ${panel.voc_volts}V at ${layout.conditions.minAmbientC}°C) rises to ≈ ${layout.stringVocDesignV}V with the +${layout.conditions.edgeOfCloudPct}% edge-of-cloud margin — over the inverter's ${spec.maxDcVoltage}V max input. Shorten the string.`)
     } else {
       add('string-voc', 'String voltage vs inverter max DC input', 'Physics / RULE-STR-02', 'pass',
         `Cold-weather string Voc ≈ ${layout.stringVocColdV}V (≈ ${layout.stringVocDesignV}V with the edge-of-cloud margin) is within the inverter's ${spec.maxDcVoltage}V limit.`)

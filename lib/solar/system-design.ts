@@ -695,10 +695,26 @@ export function defaultUserEdge(source = '', target = ''): UserEdge {
   return { id: mkId('uedge'), source, target }
 }
 
+/** Site climate + safety margins for temperature-corrected string-voltage sizing.
+ *  Structurally matches StringDesignConditions in compliance.ts. */
+export interface SiteConditions {
+  /** Coldest expected ambient (°C) — sets the maximum Voc. */
+  minAmbientC: number
+  /** Hottest expected ambient (°C) — drives the hot cell temp → minimum Vmp. */
+  maxAmbientC: number
+  /** Edge-of-cloud over-irradiance margin (%) added to the cold Voc. */
+  edgeOfCloudPct: number
+}
+
+// Gauteng / Highveld defaults (editable per project).
+export const DEFAULT_SITE_CONDITIONS: SiteConditions = { minAmbientC: -2, maxAmbientC: 35, edgeOfCloudPct: 10 }
+
 export interface SystemDesign {
   version: number
   energy: EnergyProfile
   panels: PanelGroup[]
+  /** Site climate for string-voltage sizing (falls back to DEFAULT_SITE_CONDITIONS). */
+  site?: SiteConditions
   dcCombiners: DcCombiner[]
   inverters: InverterUnit[]
   batteries: BatteryUnit[]
@@ -744,6 +760,7 @@ export function emptyDesign(): SystemDesign {
     version: DESIGN_VERSION,
     energy: emptyEnergy(),
     panels: [],
+    site: { ...DEFAULT_SITE_CONDITIONS },
     dcCombiners: [],
     inverters: [],
     batteries: [],
