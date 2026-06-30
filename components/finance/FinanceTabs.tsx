@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Receipt, Landmark, Copy } from 'lucide-react'
+import { Receipt, Landmark, Copy, CalendarClock } from 'lucide-react'
 
 const TABS = [
   { href: '/portal/employee/finance',            label: 'Documents',          icon: Receipt },
   { href: '/portal/employee/finance/bank',       label: 'Bank Statements',    icon: Landmark },
+  { href: '/portal/employee/finance/timeline',   label: 'Timeline',           icon: CalendarClock },
   { href: '/portal/employee/finance/duplicates', label: 'Possible duplicates', icon: Copy },
 ]
 
