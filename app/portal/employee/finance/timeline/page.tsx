@@ -10,6 +10,7 @@ import { FinanceTabs } from '@/components/finance/FinanceTabs'
 import { FIN_DOC_TYPE_LABEL, type FinDocType } from '@/lib/finance/types'
 import { TimelineAllocate, type TimelineSplit } from './TimelineAllocate'
 import { TimelineDocAllocate, type DocAllocSummary } from './TimelineDocAllocate'
+import { CombineProvider, CombineCheckbox, type CombineDoc } from './TimelineCombine'
 import { COMPANY_CATEGORIES } from '../[id]/DocAllocations'
 
 export const metadata: Metadata = { title: 'Finance — Timeline' }
@@ -234,6 +235,15 @@ export default async function FinanceTimelinePage({
     }
   }
 
+  // Documents that can be combined (folded into one) right from the timeline.
+  const combinableDocs: CombineDoc[] = docRows.map((d) => ({
+    id: d.id,
+    label: d.supplier_name || d.file_name || 'Document',
+    date: d.doc_date,
+    total_cents: d.total_cents,
+    hasAlloc: (docAllocMap.get(d.id)?.length ?? 0) > 0,
+  }))
+
   const totalIn = bankRows.reduce((s, r) => s + (r.amount_cents > 0 ? r.amount_cents : 0), 0)
   const totalOut = bankRows.reduce((s, r) => s + (r.amount_cents < 0 ? r.amount_cents : 0), 0)
   const filtered = !!(q || from || to || source !== 'all' || dir !== 'all' || sort !== 'newest')
@@ -332,6 +342,10 @@ export default async function FinanceTimelinePage({
           </CardContent>
         </Card>
       ) : (
+        <CombineProvider docs={combinableDocs}>
+        <p className="text-xs text-muted-foreground">
+          Tip: tick the checkbox on two or more documents to combine duplicate scans or multi-page invoices into one.
+        </p>
         <div className="space-y-4">
           {days.map((day) => {
             const net = day.moneyIn + day.moneyOut
@@ -357,6 +371,9 @@ export default async function FinanceTimelinePage({
                   <ul className="divide-y divide-border">
                     {day.items.map((it) => (
                       <li key={`${it.kind}-${it.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40">
+                        {it.kind === 'doc'
+                          ? <CombineCheckbox id={it.id} />
+                          : <span className="w-4 shrink-0" aria-hidden />}
                         <Link href={it.href} className="flex min-w-0 flex-1 items-center gap-3">
                           <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
                             it.kind === 'bank'
@@ -425,6 +442,7 @@ export default async function FinanceTimelinePage({
             )
           })}
         </div>
+        </CombineProvider>
       )}
     </PageShell>
   )
