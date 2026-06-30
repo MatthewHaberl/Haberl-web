@@ -268,7 +268,9 @@ export default async function BankStatementsPage({
       {/* Quick actions: billing backlog + auto-rules */}
       <div className="flex flex-wrap items-center gap-2">
         <Link
-          href={buildHref({}, { cust: 'none', dir: 'in', sort: 'desc' })}
+          href={cust === 'none' && dir === 'in'
+            ? buildHref(base, { cust: 'all', dir: 'all' })
+            : buildHref({}, { cust: 'none', dir: 'in', sort: 'desc' })}
           className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors ${
             cust === 'none' && dir === 'in'
               ? 'border-accent bg-accent/5 text-primary'

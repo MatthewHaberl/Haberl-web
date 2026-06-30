@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Upload, Loader2 } from 'lucide-react'
+import { Upload, Loader2, ChevronDown } from 'lucide-react'
 import { FIN_DOC_TYPES } from '@/lib/finance/types'
 
 const selectCls =
@@ -17,6 +17,7 @@ export function UploadForm({ customers }: { customers: { id: string; full_name: 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -48,10 +49,21 @@ export function UploadForm({ customers }: { customers: { id: string; full_name: 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Upload className="h-4 w-4" /> Upload a document
-        </CardTitle>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex w-full items-center gap-2 text-left"
+        >
+          <CardTitle className="text-base flex items-center gap-2">
+            <Upload className="h-4 w-4" /> Upload a document
+          </CardTitle>
+          <ChevronDown
+            className={`ml-auto h-4 w-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
       </CardHeader>
+      {open && (
       <CardContent>
         <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="sm:col-span-2 lg:col-span-3">
@@ -123,6 +135,7 @@ export function UploadForm({ customers }: { customers: { id: string; full_name: 
           </div>
         </form>
       </CardContent>
+      )}
     </Card>
   )
 }
