@@ -106,6 +106,10 @@ export interface EnergyBalanceAnnual {
   selfConsumptionPct: number
   /** Self-consumed ÷ consumption × 100. How much of the bill the solar removes. */
   gridIndependencePct: number
+  /** Total kWh discharged from the battery over the year (throughput). */
+  batteryDischargedKwh: number
+  /** Average full-equivalent battery cycles per day = throughput ÷ usable ÷ 365. */
+  batteryCyclesPerDay: number
 }
 
 export interface EnergyBalanceResult {
@@ -120,6 +124,8 @@ interface DayResult {
   imported: number
   surplus: number
   endSoc: number
+  /** kWh delivered out of the battery this day (throughput). */
+  discharged: number
 }
 
 /**
@@ -141,6 +147,7 @@ function simulateDay(
   let served = 0
   let imported = 0
   let surplus = 0
+  let discharged = 0
 
   for (let h = 0; h < 24; h++) {
     const gen = genH[h] ?? 0
@@ -165,6 +172,7 @@ function simulateDay(
       const delivered = Math.min(hourDeficit, deliverable)
       soc -= delivered / legEff
       served += delivered
+      discharged += delivered
       imported += hourDeficit - delivered
     } else {
       // No battery (or a neutral hour): surplus leaves, deficit is imported.
@@ -173,7 +181,7 @@ function simulateDay(
     }
   }
 
-  return { served, imported, surplus, endSoc: soc }
+  return { served, imported, surplus, endSoc: soc, discharged }
 }
 
 /**
@@ -211,7 +219,7 @@ export function simulateEnergyBalance(input: EnergyBalanceInput): EnergyBalanceR
     generationKwh: 0, consumptionKwh: 0, selfConsumedKwh: 0, importedKwh: 0,
     exportedKwh: 0, curtailedKwh: 0, exportCreditR: 0, billBeforeR: 0,
     billAfterR: 0, savingR: 0, energyFromSolarPct: 0, selfConsumptionPct: 0,
-    gridIndependencePct: 0,
+    gridIndependencePct: 0, batteryDischargedKwh: 0, batteryCyclesPerDay: 0,
   }
 
   for (let m = 0; m < 12; m++) {
@@ -261,6 +269,7 @@ export function simulateEnergyBalance(input: EnergyBalanceInput): EnergyBalanceR
     acc.billBeforeR += billBeforeR
     acc.billAfterR += billAfterR
     acc.savingR += savingR
+    acc.batteryDischargedKwh += day.discharged * days
   }
 
   const annual: EnergyBalanceAnnual = {
@@ -277,6 +286,8 @@ export function simulateEnergyBalance(input: EnergyBalanceInput): EnergyBalanceR
     energyFromSolarPct: pct(acc.generationKwh, acc.consumptionKwh),
     selfConsumptionPct: pct(acc.selfConsumedKwh, acc.generationKwh),
     gridIndependencePct: pct(acc.selfConsumedKwh, acc.consumptionKwh),
+    batteryDischargedKwh: round1(acc.batteryDischargedKwh),
+    batteryCyclesPerDay: cyclesPerDay(acc.batteryDischargedKwh, battery),
   }
 
   return { months, annual }
@@ -301,4 +312,11 @@ function roundR(n: number): number {
 function pct(part: number, whole: number): number {
   if (whole <= 0) return 0
   return Math.round((part / whole) * 100)
+}
+
+/** Full-equivalent battery cycles per day = annual throughput ÷ usable ÷ 365. */
+function cyclesPerDay(throughputKwh: number, battery: BatteryParams | null | undefined): number {
+  const usable = battery ? battery.capacityKwh * (battery.usableFraction ?? 0.9) : 0
+  if (usable <= 0) return 0
+  return Math.round((throughputKwh / usable / 365) * 100) / 100
 }

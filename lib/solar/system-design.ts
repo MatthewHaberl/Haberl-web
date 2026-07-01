@@ -466,6 +466,62 @@ export const DB_CONNECTIONS: Array<{ value: DbConnection; label: string }> = [
   { value: 'none', label: 'None' },
 ]
 
+// ── DB templates + reuse (W83) ───────────────────────────────────────────────
+// Starting-point boards you drop in on site and tweak, plus a re-id helper so a
+// saved/loaded board's internal wiring stays intact without colliding ids.
+export type DbTemplateKey = 'two_inverter_combiner' | 'ac_changeover' | 'essential_db'
+
+export const DB_TEMPLATES: Array<{ key: DbTemplateKey; label: string; hint: string }> = [
+  { key: 'two_inverter_combiner', label: '2-inverter combiner', hint: '2 inverters → changeover → output, with SPD + phase light' },
+  { key: 'ac_changeover', label: 'AC changeover DB', hint: 'Grid + generator → changeover → load, with SPD' },
+  { key: 'essential_db', label: 'Essential loads DB', hint: 'Main + earth-leakage + SPD + way breakers' },
+]
+
+export function buildDbTemplate(key: DbTemplateKey): DbComponent[] {
+  const c = (kind: DbComponentKind, label: string, fedFrom: string[] = []) => {
+    const x = defaultDbComponent(kind, fedFrom); x.label = label; return x
+  }
+  if (key === 'ac_changeover') {
+    const grid = c('breaker', 'Grid incomer', [DB_SUPPLY_ID])
+    const gen = c('breaker', 'Generator incomer', [DB_SUPPLY_ID])
+    const spd = c('spd', 'AC SPD', [grid.id])
+    const co = c('changeover', 'Grid / Gen changeover', [grid.id, gen.id])
+    const out = c('breaker', 'Output breaker', [co.id])
+    const lamp = c('indicator', 'Supply indicator', [co.id])
+    return [grid, gen, spd, co, out, lamp]
+  }
+  if (key === 'two_inverter_combiner') {
+    const grid = c('breaker', 'Grid incomer', [DB_SUPPLY_ID])
+    const gen = c('breaker', 'Generator incomer', [DB_SUPPLY_ID])
+    const spd = c('spd', 'AC SPD', [grid.id])
+    const co1 = c('changeover', 'Changeover — Inverter 1', [grid.id, gen.id])
+    const co2 = c('changeover', 'Changeover — Inverter 2', [grid.id, gen.id])
+    const in1 = c('breaker', 'Inverter 1 input', [co1.id])
+    const out1 = c('breaker', 'Inverter 1 output', [in1.id])
+    const in2 = c('breaker', 'Inverter 2 input', [co2.id])
+    const out2 = c('breaker', 'Inverter 2 output', [in2.id])
+    const lamp = c('indicator', 'Phase indicator', [grid.id])
+    return [grid, gen, spd, co1, co2, in1, out1, in2, out2, lamp]
+  }
+  const main = c('mainSwitch', 'Main switch', [DB_SUPPLY_ID])
+  const rccb = c('rccb', 'Earth leakage (RCCB)', [main.id])
+  const spd = c('spd', 'AC SPD', [main.id])
+  const ways = ['Lights', 'Plugs', 'Geyser', 'Backup'].map((w) => c('breaker', w, [rccb.id]))
+  return [main, rccb, spd, ...ways]
+}
+
+/** Regenerate component ids (and remap fedFrom) so a saved board can be dropped into
+ *  another quote without id collisions. The SUPPLY token is preserved. */
+export function reidDbComponents(comps: DbComponent[]): DbComponent[] {
+  const map = new Map<string, string>()
+  comps.forEach((k) => map.set(k.id, mkId('dbc')))
+  return comps.map((k) => ({
+    ...k,
+    id: map.get(k.id) as string,
+    fedFrom: (k.fedFrom ?? []).map((f) => (f === DB_SUPPLY_ID ? DB_SUPPLY_ID : (map.get(f) ?? ''))),
+  }))
+}
+
 /** AC distribution board — reuses the Chint DB enclosures + AC protection products. */
 export interface AcCombiner {
   id: string
@@ -709,12 +765,42 @@ export interface SiteConditions {
 // Gauteng / Highveld defaults (editable per project).
 export const DEFAULT_SITE_CONDITIONS: SiteConditions = { minAmbientC: -2, maxAmbientC: 35, edgeOfCloudPct: 10 }
 
+// ── Supply / main breaker (W82 breaker-led sizing) ───────────────────────────
+// Matthew's on-site starting point: read the incoming main breaker, then size the
+// inverter to comfortably take it over.
+export interface SupplyConfig {
+  /** Incoming main breaker rating (A). */
+  mainBreakerA: number
+  /** Supply phases. */
+  phases: 1 | 3
+  /** Line-to-line voltage (V): 230 single-phase, 400 three-phase. */
+  voltageV: number
+}
+
+export function defaultSupply(): SupplyConfig {
+  return { mainBreakerA: 60, phases: 1, voltageV: 230 }
+}
+
+/** Apparent power (kVA) the breaker can carry: 1φ = V×A, 3φ = √3×V_LL×A. */
+export function supplyKva(s: SupplyConfig): number {
+  const va = s.phases >= 3 ? Math.sqrt(3) * s.voltageV * s.mainBreakerA : s.voltageV * s.mainBreakerA
+  return va / 1000
+}
+
+/** Inverter AC kW to comfortably cover the supply — ~90% of the breaker kVA
+ *  (you rarely size the inverter to a full 100% of the main). */
+export function recommendedInverterKw(s: SupplyConfig): number {
+  return Math.round(supplyKva(s) * 0.9)
+}
+
 export interface SystemDesign {
   version: number
   energy: EnergyProfile
   panels: PanelGroup[]
   /** Site climate for string-voltage sizing (falls back to DEFAULT_SITE_CONDITIONS). */
   site?: SiteConditions
+  /** Incoming supply / main breaker (W82) — drives breaker-led inverter sizing. */
+  supply?: SupplyConfig
   dcCombiners: DcCombiner[]
   inverters: InverterUnit[]
   batteries: BatteryUnit[]
@@ -1598,7 +1684,13 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
     nodes.push({
       id: dbId, type: 'dbBoard',
       position: pos(dbId, { x: DB_X, y: Y_INV }),
-      data: { label: 'Distribution Board', mainBreakerA: inverterPhase === 3 ? 63 : 40, rccbA: 30, phases: inverterPhase, inputCount: 1, outputCount: dbOutputCount },
+      data: {
+        label: acBoard?.label || 'Distribution Board',
+        mainBreakerA: inverterPhase === 3 ? 63 : 40, rccbA: 30, phases: inverterPhase,
+        inputCount: 1, outputCount: dbOutputCount,
+        // W83: the board's internal devices, rendered inside the node (mini single-line).
+        components: acBoard ? acBoard.components.map((k) => ({ kind: k.kind, label: k.label, qty: k.qty })) : [],
+      },
     })
     edges.push({
       id: 'e-inv-db', source: NODE.inverter, target: dbId,

@@ -1,16 +1,32 @@
 'use client'
 
-import { Plus, Trash2, CircuitBoard, CornerDownRight } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Plus, Trash2, CircuitBoard, CornerDownRight, Save, LayoutTemplate, AlertTriangle } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 import {
   parseEnclosureSpec, ENCLOSURE_MATERIALS, ENCLOSURE_MOUNTS, ENCLOSURE_WAYS,
   DB_COMPONENT_KINDS, dbComponentKind, defaultDbComponent, DB_SUPPLY_ID, DB_SUPPLY_LABEL,
-  DB_CONNECTIONS,
-  type AcCombiner, type DbComponent, type DbComponentKind,
+  DB_CONNECTIONS, DB_TEMPLATES, buildDbTemplate, reidDbComponents,
+  type AcCombiner, type DbComponent, type DbComponentKind, type DbTemplateKey,
 } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
 import { ProductPicker } from '../ProductPicker'
 import { SectionCard } from '../section-ui'
+
+type SavedAssembly = { id: string; name: string; payload: AcCombiner }
+
+/** Lightweight board sanity checks surfaced under the component list (W83). */
+function dbSanity(c: AcCombiner): string[] {
+  const w: string[] = []
+  if (c.components.length > 0 && !c.components.some((x) => x.fedFrom.includes(DB_SUPPLY_ID)))
+    w.push('Nothing is fed from the incoming supply.')
+  if (c.components.length > 0 && !c.components.some((x) => x.kind === 'spd'))
+    w.push('No SPD on this board.')
+  for (const x of c.components.filter((x) => x.kind === 'changeover'))
+    if (x.fedFrom.filter(Boolean).length < 2) w.push(`Changeover “${x.label}” needs two sources.`)
+  return w
+}
 
 export function AcCombinerSection() {
   const { design, dispatch, gridSupply } = useDesign()
@@ -67,6 +83,38 @@ export function AcCombinerSection() {
     return c.components.filter((x) => x.fedFrom.includes(comp.id)).map((x) => x.label)
   }
 
+  // ── Reusable boards (W83) — templates + save/load from db_assemblies. ──
+  const [saved, setSaved] = useState<SavedAssembly[]>([])
+  const [savingId, setSavingId] = useState<string | null>(null)
+  async function loadSaved() {
+    const { data } = await createClient()
+      .from('db_assemblies').select('id,name,payload').eq('kind', 'ac')
+      .order('created_at', { ascending: false })
+    setSaved((data as SavedAssembly[] | null) ?? [])
+  }
+  useEffect(() => { loadSaved() }, [])
+
+  function applyTemplate(c: AcCombiner, key: DbTemplateKey) {
+    patch(c, { components: buildDbTemplate(key) })
+  }
+  async function saveBoard(c: AcCombiner) {
+    setSavingId(c.id)
+    const { error } = await createClient()
+      .from('db_assemblies').insert({ name: c.label || 'Distribution Board', kind: 'ac', payload: c })
+    setSavingId(null)
+    if (!error) loadSaved()
+  }
+  function loadInto(c: AcCombiner, a: SavedAssembly) {
+    const p = a.payload
+    patch(c, {
+      components: reidDbComponents(p.components ?? []),
+      material: p.material, mount: p.mount, ways: p.ways, rows: p.rows, ipRating: p.ipRating,
+      enclosureCatalogId: p.enclosureCatalogId ?? null,
+      productCode: p.productCode ?? c.productCode, productCodeLocked: p.productCodeLocked ?? false,
+      topConnection: p.topConnection ?? c.topConnection, bottomConnection: p.bottomConnection ?? c.bottomConnection,
+    })
+  }
+
   return (
     <SectionCard
       title="AC combiner / Distribution board"
@@ -93,6 +141,31 @@ export function AcCombinerSection() {
                     <input value={c.label} onChange={(e) => patch(c, { label: e.target.value })} className="bg-transparent border-b border-transparent hover:border-border focus:border-primary text-xs font-semibold focus:outline-none" />
                   </span>
                   <button type="button" onClick={() => dispatch({ type: 'removeAcCombiner', id: c.id })} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+
+                {/* W83 — templates + save/load a reusable board. */}
+                <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                  <LayoutTemplate className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Template:</span>
+                  {DB_TEMPLATES.map((t) => (
+                    <button key={t.key} type="button" title={t.hint} onClick={() => applyTemplate(c, t.key)}
+                      className="rounded border border-border px-1.5 py-0.5 text-[10px] hover:bg-primary/5 hover:border-primary/40">{t.label}</button>
+                  ))}
+                  <span className="mx-0.5 text-border">·</span>
+                  <button type="button" onClick={() => saveBoard(c)} disabled={savingId === c.id}
+                    className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] hover:bg-muted disabled:opacity-50">
+                    <Save className="h-3 w-3" /> {savingId === c.id ? 'Saving…' : 'Save as reusable'}
+                  </button>
+                  {saved.length > 0 && (
+                    <select
+                      defaultValue=""
+                      onChange={(e) => { const a = saved.find((s) => s.id === e.target.value); if (a) loadInto(c, a); e.currentTarget.value = '' }}
+                      className="h-6 rounded border border-border bg-background px-1 text-[10px]"
+                    >
+                      <option value="">Load saved…</option>
+                      {saved.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  )}
                 </div>
 
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Enclosure (DB)</p>
@@ -203,6 +276,19 @@ export function AcCombinerSection() {
                     })}
                   </div>
                 )}
+
+                {(() => {
+                  const warns = dbSanity(c)
+                  return warns.length > 0 ? (
+                    <div className="mt-2 rounded-md border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 p-2">
+                      {warns.map((wn, i) => (
+                        <p key={i} className="flex items-center gap-1.5 text-[11px] text-amber-800 dark:text-amber-300">
+                          <AlertTriangle className="h-3 w-3 shrink-0" /> {wn}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null
+                })()}
               </div>
             )
           })}

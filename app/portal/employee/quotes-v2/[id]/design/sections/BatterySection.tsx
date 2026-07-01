@@ -10,6 +10,8 @@ import {
   type CRateLevel, type BatteryBank, type DisconnectKind, type DisconnectChoice,
   type BatteryBusbarSpec, type BankCable,
 } from '@/lib/solar/system-design'
+import { simulateEnergyBalance } from '@/lib/solar/energy-balance'
+import { buildBalanceInput, DEFAULT_TARIFF_RATE } from '@/lib/solar/savings'
 import { CompatSelect } from '@/components/ui/CompatSelect'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
@@ -71,6 +73,17 @@ export function BatterySection() {
   const inverterKw = designInverterKw(design)
   const bank = design.bank
   const cr = batteryCRate(inverterKw, batteryKwh)
+  // W84: live grid-independence / self-consumption / cycles-per-day as the module
+  // count changes — read off the same honest hourly engine the Savings view uses.
+  // The percentages are tariff-independent, so the default rate is fine here.
+  const independence = useMemo(() => {
+    const annualGen = (balance.generationKwh ?? 0) * 365
+    const annualCons = (balance.demandKwh ?? 0) * 365
+    if (annualGen <= 0 || annualCons <= 0 || batteryKwh <= 0) return null
+    return simulateEnergyBalance(
+      buildBalanceInput(annualGen, annualCons, batteryKwh, { tariffRate: DEFAULT_TARIFF_RATE }),
+    ).annual
+  }, [balance.generationKwh, balance.demandKwh, batteryKwh])
   // Worst-case: size off the discharge-cutoff voltage, not nominal.
   const dcCurrent = batteryDcCurrent(inverterKw, bank.cutoffVoltage)
   const cableRuns = cableRunsNeeded(dcCurrent, bank.cableSizeMm2)
@@ -200,6 +213,29 @@ export function BatterySection() {
           <span>Set an essential load or usage in Energy to see hours of storage.</span>
         )}
       </div>
+
+      {/* W84 — live grid-independence readout (OpenSolar-style), updates as qty changes. */}
+      {independence && (
+        <div className="mt-3">
+          <div className="grid grid-cols-3 gap-2 rounded-lg border border-border bg-muted/20 p-2.5 text-center">
+            <div>
+              <p className="text-xl font-bold text-primary">{independence.gridIndependencePct}%</p>
+              <p className="text-[10px] text-muted-foreground">Grid independence</p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-foreground">{independence.selfConsumptionPct}%</p>
+              <p className="text-[10px] text-muted-foreground">Solar self-used</p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-foreground">{independence.batteryCyclesPerDay.toFixed(2)}</p>
+              <p className="text-[10px] text-muted-foreground">Cycles / day</p>
+            </div>
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            Add or remove modules above to move grid independence — it updates live off the energy balance (needs usage + panels set).
+          </p>
+        </div>
+      )}
 
       {batteryKwh > 0 && inverterKw > 0 && (
         <div className="mt-3 flex flex-col gap-2">

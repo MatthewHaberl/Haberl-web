@@ -11,7 +11,9 @@ import {
   defaultCombiner,
   enclosureCode,
   DEFAULT_SITE_CONDITIONS,
+  defaultSupply,
   type SiteConditions,
+  type SupplyConfig,
   type SystemDesign,
   type EnergyProfile,
   type PanelGroup,
@@ -54,6 +56,7 @@ export type DesignAction =
   | { type: 'setEarthing'; patch: Partial<EarthingConfig> }
   | { type: 'setStoreys'; storeys: number }
   | { type: 'setSite'; patch: Partial<SiteConditions> }
+  | { type: 'setSupply'; patch: Partial<SupplyConfig> }
   | { type: 'addCombiner' }
   | { type: 'updateCombiner'; id: string; patch: Partial<DcCombiner> }
   | { type: 'removeCombiner'; id: string }
@@ -295,6 +298,9 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
       return { ...d, storeys: Math.max(1, Math.min(3, Math.round(action.storeys) || 1)) }
     case 'setSite':
       return { ...d, site: { ...(d.site ?? DEFAULT_SITE_CONDITIONS), ...action.patch } }
+
+    case 'setSupply':
+      return { ...d, supply: { ...(d.supply ?? defaultSupply()), ...action.patch } }
 
     case 'addCombiner':
       return { ...d, dcCombiners: [...d.dcCombiners, defaultCombiner(d.panels.map((p) => p.id))] }

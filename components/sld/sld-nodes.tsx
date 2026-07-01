@@ -380,14 +380,24 @@ export function GridNode({ data, selected }: NodeProps) {
 }
 
 // ── Distribution Board — input on LEFT (inverter AC out on RIGHT) ─────────────
+const DB_KIND_ABBR: Record<string, string> = {
+  mainSwitch: 'MAIN', breaker: 'MCB', rcbo: 'RCBO', rccb: 'E/L', spd: 'SPD',
+  changeover: 'C/O', isolator: 'ISO', contactor: 'CONT', timer: 'TMR',
+  meter: 'kWh', indicator: 'LAMP', busbar: 'BAR', custom: '',
+}
+
 export function DBBoardNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string; mainBreakerA: number; rccbA: number; phases: number
     // ports (item 22): outgoing circuits fed from this board.
     inputCount?: number; outputCount?: number
+    // W83: internal devices to render inside the box.
+    components?: Array<{ kind: string; label: string; qty: number }>
   }
   const { CLR } = useNodeColors()
   const outN = Math.max(1, Math.round(Number(d.outputCount) || 1))
+  const comps = d.components ?? []
+  const shown = comps.slice(0, 12)
 
   return (
     <NodeCard color={CLR.ac} Icon={CircuitBoard} title={d.label || 'Distribution Board'} selected={selected}>
@@ -403,8 +413,19 @@ export function DBBoardNode({ data, selected }: NodeProps) {
       {/* Earth goes DOWN to earthing system */}
       <Handle type="source" id="earth-out" position={Position.Bottom} style={H(CLR.earth, { left: '70%' })} title="Earth → Earthing system" />
       <EarthHandles />
-      {d.mainBreakerA > 0 && <Row label="Main CB" value={`${d.mainBreakerA}A ${d.phases >= 3 ? 'TP' : 'DP'}`} />}
-      {d.rccbA > 0 && <Row label="RCCB" value={`${d.rccbA} mA`} />}
+      {comps.length > 0 ? (
+        <>
+          {shown.map((k, i) => (
+            <Row key={i} label={k.qty > 1 ? `${k.label} ×${k.qty}` : k.label} value={DB_KIND_ABBR[k.kind] ?? ''} />
+          ))}
+          {comps.length > shown.length && <Row label={`+${comps.length - shown.length} more`} value="" />}
+        </>
+      ) : (
+        <>
+          {d.mainBreakerA > 0 && <Row label="Main CB" value={`${d.mainBreakerA}A ${d.phases >= 3 ? 'TP' : 'DP'}`} />}
+          {d.rccbA > 0 && <Row label="RCCB" value={`${d.rccbA} mA`} />}
+        </>
+      )}
       {outN > 1 && <Row label="Ways out" value={outN} accent={CLR.ac} />}
       <Row label="Phase" value={`${d.phases}Ø`} />
     </NodeCard>

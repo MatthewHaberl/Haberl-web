@@ -2,8 +2,8 @@
 
 import { Plus, Trash2, Sun, Zap } from 'lucide-react'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY, parseInverterSizingSpec } from '@/lib/solar/quote-calculator'
-import { stringVoltageProfile, type StringVoltageProfile } from '@/lib/solar/compliance'
-import { panelGroupKwp, DIRECTIONS, ROOF_TYPES, DEFAULT_SITE_CONDITIONS, type SiteConditions } from '@/lib/solar/system-design'
+import { stringVoltageProfile, computeStringLayout, type StringVoltageProfile } from '@/lib/solar/compliance'
+import { panelGroupKwp, DIRECTIONS, ROOF_TYPES, DEFAULT_SITE_CONDITIONS, type SiteConditions, type PanelGroup } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
 import { SectionCard, EmptyHint, LockNote, LOCKED_FIELD, SearchableSelect } from '../section-ui'
@@ -30,6 +30,25 @@ export function PanelsSection() {
         ? { panelModel: first.description, panelWatts: first.watts_dc ?? 0, catalogId: first.id, panelCount: 0 }
         : undefined,
     })
+  }
+
+  // W82: "lay rows of N" — split an over-long group into strings of ≤ per, carrying
+  // the panel + orientation across each new string (like adding rows of 16 on a map).
+  function splitIntoStrings(g: PanelGroup, per: number) {
+    if (per <= 0 || g.panelCount <= per) return
+    const chunks: number[] = []
+    for (let left = g.panelCount; left > 0; left -= per) chunks.push(Math.min(per, left))
+    dispatch({ type: 'removePanelGroup', id: g.id })
+    for (const count of chunks) {
+      dispatch({
+        type: 'addPanelGroup',
+        group: {
+          label: g.label, panelModel: g.panelModel, panelWatts: g.panelWatts,
+          catalogId: g.catalogId, azimuth: g.azimuth, pitch: g.pitch,
+          roofType: g.roofType, panelCount: count,
+        },
+      })
+    }
   }
 
   return (
@@ -69,6 +88,11 @@ export function PanelsSection() {
             const profile = selectedPanel
               ? stringVoltageProfile({ seriesPanels: series, panel: selectedPanel, spec: inverterSpec, conditions })
               : null
+            // Max panels/string at this inverter + site → drives the "split into rows" prompt.
+            const layout = selectedPanel && series > 0
+              ? computeStringLayout({ panelCount: series, panel: selectedPanel, spec: inverterSpec, conditions })
+              : null
+            const maxPerString = layout?.maxSeriesAllowed ?? null
             return (
               <div key={g.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between mb-2">
@@ -143,6 +167,21 @@ export function PanelsSection() {
                     </select>
                   </label>
                 </div>
+
+                {maxPerString != null && series > maxPerString && (
+                  <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 text-xs">
+                    <span className="text-amber-800 dark:text-amber-300">
+                      {series} panels &gt; max {maxPerString}/string — split into {Math.ceil(series / maxPerString)} strings of ≤{maxPerString}.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => splitIntoStrings(g, maxPerString)}
+                      className="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:opacity-90"
+                    >
+                      Auto-split
+                    </button>
+                  </div>
+                )}
 
                 {profile && <StringVoltageTable profile={profile} />}
                 {!profile && g.catalogId && series > 0 && (
