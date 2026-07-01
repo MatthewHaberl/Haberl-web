@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,7 @@ import { resolveOrCreateCustomer } from '@/lib/customers/resolve'
 import { detectMunicipality, MUNICIPALITIES } from '@/lib/solar/municipalities'
 import { getTariffRateForMunicipality } from '@/lib/solar/quote-calculator'
 import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
-import { FileText, Loader2, CheckCircle2, Upload, X, Image as ImageIcon } from 'lucide-react'
+import { FileText, Loader2, CheckCircle2, Upload, X, Image as ImageIcon, Search, UserCheck } from 'lucide-react'
 import type { EquipmentBrand } from '@/types/database'
 import { ExistingArrayBuilder, type ArrayString } from './ExistingArrayBuilder'
 import { Sparkles } from 'lucide-react'
@@ -105,6 +105,17 @@ interface Props {
   leadId?: string | null
 }
 
+/** A customer row the existing-customer search returns (all we need to prefill). */
+interface CustomerHit {
+  id: string
+  full_name: string
+  email: string | null
+  phone: string | null
+  address: string | null
+  is_business: boolean | null
+  contact_name: string | null
+}
+
 export function QuoteFormV2({ brands, prefill, leadId }: Props) {
   const router = useRouter()
 
@@ -118,6 +129,47 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
   const [isBusiness, setIsBusiness]           = useState(prefill?.is_business ?? false)
   const [contactName, setContactName]         = useState(prefill?.contact_name ?? '')
   const [contactEmail, setContactEmail]       = useState(prefill?.contact_email ?? '')
+
+  // Existing-customer picker — search the CRM and link the quote to a customer
+  // directly instead of re-typing them. Fields stay editable after a pick (they
+  // only shape this quote's snapshot); Unlink reverts to new-customer mode.
+  const [linkedCustomer, setLinkedCustomer] = useState<{ id: string; name: string } | null>(null)
+  const [custQuery, setCustQuery]     = useState('')
+  const [custResults, setCustResults] = useState<CustomerHit[]>([])
+  const [custOpen, setCustOpen]       = useState(false)
+
+  useEffect(() => {
+    const q = custQuery.trim()
+    if (q.length < 2) { setCustResults([]); setCustOpen(false); return }
+    let active = true
+    const t = setTimeout(async () => {
+      // Strip PostgREST or() delimiters so a pasted "Smith, John (082…)" can't break the filter.
+      const safe = q.replace(/[,()%]/g, ' ').trim()
+      if (!safe) return
+      const { data } = await createClient()
+        .from('customers')
+        .select('id, full_name, email, phone, address, is_business, contact_name')
+        .is('archived_at', null)
+        .or(`full_name.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%`)
+        .order('full_name')
+        .limit(8)
+      if (active) { setCustResults((data as CustomerHit[] | null) ?? []); setCustOpen(true) }
+    }, 250)
+    return () => { active = false; clearTimeout(t) }
+  }, [custQuery])
+
+  function pickCustomer(c: CustomerHit) {
+    setLinkedCustomer({ id: c.id, name: c.full_name })
+    setCustomerName(c.full_name)
+    setCustomerEmail(c.email ?? '')
+    setCustomerPhone(c.phone ?? '')
+    setCustomerAddress(c.address ?? '')
+    setIsBusiness(c.is_business ?? false)
+    setContactName(c.contact_name ?? '')
+    setCustQuery('')
+    setCustResults([])
+    setCustOpen(false)
+  }
 
   // Site
   const [siteLabel, setSiteLabel]       = useState(prefill?.site_label ?? '')
@@ -222,18 +274,21 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
 
       const usage = usageMode === 'advanced' ? avgKwh() : monthlyKwh
 
-      // Link the quote to a CRM customer (created here if new). No account
-      // email is sent — that stays a deliberate "Send invite" action.
-      const { id: customerId } = await resolveOrCreateCustomer(supabase, {
-        full_name: customerName,
-        email: customerEmail || null,
-        phone: customerPhone || null,
-        address: customerAddress || null,
-        is_business: isBusiness,
-        contact_name: isBusiness ? contactName || null : null,
-        source: 'quote',
-        created_by: user.id,
-      })
+      // Link the quote to a CRM customer: the explicitly picked one, else
+      // resolve/create by email/phone. No account email is sent — that stays
+      // a deliberate "Send invite" action.
+      const customerId = linkedCustomer
+        ? linkedCustomer.id
+        : (await resolveOrCreateCustomer(supabase, {
+            full_name: customerName,
+            email: customerEmail || null,
+            phone: customerPhone || null,
+            address: customerAddress || null,
+            is_business: isBusiness,
+            contact_name: isBusiness ? contactName || null : null,
+            source: 'quote',
+            created_by: user.id,
+          })).id
 
       const payload = {
         submitted_by:    user.id,
@@ -326,6 +381,56 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
         <Card>
           <CardContent className="pt-5 pb-5 flex flex-col gap-4">
             <SectionHead title="1 · Customer" />
+
+            {/* Existing-customer search — pick from the CRM instead of re-typing. */}
+            {linkedCustomer ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-success/40 bg-success/5 px-3 py-2">
+                <span className="flex items-center gap-2 text-sm text-foreground">
+                  <UserCheck className="h-4 w-4 text-success" />
+                  Existing customer: <strong>{linkedCustomer.name}</strong>
+                  <span className="text-xs text-muted-foreground">— quote links to their record; edits below apply to this quote only</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setLinkedCustomer(null)}
+                  className="shrink-0 text-xs font-medium text-muted-foreground hover:text-destructive"
+                >
+                  Unlink
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={custQuery}
+                    onChange={(e) => setCustQuery(e.target.value)}
+                    onFocus={() => { if (custResults.length) setCustOpen(true) }}
+                    onBlur={() => setTimeout(() => setCustOpen(false), 150)}
+                    placeholder="Search existing customers — name, phone or email… (or just type a new one below)"
+                    className="pl-9"
+                  />
+                </div>
+                {custOpen && custResults.length > 0 && (
+                  <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+                    {custResults.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); pickCustomer(c) }}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
+                      >
+                        <span className="font-medium text-foreground">{c.full_name}</span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {[c.phone, c.email].filter(Boolean).join(' · ') || '—'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Customer Name" required>
                 <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="John Smith" />
