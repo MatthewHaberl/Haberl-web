@@ -16,6 +16,7 @@ import type { QuoteRequestStatus } from '@/types/database'
 import { DesignProvider } from './design/DesignProvider'
 import { BalanceHeader } from './design/BalanceHeader'
 import { BuildRail } from './design/BuildRail'
+import { Walkthrough } from './design/Walkthrough'
 import { ActiveSection } from './design/sections/ActiveSection'
 import { DesignBomPanel } from './design/DesignBomPanel'
 import { DesignCanvasPanel } from './design/DesignCanvasPanel'
@@ -105,6 +106,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
             canSave
           >
             <BalanceHeader />
+            <Walkthrough />
             <BuildRail />
             <ActiveSection />
             <DesignCanvasPanel />

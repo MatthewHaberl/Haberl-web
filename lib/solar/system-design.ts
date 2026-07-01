@@ -1397,9 +1397,12 @@ function acCableData(spec: string, lengthM: number, phase: number, phaseConfig?:
 export interface FlowGraph { nodes: Node[]; edges: Edge[] }
 
 /** Build the diagram from the design. Positions come from saved layout when present. */
-export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}): FlowGraph {
+export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detail?: 'simple' | 'detailed' } = {}): FlowGraph {
   const nodes: Node[] = []
   const edges: Edge[] = []
+  // Level of detail for canvas readability. BOM + legacy callers omit it → full
+  // detail, so the priced cabling is never affected by the simplified view.
+  const detail = opts.detail ?? 'detailed'
   const pos = (id: string, fallback: NodePosition): NodePosition => d.layout.nodes[id] ?? fallback
 
   // Phase comes from real equipment, never a kW heuristic. The grid follows the
@@ -1558,6 +1561,16 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
   const batKwh = designBatteryKwh(d)
   const bat0 = d.batteries[0]
   if (acceptsBattery && (bat0 || batKwh > 0) && (invKw > 0 || inv0)) {
+    // Simple mode collapses the whole bank to one node for readability; Detailed
+    // keeps the per-unit disconnect/busbar wiring. (BOM always uses Detailed edges.)
+    if (detail === 'simple') {
+      const totalQty = d.batteries.reduce((s, b) => s + b.qty, 0) || 1
+      nodes.push({ id: NODE.battery, type: 'battery', position: pos(NODE.battery, { x: INV_X - 30, y: Y_BAT }), data: { label: totalQty > 1 ? `Battery bank ×${totalQty}` : 'Battery', model: bat0?.model ?? '', qty: totalQty, totalKwh: +batKwh.toFixed(1), chemistry: 'LiFePO4' } })
+      const mRuns = cableRunsNeeded(batteryDcCurrent(invKw, d.bank.cutoffVoltage), d.bank.cableSizeMm2)
+      const bspec = `CU ${d.bank.cableSizeMm2}mm²`
+      edges.push({ id: 'e-bat-inv', source: NODE.battery, target: NODE.inverter, sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable', data: { ...cableData('battery', bspec, 2), runs: mRuns }, label: `${mRuns > 1 ? `${mRuns}× ` : ''}${bspec}` })
+      edges.push({ id: 'e-bms-comms', source: NODE.battery, target: NODE.inverter, sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable', data: { ...cableData('communication', 'CAN/RS485', 3), circuitLayer: 'communication', routingType: 'bezier' }, label: 'BMS · CAN' })
+    } else {
     const bank = d.bank
     const batSize = bank.cableSizeMm2
     // Thick feed sized to worst-case full current; per-battery cables stay single.
@@ -1658,6 +1671,7 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
       data: { ...cableData('communication', 'CAN/RS485', 3), circuitLayer: 'communication', routingType: 'bezier' },
       label: 'BMS · CAN',
     })
+    }
   }
 
   // Grid + DB + Earth only become meaningful once there's an inverter.
@@ -1689,7 +1703,8 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string } = {}
         mainBreakerA: inverterPhase === 3 ? 63 : 40, rccbA: 30, phases: inverterPhase,
         inputCount: 1, outputCount: dbOutputCount,
         // W83: the board's internal devices, rendered inside the node (mini single-line).
-        components: acBoard ? acBoard.components.map((k) => ({ kind: k.kind, label: k.label, qty: k.qty })) : [],
+        // Simple mode collapses to the Main CB / ways summary for readability.
+        components: detail === 'simple' || !acBoard ? [] : acBoard.components.map((k) => ({ kind: k.kind, label: k.label, qty: k.qty })),
       },
     })
     edges.push({

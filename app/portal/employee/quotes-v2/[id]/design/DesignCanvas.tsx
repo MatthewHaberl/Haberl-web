@@ -15,7 +15,7 @@ import {
   type Connection,
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes, GitMerge } from 'lucide-react'
+import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes, GitMerge, Shrink } from 'lucide-react'
 import { nodeTypes } from '@/components/sld/sld-nodes'
 import { edgeTypes } from '@/components/sld/sld-edges'
 import {
@@ -556,6 +556,9 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   const [allowOverlap, setAllowOverlap] = useState(false)
   const [showTerminations, setShowTerminations] = useState(false) // off by default to reduce clutter (item 21)
   const [fullscreen, setFullscreen] = useState(false)
+  // Level of detail (item: readability) — Simple collapses the battery bank + DB
+  // internals to summaries; Detailed shows every unit + disconnect + device.
+  const [detail, setDetail] = useState<'simple' | 'detailed'>('simple')
   const nodesRef = useRef<Node[]>([])
   nodesRef.current = nodes
 
@@ -592,11 +595,18 @@ function CanvasInner({ height = 560 }: { height?: number }) {
 
   // Rebuild from the store whenever structure changes (positions preserved via layout).
   useEffect(() => {
-    const flow = designToFlow(designRef.current, { gridSupply })
+    const flow = designToFlow(designRef.current, { gridSupply, detail })
     setNodes(flow.nodes)
     setEdges(flow.edges)
+    // Drop a stale selection whose node/edge no longer exists after the rebuild
+    // (e.g. toggling to Simple while a detail-only battery node was selected).
+    setSelected((s) => {
+      if (!s) return s
+      const present = s.kind === 'node' ? flow.nodes.some((n) => n.id === s.id) : flow.edges.some((e) => e.id === s.id)
+      return present ? s : null
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig])
+  }, [sig, detail])
 
   const onNodeDragStop = useCallback((_: unknown, node: Node) => {
     const position = allowOverlap
@@ -637,6 +647,8 @@ function CanvasInner({ height = 560 }: { height?: number }) {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') { setFullscreen(false); return }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      // Don't delete a canvas node while a modal/overlay (e.g. the walkthrough) is open.
+      if (typeof document !== 'undefined' && document.querySelector('[role="dialog"]')) return
       const tag = (e.target as HTMLElement).tagName
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
       if (selectedNodeRef.current) { dispatch({ type: 'removeNode', id: selectedNodeRef.current }); setSelected(null) }
@@ -709,6 +721,17 @@ function CanvasInner({ height = 560 }: { height?: number }) {
       </div>
 
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setDetail((v) => (v === 'simple' ? 'detailed' : 'simple'))}
+          title={detail === 'simple'
+            ? 'Simplified view — battery bank & board shown as summaries. Click for full wiring detail.'
+            : 'Full detail — every battery, disconnect, busbar & board device. Click to simplify.'}
+          className="flex items-center gap-1 rounded-lg border bg-card/90 px-2 py-1 text-[11px] font-medium backdrop-blur"
+          style={{ borderColor: detail === 'simple' ? '#2563eb' : '#e5e7eb', color: detail === 'simple' ? '#2563eb' : '#6b7280' }}
+        >
+          <Shrink className="h-3.5 w-3.5" /> {detail === 'simple' ? 'Simple' : 'Detailed'}
+        </button>
         <button
           type="button"
           onClick={() => setAllowOverlap((v) => !v)}
