@@ -67,14 +67,17 @@ export function voltageAtTempC(vStc: number, betaPctPerC: number, cellTempC: num
 }
 
 // Pull the thermal/electrical specs we need off a catalog panel, with fallbacks.
-export function panelThermal(panel: Pick<EquipmentCatalogItem, 'voc_volts' | 'specs'>) {
+export function panelThermal(panel: Pick<EquipmentCatalogItem, 'voc_volts' | 'isc_amps' | 'specs'>) {
   const specs = (panel.specs ?? {}) as Record<string, unknown>
   const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
   const voc = panel.voc_volts != null ? Number(panel.voc_volts) : null
   const vmp = n(specs.vmp_volts) ?? (voc != null ? voc * VMP_FROM_VOC : null)
+  const isc = panel.isc_amps != null ? Number(panel.isc_amps) : null
+  // Imp isn't stored on the catalog — estimated from Isc (crystalline modules).
+  const imp = n(specs.imp_amps) ?? (isc != null ? isc * IMP_FROM_ISC : null)
   const betaVocPct = n(specs.voc_temp_coeff_pct) ?? DEFAULT_BETA_VOC_PCT
   const noctC = n(specs.noct) ?? DEFAULT_NOCT_C
-  return { voc, vmp, betaVocPct, noctC }
+  return { voc, vmp, isc, imp, betaVocPct, noctC }
 }
 
 /** Temperature-corner Voc/Vmp for one series string + its inverter-window checks. */
@@ -82,6 +85,14 @@ export interface StringVoltageProfile {
   seriesPanels: number
   hotCellC: number
   conditions: StringDesignConditions
+  // Per-panel datasheet ratings at STC (25°C, 1000W/m², AM1.5) — the raw,
+  // un-corrected numbers the temperature corners below are derived from.
+  panelVocStc: number | null
+  panelVmpStc: number | null
+  panelIscStc: number | null
+  /** Estimated from Isc when no datasheet Imp is recorded (see panelThermal). */
+  panelImpStc: number | null
+  panelImpEstimated: boolean
   /** Maximum Voc (cold morning) — per string. */
   vocCold: number
   /** Cold Voc + edge-of-cloud margin — the value checked vs the inverter max DC input. */
@@ -103,15 +114,17 @@ export interface StringVoltageProfile {
 // Returns null when the panel has no Voc (custom/spec-less panel).
 export function stringVoltageProfile(opts: {
   seriesPanels: number
-  panel: Pick<EquipmentCatalogItem, 'voc_volts' | 'specs'>
+  panel: Pick<EquipmentCatalogItem, 'voc_volts' | 'isc_amps' | 'specs'>
   spec: InverterSizingSpec | null
   conditions?: StringDesignConditions
 }): StringVoltageProfile | null {
   const { seriesPanels, panel, spec } = opts
   if (seriesPanels <= 0) return null
   const conditions = opts.conditions ?? DEFAULT_CONDITIONS
-  const { voc, vmp, betaVocPct, noctC } = panelThermal(panel)
+  const { voc, vmp, isc, imp, betaVocPct, noctC } = panelThermal(panel)
   if (voc == null) return null
+  const specs = (panel.specs ?? {}) as Record<string, unknown>
+  const impEstimated = imp != null && !(typeof specs.imp_amps === 'number' && Number.isFinite(specs.imp_amps))
 
   const hotCell = hotCellTempC(conditions.maxAmbientC, noctC)
   const r = (v: number) => Math.round(v * 10) / 10
@@ -130,6 +143,9 @@ export function stringVoltageProfile(opts: {
   const mpptMaxVoltage = spec?.mpptMaxVoltage ?? null
   return {
     seriesPanels, hotCellC: r(hotCell), conditions,
+    panelVocStc: r(voc), panelVmpStc: vmp != null ? r(vmp) : null,
+    panelIscStc: isc != null ? r(isc) : null, panelImpStc: imp != null ? r(imp) : null,
+    panelImpEstimated: impEstimated,
     vocCold, vocColdEdge, vocHot, vmpCold, vmpHot,
     maxDcVoltage, mpptMinVoltage, mpptMaxVoltage,
     overMaxDc: maxDcVoltage != null && vocColdEdge > maxDcVoltage,

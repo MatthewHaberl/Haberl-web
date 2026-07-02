@@ -144,6 +144,9 @@ function newPanelGroup(group?: Partial<PanelGroup>): PanelGroup {
     azimuth: group?.azimuth ?? null,
     pitch: group?.pitch ?? null,
     roofType: group?.roofType ?? '',
+    // Carried through on duplicate so a cloned string is a faithful copy (item W85).
+    distanceFromCombinerM: group?.distanceFromCombinerM,
+    jumpers: group?.jumpers,
   }
 }
 
@@ -279,12 +282,22 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
       return { ...d, inverters: [] }
 
     case 'setBattery': {
+      const b = action.battery
       const bat: BatteryUnit = {
         id: d.batteries[0]?.id ?? mkId('bat'),
-        catalogId: action.battery.catalogId ?? null,
-        model: action.battery.model ?? '',
-        kwh: action.battery.kwh ?? 0,
-        qty: action.battery.qty ?? d.batteries[0]?.qty ?? 1,
+        catalogId: b.catalogId ?? null,
+        model: b.model ?? '',
+        kwh: b.kwh ?? 0,
+        qty: b.qty ?? d.batteries[0]?.qty ?? 1,
+        // Series-stack + catalog-derived voltage metadata (item W85).
+        seriesStack: b.seriesStack,
+        stackSize: b.stackSize,
+        perModuleKwh: b.perModuleKwh,
+        perModuleVoltage: b.perModuleVoltage,
+        minModules: b.minModules,
+        maxModules: b.maxModules,
+        voltageClass: b.voltageClass,
+        nominalVoltage: b.nominalVoltage,
       }
       return { ...d, batteries: [bat] }
     }

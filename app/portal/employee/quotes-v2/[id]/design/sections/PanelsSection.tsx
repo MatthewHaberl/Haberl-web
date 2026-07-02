@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Sun, Zap } from 'lucide-react'
+import { Plus, Trash2, Sun, Zap, Copy } from 'lucide-react'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY, parseInverterSizingSpec } from '@/lib/solar/quote-calculator'
 import { stringVoltageProfile, computeStringLayout, hotCellTempC, type StringVoltageProfile } from '@/lib/solar/compliance'
 import { panelGroupKwp, DIRECTIONS, ROOF_TYPES, DEFAULT_SITE_CONDITIONS, type SiteConditions, type PanelGroup } from '@/lib/solar/system-design'
@@ -30,12 +30,37 @@ export function PanelsSection() {
     conditions.edgeOfCloudPct !== DEFAULT_SITE_CONDITIONS.edgeOfCloudPct)
 
   function addGroup() {
+    // Carry the previous string's panel + orientation forward so adding several
+    // strings of the same panel doesn't reset the selection each time (item W85).
+    const last = design.panels[design.panels.length - 1]
+    if (last) {
+      dispatch({
+        type: 'addPanelGroup',
+        group: {
+          panelModel: last.panelModel, panelWatts: last.panelWatts, catalogId: last.catalogId,
+          azimuth: last.azimuth, roofType: last.roofType, panelCount: 0,
+        },
+      })
+      return
+    }
     const first = panels[0]
     dispatch({
       type: 'addPanelGroup',
       group: first
         ? { panelModel: first.description, panelWatts: first.watts_dc ?? 0, catalogId: first.id, panelCount: 0 }
         : undefined,
+    })
+  }
+
+  // Clone a string in full (panel, orientation, count, jumpers) as a new string (item W85).
+  function duplicateGroup(g: PanelGroup) {
+    dispatch({
+      type: 'addPanelGroup',
+      group: {
+        label: g.label, panelModel: g.panelModel, panelWatts: g.panelWatts, catalogId: g.catalogId,
+        azimuth: g.azimuth, pitch: g.pitch, roofType: g.roofType, panelCount: g.panelCount,
+        distanceFromCombinerM: g.distanceFromCombinerM, jumpers: g.jumpers,
+      },
     })
   }
 
@@ -117,14 +142,24 @@ export function PanelsSection() {
                     <Sun className="h-3.5 w-3.5 text-orange-500 dark:text-orange-400" />
                     {design.panels.length > 1 ? `String ${idx + 1}` : 'Solar array'}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => dispatch({ type: 'removePanelGroup', id: g.id })}
-                    className="text-muted-foreground hover:text-destructive"
-                    title="Remove group"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => duplicateGroup(g)}
+                      className="text-muted-foreground hover:text-foreground"
+                      title="Duplicate string"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => dispatch({ type: 'removePanelGroup', id: g.id })}
+                      className="text-muted-foreground hover:text-destructive"
+                      title="Remove group"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -260,6 +295,14 @@ export function PanelsSection() {
               </div>
             )
           })}
+          {/* Add another string right under the last one, carrying its panel forward. */}
+          <button
+            type="button"
+            onClick={addGroup}
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 text-xs font-medium text-muted-foreground hover:border-primary hover:text-foreground"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add string
+          </button>
         </div>
       )}
     </SectionCard>
@@ -310,6 +353,15 @@ function StringVoltageTable({ profile }: { profile: StringVoltageProfile }) {
       <div className="mb-1.5 flex items-center gap-1.5 font-medium text-foreground">
         <Zap className="h-3 w-3" /> String voltages ({profile.seriesPanels} in series)
       </div>
+      <p className="mb-1.5 text-muted-foreground">
+        Panel (STC, 25°C 1000W/m²):{' '}
+        <span className="text-foreground">Voc {profile.panelVocStc} V</span> ·{' '}
+        <span className="text-foreground">Vmp {profile.panelVmpStc ?? '—'} V</span> ·{' '}
+        <span className="text-foreground">Isc {profile.panelIscStc ?? '—'} A</span> ·{' '}
+        <span className="text-foreground">
+          Imp {profile.panelImpStc ?? '—'} A{profile.panelImpStc != null && profile.panelImpEstimated ? ' (est)' : ''}
+        </span>
+      </p>
       <table className="w-full tabular-nums">
         <thead className="text-muted-foreground">
           <tr>

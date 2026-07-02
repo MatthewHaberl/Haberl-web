@@ -1,13 +1,14 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { BatteryCharging, ChevronDown, ChevronRight, Gauge, Plus, Trash2, Cable } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { BatteryCharging, ChevronDown, ChevronRight, Gauge, Layers, Plus, Trash2, Cable } from 'lucide-react'
 import { evaluateBatteryForInverter, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import {
   computeBalance, designBatteryKwh, designInverterKw,
   batteryCRate, batteryDcCurrent, cableRunsNeeded, DC_CABLE_AMPACITY,
   defaultDisconnectChoice, inverterAcceptsBattery,
-  type CRateLevel, type BatteryBank, type DisconnectKind, type DisconnectChoice,
+  parseBatteryVoltage, parseBatteryStack, cutoffFromNominal,
+  type CRateLevel, type BatteryBank, type BatteryUnit, type DisconnectKind, type DisconnectChoice,
   type BatteryBusbarSpec, type BankCable,
 } from '@/lib/solar/system-design'
 import { simulateEnergyBalance } from '@/lib/solar/energy-balance'
@@ -95,6 +96,66 @@ export function BatterySection() {
   const [wiringOpen, setWiringOpen] = useState(false)
   function setBank(patch: Partial<BatteryBank>) { dispatch({ type: 'setBank', patch }) }
 
+  // ── Series (HV) stack + voltage (item W85) ──────────────────────────────────
+  const selectedBatItem = unit?.catalogId ? candidates.find((c) => c.item.id === unit.catalogId)?.item ?? null : null
+  const isStack = !!unit?.seriesStack
+  const stackSize = unit?.stackSize ?? 1
+  const perModuleKwh = unit?.perModuleKwh ?? 0
+  const perModuleVoltage = unit?.perModuleVoltage ?? 0
+  const minModules = unit?.minModules ?? 2
+  const maxModules = unit?.maxModules ?? 16
+  const override = !!bank.voltageOverride
+  // Effective voltage the bank sizes off — a series stack scales it with the module
+  // count, otherwise the stored (or catalog-derived) single-unit nominal is used. The
+  // catalog fallback self-heals designs saved before voltage was derived.
+  const effV = useMemo<{ voltageClass: 'LV' | 'HV'; nominalVoltage: number } | null>(() => {
+    if (!unit) return null
+    if (isStack && perModuleVoltage && stackSize) {
+      return { voltageClass: 'HV', nominalVoltage: Math.round(perModuleVoltage * stackSize * 10) / 10 }
+    }
+    if (unit.nominalVoltage && unit.voltageClass) return { voltageClass: unit.voltageClass, nominalVoltage: unit.nominalVoltage }
+    if (selectedBatItem) {
+      const { voltage, voltageClass } = parseBatteryVoltage(selectedBatItem.notes, selectedBatItem.description)
+      if (voltage) return { voltageClass: voltageClass ?? (voltage >= 90 ? 'HV' : 'LV'), nominalVoltage: voltage }
+    }
+    return null
+  }, [unit, isStack, perModuleVoltage, stackSize, selectedBatItem])
+
+  // Keep the persisted bank voltage in step with the selected battery (+ stack size)
+  // unless the user has taken manual control. Downstream (cable math, diagram) reads
+  // the stored bank fields, so we cache the derived values there.
+  useEffect(() => {
+    if (override || !effV) return
+    const cutoff = cutoffFromNominal(effV.nominalVoltage)
+    if (bank.voltageClass !== effV.voltageClass || bank.nominalVoltage !== effV.nominalVoltage || bank.cutoffVoltage !== cutoff) {
+      setBank({ voltageClass: effV.voltageClass, nominalVoltage: effV.nominalVoltage, cutoffVoltage: cutoff })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [override, effV?.voltageClass, effV?.nominalVoltage])
+
+  // Patch the battery unit, recomputing one stack's kWh when a stack field changes.
+  function patchBattery(patch: Partial<BatteryUnit>) {
+    const next = { ...unit, ...patch } as BatteryUnit
+    if (next.seriesStack && next.perModuleKwh != null && next.stackSize != null) {
+      patch = { ...patch, kwh: Math.round(next.perModuleKwh * next.stackSize * 100) / 100 }
+    }
+    dispatch({ type: 'updateBattery', patch })
+  }
+
+  // Enable/disable a hand-built series stack when the catalog has no stack metadata.
+  function toggleSeriesStack(on: boolean) {
+    if (!on) { patchBattery({ seriesStack: false, stackSize: 1 }); return }
+    const { voltage } = parseBatteryVoltage(selectedBatItem?.notes, selectedBatItem?.description ?? '')
+    const size = unit?.stackSize && unit.stackSize > 1 ? unit.stackSize : (unit?.maxModules ?? 12)
+    const perKwh = unit?.perModuleKwh || (selectedBatItem?.kwh ? Math.round((selectedBatItem.kwh / size) * 100) / 100 : 0)
+    const perV = unit?.perModuleVoltage || (voltage ? Math.round((voltage / size) * 10) / 10 : 0)
+    patchBattery({
+      seriesStack: true, stackSize: size,
+      minModules: unit?.minModules ?? 4, maxModules: unit?.maxModules ?? 12,
+      perModuleKwh: perKwh, perModuleVoltage: perV,
+    })
+  }
+
   // ── Disconnect choices (item 23) — a type selector + a catalog-backed product. ──
   const disconnectProducts = byCategory(items, 'disconnect')
   const mainChoice: DisconnectChoice = bank.mainDisconnectChoice ?? defaultDisconnectChoice('isolator')
@@ -152,10 +213,30 @@ export function BatterySection() {
   function pick(id: string) {
     const item = candidates.find((c) => c.item.id === id)?.item
     if (!item) { dispatch({ type: 'removeBattery' }); return }
-    dispatch({
-      type: 'setBattery',
-      battery: { catalogId: item.id, model: item.description, kwh: item.kwh ?? 0 },
-    })
+    // Derive class + nominal voltage, and auto-fill a series stack when the catalog
+    // notes describe one (item W85) — voltage then scales with the module count.
+    const { voltage, voltageClass } = parseBatteryVoltage(item.notes, item.description)
+    const stack = parseBatteryStack(item.notes)
+    const battery: Partial<BatteryUnit> = {
+      catalogId: item.id, model: item.description, kwh: item.kwh ?? 0,
+      voltageClass: voltageClass ?? undefined,
+      nominalVoltage: voltage ?? undefined,
+      seriesStack: false,
+      stackSize: 1,
+    }
+    if (stack) {
+      const size = stack.maxModules
+      const perKwh = stack.perModuleKwh ?? (item.kwh ? Math.round((item.kwh / size) * 100) / 100 : 0)
+      const perV = stack.perModuleVoltage ?? (voltage ? Math.round((voltage / size) * 10) / 10 : 0)
+      battery.seriesStack = true
+      battery.minModules = stack.minModules
+      battery.maxModules = stack.maxModules
+      battery.stackSize = size
+      battery.perModuleKwh = perKwh
+      battery.perModuleVoltage = perV
+      battery.kwh = Math.round(perKwh * size * 100) / 100
+    }
+    dispatch({ type: 'setBattery', battery })
   }
 
   // Grid-tie inverter (acceptsBattery === false): no battery editors, can't add one.
@@ -197,7 +278,7 @@ export function BatterySection() {
           )}
         </div>
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground">Modules</span>
+          <span className="text-xs font-medium text-muted-foreground">{isStack ? 'Parallel banks' : 'Modules'}</span>
           <input
             type="number" min={1} step={1}
             value={unit?.qty ?? 1}
@@ -205,8 +286,81 @@ export function BatterySection() {
             onChange={(ev) => dispatch({ type: 'updateBattery', patch: { qty: Math.max(1, Math.round(Number(ev.target.value) || 1)) } })}
             className="h-9 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
           />
+          {isStack && <span className="text-[10px] text-muted-foreground">Identical stacks in parallel</span>}
         </label>
       </div>
+
+      {/* Series (HV) stack builder (item W85) — modules in series, voltage scales with count. */}
+      {unit && (
+        <div className="mt-3 rounded-lg border border-border bg-muted/20 p-2.5">
+          <label className="flex items-center gap-1.5">
+            <input type="checkbox" checked={isStack} onChange={(e) => toggleSeriesStack(e.target.checked)} className="accent-primary" />
+            <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+              <Layers className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" /> Series (HV) stack — voltage scales with modules
+            </span>
+          </label>
+          {isStack && (
+            <>
+              <div className="mt-2.5 grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[11px] text-muted-foreground">Stack size (series)</span>
+                  <input
+                    type="number" min={minModules} max={maxModules} step={1}
+                    value={stackSize}
+                    onChange={(e) => patchBattery({ stackSize: Math.max(minModules, Math.min(maxModules, Math.round(Number(e.target.value) || minModules))) })}
+                    className="h-8 rounded border border-border bg-background px-1.5 text-xs"
+                  />
+                  <span className="text-[10px] text-muted-foreground">{minModules}–{maxModules} modules</span>
+                </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[11px] text-muted-foreground">Per-module kWh</span>
+                  <input
+                    type="number" min={0} step={0.01}
+                    value={perModuleKwh || ''}
+                    onChange={(e) => patchBattery({ perModuleKwh: Math.max(0, Number(e.target.value) || 0) })}
+                    className="h-8 rounded border border-border bg-background px-1.5 text-xs"
+                  />
+                </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[11px] text-muted-foreground">Per-module V</span>
+                  <input
+                    type="number" min={0} step={0.1}
+                    value={perModuleVoltage || ''}
+                    onChange={(e) => patchBattery({ perModuleVoltage: Math.max(0, Number(e.target.value) || 0) })}
+                    className="h-8 rounded border border-border bg-background px-1.5 text-xs"
+                  />
+                </label>
+                <div className="flex gap-1.5">
+                  <label className="flex flex-1 flex-col gap-0.5">
+                    <span className="text-[11px] text-muted-foreground">Min</span>
+                    <input
+                      type="number" min={1} step={1}
+                      value={minModules}
+                      onChange={(e) => patchBattery({ minModules: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
+                      className="h-8 w-full rounded border border-border bg-background px-1.5 text-xs"
+                    />
+                  </label>
+                  <label className="flex flex-1 flex-col gap-0.5">
+                    <span className="text-[11px] text-muted-foreground">Max</span>
+                    <input
+                      type="number" min={1} step={1}
+                      value={maxModules}
+                      onChange={(e) => patchBattery({ maxModules: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
+                      className="h-8 w-full rounded border border-border bg-background px-1.5 text-xs"
+                    />
+                  </label>
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                <strong className="text-foreground">{stackSize}</strong> in series
+                {(unit.qty ?? 1) > 1 ? <> × <strong className="text-foreground">{unit.qty}</strong> banks</> : null}
+                {' '}→ <strong className="text-foreground">{(perModuleKwh * stackSize * (unit.qty ?? 1)).toFixed(1)}</strong> kWh
+                {' '}@ <strong className="text-foreground">{Math.round(perModuleVoltage * stackSize)}</strong> VDC nominal
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
@@ -282,11 +436,26 @@ export function BatterySection() {
             )}
           </button>
           {wiringOpen && (<div className="mt-2">
-          <p className="text-xs text-muted-foreground mb-2.5">
-            <strong className="text-foreground">{bank.voltageClass}</strong> · {bank.nominalVoltage}V nominal ·{' '}
-            <strong className="text-foreground">{inverterFeeds}</strong> inverter feed{inverterFeeds === 1 ? '' : 's'}
-            <span className="opacity-70"> — derived from the inverter + batteries</span>
-          </p>
+          {/* Voltage class + nominal — derived from the battery (+ stack) unless overridden. */}
+          <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+            <label className="flex items-center gap-1.5 text-muted-foreground">
+              <input type="checkbox" checked={override} onChange={(e) => setBank({ voltageOverride: e.target.checked })} className="accent-primary" />
+              Override voltage
+            </label>
+            <label className="flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground">Class</span>
+              <select value={bank.voltageClass} disabled={!override} onChange={(e) => setBank({ voltageClass: e.target.value as BatteryBank['voltageClass'] })} className={`h-7 rounded border border-border bg-background px-1.5 text-[11px] ${LOCKED_FIELD}`}>
+                <option value="LV">LV</option>
+                <option value="HV">HV</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground">Nominal V</span>
+              <input type="number" min={0} step={0.1} value={bank.nominalVoltage} disabled={!override} onChange={(e) => setBank({ nominalVoltage: Number(e.target.value) || 0 })} className={`h-7 w-20 rounded border border-border bg-background px-1.5 text-[11px] ${LOCKED_FIELD}`} />
+            </label>
+            <span className="text-muted-foreground"><strong className="text-foreground">{inverterFeeds}</strong> inverter feed{inverterFeeds === 1 ? '' : 's'}</span>
+            {!override && <span className="text-[11px] text-muted-foreground opacity-70">— derived from the selected battery{isStack ? ' + stack size' : ''}</span>}
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-muted-foreground">Cable size</span>
@@ -297,7 +466,8 @@ export function BatterySection() {
             <ProductPicker items={items} category="cable" label="Default cable product" value={bank.cableProductId} onChange={(v) => setBank({ cableProductId: v })} />
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-muted-foreground">Worst-case cutoff V</span>
-              <input type="number" min={0} step={0.1} value={bank.cutoffVoltage} onChange={(e) => setBank({ cutoffVoltage: Number(e.target.value) || 0 })} className="h-8 rounded-md border border-border bg-background px-2 text-xs" />
+              <input type="number" min={0} step={0.1} value={bank.cutoffVoltage} disabled={!override} onChange={(e) => setBank({ cutoffVoltage: Number(e.target.value) || 0 })} className={`h-8 rounded-md border border-border bg-background px-2 text-xs ${LOCKED_FIELD}`} />
+              {!override && <LockNote>Auto (≈86% of nominal) — tick Override to set</LockNote>}
             </label>
           </div>
 

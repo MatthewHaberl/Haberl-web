@@ -148,9 +148,25 @@ export interface BatteryUnit {
   id: string
   catalogId: string | null
   model: string
-  /** kWh per unit. */
+  /** kWh per unit — for a series stack this is one whole stack (stackSize × perModuleKwh). */
   kwh: number
+  /** Parallel banks (identical stacks / units wired in parallel — kWh scales, voltage doesn't). */
   qty: number
+  // ── Series (HV) stack (item W85) — modules in series so voltage AND kWh scale ──
+  /** True when the modules are wired in series (HV stack). Default false = a plain LV/parallel unit. */
+  seriesStack?: boolean
+  /** Number of modules in series in one stack (default 1). Clamped to [minModules, maxModules]. */
+  stackSize?: number
+  /** Energy of a single series module (kWh). One stack = stackSize × perModuleKwh. */
+  perModuleKwh?: number
+  /** Nominal DC voltage of a single series module. Stack nominal = stackSize × perModuleVoltage. */
+  perModuleVoltage?: number
+  /** Allowed series-module bounds for this stack (e.g. 4–12). */
+  minModules?: number
+  maxModules?: number
+  /** Catalog-derived class + single-unit nominal voltage (used when not a series stack). */
+  voltageClass?: 'LV' | 'HV'
+  nominalVoltage?: number
 }
 
 export type BatteryTopology = 'parallel-busbar' | 'series-string' | 'series-parallel' | 'multi-inverter'
@@ -199,6 +215,9 @@ export interface BatteryBank {
   nominalVoltage: number
   /** Discharge-cutoff (worst-case) voltage — sizing uses this, not nominal. */
   cutoffVoltage: number
+  /** When true the voltage class / nominal / cutoff are hand-set; otherwise they are
+   *  derived live from the selected battery (+ its series-stack size). Default false. */
+  voltageOverride?: boolean
   /** Each battery gets its own breaker/disconnect onto the busbar. */
   perBatteryDisconnect: boolean
   disconnectRating: string
@@ -230,7 +249,7 @@ export const BATTERY_TOPOLOGIES: Array<{ value: BatteryTopology; label: string; 
 
 export function defaultBank(): BatteryBank {
   return {
-    topology: 'parallel-busbar', voltageClass: 'LV', nominalVoltage: 51.2, cutoffVoltage: 44,
+    topology: 'parallel-busbar', voltageClass: 'LV', nominalVoltage: 51.2, cutoffVoltage: 44, voltageOverride: false,
     perBatteryDisconnect: true, disconnectRating: '250A DC',
     busbar: true, mainDisconnect: true, inverterFeeds: 1, cableSizeMm2: 25,
     cableProductId: null, perBatteryDisconnectId: null, mainDisconnectId: null,
@@ -238,6 +257,67 @@ export function defaultBank(): BatteryBank {
     mainDisconnectChoice: defaultDisconnectChoice('isolator'),
     busbarSpec: null,
     cables: [],
+  }
+}
+
+/** Worst-case discharge cutoff ≈ 86% of nominal (matches the LV 44/51.2 V default). */
+export function cutoffFromNominal(nominalVoltage: number): number {
+  return Math.round(nominalVoltage * 0.86 * 10) / 10
+}
+
+/**
+ * Nominal DC voltage + LV/HV class of a battery, parsed from its catalog notes JSON
+ * (`voltage` / `battery_class`) with a fallback to a "…V" token in the description.
+ * Kept self-contained here (mirrors parseBatteryClass in compliance.ts) so the design
+ * layer can size the bank without importing the calculator.
+ */
+export function parseBatteryVoltage(
+  notes: string | null | undefined,
+  description = '',
+): { voltage: number | null; voltageClass: 'LV' | 'HV' | null } {
+  let voltage: number | null = null
+  let cls: 'LV' | 'HV' | null = null
+  if (notes) {
+    try {
+      const parsed = JSON.parse(notes) as Record<string, unknown>
+      const c = typeof parsed.battery_class === 'string' ? parsed.battery_class.toUpperCase() : null
+      if (c === 'LV' || c === 'HV') cls = c
+      const v = Number(parsed.voltage)
+      if (Number.isFinite(v) && v > 0) voltage = v
+    } catch { /* fall through to description */ }
+  }
+  if (voltage == null) {
+    const m = description.match(/(\d{2,4}(?:\.\d+)?)\s*v\b/i)
+    if (m) voltage = Number(m[1])
+  }
+  if (cls == null && voltage != null) cls = voltage < 90 ? 'LV' : 'HV'
+  return { voltage, voltageClass: cls }
+}
+
+/** Auto-fill defaults for a series (HV) stack, parsed from catalog notes when present
+ *  (`per_module_kwh`, `system_voltage` range, `scalable` module range). Returns null when
+ *  the item shows no sign of being a stack — the UI can still let staff enable one by hand. */
+export function parseBatteryStack(
+  notes: string | null | undefined,
+): { minModules: number; maxModules: number; perModuleKwh: number | null; perModuleVoltage: number | null } | null {
+  if (!notes) return null
+  let parsed: Record<string, unknown>
+  try { parsed = JSON.parse(notes) as Record<string, unknown> } catch { return null }
+  const perModuleKwh = Number(parsed.per_module_kwh)
+  const sysV = typeof parsed.system_voltage === 'string' ? parsed.system_voltage : ''
+  const scalable = typeof parsed.scalable === 'string' ? parsed.scalable : ''
+  const modMatch = scalable.match(/(\d+)\s*[-–]\s*(\d+)\s*modules/i) || sysV.match(/(\d+)\s*[-–]\s*(\d+)\s*modules/i)
+  const looksStack = Number.isFinite(perModuleKwh) || !!modMatch || /stack|series/i.test(sysV)
+  if (!looksStack) return null
+  const minModules = modMatch ? Number(modMatch[1]) : 4
+  const maxModules = modMatch ? Number(modMatch[2]) : 12
+  const vMatch = sysV.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*V/i)
+  const perModuleVoltage = vMatch && maxModules > 0 ? Math.round((Number(vMatch[2]) / maxModules) * 10) / 10 : null
+  return {
+    minModules,
+    maxModules,
+    perModuleKwh: Number.isFinite(perModuleKwh) ? perModuleKwh : null,
+    perModuleVoltage,
   }
 }
 
