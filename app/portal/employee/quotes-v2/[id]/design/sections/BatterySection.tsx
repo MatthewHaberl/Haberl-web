@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
-import { BatteryCharging, Gauge, Plus, Trash2, Cable } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { BatteryCharging, ChevronDown, ChevronRight, Gauge, Plus, Trash2, Cable } from 'lucide-react'
 import { evaluateBatteryForInverter, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import {
   computeBalance, designBatteryKwh, designInverterKw,
@@ -91,6 +91,8 @@ export function BatterySection() {
   // Derived: feeds = installed inverter count; whole house if no backup load is set.
   const inverterFeeds = design.inverters.reduce((s, u) => s + u.qty, 0) || 1
   const hasBackup = (design.energy.essentialLoadKw ?? 0) > 0
+  // Progressive disclosure — the full wiring/disconnect builder starts collapsed.
+  const [wiringOpen, setWiringOpen] = useState(false)
   function setBank(patch: Partial<BatteryBank>) { dispatch({ type: 'setBank', patch }) }
 
   // ── Disconnect choices (item 23) — a type selector + a catalog-backed product. ──
@@ -108,6 +110,11 @@ export function BatterySection() {
       ? 'catalog'
       : 'custom'
   const busbarLocked = busbarSource !== 'custom'
+  // Only offer the Lynx link on Victron systems — but never strand a saved pick.
+  const showLynxOption =
+    /victron/i.test(design.inverters[0]?.model ?? '') ||
+    /victron/i.test(unit?.model ?? '') ||
+    busbarSpec.product === VICTRON_LYNX_LABEL
   function setBusbarSpec(patch: Partial<BatteryBusbarSpec>) { setBank({ busbarSpec: { ...busbarSpec, ...patch } }) }
   function pickBusbarSource(src: BusbarSource) {
     if (src === 'victron-lynx') {
@@ -253,7 +260,28 @@ export function BatterySection() {
 
       {design.batteries.length > 0 && (
         <div className="mt-4 border-t border-border pt-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Bank wiring</p>
+          {/* Progressive disclosure — one-line summary until the builder is opened. */}
+          <button
+            type="button"
+            onClick={() => setWiringOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 text-left"
+          >
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Bank wiring &amp; disconnects (advanced)
+              {wiringOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            </span>
+            {!wiringOpen && (
+              <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                {[
+                  `${bank.cableSizeMm2}mm² × ${cableRuns}`,
+                  bank.mainDisconnect ? 'main disconnect' : null,
+                  bank.busbar ? 'busbar' : null,
+                  bank.perBatteryDisconnect ? 'per-battery disconnects' : null,
+                ].filter(Boolean).join(' · ')}
+              </span>
+            )}
+          </button>
+          {wiringOpen && (<div className="mt-2">
           <p className="text-xs text-muted-foreground mb-2.5">
             <strong className="text-foreground">{bank.voltageClass}</strong> · {bank.nominalVoltage}V nominal ·{' '}
             <strong className="text-foreground">{inverterFeeds}</strong> inverter feed{inverterFeeds === 1 ? '' : 's'}
@@ -306,7 +334,7 @@ export function BatterySection() {
                   <label className="flex flex-col gap-0.5">
                     <span className="text-[10px] text-muted-foreground">Busbar source</span>
                     <select value={busbarSource} onChange={(e) => pickBusbarSource(e.target.value as BusbarSource)} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">
-                      <option value="victron-lynx">Victron Lynx link</option>
+                      {showLynxOption && <option value="victron-lynx">Victron Lynx link</option>}
                       <option value="catalog">Catalog product</option>
                       <option value="custom">Custom (hand-built)</option>
                     </select>
@@ -401,6 +429,7 @@ export function BatterySection() {
               ))}
             </div>
           )}
+          </div>)}
         </div>
       )}
     </SectionCard>

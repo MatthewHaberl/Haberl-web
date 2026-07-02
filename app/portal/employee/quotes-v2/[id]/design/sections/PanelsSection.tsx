@@ -1,8 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { Plus, Trash2, Sun, Zap } from 'lucide-react'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY, parseInverterSizingSpec } from '@/lib/solar/quote-calculator'
-import { stringVoltageProfile, computeStringLayout, type StringVoltageProfile } from '@/lib/solar/compliance'
+import { stringVoltageProfile, computeStringLayout, hotCellTempC, type StringVoltageProfile } from '@/lib/solar/compliance'
 import { panelGroupKwp, DIRECTIONS, ROOF_TYPES, DEFAULT_SITE_CONDITIONS, type SiteConditions, type PanelGroup } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
@@ -21,6 +22,12 @@ export function PanelsSection() {
 
   // Site climate + edge-of-cloud margin driving the temperature-corrected voltages.
   const conditions = design.site ?? DEFAULT_SITE_CONDITIONS
+  // Disclosure default (captured once): only open when the site diverges from the
+  // Gauteng defaults — re-renders don't fight the user's manual toggling.
+  const [siteOpen] = useState(() =>
+    conditions.minAmbientC !== DEFAULT_SITE_CONDITIONS.minAmbientC ||
+    conditions.maxAmbientC !== DEFAULT_SITE_CONDITIONS.maxAmbientC ||
+    conditions.edgeOfCloudPct !== DEFAULT_SITE_CONDITIONS.edgeOfCloudPct)
 
   function addGroup() {
     const first = panels[0]
@@ -69,11 +76,21 @@ export function PanelsSection() {
         <EmptyHint>No panels yet. Add a group to start sizing the array.</EmptyHint>
       ) : (
         <div className="flex flex-col gap-3">
-          <ConditionsBar
-            conditions={conditions}
-            hotCellC={Math.round(conditions.maxAmbientC + ((45 - 20) / 800) * 1000)}
-            onChange={(patch) => dispatch({ type: 'setSite', patch })}
-          />
+          <details className="rounded-md border border-dashed border-border bg-muted/20" open={siteOpen}>
+            <summary className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-0.5 px-2.5 py-2 text-xs">
+              <span className="font-medium text-foreground">Site conditions (advanced)</span>
+              <span className="text-muted-foreground">
+                {conditions.minAmbientC}°C to {conditions.maxAmbientC}°C · edge-of-cloud {conditions.edgeOfCloudPct}%
+              </span>
+            </summary>
+            <div className="px-2.5 pb-2.5">
+              <ConditionsBar
+                conditions={conditions}
+                hotCellC={Math.round(hotCellTempC(conditions.maxAmbientC))}
+                onChange={(patch) => dispatch({ type: 'setSite', patch })}
+              />
+            </div>
+          </details>
           {design.panels.map((g, idx) => {
             const kwp = panelGroupKwp(g)
             const dailyKwh = kwp * PSH_GAUTENG * SYSTEM_EFFICIENCY
@@ -270,8 +287,7 @@ function ConditionsBar({ conditions, hotCellC, onChange }: {
     </label>
   )
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-md border border-dashed border-border bg-muted/20 p-2.5 text-xs">
-      <span className="self-center font-medium text-foreground">Site conditions</span>
+    <div className="flex flex-wrap items-end gap-3 text-xs">
       {field('Min temp', conditions.minAmbientC, (v) => onChange({ minAmbientC: v }), '°C')}
       {field('Max temp', conditions.maxAmbientC, (v) => onChange({ maxAmbientC: v }), '°C')}
       {field('Edge-of-cloud', conditions.edgeOfCloudPct, (v) => onChange({ edgeOfCloudPct: Math.max(0, v) }), '%', 0)}

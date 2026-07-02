@@ -15,7 +15,8 @@ import {
   type Connection,
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes, GitMerge, Shrink } from 'lucide-react'
+import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes, GitMerge, Shrink, Download } from 'lucide-react'
+import { toPng } from 'html-to-image'
 import { nodeTypes } from '@/components/sld/sld-nodes'
 import { edgeTypes } from '@/components/sld/sld-edges'
 import {
@@ -559,6 +560,7 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   // Level of detail (item: readability) — Simple collapses the battery bank + DB
   // internals to summaries; Detailed shows every unit + disconnect + device.
   const [detail, setDetail] = useState<'simple' | 'detailed'>('simple')
+  const canvasRef = useRef<HTMLDivElement>(null)
   const nodesRef = useRef<Node[]>([])
   nodesRef.current = nodes
 
@@ -659,9 +661,27 @@ function CanvasInner({ height = 560 }: { height?: number }) {
 
   const isEmpty = nodes.length === 0
 
+  // PNG export (ported from the retired legacy SLD): hide the toolbars, snapshot
+  // the canvas at 2× and download — an SLD you can hand to a client / CoC pack.
+  const exportPng = useCallback(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const hidden = Array.from(el.querySelectorAll<HTMLElement>('[data-export-hide]'))
+    hidden.forEach((h) => { h.style.visibility = 'hidden' })
+    toPng(el, { backgroundColor: '#f8fafc', pixelRatio: 2 })
+      .then((dataUrl) => {
+        const a = document.createElement('a')
+        a.download = `SLD-${new Date().toISOString().slice(0, 10)}.png`
+        a.href = dataUrl
+        a.click()
+      })
+      .catch((err) => console.error('SLD export failed:', err))
+      .finally(() => hidden.forEach((h) => { h.style.visibility = '' }))
+  }, [])
+
   const flow = (
-    <div className="flex-1 relative min-w-0">
-      <div className="absolute top-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2 py-1 backdrop-blur">
+    <div ref={canvasRef} className="flex-1 relative min-w-0">
+      <div data-export-hide className="absolute top-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2 py-1 backdrop-blur">
         <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         {CIRCUIT_LAYERS.map((l) => {
           const vis = layers[l.key] ?? { components: true, cables: true }
@@ -720,7 +740,15 @@ function CanvasInner({ height = 560 }: { height?: number }) {
         })}
       </div>
 
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+      <div data-export-hide className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={exportPng}
+          title="Download the diagram as a PNG (for the customer / CoC pack)"
+          className="flex items-center gap-1 rounded-lg border border-border bg-card/90 px-2 py-1 text-[11px] font-medium text-muted-foreground backdrop-blur hover:text-foreground"
+        >
+          <Download className="h-3.5 w-3.5" /> PNG
+        </button>
         <button
           type="button"
           onClick={() => setDetail((v) => (v === 'simple' ? 'detailed' : 'simple'))}

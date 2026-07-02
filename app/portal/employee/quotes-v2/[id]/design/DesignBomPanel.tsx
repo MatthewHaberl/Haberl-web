@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { PackageCheck, ChevronDown, ChevronRight, AlertTriangle, Download } from 'lucide-react'
+import { PackageCheck, ChevronDown, ChevronRight, AlertTriangle, Download, ShieldCheck, ShieldAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { consolidateBom, designToBom } from '@/lib/solar/design-bom'
+import { designComplianceChecks } from '@/lib/solar/design-quote'
 import { useDesign } from './DesignProvider'
 import { useCatalog } from './useCatalog'
 
@@ -47,6 +48,17 @@ export function DesignBomPanel() {
   const consolidated = useMemo(() => consolidateBom(itemised), [itemised])
   const bom = view === 'consolidated' ? consolidated : itemised
 
+  // SANS compliance verdicts on the LIVE priced BOM (same engine the generated
+  // quote embeds) — a collapsed chip that expands to the clause list, so a BOM
+  // missing a mandatory SPD / changeover / earth rods can't be sent silently.
+  const compliance = useMemo(
+    () => designComplianceChecks({ design, bom: consolidated, catalog, gridSupply }),
+    [design, consolidated, catalog, gridSupply],
+  )
+  const [complianceOpen, setComplianceOpen] = useState(false)
+  const blockers = compliance.filter((c) => c.status === 'blocker')
+  const warnings = compliance.filter((c) => c.status === 'warning')
+
   // Export just the unpriced lines as a CSV to send to a supplier for quoting.
   // Always uses the consolidated lines so each item to quote appears once.
   function exportQuoteCsv() {
@@ -78,6 +90,19 @@ export function DesignBomPanel() {
           {open ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
         </span>
         <span className="flex items-center gap-2">
+          {compliance.length > 0 && (blockers.length > 0 ? (
+            <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+              <ShieldAlert className="h-3 w-3" /> {blockers.length} blocker{blockers.length === 1 ? '' : 's'}
+            </span>
+          ) : warnings.length > 0 ? (
+            <span className="flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+              <ShieldAlert className="h-3 w-3" /> {warnings.length} warning{warnings.length === 1 ? '' : 's'}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">
+              <ShieldCheck className="h-3 w-3" /> SANS
+            </span>
+          ))}
           {bom.needsPricing > 0 && (
             <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">{bom.needsPricing} to price</span>
           )}
@@ -116,6 +141,38 @@ export function DesignBomPanel() {
               </select>
             </div>
           </div>
+          {/* SANS compliance — collapsed summary, expandable clause list. */}
+          {compliance.length > 0 && (
+            <div className={`mb-3 rounded-md border ${blockers.length ? 'border-destructive/40 bg-destructive/5' : warnings.length ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40' : 'border-success/40 bg-success/5'}`}>
+              <button
+                type="button"
+                onClick={() => setComplianceOpen((v) => !v)}
+                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs"
+              >
+                <span className={`flex items-center gap-1.5 font-medium ${blockers.length ? 'text-destructive' : warnings.length ? 'text-amber-800 dark:text-amber-300' : 'text-success'}`}>
+                  {blockers.length ? <ShieldAlert className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                  SANS 10142-1 check — {blockers.length ? `${blockers.length} blocker(s)` : ''}{blockers.length && warnings.length ? ', ' : ''}{warnings.length ? `${warnings.length} warning(s)` : ''}{!blockers.length && !warnings.length ? 'all checks pass' : ''}
+                </span>
+                {complianceOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              </button>
+              {complianceOpen && (
+                <div className="border-t border-border/60 px-3 py-2 flex flex-col gap-1">
+                  {[...blockers, ...warnings, ...compliance.filter((c) => c.status === 'pass' || c.status === 'info')].map((c) => (
+                    <div key={c.id} className="flex items-start gap-1.5 text-[11px]">
+                      <span className="mt-0.5 shrink-0">
+                        {c.status === 'blocker' ? '⛔' : c.status === 'warning' ? '⚠' : c.status === 'info' ? 'ℹ' : '✓'}
+                      </span>
+                      <span>
+                        <span className="font-medium text-foreground">{c.title}</span>
+                        <span className="text-muted-foreground"> — {c.detail} </span>
+                        <span className="text-muted-foreground/70">({c.reference})</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {loading ? (
             <p className="text-xs text-muted-foreground py-4 text-center">Loading catalog…</p>
           ) : bom.sections.length === 0 ? (
@@ -179,8 +236,8 @@ export function DesignBomPanel() {
                 <span className="text-base font-bold text-primary">{rands(bom.totalSellR)}</span>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Priced cost {rands(bom.totalCostR)} · sell = cost × {markup.toFixed(2)} · ~ = estimated (cabling = conductor-metres × rate card; add a measured route on a cable to firm it up).
-                Total excludes items marked <span className="font-semibold text-amber-700 dark:text-amber-400">Quote</span>. Labour + consumables from your pricing settings; storey premium not yet included.
+                Priced cost {rands(bom.totalCostR)} · equipment sell = cost × {markup.toFixed(2)} (labour &amp; CoC are flat rates, no markup) · ~ = estimated (cabling = conductor-metres × rate card; add a measured route on a cable to firm it up).
+                Total excludes items marked <span className="font-semibold text-amber-700 dark:text-amber-400">Quote</span>. <span className="font-medium">No VAT is added</span> — Haberl is not VAT-registered; costs already carry supplier VAT.
               </p>
             </div>
           )}

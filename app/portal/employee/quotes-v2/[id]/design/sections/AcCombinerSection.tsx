@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, CircuitBoard, CornerDownRight, Save, LayoutTemplate, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, CircuitBoard, ChevronDown, ChevronRight, CornerDownRight, Save, LayoutTemplate, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   parseEnclosureSpec, ENCLOSURE_MATERIALS, ENCLOSURE_MOUNTS, ENCLOSURE_WAYS,
@@ -34,6 +34,20 @@ export function AcCombinerSection() {
   const enclosures = byCategory(items, 'enclosure')
   const boards = design.acCombiners
   const phase = design.inverters[0]?.phases ?? (String(gridSupply ?? '').toLowerCase().includes('three') ? 3 : 1)
+
+  // Progressive disclosure — first board open, later boards collapsed until toggled.
+  const [openBoards, setOpenBoards] = useState<Record<string, boolean>>({})
+  function boardOpen(c: AcCombiner) { return openBoards[c.id] ?? (c.id === boards[0]?.id) }
+  // Wiring selectors hidden by default — but shown when anything is left unwired,
+  // so broken wiring can't hide behind the toggle.
+  const [wiringShown, setWiringShown] = useState<Record<string, boolean>>({})
+  function hasUnwired(c: AcCombiner) {
+    return c.components.some((x) => {
+      const inputs = dbComponentKind(x.kind).inputs
+      return Array.from({ length: inputs }, (_, i) => x.fedFrom[i]).some((f) => !f)
+    })
+  }
+  function boardWiring(c: AcCombiner) { return wiringShown[c.id] ?? hasUnwired(c) }
 
   function patch(c: AcCombiner, p: Partial<AcCombiner>) {
     dispatch({ type: 'updateAcCombiner', id: c.id, patch: p })
@@ -133,15 +147,27 @@ export function AcCombinerSection() {
         <div className="flex flex-col gap-4">
           {boards.map((c) => {
             const locked = !!c.enclosureCatalogId
+            const open = boardOpen(c)
+            const showWiring = boardWiring(c)
             return (
               <div key={c.id} className="rounded-lg border border-border p-3">
-                <div className="flex items-center justify-between mb-3">
+                <div className={`flex items-center justify-between ${open ? 'mb-3' : ''}`}>
                   <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                    <CircuitBoard className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    <button type="button" onClick={() => setOpenBoards((m) => ({ ...m, [c.id]: !open }))} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground" aria-expanded={open}>
+                      {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                      <CircuitBoard className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    </button>
                     <input value={c.label} onChange={(e) => patch(c, { label: e.target.value })} className="bg-transparent border-b border-transparent hover:border-border focus:border-primary text-xs font-semibold focus:outline-none" />
+                    {!open && (
+                      <span className="text-[10px] font-normal text-muted-foreground">
+                        {c.components.length} component{c.components.length === 1 ? '' : 's'}
+                      </span>
+                    )}
                   </span>
                   <button type="button" onClick={() => dispatch({ type: 'removeAcCombiner', id: c.id })} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
+
+                {open && (<>
 
                 {/* W83 — templates + save/load a reusable board. */}
                 <div className="mb-3 flex flex-wrap items-center gap-1.5">
@@ -224,9 +250,18 @@ export function AcCombinerSection() {
 
                 <div className="flex items-center justify-between mt-4 mb-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Inside ({c.components.length})</p>
-                  <button type="button" onClick={() => addComponent(c)} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted">
-                    <Plus className="h-3 w-3" /> Add component
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setWiringShown((m) => ({ ...m, [c.id]: !showWiring }))}
+                      className={`rounded-md border px-2 py-1 text-[11px] font-medium ${showWiring ? 'border-primary/40 bg-primary/5 text-foreground' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                    >
+                      {showWiring ? 'Hide wiring' : 'Show wiring'}
+                    </button>
+                    <button type="button" onClick={() => addComponent(c)} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted">
+                      <Plus className="h-3 w-3" /> Add component
+                    </button>
+                  </div>
                 </div>
 
                 {c.components.length === 0 ? (
@@ -254,23 +289,27 @@ export function AcCombinerSection() {
                           </div>
                           <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
                             <ProductPicker items={items} category={def.category} label="Product" value={comp.productId} onChange={(v) => updateComponent(c, comp.id, { productId: v })} />
-                            <div className="flex flex-col gap-1">
-                              {Array.from({ length: def.inputs }).map((_, i) => (
-                                <label key={i} className="flex flex-col gap-0.5">
-                                  <span className="text-[10px] text-muted-foreground">{def.inputs > 1 ? `Fed from (source ${i + 1})` : 'Fed from'}</span>
-                                  <select value={comp.fedFrom[i] ?? ''} onChange={(e) => setSource(c, comp, i, e.target.value)} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">
-                                    <option value="">— not wired —</option>
-                                    <option value={DB_SUPPLY_ID}>{DB_SUPPLY_LABEL}</option>
-                                    {candidates.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-                                  </select>
-                                </label>
-                              ))}
-                            </div>
+                            {showWiring && (
+                              <div className="flex flex-col gap-1">
+                                {Array.from({ length: def.inputs }).map((_, i) => (
+                                  <label key={i} className="flex flex-col gap-0.5">
+                                    <span className="text-[10px] text-muted-foreground">{def.inputs > 1 ? `Fed from (source ${i + 1})` : 'Fed from'}</span>
+                                    <select value={comp.fedFrom[i] ?? ''} onChange={(e) => setSource(c, comp, i, e.target.value)} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">
+                                      <option value="">— not wired —</option>
+                                      <option value={DB_SUPPLY_ID}>{DB_SUPPLY_LABEL}</option>
+                                      {candidates.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+                                    </select>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <p className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                            <CornerDownRight className="h-3 w-3" />
-                            Feeds: {feeds.length ? feeds.join(', ') : <span className="italic">output / load</span>}
-                          </p>
+                          {showWiring && (
+                            <p className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <CornerDownRight className="h-3 w-3" />
+                              Feeds: {feeds.length ? feeds.join(', ') : <span className="italic">output / load</span>}
+                            </p>
+                          )}
                         </div>
                       )
                     })}
@@ -289,6 +328,7 @@ export function AcCombinerSection() {
                     </div>
                   ) : null
                 })()}
+                </>)}
               </div>
             )
           })}

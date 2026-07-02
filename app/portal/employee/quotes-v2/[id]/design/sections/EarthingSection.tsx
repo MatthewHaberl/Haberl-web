@@ -1,6 +1,7 @@
 'use client'
 
-import { Plus, Trash2, Zap } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, ChevronRight, Plus, Trash2, Zap } from 'lucide-react'
 import {
   designInverterKw, mkId, EARTH_SIZES, defaultElectrode, EARTH_ARRANGEMENTS,
   type EarthConductor, type EarthElectrode, type EarthBar, type EarthKind, type EarthArrangement,
@@ -23,6 +24,10 @@ export function EarthingSection() {
   const earthProducts = byCategory(items, 'other')
   const e = design.earthing
   const kw = designInverterKw(design)
+  // Progressive disclosure — builders start collapsed unless an earth map already exists.
+  const [detailOpen, setDetailOpen] = useState(
+    e.electrodes.length > 0 || e.bars.length > 0 || e.conductors.length > 0,
+  )
 
   // Connectable earth points: equipment + bars + electrodes.
   const points: Array<{ id: string; label: string }> = [
@@ -80,6 +85,24 @@ export function EarthingSection() {
         <p className="mt-1 text-[11px] text-muted-foreground">Pick catalog products (category “other”) to price spikes/bars; leave as “None” to surface them as Quote in the BOM.</p>
       </SectionCard>
 
+      {/* Progressive disclosure — the three builder cards below stay behind one toggle. */}
+      <button
+        type="button"
+        onClick={() => setDetailOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-left"
+      >
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Detailed earth map (advanced)
+          {detailOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </span>
+        {!detailOpen && (
+          <span className="text-[11px] text-muted-foreground">
+            {e.electrodes.length} electrode{e.electrodes.length === 1 ? '' : 's'} · {e.bars.length} bar{e.bars.length === 1 ? '' : 's'} · {e.conductors.length} run{e.conductors.length === 1 ? '' : 's'}
+          </span>
+        )}
+      </button>
+
+      {detailOpen && (<>
       {/* Electrodes */}
       <SectionCard
         title="Earth electrodes (spikes)"
@@ -204,6 +227,7 @@ export function EarthingSection() {
           </div>
         )}
       </SectionCard>
+      </>)}
     </div>
   )
 }

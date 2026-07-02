@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { computeBalance } from '@/lib/solar/system-design'
 import { designToBom } from '@/lib/solar/design-bom'
-import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
+import { DEFAULT_PRICING, getTariffRateForMunicipality, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { buildLossModel } from '@/lib/solar/loss-model'
 import { buildSavingsSummary, DEFAULT_TARIFF_RATE } from '@/lib/solar/savings'
 import { SavingsAccumulation } from '@/components/charts/SavingsAccumulation'
@@ -35,7 +35,10 @@ export function SavingsSection() {
   const { design, record, gridSupply } = useDesign()
   const { items, loading } = useCatalog()
   const [pricing, setPricing] = useState(DEFAULT_PRICING)
-  const [tariff, setTariff] = useState(DEFAULT_TARIFF_RATE)
+  // Prefill from the site's municipality tariff table when known; stays editable.
+  const [tariff, setTariff] = useState(() =>
+    record?.municipality ? getTariffRateForMunicipality(record.municipality) : DEFAULT_TARIFF_RATE,
+  )
   const [allowExport, setAllowExport] = useState(false)
   const [feedInRate, setFeedInRate] = useState(0)
 
@@ -165,9 +168,13 @@ export function SavingsSection() {
 
         <SectionCard title="System performance" subtitle={`${LOSS ? Math.round(LOSS.totalLossPct * 100) : 15}% modelled system losses`}>
           <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
+            <div
+              title={a.energyFromSolarPct > 100
+                ? 'Generation exceeds annual usage — the array is oversized vs consumption; excess is stored or curtailed'
+                : undefined}
+            >
               <p className="text-2xl font-bold text-primary">{a.energyFromSolarPct}%</p>
-              <p className="text-[10px] text-muted-foreground">Energy from solar</p>
+              <p className="text-[10px] text-muted-foreground">Solar vs usage</p>
             </div>
             <div>
               <p className="text-2xl font-bold text-foreground">{a.gridIndependencePct}%</p>

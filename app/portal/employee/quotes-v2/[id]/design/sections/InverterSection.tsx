@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
-import { Zap, Plug, Wand2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Zap, Plug, Wand2, ChevronDown, ChevronUp } from 'lucide-react'
 import { verifyPanelString, parseInverterSizingSpec, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import {
   designInverterKw, designTotalKwp,
@@ -118,45 +118,9 @@ export function InverterSection() {
         </label>
       </div>
 
-      {/* Model / kW / phases — locked to the catalog spec when an inverter is chosen (item 24). */}
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <label className="flex flex-col gap-1 md:col-span-1">
-          <span className="text-xs font-medium text-muted-foreground">Model</span>
-          <input
-            value={unit?.model ?? ''}
-            disabled={!unit || locked}
-            placeholder="e.g. Sunsynk 5kW"
-            onChange={(ev) => dispatch({ type: 'updateInverter', patch: { model: ev.target.value } })}
-            className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground">kW (AC)</span>
-          <input
-            type="number" min={0} step={0.1}
-            value={unit?.kw ?? ''}
-            disabled={!unit || locked}
-            onChange={(ev) => dispatch({ type: 'updateInverter', patch: { kw: Math.max(0, Number(ev.target.value) || 0) } })}
-            className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground">Phases</span>
-          <select
-            value={unit?.phases ?? 1}
-            disabled={!unit || locked}
-            onChange={(ev) => dispatch({ type: 'updateInverter', patch: { phases: Number(ev.target.value) >= 3 ? 3 : 1 } })}
-            className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
-          >
-            <option value={1}>Single-phase</option>
-            <option value={3}>Three-phase</option>
-          </select>
-        </label>
-      </div>
-      {locked && <div className="mt-1.5"><LockNote>Model, kW and phases come from the catalog inverter</LockNote></div>}
-
-      {/* Phase configuration (item 50) — the catalog prefills a sensible default but this
-          stays editable so you can pick split-phase / American where the product doesn't say. */}
+      {/* Phase configuration (item 50) — THE phase control (the reducer derives `phases`
+          from it). The catalog prefills a sensible default but this stays editable so you
+          can pick split-phase / American where the product doesn't say. */}
       <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
         <label className="flex flex-col gap-1 md:col-span-2">
           <span className="text-xs font-medium text-muted-foreground">Phase configuration</span>
@@ -173,35 +137,69 @@ export function InverterSection() {
         </label>
       </div>
 
-      {/* Capability toggles (item 51) — default ON. */}
-      <div className="mt-3 flex flex-col gap-2">
-        <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            checked={unit ? inverterAcceptsPv(unit) : true}
-            disabled={!unit}
-            onChange={(ev) => dispatch({ type: 'updateInverter', patch: { acceptsPv: ev.target.checked } })}
-            className="mt-0.5 h-4 w-4 rounded border-border accent-primary disabled:opacity-50"
-          />
-          <span className="text-xs">
-            <span className="font-medium text-foreground">PV / strings</span>
-            <span className="block text-[11px] text-muted-foreground">Turn off for an inverter with no built-in MPPT (e.g. Victron) — suppresses the string checks.</span>
-          </span>
-        </label>
-        <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            checked={unit ? inverterAcceptsBattery(unit) : true}
-            disabled={!unit}
-            onChange={(ev) => dispatch({ type: 'updateInverter', patch: { acceptsBattery: ev.target.checked } })}
-            className="mt-0.5 h-4 w-4 rounded border-border accent-primary disabled:opacity-50"
-          />
-          <span className="text-xs">
-            <span className="font-medium text-foreground">Batteries</span>
-            <span className="block text-[11px] text-muted-foreground">Turn off for a grid-tie inverter that can't take a battery.</span>
-          </span>
-        </label>
-      </div>
+      {/* Model / kW override + capability toggles — advanced; opens by default only for a
+          manual (non-catalog) inverter, where these fields are the only way to describe it. */}
+      <details className="mt-3" open={!!unit && !unit.catalogId}>
+        <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+          Advanced (model override & capabilities)
+        </summary>
+        <div className="mt-2">
+          {/* Model / kW — locked to the catalog spec when an inverter is chosen (item 24). */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label className="flex flex-col gap-1 md:col-span-2">
+              <span className="text-xs font-medium text-muted-foreground">Model</span>
+              <input
+                value={unit?.model ?? ''}
+                disabled={!unit || locked}
+                placeholder="e.g. Sunsynk 5kW"
+                onChange={(ev) => dispatch({ type: 'updateInverter', patch: { model: ev.target.value } })}
+                className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">kW (AC)</span>
+              <input
+                type="number" min={0} step={0.1}
+                value={unit?.kw ?? ''}
+                disabled={!unit || locked}
+                onChange={(ev) => dispatch({ type: 'updateInverter', patch: { kw: Math.max(0, Number(ev.target.value) || 0) } })}
+                className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
+              />
+            </label>
+          </div>
+          {locked && <div className="mt-1.5"><LockNote>Model and kW come from the catalog inverter</LockNote></div>}
+
+          {/* Capability toggles (item 51) — default ON. */}
+          <div className="mt-3 flex flex-col gap-2">
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={unit ? inverterAcceptsPv(unit) : true}
+                disabled={!unit}
+                onChange={(ev) => dispatch({ type: 'updateInverter', patch: { acceptsPv: ev.target.checked } })}
+                className="mt-0.5 h-4 w-4 rounded border-border accent-primary disabled:opacity-50"
+              />
+              <span className="text-xs">
+                <span className="font-medium text-foreground">PV / strings</span>
+                <span className="block text-[11px] text-muted-foreground">Turn off for an inverter with no built-in MPPT (e.g. Victron) — suppresses the string checks.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={unit ? inverterAcceptsBattery(unit) : true}
+                disabled={!unit}
+                onChange={(ev) => dispatch({ type: 'updateInverter', patch: { acceptsBattery: ev.target.checked } })}
+                className="mt-0.5 h-4 w-4 rounded border-border accent-primary disabled:opacity-50"
+              />
+              <span className="text-xs">
+                <span className="font-medium text-foreground">Batteries</span>
+                <span className="block text-[11px] text-muted-foreground">Turn off for a grid-tie inverter that can't take a battery.</span>
+              </span>
+            </label>
+          </div>
+        </div>
+      </details>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -209,7 +207,7 @@ export function InverterSection() {
           <strong className="text-foreground">{inverterKw.toFixed(1)}</strong> kW AC total
         </span>
         {ratio != null && (
-          <span className={`rounded-full border px-2 py-0.5 font-medium ${
+          <span title="DC:AC ratio — panel kWp vs inverter kW AC. Healthy ≈ 1.0–1.3; higher clips at midday." className={`rounded-full border px-2 py-0.5 font-medium ${
             ratio > 1.3 ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300'
               : ratio < 0.5 ? 'border-border bg-muted/40 text-muted-foreground'
               : 'border-success/40 bg-success/5 text-success'
@@ -310,6 +308,9 @@ function recommendInverterOptions(targetKw: number, list: EquipmentCatalogItem[]
 function SupplySizer() {
   const { design, dispatch } = useDesign()
   const { items } = useCatalog()
+  // Expanded while there's no inverter yet (the sizer is the fastest route to one);
+  // collapsed once a unit exists — still manually toggleable either way.
+  const [sizerOpen, setSizerOpen] = useState(design.inverters.length === 0)
   const supply: SupplyConfig = design.supply ?? defaultSupply()
   const set = (patch: Partial<SupplyConfig>) => dispatch({ type: 'setSupply', patch })
   const kva = supplyKva(supply)
@@ -329,10 +330,18 @@ function SupplySizer() {
   }
 
   return (
-    <details className="mb-3 rounded-lg border border-primary/30 bg-primary/5 p-3" open>
-      <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-foreground">
+    <div className="mb-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+      <button
+        type="button"
+        onClick={() => setSizerOpen((o) => !o)}
+        className="flex w-full cursor-pointer items-center gap-1.5 text-xs font-semibold text-foreground"
+      >
         <Plug className="h-3.5 w-3.5 text-primary" /> Size from the main breaker
-      </summary>
+        {sizerOpen
+          ? <ChevronUp className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          : <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+      </button>
+      {sizerOpen && (<>
       <div className="mt-2.5 grid grid-cols-2 md:grid-cols-4 gap-2.5">
         <label className="flex flex-col gap-1">
           <span className="text-[11px] text-muted-foreground">Main breaker (A)</span>
@@ -381,6 +390,7 @@ function SupplySizer() {
       ) : (
         <p className="mt-2 text-[11px] italic text-muted-foreground">No catalog inverter matches yet — set the breaker, or pick one below.</p>
       )}
-    </details>
+      </>)}
+    </div>
   )
 }

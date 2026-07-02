@@ -43,6 +43,10 @@ const TABS: Array<{ value: CategoryTab; label: string }> = [
   { value: 'other', label: 'Other / Accessories' },
 ]
 
+// Every category that has its own tab. Anything outside this set (e.g. legacy or
+// imported categories) falls through to the "Other / Accessories" tab.
+const KNOWN_CATEGORIES = new Set<string>(TABS.map((tab) => tab.value))
+
 // Categories that carry structured protection-gear attributes (migration 051 specs).
 const PROTECTION_CATEGORIES: CategoryTab[] = ['breaker', 'fuse', 'fuseholder', 'spd', 'isolator', 'disconnect', 'rccb']
 const CURRENT_TYPES = ['AC', 'DC', 'AC/DC'] as const
@@ -182,6 +186,23 @@ function formatRands(value: number) {
   return `R${value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+// Compact age of the last cost change (stamped by the migration 030 DB trigger),
+// e.g. "3d ago" / "3mo ago". Stale (> 60 days) prices get flagged amber.
+function priceAge(updatedAt?: string | null): { label: string; stale: boolean } | null {
+  if (!updatedAt) return null
+  const ms = Date.now() - new Date(updatedAt).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return null
+  const days = Math.floor(ms / 86_400_000)
+  const label = days < 1
+    ? 'today'
+    : days < 30
+      ? `${days}d ago`
+      : days < 365
+        ? `${Math.floor(days / 30)}mo ago`
+        : `${Math.floor(days / 365)}y ago`
+  return { label, stale: days > 60 }
+}
+
 function itemToForm(item: EquipmentCatalogItem): FormState {
   return {
     id: item.id,
@@ -218,6 +239,8 @@ export default function CatalogPage() {
   // 'pending' is a cross-category filter for the "to-add" queue, not a real category.
   const [activeTab, setActiveTab] = useState<CategoryTab | 'pending'>('inverter')
   const [supplierFilter, setSupplierFilter] = useState<string>('all')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [editing, setEditing] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
   const [markup, setMarkup] = useState(DEFAULT_PRICING.markup)
@@ -269,6 +292,12 @@ export default function CatalogPage() {
     }
   }, [supabase])
 
+  // Debounce the free-text search so filtering doesn't run on every keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 250)
+    return () => clearTimeout(timer)
+  }, [search])
+
   // Count of "to-add" placeholders created from the design canvas (migration 049).
   const pendingCount = useMemo(() => items.filter((item) => item.pending).length, [items])
 
@@ -279,11 +308,24 @@ export default function CatalogPage() {
   )
 
   const visibleItems = useMemo(() => {
-    const base = activeTab === 'pending'
-      ? items.filter((item) => item.pending)
-      : items.filter((item) => item.category === activeTab)
-    return supplierFilter === 'all' ? base : base.filter((item) => item.supplier === supplierFilter)
-  }, [activeTab, items, supplierFilter])
+    const base = items.filter((item) => {
+      if (activeTab === 'pending') return item.pending
+      // "To-add" placeholders live only on the pending tab — keep category tabs clean.
+      if (item.pending) return false
+      if (activeTab === 'other') {
+        // Catch-all: 'other' plus any category that has no tab of its own.
+        return item.category === 'other' || !KNOWN_CATEGORIES.has(item.category)
+      }
+      return item.category === activeTab
+    })
+    const bySupplier = supplierFilter === 'all' ? base : base.filter((item) => item.supplier === supplierFilter)
+    const query = debouncedSearch.trim().toLowerCase()
+    if (!query) return bySupplier
+    return bySupplier.filter((item) =>
+      [item.description, item.sku, item.brand, item.supplier]
+        .some((field) => (field ?? '').toLowerCase().includes(query)),
+    )
+  }, [activeTab, items, supplierFilter, debouncedSearch])
 
   async function saveItem() {
     if (!editing) return
@@ -398,6 +440,16 @@ export default function CatalogPage() {
           </Button>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search description, SKU, brand…"
+              className="w-56 pl-8"
+              aria-label="Search catalog"
+            />
+          </div>
           {suppliers.length > 0 && (
             <Select
               value={supplierFilter}
@@ -449,6 +501,7 @@ export default function CatalogPage() {
                 </thead>
                 <tbody>
                   {visibleItems.map((item) => {
+                    const age = priceAge(item.price_updated_at)
                     const enc = item.category === 'enclosure' ? parseEnclosureSpec(item.notes) : null
                     const spec = item.category === 'inverter'
                       ? `${((item.watts_ac ?? 0) / 1000).toFixed(1)}kW · ${item.phase}`
@@ -468,7 +521,17 @@ export default function CatalogPage() {
                         <td className="py-3 pr-4 font-mono text-xs">{item.sku}</td>
                         <td className="py-3 pr-4">{item.description}</td>
                         <td className="py-3 pr-4">{spec}</td>
-                        <td className="py-3 pr-4">{formatRands(item.cost_rands)}</td>
+                        <td className="py-3 pr-4">
+                          {formatRands(item.cost_rands)}
+                          {age && (
+                            <div
+                              className={`text-[10px] ${age.stale ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}
+                              title={`Cost last updated ${new Date(item.price_updated_at!).toLocaleDateString('en-ZA')}${age.stale ? ' — over 60 days old, worth re-checking with the supplier' : ''}`}
+                            >
+                              {age.label}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 pr-4">{formatRands(item.cost_rands * markup)}</td>
                         <td className="py-3 pr-4">
                           {item.pending ? (
@@ -721,49 +784,54 @@ export default function CatalogPage() {
                 />
                 Sell on web store
               </label>
-              <FormField label="Store price override" hint={`Leave blank to use cost + ${storeMarkup}% store markup.`}>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  leadingText="R"
-                  value={editing.store_price_rands}
-                  onChange={(event) => setEditing({ ...editing, store_price_rands: event.target.value })}
-                  placeholder={`Auto: ${formatRands(Number(editing.cost_rands || 0) * (1 + storeMarkup / 100))}`}
-                />
-              </FormField>
-              <FormField label="Primary image URL" hint="Shown on the store; reusable on quotes.">
-                <Input
-                  type="url"
-                  value={editing.primary_image_url}
-                  onChange={(event) => setEditing({ ...editing, primary_image_url: event.target.value })}
-                  placeholder="https://…"
-                />
-              </FormField>
-              <FormField label="Shop description" className="md:col-span-2">
-                <Textarea
-                  value={editing.shop_description}
-                  onChange={(event) => setEditing({ ...editing, shop_description: event.target.value })}
-                  rows={2}
-                  placeholder="Customer-facing description for the web store (falls back to the description above)."
-                />
-              </FormField>
-              <FormField label="Datasheet URL">
-                <Input
-                  type="url"
-                  value={editing.datasheet_url}
-                  onChange={(event) => setEditing({ ...editing, datasheet_url: event.target.value })}
-                  placeholder="https://…"
-                />
-              </FormField>
-              <FormField label={<>3D model URL <span className="text-muted-foreground">(future)</span></>}>
-                <Input
-                  type="url"
-                  value={editing.model_3d_url}
-                  onChange={(event) => setEditing({ ...editing, model_3d_url: event.target.value })}
-                  placeholder="https://… .glb / .gltf"
-                />
-              </FormField>
+              {/* Store detail fields only matter once the item is (or was) on the store —
+                  hide them otherwise so the modal stays short. A field with a value stays
+                  visible even when the toggle is off, so nothing silently disappears. */}
+              {(editing.show_on_store || editing.store_price_rands.trim() !== '') && (
+                <FormField label="Store price override" hint={`Leave blank to use cost + ${storeMarkup}% store markup.`}>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    leadingText="R"
+                    value={editing.store_price_rands}
+                    onChange={(event) => setEditing({ ...editing, store_price_rands: event.target.value })}
+                    placeholder={`Auto: ${formatRands(Number(editing.cost_rands || 0) * (1 + storeMarkup / 100))}`}
+                  />
+                </FormField>
+              )}
+              {(editing.show_on_store || editing.primary_image_url.trim() !== '') && (
+                <FormField label="Primary image URL" hint="Shown on the store; reusable on quotes.">
+                  <Input
+                    type="url"
+                    value={editing.primary_image_url}
+                    onChange={(event) => setEditing({ ...editing, primary_image_url: event.target.value })}
+                    placeholder="https://…"
+                  />
+                </FormField>
+              )}
+              {(editing.show_on_store || editing.shop_description.trim() !== '') && (
+                <FormField label="Shop description" className="md:col-span-2">
+                  <Textarea
+                    value={editing.shop_description}
+                    onChange={(event) => setEditing({ ...editing, shop_description: event.target.value })}
+                    rows={2}
+                    placeholder="Customer-facing description for the web store (falls back to the description above)."
+                  />
+                </FormField>
+              )}
+              {(editing.show_on_store || editing.datasheet_url.trim() !== '') && (
+                <FormField label="Datasheet URL">
+                  <Input
+                    type="url"
+                    value={editing.datasheet_url}
+                    onChange={(event) => setEditing({ ...editing, datasheet_url: event.target.value })}
+                    placeholder="https://…"
+                  />
+                </FormField>
+              )}
+              {/* 3D model URL input removed — the model_3d_url column is untouched and
+                  still round-trips through the save payload. */}
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-border bg-background px-6 py-4">

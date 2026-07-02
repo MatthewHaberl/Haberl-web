@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Check, Copy, Send, X, Loader2, Briefcase, ArrowRight, Eye, MessageCircle } from 'lucide-react'
+import { Check, Copy, Send, X, Loader2, Briefcase, ArrowRight, Eye, MessageCircle, FileText, RefreshCw } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
 
 /**
@@ -36,7 +36,7 @@ const STATUS_LABELS: Record<QuoteRequestStatus, string> = {
 
 const STATUS_VARIANT: Record<QuoteRequestStatus, 'default' | 'warning' | 'success'> = {
   pending:   'warning',
-  generated: 'default',
+  generated: 'success', // matches the quotes list — "ready to send" reads green everywhere
   sent:      'default',
   accepted:  'success',
   declined:  'default',
@@ -101,6 +101,33 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
         )
       } else {
         setError(data?.error ?? 'Send failed')
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Generate & save the customer quote from the live design (the v2 bridge):
+  // renders quote_html, allocates the quote number, snapshots the BOM and
+  // flips pending → generated so the send buttons appear.
+  async function generateQuote() {
+    setSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const res = await fetch(`/api/quotes/${requestId}/generate`, { method: 'POST' })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        setStatus('generated')
+        const bits = [
+          `Quote ${data?.quoteNumber ?? ''} saved — R${Number(data?.totalR ?? 0).toLocaleString('en-ZA')}`,
+          data?.needsPricing > 0 ? `${data.needsPricing} item(s) still need pricing` : null,
+          data?.complianceBlockers > 0 ? `⚠ ${data.complianceBlockers} compliance blocker(s)` : null,
+        ].filter(Boolean)
+        setMessage(bits.join(' · '))
+        router.refresh()
+      } else {
+        setError(data?.error ?? 'Generate failed')
       }
     } finally {
       setSaving(false)
@@ -221,8 +248,28 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
 
         {saving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
 
+        {!saving && status === 'pending' && (
+          <Button
+            variant="accent"
+            size="sm"
+            onClick={generateQuote}
+            title="Render the customer quote from the design, allocate a quote number and unlock sending"
+          >
+            <FileText className="h-3.5 w-3.5" /> Generate quote
+          </Button>
+        )}
+
         {!saving && status === 'generated' && (
           <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={generateQuote}
+              className="text-muted-foreground text-xs"
+              title="Re-render the quote from the current design (overwrites the draft — fine until it's sent)"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Regenerate
+            </Button>
             <Button
               variant="accent"
               size="sm"

@@ -212,6 +212,11 @@ export function EnergySection() {
   const e = design.energy
   const resolved = useMemo(() => resolveEnergy(e, record), [e, record])
 
+  // Progressive disclosure — capture the initial open state once so the browser owns
+  // the <details> after mount (re-renders don't fight the user's manual toggling).
+  const [shapeDayOpen] = useState(() => e.hourly != null)
+  const [shapeYearOpen] = useState(() => e.monthlyProfile != null)
+
   const gridValues = e.hourly ?? resolved.hourly ?? new Array(24).fill(0)
 
   function setCell(hour: number, value: number) {
@@ -307,57 +312,64 @@ export function EnergySection() {
         )}
       </SectionCard>
 
-      {/* Daily → hourly profile */}
+      {/* Daily → hourly profile — collapsed by default, open when a custom profile exists */}
       {e.mode === 'daily' && (
-        <SectionCard
-          title="Hourly profile"
-          subtitle="Pick a usage pattern, or type real meter readings per hour."
-          action={
-            e.hourly != null ? (
-              <button type="button" onClick={() => dispatch({ type: 'clearHourly' })} className="text-xs text-muted-foreground hover:text-foreground underline">
-                Clear hourly
-              </button>
-            ) : resolved.hourly ? (
-              <button type="button" onClick={() => dispatch({ type: 'setEnergy', patch: { hourly: resolved.hourly!.slice(), curvePreset: 'custom' } })} className="text-xs text-primary hover:underline">
-                Edit from pattern
-              </button>
-            ) : undefined
-          }
-        >
-          <p className="text-xs font-medium text-muted-foreground mb-1.5">Usage pattern</p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {PRESETS.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                onClick={() => dispatch({ type: 'setEnergy', patch: { curvePreset: p.key } })}
-                className={`rounded-lg border px-3 py-1.5 text-left transition-colors ${
-                  e.curvePreset === p.key ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:border-primary/40'
-                }`}
-              >
-                <span className="block text-xs font-semibold">{p.label}</span>
-                <span className="block text-[11px] text-muted-foreground">{p.hint}</span>
-              </button>
-            ))}
-            {e.curvePreset === 'custom' && (
-              <span className="self-center rounded-lg border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">
-                Custom hourly profile in use
-              </span>
-            )}
-          </div>
+        <details open={shapeDayOpen}>
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+            Shape the day hour-by-hour (optional)
+          </summary>
+          <div className="mt-2">
+            <SectionCard
+              title="Hourly profile"
+              subtitle="Pick a usage pattern, or type real meter readings per hour."
+              action={
+                e.hourly != null ? (
+                  <button type="button" onClick={() => dispatch({ type: 'clearHourly' })} className="text-xs text-muted-foreground hover:text-foreground underline">
+                    Clear hourly
+                  </button>
+                ) : resolved.hourly ? (
+                  <button type="button" onClick={() => dispatch({ type: 'setEnergy', patch: { hourly: resolved.hourly!.slice(), curvePreset: 'custom' } })} className="text-xs text-primary hover:underline">
+                    Edit from pattern
+                  </button>
+                ) : undefined
+              }
+            >
+              <p className="text-xs font-medium text-muted-foreground mb-1.5">Usage pattern</p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => dispatch({ type: 'setEnergy', patch: { curvePreset: p.key } })}
+                    className={`rounded-lg border px-3 py-1.5 text-left transition-colors ${
+                      e.curvePreset === p.key ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:border-primary/40'
+                    }`}
+                  >
+                    <span className="block text-xs font-semibold">{p.label}</span>
+                    <span className="block text-[11px] text-muted-foreground">{p.hint}</span>
+                  </button>
+                ))}
+                {e.curvePreset === 'custom' && (
+                  <span className="self-center rounded-lg border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-3 py-1.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                    Custom hourly profile in use
+                  </span>
+                )}
+              </div>
 
-          {/* Drag-to-edit bar chart + paired numeric grid — same reusable editor used
-              by the weekly/monthly/annual shaping profiles below (item 40). */}
-          <ProfileEditor
-            values={gridValues}
-            onSet={setCell}
-            unit="kW"
-            cellLabel={(h) => `${String(h).padStart(2, '0')}:00`}
-            ticks={['00:00', '06:00', '12:00', '18:00', '24:00']}
-            gridCols={2}
-            hint="Drag the bars to shape the day"
-          />
-        </SectionCard>
+              {/* Drag-to-edit bar chart + paired numeric grid — same reusable editor used
+                  by the weekly/monthly/annual shaping profiles below (item 40). */}
+              <ProfileEditor
+                values={gridValues}
+                onSet={setCell}
+                unit="kW"
+                cellLabel={(h) => `${String(h).padStart(2, '0')}:00`}
+                ticks={['00:00', '06:00', '12:00', '18:00', '24:00']}
+                gridCols={2}
+                hint="Drag the bars to shape the day"
+              />
+            </SectionCard>
+          </div>
+        </details>
       )}
 
       {/* Weekly → day-of-week profile (item 37) */}
@@ -384,33 +396,39 @@ export function EnergySection() {
         </SectionCard>
       )}
 
-      {/* Monthly → seasonal year graph + per-week profile (item 38) */}
+      {/* Monthly → seasonal year graph + per-week profile (item 38) — collapsed by
+          default, open when a per-week profile already exists */}
       {e.mode === 'monthly' && (
-        <>
-          <SectionCard title="Seasonal spread" subtitle="How the monthly figure typically rises in winter and dips in summer.">
-            <SeasonalGraph avgMonthly={monthlyForGraph} />
-          </SectionCard>
-          <SectionCard
-            title="Per-week profile"
-            subtitle="Shape usage across the weeks of a month — leave flat for an even spread."
-            action={
-              e.monthlyProfile != null ? (
-                <button type="button" onClick={() => dispatch({ type: 'clearProfile', field: 'monthlyProfile' })} className="text-xs text-muted-foreground hover:text-foreground underline">
-                  Clear profile
-                </button>
-              ) : undefined
-            }
-          >
-            <ProfileEditor
-              values={profileValues('monthlyProfile')}
-              onSet={(i, v) => setProfileCell('monthlyProfile', i, v)}
-              unit="kWh"
-              cellLabel={(i) => WEEK_LABELS[i]}
-              gridCols={1}
-              hint="Drag the bars to shape the month"
-            />
-          </SectionCard>
-        </>
+        <details open={shapeYearOpen}>
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+            Shape across the year (optional)
+          </summary>
+          <div className="mt-2 flex flex-col gap-4">
+            <SectionCard title="Seasonal spread" subtitle="How the monthly figure typically rises in winter and dips in summer.">
+              <SeasonalGraph avgMonthly={monthlyForGraph} />
+            </SectionCard>
+            <SectionCard
+              title="Per-week profile"
+              subtitle="Shape usage across the weeks of a month — leave flat for an even spread."
+              action={
+                e.monthlyProfile != null ? (
+                  <button type="button" onClick={() => dispatch({ type: 'clearProfile', field: 'monthlyProfile' })} className="text-xs text-muted-foreground hover:text-foreground underline">
+                    Clear profile
+                  </button>
+                ) : undefined
+              }
+            >
+              <ProfileEditor
+                values={profileValues('monthlyProfile')}
+                onSet={(i, v) => setProfileCell('monthlyProfile', i, v)}
+                unit="kWh"
+                cellLabel={(i) => WEEK_LABELS[i]}
+                gridCols={1}
+                hint="Drag the bars to shape the month"
+              />
+            </SectionCard>
+          </div>
+        </details>
       )}
 
       {/* Annual → 12-month seasonal profile (item 39) */}

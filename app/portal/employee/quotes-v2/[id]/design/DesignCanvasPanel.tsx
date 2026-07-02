@@ -19,7 +19,7 @@ const DesignCanvas = dynamic(
 
 /** Collapsible wrapper around the design canvas — mirrors the BOM panel pattern. */
 export function DesignCanvasPanel() {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
 
   return (
     <div className="rounded-xl border border-border bg-card">

@@ -10,6 +10,7 @@ import {
   mkId,
   defaultCombiner,
   enclosureCode,
+  phaseConfigToPhases,
   DEFAULT_SITE_CONDITIONS,
   defaultSupply,
   type SiteConditions,
@@ -264,10 +265,15 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
       return { ...d, inverters: [inv] }
     }
 
-    case 'updateInverter':
-      return d.inverters.length
-        ? { ...d, inverters: [{ ...d.inverters[0], ...action.patch }, ...d.inverters.slice(1)] }
-        : d
+    case 'updateInverter': {
+      if (!d.inverters.length) return d
+      const merged = { ...d.inverters[0], ...action.patch }
+      // The Phase-configuration select is THE phase control (item 50) — keep the
+      // legacy `phases` field derived so raw readers (canvas panel, AC board
+      // subtitle) can never disagree with the user's selection.
+      if (action.patch.phaseConfig) merged.phases = phaseConfigToPhases(action.patch.phaseConfig)
+      return { ...d, inverters: [merged, ...d.inverters.slice(1)] }
+    }
 
     case 'removeInverter':
       return { ...d, inverters: [] }
@@ -553,7 +559,7 @@ interface DesignContextValue {
   design: SystemDesign
   dispatch: React.Dispatch<DesignAction>
   gridSupply: string | undefined
-  record: { monthly_kwh?: string | number | null } | null
+  record: { monthly_kwh?: string | number | null; municipality?: string | null } | null
   activeStep: number
   setActiveStep: (i: number) => void
   saveState: 'idle' | 'saving' | 'saved' | 'error'
@@ -571,7 +577,7 @@ interface ProviderProps {
   requestId: string
   initialDesign: SystemDesign
   gridSupply?: string
-  record: { monthly_kwh?: string | number | null } | null
+  record: { monthly_kwh?: string | number | null; municipality?: string | null } | null
   canSave: boolean
   children: React.ReactNode
 }

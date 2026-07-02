@@ -102,7 +102,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
             requestId={req.id}
             initialDesign={initialDesign}
             gridSupply={req.grid_supply as string | undefined}
-            record={{ monthly_kwh: req.monthly_kwh ?? null }}
+            record={{ monthly_kwh: req.monthly_kwh ?? null, municipality: req.municipality ?? null }}
             canSave
           >
             <BalanceHeader />
