@@ -500,6 +500,25 @@ export interface DbComponent {
   /** Upstream source ids feeding this device — other component ids, or the SUPPLY
    *  token (incoming feed / previous DB). Changeovers carry two sources. */
   fedFrom: string[]
+  /** Physical position on the DB faceplate (which rail, which module, how wide).
+   *  Optional + additive: boards without it keep working; the faceplate/auto-arrange
+   *  seed it. A device is "unplaced" (sits in the tray) until it has a slot. */
+  slot?: DbSlot
+  /** Switched poles → how many top/bottom terminals for wiring (1=L, 2=L+N,
+   *  3=L1/L2/L3, 4=+N). Optional; defaults from kind + phase via dbPoles(). */
+  poles?: number
+  /** Whether the device exposes an earth terminal (green/yellow). Default on for SPDs. */
+  earth?: boolean
+}
+
+/** Where a device physically sits on the board's DIN rails. */
+export interface DbSlot {
+  /** 0-based rail index, top rail = 0. */
+  row: number
+  /** 0-based module index within the rail (its left edge). */
+  startWay: number
+  /** DIN modules (poles) the device occupies. */
+  width: number
 }
 
 /** Virtual upstream node: the board's incoming feed (grid / previous DB / inverter). */
@@ -531,6 +550,164 @@ export function dbComponentKind(kind: DbComponentKind) {
 export function defaultDbComponent(kind: DbComponentKind, fedFrom: string[] = []): DbComponent {
   const def = dbComponentKind(kind)
   return { id: mkId('dbc'), kind, label: def.label, productId: null, qty: 1, fedFrom }
+}
+
+// ── Physical board layout (faceplate) ────────────────────────────────────────
+// The DB's overview node stays as-is; clicking it opens a physical faceplate where
+// each device sits in real DIN module slots. These helpers seed sensible module
+// widths and pack the devices onto the rails — everything stays hand-adjustable.
+
+/** Default module width (poles) for a device kind, widened for three-phase.
+ *  Outgoing MCBs/RCBOs default to a single module; the user widens per circuit. */
+export function dbModuleWidth(kind: DbComponentKind, phases = 1): number {
+  const three = phases >= 3
+  switch (kind) {
+    case 'mainSwitch': return three ? 4 : 2
+    case 'changeover': return three ? 4 : 2
+    case 'rccb': return three ? 4 : 2
+    case 'spd': return three ? 4 : 2
+    case 'isolator': return three ? 3 : 2
+    case 'contactor': return three ? 3 : 2
+    case 'meter': return three ? 4 : 2
+    case 'rcbo': return 1
+    case 'breaker': return 1
+    default: return 1
+  }
+}
+
+/** True once every device is a single physical unit (qty ≤ 1) — the form the
+ *  faceplate works in, so each breaker can be placed and moved on its own. */
+export function isDbExpanded(components: DbComponent[]): boolean {
+  return components.every((c) => Math.max(1, Math.round(c.qty || 1)) <= 1)
+}
+
+/** Split any qty>1 device into that many individual units (each qty 1) so each
+ *  can occupy its own slot. The first unit keeps the original id (and slot) so
+ *  existing `fedFrom` links stay valid; the rest get fresh ids and inherit the
+ *  same wiring. A no-op for boards that are already expanded. */
+export function expandDbUnits(components: DbComponent[]): DbComponent[] {
+  const out: DbComponent[] = []
+  for (const c of components) {
+    const n = Math.max(1, Math.round(c.qty || 1))
+    if (n === 1) { out.push({ ...c, qty: 1 }); continue }
+    for (let i = 0; i < n; i++) {
+      out.push({
+        ...c,
+        id: i === 0 ? c.id : mkId('dbc'),
+        qty: 1,
+        fedFrom: [...c.fedFrom],
+        slot: i === 0 ? c.slot : undefined,
+      })
+    }
+  }
+  return out
+}
+
+/** Flow the devices left-to-right across the rails, wrapping to the next rail
+ *  when the current one is full. Mains/switching/SPD are floated to the front.
+ *  Grows the row count if the board doesn't have enough rails to hold everything,
+ *  so a board that already has devices lays itself out in one click. */
+export function autoArrangeDb(
+  components: DbComponent[],
+  ways: number,
+  rows: number,
+  phases = 1,
+): { components: DbComponent[]; rows: number } {
+  const units = expandDbUnits(components)
+  const rank = (k: DbComponentKind) =>
+    k === 'mainSwitch' ? 0 : k === 'changeover' ? 1 : k === 'spd' ? 2 : 3
+  const ordered = units
+    .map((u, i) => ({ u, i }))
+    .sort((a, b) => rank(a.u.kind) - rank(b.u.kind) || a.i - b.i)
+    .map((x) => x.u)
+
+  const W = Math.max(1, Math.round(ways))
+  let row = 0
+  let cursor = 0
+  const placed = ordered.map((u) => {
+    const width = Math.min(W, Math.max(1, Math.round(u.slot?.width ?? dbModuleWidth(u.kind, phases))))
+    if (cursor + width > W) { row += 1; cursor = 0 }
+    const slot: DbSlot = { row, startWay: cursor, width }
+    cursor += width
+    return { ...u, slot }
+  })
+  return { components: placed, rows: Math.max(Math.max(1, Math.round(rows)), row + 1) }
+}
+
+// ── Faceplate wiring (coloured conductors, SANS 10142-1) ─────────────────────
+// Each device exposes top (supply) and bottom (load) terminals — one per switched
+// pole — plus an optional earth terminal. Cables are drawn terminal-to-terminal and
+// take the colour of the conductor they carry.
+
+export type DbConductor = 'L' | 'L1' | 'L2' | 'L3' | 'N' | 'E'
+
+/** A terminal on a device: which end, and which pole (0-based; -1 = earth). */
+export interface DbTerminalRef { componentId: string; end: 'top' | 'bottom'; pole: number }
+
+export const DB_EARTH_POLE = -1
+
+export interface DbWire {
+  id: string
+  from: DbTerminalRef
+  to: DbTerminalRef
+  conductor: DbConductor
+  /** Vertical offset (px) of the horizontal run from its gutter baseline. Lets the
+   *  user raise/lower a conductor's channel; 0 = on the shared baseline plane. */
+  lane?: number
+}
+
+/** Default switched-pole count for a device kind (widened for three-phase). */
+export function dbPoles(kind: DbComponentKind, phases = 1): number {
+  const three = phases >= 3
+  switch (kind) {
+    case 'mainSwitch': return three ? 4 : 2
+    case 'changeover': return three ? 4 : 2
+    case 'rccb': return three ? 4 : 2
+    case 'isolator': return three ? 3 : 2
+    case 'contactor': return three ? 3 : 2
+    case 'spd': return three ? 3 : 1
+    case 'rcbo': return 2
+    case 'breaker': return three ? 3 : 1
+    default: return 1
+  }
+}
+
+/** SPDs default to having an earth terminal; everything else off unless toggled on. */
+export function dbDefaultEarth(kind: DbComponentKind): boolean {
+  return kind === 'spd'
+}
+
+/** Which conductor a given pole carries, given the device's pole count. */
+export function dbPoleConductor(poleIndex: number, poles: number): DbConductor {
+  if (poleIndex === DB_EARTH_POLE) return 'E'
+  if (poles <= 1) return 'L'
+  if (poles === 2) return poleIndex === 0 ? 'L' : 'N'
+  if (poles === 3) return (['L1', 'L2', 'L3'] as const)[poleIndex] ?? 'L'
+  return (['L1', 'L2', 'L3', 'N'] as const)[poleIndex] ?? 'L'
+}
+
+export type PhaseColorSet = 'rwy' | 'rwb' | 'iec'
+
+export const DB_PHASE_SETS: Record<PhaseColorSet, { label: string; L1: string; L2: string; L3: string; N: string }> = {
+  rwy: { label: 'Red / White / Yellow', L1: '#dc2626', L2: '#e5e7eb', L3: '#facc15', N: '#111827' },
+  rwb: { label: 'Red / White / Blue (SANS)', L1: '#dc2626', L2: '#e5e7eb', L3: '#2563eb', N: '#111827' },
+  iec: { label: 'Brown / Black / Grey (IEC)', L1: '#92400e', L2: '#111827', L3: '#9ca3af', N: '#2563eb' },
+}
+
+/** Wire colour for a conductor. Earth is drawn green with a yellow stripe by the UI. */
+export function dbConductorColor(cond: DbConductor, set: PhaseColorSet = 'rwy'): string {
+  const s = DB_PHASE_SETS[set] ?? DB_PHASE_SETS.rwy
+  switch (cond) {
+    case 'L': case 'L1': return s.L1
+    case 'L2': return s.L2
+    case 'L3': return s.L3
+    case 'N': return s.N
+    case 'E': return '#16a34a'
+  }
+}
+
+export function dbConductorLabel(cond: DbConductor): string {
+  return cond === 'E' ? 'Earth' : cond === 'N' ? 'Neutral' : cond === 'L' ? 'Live' : cond
 }
 
 /** How cables enter the board, top and bottom. */
@@ -619,6 +796,10 @@ export interface AcCombiner {
   /** Cable entry on the top / bottom of the enclosure. */
   topConnection: DbConnection
   bottomConnection: DbConnection
+  /** Physical-layout wiring: coloured conductors drawn terminal-to-terminal (faceplate). */
+  wires?: DbWire[]
+  /** Three-phase colour convention used when drawing wires (default 'rwy'). */
+  phaseColors?: PhaseColorSet
   /** @deprecated migrated into `components` by parseDesign — kept for old saved data. */
   mainBreakerId?: string | null
   rccbId?: string | null

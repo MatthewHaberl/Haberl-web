@@ -15,7 +15,7 @@ import {
   type Connection,
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes, GitMerge, Shrink, Download } from 'lucide-react'
+import { Trash2, X, PencilLine, Layers, Magnet, Maximize2, Minimize2, Cable, RotateCcw, Boxes, GitMerge, Shrink, Download, LayoutGrid } from 'lucide-react'
 import { toPng } from 'html-to-image'
 import { nodeTypes } from '@/components/sld/sld-nodes'
 import { edgeTypes } from '@/components/sld/sld-edges'
@@ -25,6 +25,7 @@ import {
 import { useCircuitTheme, type CircuitLayer } from '@/lib/solar/canvas-theme'
 import type { CableEdgeData } from '@/lib/solar/sld-builder'
 import { useDesign } from './DesignProvider'
+import { DbFaceplate } from './DbFaceplate'
 
 // Cable editor option lists (mirror the legacy SLD panel).
 const CABLE_MATERIALS = ['CU', 'Al', 'H1Z2Z2', 'XLPE', 'Flex (HO5VV-F)']
@@ -197,7 +198,7 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
   })
 }
 
-function NodeInspector({ nodeId, onClose }: { nodeId: string; onClose: () => void }) {
+function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onClose: () => void; onOpenLayout: (boardId: string) => void }) {
   const { design, dispatch, setActiveStep } = useDesign()
   const ref = nodeIdToRef(nodeId)
   if (!ref) return null
@@ -320,10 +321,37 @@ function NodeInspector({ nodeId, onClose }: { nodeId: string; onClose: () => voi
     )
   }
 
-  // combiner / grid / db — informational in Phase 1
+  // The DB board opens into a physical faceplate (place breakers in real spaces).
+  if (ref.kind === 'db') {
+    const board = design.acCombiners[0]
+    return (
+      <div>
+        <Header title="Distribution board" />
+        {board ? (
+          <>
+            <p className="mb-3 text-xs text-muted-foreground">
+              {board.components.length} device{board.components.length === 1 ? '' : 's'} · {board.ways}-way{(board.rows ?? 1) > 1 ? ` × ${board.rows} rails` : ''}
+            </p>
+            <button
+              type="button"
+              onClick={() => onOpenLayout(board.id)}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" /> Open board layout
+            </button>
+            <p className="mt-2 text-[11px] text-muted-foreground">Lay out the breakers in their physical spaces.</p>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">Add an AC board in the AC combiner section first, then lay it out here.</p>
+        )}
+      </div>
+    )
+  }
+
+  // combiner / grid — informational in Phase 1
   return (
     <div>
-      <Header title={ref.kind === 'db' ? 'Distribution board' : ref.kind === 'combiner' ? 'DC combiner' : 'Grid supply'} />
+      <Header title={ref.kind === 'combiner' ? 'DC combiner' : 'Grid supply'} />
       <p className="text-xs text-muted-foreground">Derived automatically from the design. Editing arrives in a later phase.</p>
     </div>
   )
@@ -557,6 +585,8 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   const [allowOverlap, setAllowOverlap] = useState(false)
   const [showTerminations, setShowTerminations] = useState(false) // off by default to reduce clutter (item 21)
   const [fullscreen, setFullscreen] = useState(false)
+  // The DB board's physical faceplate overlay (opened from the DB inspector).
+  const [layoutBoardId, setLayoutBoardId] = useState<string | null>(null)
   // Level of detail (item: readability) — Simple collapses the battery bank + DB
   // internals to summaries; Detailed shows every unit + disconnect + device.
   const [detail, setDetail] = useState<'simple' | 'detailed'>('simple')
@@ -854,17 +884,22 @@ function CanvasInner({ height = 560 }: { height?: number }) {
           const node = nodes.find((nn) => nn.id === selected.id)
           return node?.type === 'busblock'
             ? <ComponentInspector node={node} onClose={() => setSelected(null)} />
-            : <NodeInspector nodeId={selected.id} onClose={() => setSelected(null)} />
+            : <NodeInspector nodeId={selected.id} onClose={() => setSelected(null)} onOpenLayout={setLayoutBoardId} />
         })()
       )}
     </div>
   ) : null
+
+  const boardLayout = layoutBoardId
+    ? <DbFaceplate combinerId={layoutBoardId} onClose={() => setLayoutBoardId(null)} />
+    : null
 
   if (fullscreen) {
     return (
       <div className="fixed inset-0 z-[9999] flex bg-card">
         {flow}
         {panel}
+        {boardLayout}
       </div>
     )
   }
@@ -875,6 +910,7 @@ function CanvasInner({ height = 560 }: { height?: number }) {
         {flow}
         {panel}
       </div>
+      {boardLayout}
     </div>
   )
 }
