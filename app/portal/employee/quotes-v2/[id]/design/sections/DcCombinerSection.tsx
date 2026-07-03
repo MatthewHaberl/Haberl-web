@@ -1,6 +1,7 @@
 'use client'
 
-import { Plus, Trash2, CircuitBoard, CornerDownRight } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Trash2, CircuitBoard, CornerDownRight, Pencil, ChevronDown } from 'lucide-react'
 import {
   combinerConfigLabel, mkId, parseEnclosureSpec,
   ENCLOSURE_MATERIALS, ENCLOSURE_MOUNTS, ENCLOSURE_WAYS,
@@ -27,6 +28,9 @@ export function DcCombinerSection() {
   const panels = design.panels
   const combiners = design.dcCombiners
   const enclosures = byCategory(items, 'enclosure')
+  // Enclosure detail (material / mount / ways …) is collapsed by default — the DB
+  // product line is enough; click "Edit" to reveal the rest.
+  const [editEnc, setEditEnc] = useState<Record<string, boolean>>({})
 
   function patch(c: DcCombiner, p: Partial<DcCombiner>) {
     dispatch({ type: 'updateCombiner', id: c.id, patch: p })
@@ -157,8 +161,16 @@ export function DcCombinerSection() {
                 </button>
               }
             >
-              {/* Enclosure */}
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Enclosure</p>
+              {/* Enclosure — just the DB product line; the rest is behind "Edit". */}
+              {(() => { const encOpen = editEnc[c.id] ?? false; return (<>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Enclosure</p>
+                <button type="button" onClick={() => setEditEnc((m) => ({ ...m, [c.id]: !encOpen }))}
+                  className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                  {encOpen ? <ChevronDown className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+                  {encOpen ? 'Done' : 'Edit material, ways…'}
+                </button>
+              </div>
               <label className="flex flex-col gap-1 mb-2.5">
                 <span className="text-[11px] text-muted-foreground">DB product (from catalog)</span>
                 <select
@@ -169,8 +181,9 @@ export function DcCombinerSection() {
                   <option value="">Custom / manual</option>
                   {enclosures.map((x) => <option key={x.id} value={x.id}>{x.description} ({x.sku})</option>)}
                 </select>
-                <span className="text-[10px] text-muted-foreground">Pick one to auto-fill the fields below, or set them manually.</span>
+                {encOpen && <span className="text-[10px] text-muted-foreground">Pick one to auto-fill the fields below, or set them manually.</span>}
               </label>
+              {encOpen && (<>
               {locked && <div className="mb-2"><LockNote>Material, mount, ways and rows come from the chosen DB</LockNote></div>}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                 <label className="flex flex-col gap-1">
@@ -204,6 +217,8 @@ export function DcCombinerSection() {
                   <input value={c.productCode} onChange={(e) => patch(c, { productCode: e.target.value, productCodeLocked: true })} className="h-8 rounded-md border border-border bg-background px-2 text-xs font-mono" />
                 </label>
               </div>
+              </>)}
+              </>) })()}
 
               {/* Inputs — strings already on another combiner are disabled (item 45) */}
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mt-4 mb-2">Strings in</p>

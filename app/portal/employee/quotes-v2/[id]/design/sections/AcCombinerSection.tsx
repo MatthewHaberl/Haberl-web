@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, CircuitBoard, ChevronDown, ChevronRight, CornerDownRight, Save, LayoutTemplate, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, CircuitBoard, ChevronDown, ChevronRight, CornerDownRight, Save, LayoutTemplate, AlertTriangle, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   parseEnclosureSpec, ENCLOSURE_MATERIALS, ENCLOSURE_MOUNTS, ENCLOSURE_WAYS,
@@ -37,6 +37,9 @@ export function AcCombinerSection() {
 
   // Progressive disclosure — first board open, later boards collapsed until toggled.
   const [openBoards, setOpenBoards] = useState<Record<string, boolean>>({})
+  // Enclosure detail (material / mount / ways) hidden behind "Edit" — the DB product
+  // line is enough by default.
+  const [editEnc, setEditEnc] = useState<Record<string, boolean>>({})
   function boardOpen(c: AcCombiner) { return openBoards[c.id] ?? (c.id === boards[0]?.id) }
   // Wiring selectors hidden by default — but shown when anything is left unwired,
   // so broken wiring can't hide behind the toggle.
@@ -194,7 +197,15 @@ export function AcCombinerSection() {
                   )}
                 </div>
 
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Enclosure (DB)</p>
+                {(() => { const encOpen = editEnc[c.id] ?? false; return (<>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Enclosure (DB)</p>
+                  <button type="button" onClick={() => setEditEnc((m) => ({ ...m, [c.id]: !encOpen }))}
+                    className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                    {encOpen ? <ChevronDown className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+                    {encOpen ? 'Done' : 'Edit material, ways…'}
+                  </button>
+                </div>
                 <label className="flex flex-col gap-1 mb-2.5">
                   <span className="text-[11px] text-muted-foreground">DB product (from catalog)</span>
                   <select value={c.enclosureCatalogId ?? ''} onChange={(e) => pickEnclosure(c, e.target.value)} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
@@ -202,6 +213,7 @@ export function AcCombinerSection() {
                     {enclosures.map((x) => <option key={x.id} value={x.id}>{x.description} ({x.sku})</option>)}
                   </select>
                 </label>
+                {encOpen && (<>
                 {locked && (
                   <p className="mb-2 text-[10px] text-muted-foreground">
                     Material, mount and ways come from the chosen DB. Switch to <span className="font-medium">Custom / manual</span> to edit them.
@@ -231,6 +243,8 @@ export function AcCombinerSection() {
                     <input value={c.productCode} onChange={(e) => patch(c, { productCode: e.target.value, productCodeLocked: true })} className="h-8 rounded-md border border-border bg-background px-2 text-xs font-mono" />
                   </label>
                 </div>
+                </>)}
+                </>) })()}
 
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mt-4 mb-2">Cable entry</p>
                 <div className="grid grid-cols-2 gap-2.5">

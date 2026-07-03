@@ -223,6 +223,13 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
     return null
   }
 
+  // First free single space anywhere on the board (scans rails top-to-bottom) — the
+  // landing spot for the "Add" button; falls back to rail 1 (device then goes to tray).
+  const firstFreeSlot = (): AddTarget => {
+    for (let r = 0; r < rows; r++) { const s = firstGap(r, 1, 0); if (s !== null) return { row: r, startWay: s } }
+    return { row: 0, startWay: 0 }
+  }
+
   // ── Pointer-based drag (slide-to-move with push-to-insert) ───────────────────
   // The breakers already on a rail, left-to-right (excluding the one being dragged).
   const railUnitsOf = (row: number, exceptId?: string) =>
@@ -536,6 +543,10 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
                 onChange={(e) => dispatch({ type: 'updateAcCombiner', id: board.id, patch: { rows: Math.max(1, Math.round(Number(e.target.value) || 1)) } })}
                 className="h-7 w-14 rounded border border-border bg-background px-1.5 text-xs" />
             </label>
+            <button type="button" onClick={() => setAddAt(firstFreeSlot())}
+              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted">
+              <Plus className="h-3.5 w-3.5" /> Add breaker
+            </button>
             <button type="button" onClick={autoArrange}
               className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">
               <Wand2 className="h-3.5 w-3.5" /> Auto-arrange
