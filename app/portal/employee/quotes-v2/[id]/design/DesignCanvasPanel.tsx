@@ -17,9 +17,19 @@ const DesignCanvas = dynamic(
   },
 )
 
-/** Collapsible wrapper around the design canvas — mirrors the BOM panel pattern. */
-export function DesignCanvasPanel() {
+/** Collapsible wrapper around the design canvas — mirrors the BOM panel pattern.
+ *  In `fill` mode (studio layout) it drops the collapse chrome and lets the
+ *  canvas span the full parent height. */
+export function DesignCanvasPanel({ fill = false }: { fill?: boolean }) {
   const [open, setOpen] = useState(false)
+
+  if (fill) {
+    return (
+      <div className="h-full min-h-0">
+        <DesignCanvas fill />
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-xl border border-border bg-card">

@@ -12,8 +12,8 @@ export const BUILD_STEPS = [
 // Two-tier rail: the numbered core path every quote follows, plus the detail
 // steps tucked behind a toggle. These are indices into BUILD_STEPS — the
 // array order stays untouched (Walkthrough + ActiveSection are index-aligned).
-const CORE_STEPS = [0, 1, 3, 4, 10]
-const DETAIL_STEPS = [2, 5, 6, 7, 8, 9]
+export const CORE_STEPS = [0, 1, 3, 4, 10]
+export const DETAIL_STEPS = [2, 5, 6, 7, 8, 9]
 
 export function BuildRail() {
   const { activeStep, setActiveStep } = useDesign()

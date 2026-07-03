@@ -20,6 +20,7 @@ import { Walkthrough } from './design/Walkthrough'
 import { ActiveSection } from './design/sections/ActiveSection'
 import { DesignBomPanel } from './design/DesignBomPanel'
 import { DesignCanvasPanel } from './design/DesignCanvasPanel'
+import { DesignStudio } from './design/DesignStudio'
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,6 +34,30 @@ interface Props {
 export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
   const siteLabel = req.site_label?.trim() || req.address?.trim() || `Site ${req.site_number ?? 1}`
   const optionLabel = req.option_label?.trim() || req.quote_number || 'Option'
+
+  // Opt-in "studio" cockpit layout — the classic vertical stack stays the default
+  // until the user flips it. Seeded from localStorage in an effect (not a lazy
+  // initializer) so server + first client render agree on 'classic' (no hydration
+  // mismatch); the other three are pure layout state, never persisted.
+  const [layout, setLayout] = useState<'classic' | 'studio'>('classic')
+  useEffect(() => {
+    // Deferred read of a client-only preference: server + first client render must
+    // both be 'classic' to avoid a hydration mismatch, so the stored choice is
+    // applied after mount (the intentional two-pass render).
+    const v = localStorage.getItem('qv2-layout')
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (v === 'studio' || v === 'classic') setLayout(v)
+  }, [])
+  function flipLayout() {
+    setLayout((prev) => {
+      const next = prev === 'studio' ? 'classic' : 'studio'
+      try { localStorage.setItem('qv2-layout', next) } catch { /* private mode: ignore */ }
+      return next
+    })
+  }
+  const [consoleOpen, setConsoleOpen] = useState(true)
+  const [overviewOpen, setOverviewOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<'canvas' | 'bom'>('canvas')
 
   // Company-wide canvas colour overrides for the diagram. Same client fetch pattern
   // as DesignBomPanel's markup read; null/missing degrades to the brand defaults.
@@ -65,7 +90,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
   }, [req.system_design, req.generated_quote])
 
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className={`flex flex-col gap-4 ${isAdmin && layout === 'studio' ? 'pb-4' : 'pb-20'}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -80,17 +105,29 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
           </div>
         </div>
         {isAdmin ? (
-          <QuoteStatusBar
-            requestId={req.id}
-            initialStatus={req.status as QuoteRequestStatus}
-            initialJobId={linkedJobId}
-            shareToken={req.share_token}
-            customerEmail={req.customer_email ?? null}
-            customerPhone={req.customer_phone ?? null}
-            customerName={req.customer_name}
-            quoteNumber={req.quote_number ?? null}
-            viewedAt={req.viewed_at ?? null}
-          />
+          <div className="flex flex-col items-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={flipLayout}
+              title={layout === 'studio' ? 'Switch back to the classic layout' : 'Try the new canvas-forward studio layout'}
+            >
+              {layout === 'studio' ? 'Classic layout' : 'Try new layout'}
+            </Button>
+            <div id="quote-status-bar">
+              <QuoteStatusBar
+                requestId={req.id}
+                initialStatus={req.status as QuoteRequestStatus}
+                initialJobId={linkedJobId}
+                shareToken={req.share_token}
+                customerEmail={req.customer_email ?? null}
+                customerPhone={req.customer_phone ?? null}
+                customerName={req.customer_name}
+                quoteNumber={req.quote_number ?? null}
+                viewedAt={req.viewed_at ?? null}
+              />
+            </div>
+          </div>
         ) : (
           <Badge variant="default" className="mt-1 shrink-0">{req.status}</Badge>
         )}
@@ -105,12 +142,25 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
             record={{ monthly_kwh: req.monthly_kwh ?? null, municipality: req.municipality ?? null }}
             canSave
           >
-            <BalanceHeader />
-            <Walkthrough />
-            <BuildRail />
-            <ActiveSection />
-            <DesignCanvasPanel />
-            <DesignBomPanel />
+            {layout === 'studio' ? (
+              <DesignStudio
+                consoleOpen={consoleOpen}
+                setConsoleOpen={setConsoleOpen}
+                overviewOpen={overviewOpen}
+                setOverviewOpen={setOverviewOpen}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+              />
+            ) : (
+              <>
+                <BalanceHeader />
+                <Walkthrough />
+                <BuildRail />
+                <ActiveSection />
+                <DesignCanvasPanel />
+                <DesignBomPanel />
+              </>
+            )}
           </DesignProvider>
         </CanvasThemeProvider>
       ) : (

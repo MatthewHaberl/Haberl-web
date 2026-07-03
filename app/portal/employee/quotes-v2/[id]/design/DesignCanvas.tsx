@@ -564,7 +564,7 @@ function ComponentInspector({ node, onClose }: { node: Node; onClose: () => void
   )
 }
 
-function CanvasInner({ height = 560 }: { height?: number }) {
+function CanvasInner({ height = 560, fill }: { height?: number; fill?: boolean }) {
   const { design, dispatch, gridSupply } = useDesign()
   const designRef = useRef(design)
   designRef.current = design
@@ -905,7 +905,10 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   }
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden" style={{ height }}>
+    <div
+      className={`rounded-lg border border-border overflow-hidden${fill ? ' h-full' : ''}`}
+      style={fill ? undefined : { height }}
+    >
       <div className="flex h-full">
         {flow}
         {panel}
@@ -915,10 +918,10 @@ function CanvasInner({ height = 560 }: { height?: number }) {
   )
 }
 
-export function DesignCanvas({ height }: { height?: number }) {
+export function DesignCanvas({ height, fill }: { height?: number; fill?: boolean }) {
   return (
     <ReactFlowProvider>
-      <CanvasInner height={height} />
+      <CanvasInner height={height} fill={fill} />
     </ReactFlowProvider>
   )
 }
