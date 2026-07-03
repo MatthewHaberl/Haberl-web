@@ -230,6 +230,23 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
     return { row: 0, startWay: 0 }
   }
 
+  // Per-rail height — drag the handle at a rail's bottom edge to make it taller/shorter.
+  const setRowHeight = (r: number, h: number) => {
+    const rh = Array.from({ length: rows }, (_, i) => Math.round(board.rowHeights?.[i] ?? ROW_H))
+    rh[r] = Math.max(48, Math.min(260, Math.round(h)))
+    setBoard({ rowHeights: rh })
+  }
+  const startRowResize = (e: React.PointerEvent, r: number) => {
+    if (e.button !== 0) return
+    e.stopPropagation(); e.preventDefault()
+    const rect = railRefs.current[r]?.getBoundingClientRect()
+    const top = rect ? rect.top : e.clientY
+    const onMove = (ev: PointerEvent) => setRowHeight(r, (ev.clientY - top) / zoom)
+    const onUp = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
   // ── Pointer-based drag (slide-to-move with push-to-insert) ───────────────────
   // The breakers already on a rail, left-to-right (excluding the one being dragged).
   const railUnitsOf = (row: number, exceptId?: string) =>
@@ -332,12 +349,13 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
   }
 
   // ── Wiring geometry + cable drawing (wrapper coordinate space) ───────────────
-  const railTop = (row: number) => row * (ROW_H + RAIL_GAP)
+  const rowH = (r: number) => Math.max(40, Math.round(board.rowHeights?.[r] ?? ROW_H))
+  const railTop = (row: number) => { let y = 0; for (let i = 0; i < row; i++) y += rowH(i) + RAIL_GAP; return y }
   const termPos = (c: DbComponent, end: 'top' | 'bottom', pole: number) => {
     const x0 = c.slot!.startWay * MODULE_PX
     const wpx = c.slot!.width * MODULE_PX
     const yTop = railTop(c.slot!.row) + TERM_INSET
-    const yBot = railTop(c.slot!.row) + ROW_H - TERM_INSET
+    const yBot = railTop(c.slot!.row) + rowH(c.slot!.row) - TERM_INSET
     if (pole === DB_EARTH_POLE) return { x: x0 + wpx - 5, y: yBot }
     const n = compPoles(c)
     return { x: x0 + (wpx * (pole + 1)) / (n + 1), y: end === 'top' ? yTop : yBot }
@@ -361,7 +379,7 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
   const rowOf = (r: DbTerminalRef) => comps.find((c) => c.id === r.componentId)?.slot?.row ?? 0
   // Horizontal routing lanes sit in the gutter just above / below each rail.
   const topLaneY = (row: number) => railTop(row) - 7
-  const botLaneY = (row: number) => railTop(row) + ROW_H + 7
+  const botLaneY = (row: number) => railTop(row) + rowH(row) + 7
   // Conductors sit on a shared baseline plane by default; each wire can be raised /
   // lowered on its own by dragging (stored as `lane`). No forced auto-stepping.
   const baseLaneOf = (w: DbWire) => (w.from.end === 'top' ? topLaneY(rowOf(w.from)) : botLaneY(rowOf(w.from)))
@@ -376,7 +394,7 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
   // Device bodies (for hiding conductors that pass behind a breaker).
   const deviceRects: Rect[] = onBoard.map((c) => ({
     x0: c.slot!.startWay * MODULE_PX, x1: (c.slot!.startWay + c.slot!.width) * MODULE_PX,
-    y0: railTop(c.slot!.row) + 4, y1: railTop(c.slot!.row) + ROW_H - 4,
+    y0: railTop(c.slot!.row) + 4, y1: railTop(c.slot!.row) + rowH(c.slot!.row) - 4,
   }))
   // Every vertical stub (drop) — used to detect where another wire's horizontal
   // must hop over it.
@@ -475,7 +493,7 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }
-  const boardH = rows * ROW_H + (rows - 1) * RAIL_GAP
+  const boardH = Array.from({ length: rows }, (_, r) => rowH(r)).reduce((a, b) => a + b, 0) + (rows - 1) * RAIL_GAP
   const padY = Math.max(44, channelH + 26)   // top/bottom channel room, grows with channel height
 
   // Arrow (not a hoisted `function`) so TS keeps the `board` non-null narrowing.
@@ -619,7 +637,7 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
                   key={row}
                   ref={(el) => { railRefs.current[row] = el }}
                   className={`relative rounded-md border bg-muted/30 ${isTarget ? 'border-primary/60 bg-primary/5' : 'border-border'}`}
-                  style={{ width: railWidth, height: ROW_H }}
+                  style={{ width: railWidth, height: rowH(row) }}
                 >
                   {/* Empty module cells — click a free one to add a device there (Layout mode). */}
                   <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${ways}, ${MODULE_PX}px)`, gridTemplateRows: '100%' }}>
@@ -640,6 +658,14 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
                   </div>
                   {/* DIN rail line */}
                   <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-[3px] -translate-y-1/2 bg-border/70" />
+                  {/* Height handle — drag this rail's bottom edge to make it taller / shorter */}
+                  <div
+                    onPointerDown={(e) => startRowResize(e, row)}
+                    title="Drag to change this rail's height"
+                    className="group absolute -bottom-1.5 left-0 right-0 z-20 flex h-3 cursor-ns-resize items-center justify-center"
+                  >
+                    <div className="h-1 w-10 rounded-full bg-border group-hover:bg-primary" />
+                  </div>
                   {/* Placed devices (the one being dragged is shown as the floating ghost) */}
                   {onBoard.filter((c) => c.slot!.row === row && c.id !== drag?.id).map((c) => {
                     const color = kindColor(c.kind)

@@ -902,6 +902,9 @@ export interface AcCombiner {
   wires?: DbWire[]
   /** Three-phase colour convention used when drawing wires (default 'rwy'). */
   phaseColors?: PhaseColorSet
+  /** Per-rail height in px (index = row). Absent/short → default rail height. Lets some
+   *  rails be taller than others for cable routing / bigger devices. */
+  rowHeights?: number[]
   /** @deprecated migrated into `components` by parseDesign — kept for old saved data. */
   mainBreakerId?: string | null
   rccbId?: string | null
