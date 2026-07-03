@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { X, Wand2, Plus, Trash2, Printer, LayoutGrid, CornerUpLeft, AlertTriangle, Minus, Cable, MousePointer2, ZoomIn, ZoomOut, MoveHorizontal, MoveVertical } from 'lucide-react'
+import { X, Wand2, Plus, Trash2, Printer, LayoutGrid, CornerUpLeft, AlertTriangle, Minus, Cable, MousePointer2, ZoomIn, ZoomOut, MoveHorizontal, MoveVertical, BoxSelect } from 'lucide-react'
 import {
   DB_COMPONENT_KINDS, dbComponentKind, defaultDbComponent, dbModuleWidth,
   expandDbUnits, isDbExpanded, autoArrangeDb, mkId,
   dbPoles, dbDefaultEarth, dbPoleConductor, dbConductorColor, dbConductorLabel,
-  DB_PHASE_SETS, DB_EARTH_POLE,
+  DB_PHASE_SETS, DB_EARTH_POLE, defaultDbSection,
   type AcCombiner, type DbComponent, type DbComponentKind,
-  type DbWire, type DbConductor, type DbTerminalRef, type PhaseColorSet,
+  type DbWire, type DbConductor, type DbTerminalRef, type PhaseColorSet, type DbSection,
 } from '@/lib/solar/system-design'
 import { useDesign } from './DesignProvider'
 import { useCatalog } from './useCatalog'
@@ -133,6 +133,7 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
   const [zoom, setZoom] = useState(1)
   const [moduleW, setModuleW] = useState(MODULE_W_DEF)
   const [channelH, setChannelH] = useState(RAIL_GAP_DEF)
+  const [selectedSection, setSelectedSection] = useState<string | null>(null)
 
   // Close on Esc.
   useEffect(() => {
@@ -496,6 +497,21 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
   const boardH = Array.from({ length: rows }, (_, r) => rowH(r)).reduce((a, b) => a + b, 0) + (rows - 1) * RAIL_GAP
   const padY = Math.max(44, channelH + 26)   // top/bottom channel room, grows with channel height
 
+  // ── Sections (named regions that span an area of the board) ──────────────────
+  const sections = board.sections ?? []
+  const setSections = (next: DbSection[]) => setBoard({ sections: next })
+  const patchSection = (id: string, p: Partial<DbSection>) => setSections(sections.map((s) => (s.id === id ? { ...s, ...p } : s)))
+  const removeSection = (id: string) => { setSections(sections.filter((s) => s.id !== id)); setSelectedSection((v) => (v === id ? null : v)) }
+  const addSection = () => { const s = defaultDbSection(0, 0, Math.min(ways, 4)); setSections([...sections, s]); setSelectedSection(s.id) }
+  // Pixel rect for a section spanning rows × ways.
+  const sectionRect = (s: DbSection) => {
+    const r0 = Math.max(0, Math.min(rows - 1, s.row))
+    const rEnd = Math.max(r0, Math.min(rows - 1, s.row + s.rowSpan - 1))
+    let height = 0
+    for (let i = r0; i <= rEnd; i++) height += rowH(i) + (i < rEnd ? RAIL_GAP : 0)
+    return { left: s.startWay * MODULE_PX, top: railTop(r0), width: Math.min(ways - s.startWay, s.waySpan) * MODULE_PX, height }
+  }
+
   // Arrow (not a hoisted `function`) so TS keeps the `board` non-null narrowing.
   const autoArrange = () => {
     const res = autoArrangeDb(comps, ways, rows, phases)
@@ -564,6 +580,10 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
             <button type="button" onClick={() => setAddAt(firstFreeSlot())}
               className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted">
               <Plus className="h-3.5 w-3.5" /> Add breaker
+            </button>
+            <button type="button" onClick={addSection}
+              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-muted">
+              <BoxSelect className="h-3.5 w-3.5" /> Add section
             </button>
             <button type="button" onClick={autoArrange}
               className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">
@@ -685,6 +705,26 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
                 </div>
               )})}
             </div>
+
+            {/* Sections — translucent named regions spanning an area. The band is
+                click-through; the label chip selects it (Layout mode). */}
+            {sections.map((s) => {
+              const rect = sectionRect(s)
+              const col = s.color || '#6366f1'
+              const sel = selectedSection === s.id
+              return (
+                <div key={s.id} className="pointer-events-none absolute rounded-md" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height, background: `${col}14`, border: `1.5px ${sel ? 'solid' : 'dashed'} ${col}`, zIndex: 5 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setSelectedSection(sel ? null : s.id) }}
+                    className="pointer-events-auto absolute -top-2 left-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm"
+                    style={{ background: col }}
+                  >
+                    {s.label || 'Section'}
+                  </button>
+                </div>
+              )
+            })}
 
             {/* Wiring overlay — coloured conductors + terminals, drawn over the rails. */}
             <svg className="absolute inset-0" width={railWidth} height={boardH} style={{ pointerEvents: 'none', overflow: 'visible' }}>
@@ -817,6 +857,45 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
           onRemove={() => { removeComponent(selected.id); setSelectedId(null) }}
         />
       )}
+
+      {/* Section inspector */}
+      {(() => {
+        const sec = selectedSection ? sections.find((s) => s.id === selectedSection) ?? null : null
+        if (!sec) return null
+        const num = (label: string, value: number, min: number, max: number, on: (v: number) => void) => (
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] text-muted-foreground">{label}</span>
+            <input type="number" min={min} max={max} value={value} onChange={(e) => on(Math.max(min, Math.min(max, Math.round(Number(e.target.value) || min))))} className="h-9 rounded-md border border-border bg-background px-2 text-sm" />
+          </label>
+        )
+        return (
+          <div className="fixed right-0 top-[92px] bottom-0 z-[10001] w-72 overflow-y-auto border-l border-border bg-card p-3 shadow-xl">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Section</span>
+              <button type="button" onClick={() => setSelectedSection(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-muted-foreground">Label</span>
+                <input value={sec.label} onChange={(e) => patchSection(sec.id, { label: e.target.value })} className="h-9 rounded-md border border-border bg-background px-2 text-sm" />
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">Colour</span>
+                <input type="color" value={sec.color || '#6366f1'} onChange={(e) => patchSection(sec.id, { color: e.target.value })} className="h-8 w-12 rounded border border-border bg-background" />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {num('From rail', sec.row + 1, 1, rows, (v) => patchSection(sec.id, { row: v - 1 }))}
+                {num('Rails tall', sec.rowSpan, 1, rows, (v) => patchSection(sec.id, { rowSpan: v }))}
+                {num('From space', sec.startWay + 1, 1, ways, (v) => patchSection(sec.id, { startWay: v - 1 }))}
+                {num('Spaces wide', sec.waySpan, 1, ways, (v) => patchSection(sec.id, { waySpan: v }))}
+              </div>
+            </div>
+            <button type="button" onClick={() => removeSection(sec.id)} className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive">
+              <Trash2 className="h-3.5 w-3.5" /> Remove section
+            </button>
+          </div>
+        )
+      })()}
     </div>
   )
 }

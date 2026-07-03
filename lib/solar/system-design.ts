@@ -905,10 +905,29 @@ export interface AcCombiner {
   /** Per-rail height in px (index = row). Absent/short → default rail height. Lets some
    *  rails be taller than others for cable routing / bigger devices. */
   rowHeights?: number[]
+  /** Named regions that span an area of the board (a group of ways/rows) — the
+   *  breakers placed inside are grouped visually. */
+  sections?: DbSection[]
   /** @deprecated migrated into `components` by parseDesign — kept for old saved data. */
   mainBreakerId?: string | null
   rccbId?: string | null
   spdId?: string | null
+}
+
+/** A named region spanning an area of the board (rows × ways). Groups the breakers
+ *  physically placed inside it; purely a layout annotation. */
+export interface DbSection {
+  id: string
+  label: string
+  row: number
+  startWay: number
+  rowSpan: number
+  waySpan: number
+  color?: string
+}
+
+export function defaultDbSection(row = 0, startWay = 0, waySpan = 4): DbSection {
+  return { id: mkId('sec'), label: 'Section', row, startWay, rowSpan: 1, waySpan, color: '#6366f1' }
 }
 
 export function defaultAcCombiner(): AcCombiner {
