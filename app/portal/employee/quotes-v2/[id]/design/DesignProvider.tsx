@@ -13,6 +13,10 @@ import {
   phaseConfigToPhases,
   DEFAULT_SITE_CONDITIONS,
   defaultSupply,
+  defaultInverterConnection,
+  reconcileConnectionsToBoard,
+  type InverterConnection,
+  type DbConnectionRole,
   type SiteConditions,
   type SupplyConfig,
   type SystemDesign,
@@ -51,6 +55,10 @@ export type DesignAction =
   | { type: 'setInverter'; inverter: Partial<InverterUnit> }
   | { type: 'updateInverter'; patch: Partial<InverterUnit> }
   | { type: 'removeInverter' }
+  // Inverter connection points (auto-sync into the AC board as breakers)
+  | { type: 'addInverterConnection'; role: DbConnectionRole }
+  | { type: 'updateInverterConnection'; id: string; patch: Partial<InverterConnection> }
+  | { type: 'removeInverterConnection'; id: string }
   | { type: 'setBattery'; battery: Partial<BatteryUnit> }
   | { type: 'updateBattery'; patch: Partial<BatteryUnit> }
   | { type: 'removeBattery' }
@@ -281,6 +289,29 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
 
     case 'removeInverter':
       return { ...d, inverters: [] }
+
+    // ── Inverter connection points → reconcile the AC board on every change ──────
+    case 'addInverterConnection': {
+      if (!d.inverters.length) return d
+      const inv = d.inverters[0]
+      const conn = defaultInverterConnection(action.role, inv.phases, inv.kw)
+      const next = { ...d, inverters: [{ ...inv, connections: [...(inv.connections ?? []), conn] }, ...d.inverters.slice(1)] }
+      return reconcileConnectionsToBoard(next)
+    }
+
+    case 'updateInverterConnection': {
+      if (!d.inverters.length) return d
+      const inv = d.inverters[0]
+      const connections = (inv.connections ?? []).map((c) => (c.id === action.id ? { ...c, ...action.patch } : c))
+      return reconcileConnectionsToBoard({ ...d, inverters: [{ ...inv, connections }, ...d.inverters.slice(1)] })
+    }
+
+    case 'removeInverterConnection': {
+      if (!d.inverters.length) return d
+      const inv = d.inverters[0]
+      const connections = (inv.connections ?? []).filter((c) => c.id !== action.id)
+      return reconcileConnectionsToBoard({ ...d, inverters: [{ ...inv, connections }, ...d.inverters.slice(1)] })
+    }
 
     case 'setBattery': {
       const b = action.battery

@@ -1,19 +1,20 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Zap, Plug, Wand2, ChevronDown, ChevronUp, Cable, RotateCcw } from 'lucide-react'
+import { Zap, Plug, Wand2, ChevronDown, ChevronUp, Cable, RotateCcw, Trash2, Plus, PlugZap } from 'lucide-react'
 import { verifyPanelString, parseInverterSizingSpec, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import {
   designInverterKw, designTotalKwp, designPanelCount,
   enumerateStrings, resolveMpptAssignment, inverterMpptCount,
   supplyKva, recommendedInverterKw, defaultSupply,
   INVERTER_PHASE_CONFIGS, inverterAcceptsPv, inverterAcceptsBattery,
-  DEFAULT_SITE_CONDITIONS,
-  type InverterPhaseConfig, type SupplyConfig, type InverterUnit,
+  DEFAULT_SITE_CONDITIONS, DB_CONNECTION_ROLES,
+  type InverterPhaseConfig, type SupplyConfig, type InverterUnit, type DbConnectionRole,
 } from '@/lib/solar/system-design'
 import { computeStringLayout } from '@/lib/solar/compliance'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
+import { ProductPicker } from '../ProductPicker'
 import { SectionCard, LockNote, LOCKED_FIELD, SearchableSelect } from '../section-ui'
 
 function phaseOf(gridSupply?: string): 'single' | 'three' {
@@ -240,6 +241,8 @@ export function InverterSection() {
 
       {unit && pvOn && <MpptAssignment unit={unit} specMpptCount={invSpec?.mpptCount ?? null} />}
 
+      {unit && <ConnectionPoints unit={unit} />}
+
       {!pvOn ? (
         <p className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
           PV / string checks are off — this inverter has no built-in MPPT (PV runs via an external MPPT charge controller), so no string sizing is checked here.
@@ -354,6 +357,73 @@ function MpptAssignment({ unit, specMpptCount }: { unit: InverterUnit; specMpptC
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ── Connection points → auto-synced DB breakers ───────────────────────────────
+// Each connection (grid input, AC output, generator…) with a breaker size becomes
+// a breaker in the DB builder automatically — place it and account for its space.
+function ConnectionPoints({ unit }: { unit: InverterUnit }) {
+  const { dispatch } = useDesign()
+  const { items } = useCatalog()
+  const conns = unit.connections ?? []
+  return (
+    <div className="mt-3 rounded-md border border-border bg-muted/20 p-2.5 text-xs">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="flex items-center gap-1.5 font-medium text-foreground">
+          <PlugZap className="h-3 w-3 text-primary" /> Connection points
+        </span>
+        <span className="text-muted-foreground">— input / output / generator breakers</span>
+        <select
+          value=""
+          onChange={(e) => { if (e.target.value) dispatch({ type: 'addInverterConnection', role: e.target.value as DbConnectionRole }); e.currentTarget.value = '' }}
+          className="ml-auto h-7 rounded border border-border bg-background px-1.5 text-[11px]"
+        >
+          <option value="">+ Add connection…</option>
+          {DB_CONNECTION_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+      </div>
+
+      {conns.length === 0 ? (
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          Add the inverter&apos;s connection points (from the spec sheet) — each becomes a sized breaker in the DB builder.
+        </p>
+      ) : (
+        <div className="mt-2 flex flex-col gap-2">
+          {conns.map((conn) => (
+            <div key={conn.id} className="rounded-md border border-border bg-background p-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={conn.role} onChange={(e) => dispatch({ type: 'updateInverterConnection', id: conn.id, patch: { role: e.target.value as DbConnectionRole } })}
+                  className="h-7 rounded border border-border bg-background px-1.5 text-[11px] font-medium">
+                  {DB_CONNECTION_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+                <input value={conn.label} onChange={(e) => dispatch({ type: 'updateInverterConnection', id: conn.id, patch: { label: e.target.value } })}
+                  className="h-7 flex-1 min-w-[120px] rounded border border-border bg-background px-1.5 text-[11px]" placeholder="Label" />
+                <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  Breaker
+                  <input type="number" min={0} step={5} value={conn.breakerA} onChange={(e) => dispatch({ type: 'updateInverterConnection', id: conn.id, patch: { breakerA: Math.max(0, Number(e.target.value) || 0) } })}
+                    className="h-7 w-16 rounded border border-border bg-background px-1.5 text-[11px]" />
+                  A
+                </label>
+                <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <select value={conn.poles} onChange={(e) => dispatch({ type: 'updateInverterConnection', id: conn.id, patch: { poles: Number(e.target.value) } })}
+                    className="h-7 rounded border border-border bg-background px-1 text-[11px]">
+                    {[1, 2, 3, 4].map((p) => <option key={p} value={p}>{p}P</option>)}
+                  </select>
+                </label>
+                <button type="button" onClick={() => dispatch({ type: 'removeInverterConnection', id: conn.id })} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+              <div className="mt-2">
+                <ProductPicker items={items} category="breaker" label="Breaker product (optional)" value={conn.productId ?? null} onChange={(v) => dispatch({ type: 'updateInverterConnection', id: conn.id, patch: { productId: v } })} />
+              </div>
+            </div>
+          ))}
+          <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Plus className="h-3 w-3" /> These appear as breakers in the DB builder — open the board layout to place them.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

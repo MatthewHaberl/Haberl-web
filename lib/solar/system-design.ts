@@ -133,6 +133,80 @@ export interface InverterUnit {
   /** Manual string→MPPT override: logical-string id → 0-based MPPT index. null/absent
    *  means auto-distribute (autoMpptAssignment). Ids come from enumerateStrings(). */
   stringAssignments?: Record<string, number> | null
+  /** AC-side connection points from the spec sheet (grid input, AC output, generator…),
+   *  each with a breaker size. These auto-sync into the AC board as breakers. */
+  connections?: InverterConnection[]
+}
+
+// ── Inverter connection points → auto-synced DB breakers ─────────────────────
+export type DbConnectionRole = 'input' | 'output' | 'generator' | 'load' | 'aux'
+
+export interface InverterConnection {
+  id: string
+  role: DbConnectionRole
+  label: string
+  /** Breaker size (A) protecting this connection. */
+  breakerA: number
+  /** Poles (1/2/3/4) → sets the DB breaker width + terminals. */
+  poles: number
+  /** Catalog product for the breaker (optional). */
+  productId?: string | null
+}
+
+export const DB_CONNECTION_ROLES: Array<{ value: DbConnectionRole; label: string }> = [
+  { value: 'input', label: 'Grid / AC input' },
+  { value: 'output', label: 'AC output (load)' },
+  { value: 'generator', label: 'Generator input' },
+  { value: 'load', label: 'Essential-loads output' },
+  { value: 'aux', label: 'Auxiliary' },
+]
+
+export function dbConnectionRoleLabel(role: DbConnectionRole): string {
+  return DB_CONNECTION_ROLES.find((r) => r.value === role)?.label ?? 'Connection'
+}
+
+/** A sensible starting connection for a role, sized from the inverter phase/kW. */
+export function defaultInverterConnection(role: DbConnectionRole, phases: number, kw: number): InverterConnection {
+  const three = phases >= 3
+  const amps = kw > 0 ? Math.round((kw * 1000) / (three ? 400 * 1.732 * 0.9 : 230) / 5) * 5 : (three ? 63 : 40)
+  return {
+    id: mkId('conn'),
+    role,
+    label: dbConnectionRoleLabel(role),
+    breakerA: Math.max(6, amps || (three ? 63 : 40)),
+    poles: three ? 4 : 2,
+    productId: null,
+  }
+}
+
+/** Map an inverter's connection points to synced breakers on the AC board. Synced
+ *  devices carry `fromConnection`; user-added devices (no tag) are untouched, and
+ *  existing synced devices keep their slot/qty so the physical layout survives. */
+export function reconcileConnectionsToBoard(d: SystemDesign): SystemDesign {
+  const conns = d.inverters[0]?.connections ?? []
+  const boards = d.acCombiners
+  // Nothing to sync and no board yet → leave it alone.
+  if (conns.length === 0 && boards.length === 0) return d
+  const target = boards[0] ?? defaultAcCombiner()
+  const phases = d.inverters[0]?.phases ?? 2
+  const existing = target.components
+  const byConn = new Map(existing.filter((c) => c.fromConnection).map((c) => [c.fromConnection!, c]))
+  const kept: DbComponent[] = existing.filter((c) => !c.fromConnection || conns.some((k) => k.id === c.fromConnection))
+  // Update existing synced devices in place; append new ones for fresh connections.
+  const next: DbComponent[] = kept.map((c) => {
+    if (!c.fromConnection) return c
+    const conn = conns.find((k) => k.id === c.fromConnection)!
+    const label = `${conn.label}${conn.breakerA ? ` — ${conn.breakerA}A` : ''}`
+    return { ...c, kind: 'breaker', label, productId: conn.productId ?? c.productId, poles: conn.poles }
+  })
+  for (const conn of conns) {
+    if (byConn.has(conn.id)) continue
+    const label = `${conn.label}${conn.breakerA ? ` — ${conn.breakerA}A` : ''}`
+    next.push({ ...defaultDbComponent('breaker', [DB_SUPPLY_ID]), label, productId: conn.productId ?? null, poles: conn.poles, fromConnection: conn.id })
+  }
+  const wires = validDbWires(target.wires ?? [], next, phases)
+  const board = { ...target, components: next, wires }
+  return { ...d, acCombiners: boards.length ? [board, ...boards.slice(1)] : [board] }
 }
 
 /** Map a phase config to a 1|3 phase count (item 50). */
@@ -520,6 +594,9 @@ export interface DbComponent {
   poles?: number
   /** Whether the device exposes an earth terminal (green/yellow). Default on for SPDs. */
   earth?: boolean
+  /** If set, this device is auto-synced from an inverter connection point (that
+   *  connection's id). Reconcile updates/removes it; the user shouldn't hand-edit it. */
+  fromConnection?: string
 }
 
 /** Where a device physically sits on the board's DIN rails. */
@@ -636,7 +713,7 @@ export function autoArrangeDb(
   let row = 0
   let cursor = 0
   const placed = ordered.map((u) => {
-    const width = Math.min(W, Math.max(1, Math.round(u.slot?.width ?? dbModuleWidth(u.kind, phases))))
+    const width = Math.min(W, Math.max(1, Math.round(u.slot?.width ?? u.poles ?? dbModuleWidth(u.kind, phases))))
     if (cursor + width > W) { row += 1; cursor = 0 }
     const slot: DbSlot = { row, startWay: cursor, width }
     cursor += width
@@ -719,6 +796,20 @@ export function dbConductorColor(cond: DbConductor, set: PhaseColorSet = 'rwy'):
 
 export function dbConductorLabel(cond: DbConductor): string {
   return cond === 'E' ? 'Earth' : cond === 'N' ? 'Neutral' : cond === 'L' ? 'Live' : cond
+}
+
+/** Drop wires whose terminals no longer exist (device removed / unplaced / poles
+ *  reduced / earth toggled off). Shared by the faceplate and connection reconcile. */
+export function validDbWires(wires: DbWire[], comps: DbComponent[], phases = 1): DbWire[] {
+  const poleCount = (c: DbComponent) => Math.max(1, Math.round(c.poles ?? dbPoles(c.kind, phases)))
+  const hasEarth = (c: DbComponent) => c.earth ?? dbDefaultEarth(c.kind)
+  const ok = (r: DbTerminalRef) => {
+    const c = comps.find((x) => x.id === r.componentId)
+    if (!c || !c.slot) return false
+    if (r.pole === DB_EARTH_POLE) return hasEarth(c)
+    return r.pole < poleCount(c)
+  }
+  return wires.filter((w) => ok(w.from) && ok(w.to))
 }
 
 /** How cables enter the board, top and bottom. */

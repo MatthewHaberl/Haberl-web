@@ -280,7 +280,7 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
 
   const startDrag = (e: React.PointerEvent, c: DbComponent) => {
     if (e.button !== 0) return
-    const width = Math.min(ways, Math.max(1, c.slot?.width ?? dbModuleWidth(c.kind, phases)))
+    const width = Math.min(ways, Math.max(1, c.slot?.width ?? c.poles ?? dbModuleWidth(c.kind, phases)))
     const rect = e.currentTarget.getBoundingClientRect()
     const ox = e.clientX - rect.left
     const startX = e.clientX, startY = e.clientY
