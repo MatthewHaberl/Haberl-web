@@ -10,7 +10,7 @@
 import { cableCostPerMeter, terminationCost, heatShrinkCost, type EquipmentCatalogItem, type PricingSettings } from './quote-calculator'
 import type { CableEdgeData } from './sld-builder'
 import {
-  designBatteryKwh, designToFlow, type SystemDesign,
+  designBatteryKwh, designToFlow, panelGroupPanels, panelGroupStrings, type SystemDesign,
 } from './system-design'
 
 // Defensive mirror of ProductPicker's custom sentinel (CUSTOM_PREFIX). A finished
@@ -99,13 +99,14 @@ export function designToBom(
     })
   }
 
-  // Panels
-  for (const g of design.panels) add('Panels', g.catalogId, g.panelCount, { label: g.panelModel || 'PV module' })
+  // Panels — physical total = series panels × parallel strings.
+  for (const g of design.panels) add('Panels', g.catalogId, panelGroupPanels(g), { label: g.panelModel || 'PV module' })
 
   // MC4 jumpers (item 42) — each jumper pair is two MC4 connectors (male + female
-  // extension lead). Surfaced as a "Quote" line (no catalog field yet) per string.
+  // extension lead). Surfaced as a "Quote" line (no catalog field yet), per string,
+  // so a group of N identical strings gets N× the jumpers.
   for (const g of design.panels) {
-    const jumpers = Math.max(0, Math.round(g.jumpers ?? 0))
+    const jumpers = Math.max(0, Math.round(g.jumpers ?? 0)) * panelGroupStrings(g)
     if (jumpers > 0) add('Cables & Connectors', null, jumpers * 2, { label: `MC4 jumper connector (${g.label || 'string'})` })
   }
 
@@ -289,7 +290,7 @@ export function designToBom(
   // Labour (installation) from pricing settings — sell-only, no markup.
   const pricing = opts.pricing
   if (pricing) {
-    const panelW = design.panels.reduce((s, g) => s + g.panelCount * g.panelWatts, 0)
+    const panelW = design.panels.reduce((s, g) => s + panelGroupPanels(g) * g.panelWatts, 0)
     const invW = design.inverters.reduce((s, u) => s + u.kw * 1000 * u.qty, 0)
     const pushLabour = (description: string, amt: number) => {
       if (amt <= 0) return

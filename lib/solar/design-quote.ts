@@ -19,7 +19,7 @@ import type { EquipmentCatalogItem } from './quote-calculator'
 import { parseInverterSizingSpec } from './quote-calculator'
 import {
   computeBalance, designTotalKwp, designInverterKw, designBatteryKwh,
-  generationDailyKwh, combinerConfigLabel, DEFAULT_SITE_CONDITIONS,
+  generationDailyKwh, combinerConfigLabel, designPanelCount, DEFAULT_SITE_CONDITIONS,
   type SystemDesign,
 } from './system-design'
 import { computeStringLayout, runComplianceChecks, type ComplianceCheck } from './compliance'
@@ -90,7 +90,7 @@ export function designComplianceChecks(opts: {
   if (!panelItem || !inverterItem) return []
   const batteryItem = design.batteries[0]?.catalogId ? catalog.get(design.batteries[0].catalogId!) : undefined
 
-  const panelCount = design.panels.reduce((s, g) => s + g.panelCount, 0)
+  const panelCount = designPanelCount(design)
   if (panelCount <= 0) return []
   const spec = parseInverterSizingSpec(inverterItem.notes)
   const layout = computeStringLayout({
@@ -161,7 +161,7 @@ export function buildQuoteDataFromDesign(args: DesignQuoteArgs): QuoteData {
   const totalKwp = designTotalKwp(design)
   const inverterKw = designInverterKw(design)
   const batteryKwh = designBatteryKwh(design)
-  const panelCount = design.panels.reduce((s, g) => s + g.panelCount, 0)
+  const panelCount = designPanelCount(design)
   const inv0 = design.inverters[0]
   const bat0 = design.batteries[0]
   const invQty = design.inverters.reduce((s, u) => s + u.qty, 0)

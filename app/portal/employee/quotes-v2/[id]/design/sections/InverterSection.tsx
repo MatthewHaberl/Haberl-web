@@ -1,14 +1,15 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Zap, Plug, Wand2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Zap, Plug, Wand2, ChevronDown, ChevronUp, Cable, RotateCcw } from 'lucide-react'
 import { verifyPanelString, parseInverterSizingSpec, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import {
-  designInverterKw, designTotalKwp,
+  designInverterKw, designTotalKwp, designPanelCount,
+  enumerateStrings, resolveMpptAssignment, inverterMpptCount,
   supplyKva, recommendedInverterKw, defaultSupply,
   INVERTER_PHASE_CONFIGS, inverterAcceptsPv, inverterAcceptsBattery,
   DEFAULT_SITE_CONDITIONS,
-  type InverterPhaseConfig, type SupplyConfig,
+  type InverterPhaseConfig, type SupplyConfig, type InverterUnit,
 } from '@/lib/solar/system-design'
 import { computeStringLayout } from '@/lib/solar/compliance'
 import { useDesign } from '../DesignProvider'
@@ -34,7 +35,7 @@ export function InverterSection() {
   const firstPanel = design.panels[0]
   const panelItem: EquipmentCatalogItem | null =
     byCategory(items, 'panel').find((p) => p.id === firstPanel?.catalogId) ?? null
-  const totalPanels = design.panels.reduce((s, g) => s + g.panelCount, 0)
+  const totalPanels = designPanelCount(design)
 
   const stringVerdict = useMemo(
     () => verifyPanelString(selected, panelItem, totalPanels),
@@ -237,6 +238,8 @@ export function InverterSection() {
         </div>
       )}
 
+      {unit && pvOn && <MpptAssignment unit={unit} specMpptCount={invSpec?.mpptCount ?? null} />}
+
       {!pvOn ? (
         <p className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
           PV / string checks are off — this inverter has no built-in MPPT (PV runs via an external MPPT charge controller), so no string sizing is checked here.
@@ -262,6 +265,96 @@ export function InverterSection() {
         </p>
       )}
     </SectionCard>
+  )
+}
+
+// ── MPPT string assignment (auto + manual override) ────────────────────────────
+// The panel section declares the pool of parallel strings; here they are allocated
+// across the inverter's MPPT trackers. Auto distributes them evenly; a per-string
+// dropdown overrides any string onto a chosen MPPT. "Auto" clears the override.
+function MpptAssignment({ unit, specMpptCount }: { unit: InverterUnit; specMpptCount: number | null }) {
+  const { design, dispatch } = useDesign()
+  const strings = useMemo(() => enumerateStrings(design), [design])
+  const mpptCount = inverterMpptCount(unit, specMpptCount)
+  const override = unit.stringAssignments ?? null
+  const manual = !!override && Object.keys(override).length > 0
+  const assignment = useMemo(
+    () => resolveMpptAssignment(strings, mpptCount, override),
+    [strings, mpptCount, override],
+  )
+
+  if (strings.length === 0) {
+    return (
+      <div className="mt-3 rounded-md border border-border bg-muted/20 p-2.5 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5 font-medium text-foreground"><Cable className="h-3 w-3 text-primary" /> MPPT assignment</span>
+        <p className="mt-0.5">Add panel strings in the Panels section to allocate them to this inverter&apos;s MPPTs.</p>
+      </div>
+    )
+  }
+
+  // Tally per MPPT for the summary line.
+  const perMppt = Array.from({ length: mpptCount }, (_, m) => strings.filter((s) => assignment[s.id] === m).length)
+
+  const setMppt = (stringId: string, m: number) =>
+    dispatch({ type: 'updateInverter', patch: { stringAssignments: { ...(override ?? {}), [stringId]: m } } })
+  const resetAuto = () => dispatch({ type: 'updateInverter', patch: { stringAssignments: null } })
+
+  return (
+    <div className="mt-3 rounded-md border border-border bg-muted/20 p-2.5 text-xs">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="flex items-center gap-1.5 font-medium text-foreground">
+          <Cable className="h-3 w-3 text-primary" /> MPPT assignment
+        </span>
+        <span className="text-muted-foreground">
+          {strings.length} string{strings.length === 1 ? '' : 's'} across
+        </span>
+        <label className="flex items-center gap-1">
+          <input
+            type="number" min={1} max={12} step={1}
+            value={mpptCount}
+            onChange={(e) => dispatch({ type: 'updateInverter', patch: { mpptCount: Math.max(1, Math.min(12, Math.round(Number(e.target.value) || 1))) } })}
+            className="h-7 w-14 rounded border border-border bg-background px-1.5 text-sm"
+          />
+          <span className="text-muted-foreground">MPPTs</span>
+        </label>
+        <span className={`rounded-full border px-2 py-0.5 font-medium ${manual ? 'border-primary/40 bg-primary/5 text-primary' : 'border-border bg-muted/40 text-muted-foreground'}`}>
+          {manual ? 'Manual override' : 'Auto'}
+        </span>
+        {manual && (
+          <button
+            type="button"
+            onClick={resetAuto}
+            className="flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcw className="h-3 w-3" /> Reset to auto
+          </button>
+        )}
+      </div>
+
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        {perMppt.map((count, m) => `MPPT ${m + 1}: ${count}`).join(' · ')}
+      </p>
+
+      <div className="mt-2 grid grid-cols-1 gap-1 sm:grid-cols-2">
+        {strings.map((s) => (
+          <div key={s.id} className="flex items-center gap-2 rounded border border-border bg-background px-2 py-1">
+            <span className="text-foreground">
+              String <strong>{s.seq}</strong> <span className="text-muted-foreground">of {strings.length}</span>
+            </span>
+            <span className="text-[11px] text-muted-foreground">· {s.panels}× series</span>
+            <select
+              value={assignment[s.id] ?? 0}
+              onChange={(e) => setMppt(s.id, Math.max(0, Math.round(Number(e.target.value) || 0)))}
+              className="ml-auto h-7 rounded border border-border bg-background px-1.5 text-xs"
+            >
+              {Array.from({ length: mpptCount }, (_, m) => (
+                <option key={m} value={m}>MPPT {m + 1}</option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

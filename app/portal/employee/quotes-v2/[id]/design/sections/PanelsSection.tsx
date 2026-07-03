@@ -1,10 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Sun, Zap, Copy } from 'lucide-react'
+import { Plus, Trash2, Sun, Zap, Copy, ChevronRight } from 'lucide-react'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY, parseInverterSizingSpec } from '@/lib/solar/quote-calculator'
 import { stringVoltageProfile, computeStringLayout, hotCellTempC, type StringVoltageProfile } from '@/lib/solar/compliance'
-import { panelGroupKwp, DIRECTIONS, ROOF_TYPES, DEFAULT_SITE_CONDITIONS, type SiteConditions, type PanelGroup } from '@/lib/solar/system-design'
+import { panelGroupKwp, panelGroupStrings, panelGroupPanels, DIRECTIONS, ROOF_TYPES, DEFAULT_SITE_CONDITIONS, type SiteConditions, type PanelGroup } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
 import { SectionCard, EmptyHint, LockNote, LOCKED_FIELD, SearchableSelect } from '../section-ui'
@@ -58,7 +58,7 @@ export function PanelsSection() {
       type: 'addPanelGroup',
       group: {
         label: g.label, panelModel: g.panelModel, panelWatts: g.panelWatts, catalogId: g.catalogId,
-        azimuth: g.azimuth, pitch: g.pitch, roofType: g.roofType, panelCount: g.panelCount,
+        azimuth: g.azimuth, pitch: g.pitch, roofType: g.roofType, panelCount: g.panelCount, strings: g.strings,
         distanceFromCombinerM: g.distanceFromCombinerM, jumpers: g.jumpers,
       },
     })
@@ -196,13 +196,29 @@ export function PanelsSection() {
                   </label>
 
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs font-medium text-muted-foreground">Count</span>
+                    <span className="text-xs font-medium text-muted-foreground">Panels / string</span>
                     <input
                       type="number" min={0} step={1}
                       value={g.panelCount || ''}
                       onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { panelCount: Math.max(0, Math.round(Number(ev.target.value) || 0)) } })}
                       className="h-9 rounded-md border border-border bg-background px-2 text-sm"
                     />
+                    <span className="text-[10px] text-muted-foreground">Panels in series (sets string voltage)</span>
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-medium text-muted-foreground">Strings</span>
+                    <input
+                      type="number" min={1} step={1}
+                      value={panelGroupStrings(g)}
+                      onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { strings: Math.max(1, Math.round(Number(ev.target.value) || 1)) } })}
+                      className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                    />
+                    <span className="text-[10px] text-muted-foreground">
+                      {panelGroupStrings(g) > 1
+                        ? `${panelGroupStrings(g)} × ${g.panelCount || 0} = ${panelGroupPanels(g)} panels`
+                        : 'Identical parallel strings'}
+                    </span>
                   </label>
 
                   <label className="flex flex-col gap-1 md:col-span-2">
@@ -235,7 +251,26 @@ export function PanelsSection() {
                   </div>
                 )}
 
-                {profile && <StringVoltageTable profile={profile} />}
+                {profile && (
+                  <details className="group mt-2 rounded-md border border-border bg-muted/30 text-xs [&_summary::-webkit-details-marker]:hidden">
+                    <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 font-medium text-foreground">
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                      <Zap className="h-3 w-3 text-primary" />
+                      String voltages
+                      <span className="ml-1 font-normal text-muted-foreground">
+                        {profile.stringVocStc} V at STC · {profile.vocDesign} V design
+                      </span>
+                      {profile.maxDcVoltage != null && (
+                        <span className={`ml-auto shrink-0 font-semibold ${profile.overMaxDc ? 'text-destructive' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                          {profile.overMaxDc ? `✗ over ${profile.maxDcVoltage} V` : `✓ within ${profile.maxDcVoltage} V`}
+                        </span>
+                      )}
+                    </summary>
+                    <div className="border-t border-border px-2.5 pb-2.5 pt-2">
+                      <StringVoltageTable profile={profile} strings={panelGroupStrings(g)} />
+                    </div>
+                  </details>
+                )}
                 {!profile && g.catalogId && series > 0 && (
                   <p className="mt-2 text-xs italic text-muted-foreground">
                     String voltages — add a datasheet Voc to this panel in the catalog to enable the check.
@@ -329,38 +364,72 @@ function ConditionsBar({ conditions, hotCellC, onChange }: {
       </span>
     </label>
   )
+  const mode = conditions.edgeOfCloudMode ?? 'stacked'
   return (
-    <div className="flex flex-wrap items-end gap-3 text-xs">
-      {field('Min temp', conditions.minAmbientC, (v) => onChange({ minAmbientC: v }), '°C')}
-      {field('Max temp', conditions.maxAmbientC, (v) => onChange({ maxAmbientC: v }), '°C')}
-      {field('Edge-of-cloud', conditions.edgeOfCloudPct, (v) => onChange({ edgeOfCloudPct: Math.max(0, v) }), '%', 0)}
-      <span className="self-center text-[11px] text-muted-foreground">
-        Hot cell ≈ {hotCellC}°C · cold morning sets max Voc, hot cell sets min Vmp.
-      </span>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-end gap-3 text-xs">
+        {field('Min temp', conditions.minAmbientC, (v) => onChange({ minAmbientC: v }), '°C')}
+        {field('Max temp', conditions.maxAmbientC, (v) => onChange({ maxAmbientC: v }), '°C')}
+        {field('Edge-of-cloud', conditions.edgeOfCloudPct, (v) => onChange({ edgeOfCloudPct: Math.max(0, v) }), '%', 0)}
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[11px] text-muted-foreground">Combine</span>
+          <span className="inline-flex rounded-md border border-border bg-background p-0.5">
+            {(['stacked', 'separate'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => onChange({ edgeOfCloudMode: m })}
+                className={`rounded px-2 py-1 text-[11px] font-medium capitalize ${
+                  mode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </span>
+        </label>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Hot cell ≈ {hotCellC}°C · cold morning sets max Voc, hot cell sets min Vmp.{' '}
+        {mode === 'stacked'
+          ? 'Stacked: edge-of-cloud multiplies on top of the cold Voc (conservative worst case).'
+          : 'Separate: the max-DC check uses the temperature-only Voc; edge-of-cloud is shown alongside, not stacked.'}
+      </p>
     </div>
   )
 }
 
-// OpenSolar-style per-string voltage table: Voc/Vmp at the cold and hot corners,
-// with pass/fail ticks against the inverter's DC-input and MPPT window.
-function StringVoltageTable({ profile }: { profile: StringVoltageProfile }) {
+// OpenSolar-style per-string voltage table: per-panel + whole-string STC totals,
+// then Voc/Vmp at the cold and hot corners with pass/fail ticks against the
+// inverter's DC-input and MPPT window. The edge-of-cloud row follows the site's
+// combine mode — stacked (on top of the cold Voc) or separate (shown, not stacked).
+function StringVoltageTable({ profile, strings = 1 }: { profile: StringVoltageProfile; strings?: number }) {
   const { conditions } = profile
+  const separate = profile.edgeMode === 'separate'
   const tick = (ok: boolean) =>
     ok ? <span className="text-emerald-600 dark:text-emerald-400">✓</span>
        : <span className="font-semibold text-destructive">✗</span>
   return (
-    <div className="mt-2 rounded-md border border-border bg-muted/30 p-2.5 text-xs">
+    <div className="text-xs">
       <div className="mb-1.5 flex items-center gap-1.5 font-medium text-foreground">
-        <Zap className="h-3 w-3" /> String voltages ({profile.seriesPanels} in series)
+        <Zap className="h-3 w-3" /> String voltages ({profile.seriesPanels} in series{strings > 1 ? ` × ${strings} parallel strings` : ''})
       </div>
-      <p className="mb-1.5 text-muted-foreground">
-        Panel (STC, 25°C 1000W/m²):{' '}
+      <p className="mb-1 text-muted-foreground">
+        <span className="text-muted-foreground">Per panel (STC, 25°C 1000W/m²):</span>{' '}
         <span className="text-foreground">Voc {profile.panelVocStc} V</span> ·{' '}
         <span className="text-foreground">Vmp {profile.panelVmpStc ?? '—'} V</span> ·{' '}
         <span className="text-foreground">Isc {profile.panelIscStc ?? '—'} A</span> ·{' '}
         <span className="text-foreground">
           Imp {profile.panelImpStc ?? '—'} A{profile.panelImpStc != null && profile.panelImpEstimated ? ' (est)' : ''}
         </span>
+      </p>
+      <p className="mb-1.5 text-muted-foreground">
+        <span className="text-muted-foreground">Per string (× {profile.seriesPanels} in series, STC):</span>{' '}
+        <span className="font-semibold text-foreground">Voc {profile.stringVocStc} V</span> ·{' '}
+        <span className="font-semibold text-foreground">Vmp {profile.stringVmpStc ?? '—'} V</span> ·{' '}
+        <span className="text-foreground">Isc {profile.panelIscStc ?? '—'} A</span> ·{' '}
+        <span className="text-foreground">Imp {profile.panelImpStc ?? '—'} A</span>
+        <span className="block text-[10px]">Series adds voltage; current stays a single panel's.</span>
       </p>
       <table className="w-full tabular-nums">
         <thead className="text-muted-foreground">
@@ -372,19 +441,24 @@ function StringVoltageTable({ profile }: { profile: StringVoltageProfile }) {
           </tr>
         </thead>
         <tbody className="text-foreground">
-          <tr>
-            <td className="text-muted-foreground">Voc</td>
-            <td className="text-right">{profile.vocCold} V</td>
+          <tr className={separate && profile.overMaxDc ? 'text-destructive' : ''}>
+            <td className="text-muted-foreground">Voc (temperature){separate ? ' — checked' : ''}</td>
+            <td className={`text-right ${separate ? 'font-semibold' : ''}`}>
+              {profile.vocCold} V {separate && profile.maxDcVoltage != null && tick(!profile.overMaxDc)}
+            </td>
             <td className="text-right">{profile.vocHot} V</td>
             <td className="text-right text-muted-foreground">{profile.maxDcVoltage != null ? `≤ ${profile.maxDcVoltage} V` : '—'}</td>
           </tr>
-          <tr className={profile.overMaxDc ? 'text-destructive' : ''}>
-            <td className="text-muted-foreground">+{conditions.edgeOfCloudPct}% edge-of-cloud</td>
-            <td className="text-right font-semibold">
-              {profile.vocColdEdge} V {profile.maxDcVoltage != null && tick(!profile.overMaxDc)}
+          <tr className={!separate && profile.overMaxDc ? 'text-destructive' : ''}>
+            <td className="text-muted-foreground">
+              {separate ? `edge-of-cloud +${conditions.edgeOfCloudPct}% (not stacked)` : `+${conditions.edgeOfCloudPct}% edge-of-cloud`}
+            </td>
+            <td className={`text-right ${separate ? 'text-muted-foreground' : 'font-semibold'}`}>
+              {separate ? profile.vocStcEdge : profile.vocColdEdge} V{' '}
+              {!separate && profile.maxDcVoltage != null && tick(!profile.overMaxDc)}
             </td>
             <td />
-            <td className="text-right text-muted-foreground">{profile.maxDcVoltage != null ? `≤ ${profile.maxDcVoltage} V` : '—'}</td>
+            <td className="text-right text-muted-foreground">{profile.maxDcVoltage != null && !separate ? `≤ ${profile.maxDcVoltage} V` : ''}</td>
           </tr>
           <tr>
             <td className="text-muted-foreground">Vmp</td>

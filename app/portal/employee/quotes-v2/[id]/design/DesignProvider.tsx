@@ -138,6 +138,7 @@ function newPanelGroup(group?: Partial<PanelGroup>): PanelGroup {
     id: mkId('panel'),
     label: group?.label ?? 'Solar Array',
     panelCount: group?.panelCount ?? 0,
+    strings: group?.strings,
     panelWatts: group?.panelWatts ?? 0,
     panelModel: group?.panelModel ?? '',
     catalogId: group?.catalogId ?? null,

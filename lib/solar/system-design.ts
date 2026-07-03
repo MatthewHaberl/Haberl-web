@@ -63,7 +63,12 @@ export type EnergyProfileField = 'weekly' | 'monthlyProfile' | 'annualProfile'
 export interface PanelGroup {
   id: string
   label: string
+  /** Panels in series in ONE string of this group. */
   panelCount: number
+  /** Identical parallel strings this card stands for (default 1). "14 strings of
+   *  16 panels" = one card with strings 14, panelCount 16. Series voltage is set by
+   *  panelCount; kWp / panel totals / generation / BOM all scale by strings. */
+  strings?: number
   /** DC watts per panel. */
   panelWatts: number
   panelModel: string
@@ -122,6 +127,12 @@ export interface InverterUnit {
   acceptsPv?: boolean
   /** Accepts a battery (hybrid). Default true. AC-coupled inverters set this false. */
   acceptsBattery?: boolean
+  /** Number of independent MPPT trackers the strings are shared across. Falls back
+   *  to the catalog sizing spec's mpptCount, then 2. User-overridable. */
+  mpptCount?: number
+  /** Manual string→MPPT override: logical-string id → 0-based MPPT index. null/absent
+   *  means auto-distribute (autoMpptAssignment). Ids come from enumerateStrings(). */
+  stringAssignments?: Record<string, number> | null
 }
 
 /** Map a phase config to a 1|3 phase count (item 50). */
@@ -1021,10 +1032,17 @@ export interface SiteConditions {
   maxAmbientC: number
   /** Edge-of-cloud over-irradiance margin (%) added to the cold Voc. */
   edgeOfCloudPct: number
+  /** How the edge-of-cloud margin combines with the temperature correction.
+   *  'stacked' (default) multiplies edge-of-cloud ON TOP of the cold-morning Voc —
+   *  the conservative worst-case the inverter max-DC check uses. 'separate' checks
+   *  against the temperature-only Voc and shows the edge-of-cloud margin alongside
+   *  as informational, so the stacked figure never forces a shorter string when it
+   *  isn't physically warranted. */
+  edgeOfCloudMode?: 'stacked' | 'separate'
 }
 
 // Gauteng / Highveld defaults (editable per project).
-export const DEFAULT_SITE_CONDITIONS: SiteConditions = { minAmbientC: -2, maxAmbientC: 35, edgeOfCloudPct: 10 }
+export const DEFAULT_SITE_CONDITIONS: SiteConditions = { minAmbientC: -2, maxAmbientC: 35, edgeOfCloudPct: 10, edgeOfCloudMode: 'stacked' }
 
 // ── Supply / main breaker (W82 breaker-led sizing) ───────────────────────────
 // Matthew's on-site starting point: read the incoming main breaker, then size the
@@ -1420,12 +1438,118 @@ export const ENERGY_SOURCE_LABEL: Record<EnergySource, string> = {
 
 // ── Generation + sizing ──────────────────────────────────────────────────────────
 
+/** Parallel identical strings this card represents (≥1). */
+export function panelGroupStrings(g: PanelGroup): number {
+  return Math.max(1, Math.round(g.strings ?? 1))
+}
+
+/** Total PHYSICAL panels in the card = series panels × parallel strings. */
+export function panelGroupPanels(g: PanelGroup): number {
+  return Math.max(0, Math.round(g.panelCount)) * panelGroupStrings(g)
+}
+
 export function panelGroupKwp(g: PanelGroup): number {
-  return (g.panelCount * g.panelWatts) / 1000
+  return (panelGroupPanels(g) * g.panelWatts) / 1000
 }
 
 export function designTotalKwp(d: SystemDesign): number {
   return d.panels.reduce((s, g) => s + panelGroupKwp(g), 0)
+}
+
+/** Total physical panels across every group (series × strings). */
+export function designPanelCount(d: SystemDesign): number {
+  return d.panels.reduce((s, g) => s + panelGroupPanels(g), 0)
+}
+
+/** Total number of parallel strings across every group with panels — the pool the
+ *  inverter's MPPT assignment allocates. */
+export function designStringCount(d: SystemDesign): number {
+  return d.panels.reduce((s, g) => s + (g.panelCount > 0 ? panelGroupStrings(g) : 0), 0)
+}
+
+/** One addressable logical string. A group of `strings` N expands into N of these,
+ *  each carrying the same series panelCount + orientation. */
+export interface LogicalString {
+  /** Stable id `${groupId}#${indexInGroup}` — survives reorders of other groups. */
+  id: string
+  groupId: string
+  groupIndex: number
+  indexInGroup: number
+  /** Panels in series in this string. */
+  panels: number
+  panelWatts: number
+  /** 1-based sequence across the whole design (string "N of total"). */
+  seq: number
+  label: string
+}
+
+/** Flatten the panel groups into the full ordered list of logical strings. */
+export function enumerateStrings(d: SystemDesign): LogicalString[] {
+  const out: LogicalString[] = []
+  let seq = 0
+  d.panels.forEach((g, groupIndex) => {
+    if (g.panelCount <= 0) return
+    const n = panelGroupStrings(g)
+    for (let k = 0; k < n; k++) {
+      seq += 1
+      out.push({
+        id: `${g.id}#${k}`,
+        groupId: g.id,
+        groupIndex,
+        indexInGroup: k,
+        panels: Math.max(0, Math.round(g.panelCount)),
+        panelWatts: g.panelWatts,
+        seq,
+        label: `String ${seq}`,
+      })
+    }
+  })
+  return out
+}
+
+/** Even, contiguous auto-distribution of logical strings across `mpptCount` MPPTs:
+ *  string id → 0-based MPPT index. The first MPPTs take one extra when it doesn't
+ *  divide evenly (matches computeStringLayout's longest-first convention). */
+export function autoMpptAssignment(strings: LogicalString[], mpptCount: number): Record<string, number> {
+  const map: Record<string, number> = {}
+  const mppts = Math.max(1, Math.round(mpptCount))
+  const total = strings.length
+  if (total === 0) return map
+  const base = Math.floor(total / mppts)
+  const remainder = total % mppts
+  let idx = 0
+  for (let m = 0; m < mppts; m++) {
+    const take = base + (m < remainder ? 1 : 0)
+    for (let i = 0; i < take && idx < total; i++, idx++) map[strings[idx].id] = m
+  }
+  return map
+}
+
+/** Resolve the effective string→MPPT map: the manual override where a string is
+ *  explicitly placed, otherwise the auto distribution. Stale ids are dropped and
+ *  strings the override doesn't mention fall back to auto — so adding a string
+ *  never leaves it unassigned. */
+export function resolveMpptAssignment(
+  strings: LogicalString[],
+  mpptCount: number,
+  override?: Record<string, number> | null,
+): Record<string, number> {
+  const auto = autoMpptAssignment(strings, mpptCount)
+  if (!override) return auto
+  const mppts = Math.max(1, Math.round(mpptCount))
+  const map: Record<string, number> = {}
+  for (const s of strings) {
+    const manual = override[s.id]
+    map[s.id] = Number.isInteger(manual) && manual >= 0 && manual < mppts ? manual : auto[s.id]
+  }
+  return map
+}
+
+/** The MPPT count in force for an inverter — explicit override, else spec, else 2. */
+export function inverterMpptCount(u: InverterUnit | undefined, specMpptCount?: number | null): number {
+  if (u?.mpptCount && u.mpptCount > 0) return Math.round(u.mpptCount)
+  if (specMpptCount && specMpptCount > 0) return Math.round(specMpptCount)
+  return 2
 }
 
 export function designInverterKw(d: SystemDesign): number {
@@ -1453,8 +1577,10 @@ export function generationDailyKwh(d: SystemDesign, opts: GenerationOpts = {}): 
   let total = 0
   for (const g of d.panels) {
     if (g.panelCount <= 0 || g.panelWatts <= 0) continue
+    // Each parallel string generates the same — scale one string's output by the count.
+    const strings = panelGroupStrings(g)
     if (g.azimuth != null && g.pitch != null) {
-      total += calculateStringGeneration(
+      total += strings * calculateStringGeneration(
         g.panelCount, g.panelWatts, g.azimuth, g.pitch, opts.season ?? 'average',
       ).daily_kwh
     } else {
@@ -1706,10 +1832,13 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
       data: {
         label: g.label || (groupCount > 1 ? `String ${i + 1}` : 'Solar Array'),
         panelCount: g.panelCount,
+        strings: panelGroupStrings(g),
         panelModel: g.panelModel,
         wpPerPanel: g.panelWatts,
         totalKwp: +panelGroupKwp(g).toFixed(2),
-        config: g.panelCount > 0 ? `${g.panelCount}S` : '',
+        config: g.panelCount > 0
+          ? (panelGroupStrings(g) > 1 ? `${panelGroupStrings(g)}×${g.panelCount}S` : `${g.panelCount}S`)
+          : '',
       },
     })
   })

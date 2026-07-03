@@ -35,11 +35,16 @@ export interface StringDesignConditions {
   /** Edge-of-cloud over-irradiance margin (%) added to the cold Voc for the
    *  inverter max-DC-input check. */
   edgeOfCloudPct: number
+  /** 'stacked' (default) multiplies the edge-of-cloud margin on top of the cold
+   *  temperature-corrected Voc — the conservative value checked against the max DC
+   *  input. 'separate' checks against the temperature-only Voc and treats the
+   *  edge-of-cloud margin as an informational figure shown alongside. */
+  edgeOfCloudMode?: 'stacked' | 'separate'
 }
 
 // Gauteng / Highveld defaults. minAmbient −2 °C ≈ OpenSolar's −1.5 °C for the area
 // and ASHRAE's extreme-minimum band for Johannesburg; editable per project.
-export const DEFAULT_CONDITIONS: StringDesignConditions = { minAmbientC: -2, maxAmbientC: 35, edgeOfCloudPct: 10 }
+export const DEFAULT_CONDITIONS: StringDesignConditions = { minAmbientC: -2, maxAmbientC: 35, edgeOfCloudPct: 10, edgeOfCloudMode: 'stacked' }
 
 // Fallbacks when a panel's datasheet specs are missing.
 export const DEFAULT_BETA_VOC_PCT = -0.30   // %/°C, typical c-Si Voc temperature coefficient
@@ -93,10 +98,23 @@ export interface StringVoltageProfile {
   /** Estimated from Isc when no datasheet Imp is recorded (see panelThermal). */
   panelImpStc: number | null
   panelImpEstimated: boolean
-  /** Maximum Voc (cold morning) — per string. */
+  // ── Whole-string STC totals (before any temperature / edge correction) ──
+  // Series adds voltage, so string Voc/Vmp = seriesPanels × the panel figure.
+  // Current does NOT add in a series string — string Isc/Imp equal one panel's.
+  stringVocStc: number
+  stringVmpStc: number | null
+  /** Maximum Voc (cold morning) — per string, temperature only. */
   vocCold: number
-  /** Cold Voc + edge-of-cloud margin — the value checked vs the inverter max DC input. */
+  /** Cold Voc + edge-of-cloud margin (temperature AND edge stacked). */
   vocColdEdge: number
+  /** Edge-of-cloud margin applied to the STC Voc alone (no temperature) — shown as
+   *  the "edge only" figure so the two contributions can be judged separately. */
+  vocStcEdge: number
+  /** Which mode is in force. */
+  edgeMode: 'stacked' | 'separate'
+  /** The Voc actually checked against the inverter max DC input:
+   *  stacked → vocColdEdge, separate → vocCold (temperature only). */
+  vocDesign: number
   vocHot: number
   vmpCold: number | null
   /** Minimum Vmp (hot cell) — checked vs the MPPT minimum. */
@@ -128,15 +146,23 @@ export function stringVoltageProfile(opts: {
 
   const hotCell = hotCellTempC(conditions.maxAmbientC, noctC)
   const r = (v: number) => Math.round(v * 10) / 10
-  const vocColdEdgePanel = voltageAtTempC(voc, betaVocPct, conditions.minAmbientC) * (1 + conditions.edgeOfCloudPct / 100)
+  const edgeMode: 'stacked' | 'separate' = conditions.edgeOfCloudMode ?? 'stacked'
+  const edgeFactor = 1 + conditions.edgeOfCloudPct / 100
+  const vocColdEdgePanel = voltageAtTempC(voc, betaVocPct, conditions.minAmbientC) * edgeFactor
   const vmpColdPanel = vmp != null ? voltageAtTempC(vmp, betaVocPct, conditions.minAmbientC) : null
   const vmpHotPanel = vmp != null ? voltageAtTempC(vmp, betaVocPct, hotCell) : null
 
+  const stringVocStc = r(seriesPanels * voc)
+  const stringVmpStc = vmp != null ? r(seriesPanels * vmp) : null
   const vocCold = r(seriesPanels * voltageAtTempC(voc, betaVocPct, conditions.minAmbientC))
   const vocColdEdge = r(seriesPanels * vocColdEdgePanel)
+  const vocStcEdge = r(seriesPanels * voc * edgeFactor)
   const vocHot = r(seriesPanels * voltageAtTempC(voc, betaVocPct, hotCell))
   const vmpCold = vmpColdPanel != null ? r(seriesPanels * vmpColdPanel) : null
   const vmpHot = vmpHotPanel != null ? r(seriesPanels * vmpHotPanel) : null
+  // In 'separate' mode the physical worst case checked is the temperature-only Voc;
+  // the edge-of-cloud margin is shown alongside but not stacked onto the check.
+  const vocDesign = edgeMode === 'separate' ? vocCold : vocColdEdge
 
   const maxDcVoltage = spec?.maxDcVoltage ?? null
   const mpptMinVoltage = spec?.mpptMinVoltage ?? null
@@ -146,9 +172,10 @@ export function stringVoltageProfile(opts: {
     panelVocStc: r(voc), panelVmpStc: vmp != null ? r(vmp) : null,
     panelIscStc: isc != null ? r(isc) : null, panelImpStc: imp != null ? r(imp) : null,
     panelImpEstimated: impEstimated,
-    vocCold, vocColdEdge, vocHot, vmpCold, vmpHot,
+    stringVocStc, stringVmpStc,
+    vocCold, vocColdEdge, vocStcEdge, edgeMode, vocDesign, vocHot, vmpCold, vmpHot,
     maxDcVoltage, mpptMinVoltage, mpptMaxVoltage,
-    overMaxDc: maxDcVoltage != null && vocColdEdge > maxDcVoltage,
+    overMaxDc: maxDcVoltage != null && vocDesign > maxDcVoltage,
     underMpptMin: mpptMinVoltage != null && vmpHot != null && vmpHot < mpptMinVoltage,
     overMpptMax: mpptMaxVoltage != null && vmpCold != null && vmpCold > mpptMaxVoltage,
   }
@@ -210,7 +237,12 @@ export function computeStringLayout(opts: {
   // the max Voc; the hot cell temperature sets the min Vmp.
   const hotCellC = hotCellTempC(conditions.maxAmbientC, noctC)
   const vocColdPanel = voc != null ? voltageAtTempC(voc, betaVocPct, conditions.minAmbientC) : null
-  const vocDesignPanel = vocColdPanel != null ? vocColdPanel * (1 + conditions.edgeOfCloudPct / 100) : null
+  // 'separate' mode checks against the temperature-only Voc (edge-of-cloud shown but
+  // not stacked); 'stacked' (default) folds the edge-of-cloud margin into the design Voc.
+  const edgeApplies = (conditions.edgeOfCloudMode ?? 'stacked') === 'stacked'
+  const vocDesignPanel = vocColdPanel != null
+    ? vocColdPanel * (edgeApplies ? 1 + conditions.edgeOfCloudPct / 100 : 1)
+    : null
   const vocHotPanel = voc != null ? voltageAtTempC(voc, betaVocPct, hotCellC) : null
   const vmpColdPanel = vmp != null ? voltageAtTempC(vmp, betaVocPct, conditions.minAmbientC) : null
   const vmpHotPanel = vmp != null ? voltageAtTempC(vmp, betaVocPct, hotCellC) : null
