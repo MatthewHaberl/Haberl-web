@@ -800,3 +800,52 @@ export interface CalendarEvent {
   created_at: string
   updated_at: string
 }
+
+/** One edition of a SANS standard held in the library — see migration 088. */
+export interface SansDocument {
+  id: string
+  code: string
+  edition: string
+  title: string
+  status: 'in_force' | 'draft' | 'superseded'
+  published: string | null
+  notes: string | null
+  created_at: string
+}
+
+/** One clause of a SANS document (metadata + plain-language summary; verbatim text lives in sans_clause_bodies). */
+export interface SansClause {
+  id: string
+  document_id: string
+  clause_ref: string
+  parent_ref: string | null
+  title: string | null
+  kind: 'section' | 'clause' | 'definition' | 'annex'
+  page_number: number | null
+  plain_summary: string | null
+  tags: string[]
+  sort_key: string
+  created_at: string
+}
+
+/** Verbatim SABS clause text — admin-only via RLS (copyright). */
+export interface SansClauseBody {
+  clause_id: string
+  body: string
+}
+
+/** A design rule distilled from the standard, keyed to clause refs — see migration 088. */
+export interface SansRule {
+  id: string
+  rule_key: string
+  title: string
+  summary: string
+  clause_refs: string[]
+  category: string
+  severity: 'blocker' | 'warning' | 'info'
+  machine_checkable: boolean
+  implemented_in: string | null
+  parameters: Record<string, unknown> | null
+  source: string | null
+  created_at: string
+}

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { consolidateBom, designToBom } from '@/lib/solar/design-bom'
 import { designComplianceChecks } from '@/lib/solar/design-quote'
+import { SansRefLink } from '@/components/sans/SansRefLink'
 import { useDesign } from './DesignProvider'
 import { useCatalog } from './useCatalog'
 
@@ -165,7 +166,7 @@ export function DesignBomPanel() {
                       <span>
                         <span className="font-medium text-foreground">{c.title}</span>
                         <span className="text-muted-foreground"> — {c.detail} </span>
-                        <span className="text-muted-foreground/70">({c.reference})</span>
+                        <SansRefLink reference={`(${c.reference})`} className="text-muted-foreground/70" />
                       </span>
                     </div>
                   ))}
