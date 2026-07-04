@@ -47,3 +47,21 @@ export function smallConductorCap(sizeMm2: number): number | null {
   const row = SMALL_CONDUCTOR_MAX_PROTECTION.find((r) => r.sizeMm2 === sizeMm2)
   return row ? row.maxA : null
 }
+
+/**
+ * Table 8.1 (8.6.3, Amdt 2) — maximum resistance of the earth continuity path,
+ * by the rated current of the protective device. Values equal 9,2 ÷ In.
+ * Final circuits above 63 A fall under table 6.28 instead.
+ */
+export const ECC_MAX_RESISTANCE: { ratedA: number; maxOhm: number }[] = [
+  { ratedA: 6, maxOhm: 1.533 },
+  { ratedA: 10, maxOhm: 0.920 },
+  { ratedA: 16, maxOhm: 0.575 },
+  { ratedA: 20, maxOhm: 0.460 },
+  { ratedA: 25, maxOhm: 0.368 },
+  { ratedA: 32, maxOhm: 0.288 },
+  { ratedA: 40, maxOhm: 0.230 },
+  { ratedA: 45, maxOhm: 0.204 },
+  { ratedA: 50, maxOhm: 0.184 },
+  { ratedA: 63, maxOhm: 0.146 },
+]

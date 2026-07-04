@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { voltageDrop, cableCapacity, effectiveMvPerAm } from '../calculators'
 import { VD_CABLE_TYPES } from '../tables/voltage-drop'
-import { minProtectiveConductor } from '../tables/earthing'
+import { ECC_MAX_RESISTANCE, minProtectiveConductor } from '../tables/earthing'
 import { ambientFactor, groupingFactor, GROUPING_SCENARIOS } from '../tables/correction-factors'
 import { conduitFill } from '../tables/conduit-fill'
 
@@ -91,6 +91,12 @@ test('earthing — table 6.25 bands', () => {
   assert.equal(minProtectiveConductor(500).exact, 200)
   assert.equal(minProtectiveConductor(1000).exact, 250)
   assert.equal(minProtectiveConductor(50).standard, 25)
+})
+
+test('ECC resistance limits — every table 8.1 value equals 9,2 ÷ In', () => {
+  for (const row of ECC_MAX_RESISTANCE) {
+    assert.ok(Math.abs(row.maxOhm - 9.2 / row.ratedA) < 0.001, `${row.ratedA} A: ${row.maxOhm} vs ${(9.2 / row.ratedA).toFixed(3)}`)
+  }
 })
 
 test('conduit fill — Annex F example 1 reproduces exactly', () => {
