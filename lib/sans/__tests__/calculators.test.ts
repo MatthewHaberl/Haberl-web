@@ -4,6 +4,7 @@ import { voltageDrop, cableCapacity, effectiveMvPerAm } from '../calculators'
 import { VD_CABLE_TYPES } from '../tables/voltage-drop'
 import { minProtectiveConductor } from '../tables/earthing'
 import { ambientFactor, groupingFactor, GROUPING_SCENARIOS } from '../tables/correction-factors'
+import { conduitFill } from '../tables/conduit-fill'
 
 test('table data is internally consistent (z ≈ √(r²+x²), ampacity monotonic)', () => {
   for (const cable of VD_CABLE_TYPES) {
@@ -90,6 +91,24 @@ test('earthing — table 6.25 bands', () => {
   assert.equal(minProtectiveConductor(500).exact, 200)
   assert.equal(minProtectiveConductor(1000).exact, 250)
   assert.equal(minProtectiveConductor(50).standard, 25)
+})
+
+test('conduit fill — Annex F example 1 reproduces exactly', () => {
+  // 2×4mm² + 2×2.5mm² + 2×2.5mm² earths → ΣC = 34+28+28 = 90 → 20mm conduit
+  const r = conduitFill([
+    { size: 4, count: 2 },
+    { size: 2.5, count: 2 },
+    { size: 2.5, count: 2 },
+  ])
+  assert.ok(!('error' in r))
+  assert.equal(r.totalC, 90)
+  assert.equal(r.recommended, 20)
+})
+
+test('conduit fill — overfull bundle recommends nothing', () => {
+  const r = conduitFill([{ size: 70, count: 5 }]) // ΣC = 760 > K(50mm)=640
+  assert.ok(!('error' in r))
+  assert.equal(r.recommended, null)
 })
 
 test('correction factors — conservative rounding', () => {

@@ -21,12 +21,17 @@ const LIVE = [
     title: 'Earth conductor sizing',
     blurb: 'Table 6.25 — minimum protective conductor from phase conductor size, rounded to standard sizes.',
   },
+  {
+    href: '/portal/employee/sans/calculators/conduit-fill',
+    icon: Ruler,
+    title: 'Conduit fill',
+    blurb: 'Tables 6.22–6.24 + Annex F — mixed cable sizes, ΣC ≤ K, the smallest pipe that legally fits.',
+  },
 ]
 
 const COMING = [
   { icon: Waves, title: 'Earth-fault loop impedance', blurb: 'Max Zs per breaker curve + the new 8.6.5 main-switch formula (Amdt 3).' },
   { icon: PlugZap, title: 'PSCC', blurb: 'Prospective short-circuit current incl. paralleled PV/battery sources (8.4.7, Amdt 3).' },
-  { icon: Ruler, title: 'Conduit fill', blurb: 'Tables 6.22 + Annex F — how many cables fit the pipe.' },
 ]
 
 export default function SansCalculatorsPage() {

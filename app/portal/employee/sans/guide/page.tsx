@@ -106,6 +106,31 @@ export default function SansGuidePage() {
           </p>
         </Card>
 
+        <Card title="Bathrooms — what goes in which zone (table 7.1)" refs={['7.1.2', '7.1.4']}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide">
+                  <th className="py-1 pr-3">Equipment</th>
+                  <th className="py-1 pr-3">Zone 1</th>
+                  <th className="py-1 pr-3">Zone 2</th>
+                  <th className="py-1">Zone 3</th>
+                </tr>
+              </thead>
+              <tbody className="text-foreground">
+                <tr><td className="py-1 pr-3">Distribution & control</td><td>✗</td><td>✗</td><td>normal rules</td></tr>
+                <tr><td className="py-1 pr-3">Bell push</td><td>insulated + ≤25 V safety supply</td><td>same</td><td>normal rules</td></tr>
+                <tr><td className="py-1 pr-3">Socket-outlet</td><td>✗</td><td>safety supply ≤50 VA (shaver unit)</td><td>normal rules</td></tr>
+                <tr><td className="py-1 pr-3">Wall switch</td><td>✗</td><td>✗</td><td>normal rules</td></tr>
+                <tr><td className="py-1 pr-3">Pull switch</td><td colSpan={3}>normal rules — any zone</td></tr>
+                <tr><td className="py-1 pr-3">Distribution board</td><td>✗</td><td>✗</td><td>✗</td></tr>
+                <tr><td className="py-1 pr-3">Fixed appliances (luminaires, heaters)</td><td>earth leakage + insulated, or Class II</td><td>same</td><td>normal rules</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2">✗ = not allowed in that zone. Zone boundaries and earthing specifics: <ClauseLink refId="7.1.2" /> and <ClauseLink refId="7.1.5" />.</p>
+        </Card>
+
         <Card title="Testing & CoC — the chapter 8 trail" refs={['8.5', '8.6', '8.7']}>
           <ul className="list-inside list-disc space-y-1">
             <li><ClauseLink refId="8.5" /> — the visual inspection list before you test.</li>
