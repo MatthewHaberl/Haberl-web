@@ -1,7 +1,10 @@
-import Link from 'next/link'
 import type { Verdict } from '@/lib/sans/calculators'
+import { ClausePeek } from './ClausePeek'
 
-/** Clause-cited pass/warn/fail verdict rows shared by the SANS calculators. */
+/**
+ * Clause-cited pass/warn/fail verdict rows shared by the SANS calculators.
+ * Each clause chip expands inline to show the actual clause wording.
+ */
 export function VerdictList({ verdicts }: { verdicts: Verdict[] }) {
   return (
     <div className="flex flex-col gap-2">
@@ -20,17 +23,11 @@ export function VerdictList({ verdicts }: { verdicts: Verdict[] }) {
             {v.status === 'fail' ? '⛔' : v.status === 'warning' ? '⚠️' : '✅'} {v.headline}
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">{v.detail}</p>
-          <p className="mt-1 flex flex-wrap gap-1.5">
+          <div className="mt-1.5 flex flex-col gap-1">
             {v.clauseRefs.map((ref) => (
-              <Link
-                key={ref}
-                href={`/portal/employee/sans/clause/${encodeURIComponent(ref)}`}
-                className="rounded-full bg-accent/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-accent hover:bg-accent/20"
-              >
-                SANS {ref}
-              </Link>
+              <ClausePeek key={ref} clauseRef={ref} />
             ))}
-          </p>
+          </div>
         </div>
       ))}
     </div>

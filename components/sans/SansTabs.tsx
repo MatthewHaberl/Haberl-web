@@ -20,9 +20,12 @@ export function SansTabs() {
   return (
     <div className="flex items-center gap-1 overflow-x-auto border-b border-border">
       {TABS.map((t) => {
+        // Clause pages and the glossary belong to "The Standard"; search stays under Overview.
         const active = t.href === '/portal/employee/sans'
-          ? pathname === t.href || pathname.startsWith('/portal/employee/sans/search') || pathname.startsWith('/portal/employee/sans/clause')
-          : pathname.startsWith(t.href)
+          ? pathname === t.href || pathname.startsWith('/portal/employee/sans/search')
+          : t.href === '/portal/employee/sans/browse'
+            ? pathname.startsWith(t.href) || pathname.startsWith('/portal/employee/sans/clause') || pathname.startsWith('/portal/employee/sans/glossary')
+            : pathname.startsWith(t.href)
         const Icon = t.icon
         return (
           <Link

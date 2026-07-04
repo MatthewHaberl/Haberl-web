@@ -2,9 +2,17 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ChevronRight, Lightbulb, ShieldCheck, GitCompareArrows, Lock } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { requireSection } from '@/lib/auth/permissions'
 import { ancestorsOf, FRONT_MATTER_TITLES, TAG_LABELS } from '@/lib/sans/refs'
 import { amdt3ChangesFor } from '@/lib/sans/amdt3-changes'
+import { BookPanel } from '@/components/sans/BookPanel'
 import type { SansClause, SansRule } from '@/types/database'
+
+interface ClauseWithDoc extends SansClause {
+  doc_page: number | null
+  doc_y0: number | null
+  doc_y1: number | null
+}
 
 /** One clause: breadcrumb, verbatim text (admin), plain language, children, rules, Amdt 3 flags. */
 export default async function SansClausePage({
@@ -14,6 +22,7 @@ export default async function SansClausePage({
 }) {
   const { ref: rawRef } = await params
   const ref = decodeURIComponent(rawRef)
+  const { role } = await requireSection('sans')
   const supabase = await createClient()
 
   const { data: clauseRow } = await supabase
@@ -22,7 +31,7 @@ export default async function SansClausePage({
     .eq('clause_ref', ref)
     .maybeSingle()
   if (!clauseRow) notFound()
-  const clause = clauseRow as SansClause
+  const clause = clauseRow as ClauseWithDoc
 
   const ancestors = ancestorsOf(ref)
   const [{ data: bodyRow }, { data: childRows }, { data: ancestorRows }, { data: ruleRows }] =
@@ -49,6 +58,7 @@ export default async function SansClausePage({
   )
   const amdtChanges = amdt3ChangesFor(ref)
   const displayTitle = clause.title ?? FRONT_MATTER_TITLES[ref.toLowerCase()] ?? ref
+  const showBook = role === 'admin' && clause.doc_page != null
 
   return (
     <div className="flex flex-col gap-5">
@@ -94,6 +104,8 @@ export default async function SansClausePage({
         </div>
       </div>
 
+      <div className={showBook ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,42%)]' : 'contents'}>
+      <div className="flex min-w-0 flex-col gap-5">
       {/* Amdt 3 heads-up */}
       {amdtChanges.length > 0 && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
@@ -195,6 +207,21 @@ export default async function SansClausePage({
           </div>
         </div>
       )}
+      </div>
+
+      {/* The actual book page, clause highlighted — admin split view */}
+      {showBook && (
+        <div className="lg:sticky lg:top-4 lg:self-start">
+          <BookPanel
+            docPage={clause.doc_page as number}
+            y0={clause.doc_y0}
+            y1={clause.doc_y1}
+            printedPage={clause.page_number}
+            clauseRef={ref}
+          />
+        </div>
+      )}
+      </div>
     </div>
   )
 }

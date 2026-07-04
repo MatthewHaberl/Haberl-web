@@ -125,10 +125,37 @@ export function VoltageDropCalculator() {
               </div>
             </div>
             <VerdictList verdicts={result.verdicts} />
-            <p className="text-xs text-muted-foreground">
-              Vd = mV/A/m × I × L ÷ 1000. Values assume conductors at 70 °C operating temperature.
-              Single-phase table values already include the return conductor.
-            </p>
+            <details className="rounded-lg border border-border bg-card px-4 py-2.5">
+              <summary className="cursor-pointer text-sm font-medium text-foreground">
+                Where these numbers come from — table {result.tableRef}, {size} mm², {arrangement.label}
+              </summary>
+              <div className="mt-2 text-sm text-muted-foreground">
+                {(() => {
+                  const row = cable.rows.find((r) => r.size === parseFloat(size))
+                  const v = row?.values[arrangement.id]
+                  if (v == null) return null
+                  return typeof v === 'number' ? (
+                    <p>
+                      Tabulated impedance: <span className="font-mono text-foreground">{String(v).replace('.', ',')} mV/A/m</span>{' '}
+                      (small conductors publish a single value — reactance is negligible below 25 mm²).
+                    </p>
+                  ) : (
+                    <p>
+                      Tabulated row — resistive r: <span className="font-mono text-foreground">{String(v.r).replace('.', ',')}</span>,
+                      reactive x: <span className="font-mono text-foreground">{String(v.x).replace('.', ',')}</span>,
+                      impedance z: <span className="font-mono text-foreground">{String(v.z).replace('.', ',')}</span> mV/A/m.
+                      At power factor {pf}, the effective value is {parseFloat(pf) >= 1 ? 'r' : 'r·cosφ + x·sinφ'} ={' '}
+                      <span className="font-mono text-foreground">{result.mvPerAm.toFixed(3).replace('.', ',')}</span>.
+                    </p>
+                  )
+                })()}
+                <p className="mt-1.5">
+                  Vd = mV/A/m × I × L ÷ 1000, conductors at 70 °C, single-phase values include the
+                  return conductor. Full row-by-row data:{' '}
+                  <a href="/portal/employee/sans/calculators/tables" className="font-medium text-accent hover:underline">reference tables</a>.
+                </p>
+              </div>
+            </details>
           </>
         )}
       </div>
