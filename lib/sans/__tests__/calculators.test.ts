@@ -5,6 +5,7 @@ import { VD_CABLE_TYPES } from '../tables/voltage-drop'
 import { ECC_MAX_RESISTANCE, minProtectiveConductor } from '../tables/earthing'
 import { ambientFactor, groupingFactor, GROUPING_SCENARIOS } from '../tables/correction-factors'
 import { conduitFill } from '../tables/conduit-fill'
+import { earthLoop } from '../earth-loop'
 
 test('table data is internally consistent (z ≈ √(r²+x²), ampacity monotonic)', () => {
   for (const cable of VD_CABLE_TYPES) {
@@ -115,6 +116,23 @@ test('conduit fill — overfull bundle recommends nothing', () => {
   const r = conduitFill([{ size: 70, count: 5 }]) // ΣC = 760 > K(50mm)=640
   assert.ok(!('error' in r))
   assert.equal(r.recommended, null)
+})
+
+test('earth loop — 60A main at 10× needs Zs ≤ 0.383Ω', () => {
+  const r = earthLoop({ u0: 230, ratedA: 60, curveId: 'assume10', measuredZs: 0.3, measuredZn: 0.25 })
+  assert.ok(!('error' in r))
+  assert.equal(r.tripCurrent, 600)
+  assert.ok(Math.abs(r.maxZs - 230 / 600) < 0.0001)
+  assert.equal(r.verdicts[0].status, 'pass')
+  assert.equal(r.verdicts[1].status, 'pass') // neutral ≤ earth
+})
+
+test('earth loop — high Zs fails and cites 8.6.5.4 fallback; high neutral fails', () => {
+  const r = earthLoop({ u0: 230, ratedA: 60, curveId: 'assume10', measuredZs: 0.5, measuredZn: 0.6 })
+  assert.ok(!('error' in r))
+  assert.equal(r.verdicts[0].status, 'fail')
+  assert.ok(r.verdicts[0].clauseRefs.includes('8.6.5.4'))
+  assert.equal(r.verdicts[1].status, 'fail')
 })
 
 test('correction factors — conservative rounding', () => {

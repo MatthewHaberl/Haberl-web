@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import {
   BookOpenCheck, Search, ListTree, Lightbulb, Calculator, ClipboardCheck,
-  GitCompareArrows, ShieldCheck,
+  GitCompareArrows, ShieldCheck, BookMarked,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/layout/page'
@@ -13,6 +13,7 @@ const QUICK_LINKS = [
   { href: '/portal/employee/sans/calculators', icon: Calculator, title: 'Calculators', blurb: 'Voltage drop, cable sizing, earth-loop, PSCC — with clause references.' },
   { href: '/portal/employee/sans/guide', icon: ClipboardCheck, title: 'Field Guide', blurb: 'Quick-reference cards for installers: zones, colours, test values, CoC.' },
   { href: '/portal/employee/sans/changes', icon: GitCompareArrows, title: "What's Changing", blurb: 'Amendment 3 (Ed 3.03) change register — heavy on PV and testing.' },
+  { href: '/portal/employee/sans/glossary', icon: BookMarked, title: 'Glossary', blurb: 'All 150 defined terms in plain language, A to Z.' },
   { href: '/portal/employee/settings/rules', icon: ShieldCheck, title: 'Design Rules', blurb: 'The live rules engine the quote builder enforces, mapped to clauses.' },
 ]
 

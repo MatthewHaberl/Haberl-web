@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Calculator, Zap, Cable, Earth, Ruler, Waves, PlugZap } from 'lucide-react'
+import { Calculator, Zap, Cable, Earth, Ruler, Waves, PlugZap, Table2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page'
 
 const LIVE = [
@@ -27,10 +27,21 @@ const LIVE = [
     title: 'Conduit fill',
     blurb: 'Tables 6.22–6.24 + Annex F — mixed cable sizes, ΣC ≤ K, the smallest pipe that legally fits.',
   },
+  {
+    href: '/portal/employee/sans/calculators/earth-loop',
+    icon: Waves,
+    title: 'Earth-fault loop impedance',
+    blurb: '§8.6.5 at the main switch — Zs vs the instantaneous trip (curve × In), plus the neutral-loop check.',
+  },
+  {
+    href: '/portal/employee/sans/calculators/tables',
+    icon: Table2,
+    title: 'Reference tables',
+    blurb: 'Read the raw numbers — ampacity, voltage drop and ECC limits as printed, no inputs needed.',
+  },
 ]
 
 const COMING = [
-  { icon: Waves, title: 'Earth-fault loop impedance', blurb: 'Max Zs per breaker curve + the new 8.6.5 main-switch formula (Amdt 3).' },
   { icon: PlugZap, title: 'PSCC', blurb: 'Prospective short-circuit current incl. paralleled PV/battery sources (8.4.7, Amdt 3).' },
 ]
 
