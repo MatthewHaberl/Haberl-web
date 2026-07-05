@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Calculator, Zap, Cable, Earth, Ruler, Waves, PlugZap, Table2 } from 'lucide-react'
+import { Calculator, Zap, Cable, Earth, Ruler, Waves, PlugZap, Table2, ShieldAlert } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page'
 
 const LIVE = [
@@ -34,6 +34,12 @@ const LIVE = [
     blurb: '§8.6.5 at the main switch — Zs vs the instantaneous trip (curve × In), plus the neutral-loop check.',
   },
   {
+    href: '/portal/employee/sans/calculators/pscc',
+    icon: PlugZap,
+    title: 'PSCC',
+    blurb: '§8.4 — fault current from transformer + cable (table D.1), Amdt 3 paralleled-source summation, switchgear-rating check.',
+  },
+  {
     href: '/portal/employee/sans/calculators/tables',
     icon: Table2,
     title: 'Reference tables',
@@ -42,7 +48,7 @@ const LIVE = [
 ]
 
 const COMING = [
-  { icon: PlugZap, title: 'PSCC', blurb: 'Prospective short-circuit current incl. paralleled PV/battery sources (8.4.7, Amdt 3).' },
+  { icon: ShieldAlert, title: 'SPD risk assessment', blurb: 'Annex Q — does this site need surge protection? Town lightning density + environment + service-line length.' },
 ]
 
 export default function SansCalculatorsPage() {

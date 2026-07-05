@@ -7,6 +7,7 @@ import { ECC_MAX_RESISTANCE, minProtectiveConductor } from '../tables/earthing'
 import { ambientFactor, groupingFactor, GROUPING_SCENARIOS } from '../tables/correction-factors'
 import { conduitFill } from '../tables/conduit-fill'
 import { earthLoop } from '../earth-loop'
+import { pscc } from '../pscc'
 
 test('table data is internally consistent (z ≈ √(r²+x²), ampacity monotonic)', () => {
   for (const cable of VD_CABLE_TYPES) {
@@ -145,6 +146,24 @@ test('earth loop — high Zs fails and cites 8.6.5.4 fallback; high neutral fail
   assert.equal(r.verdicts[0].status, 'fail')
   assert.ok(r.verdicts[0].clauseRefs.includes('8.6.5.4'))
   assert.equal(r.verdicts[1].status, 'fail')
+})
+
+test('PSCC — 500 kVA 4,5% transformer gives ~16 kA at the terminals; cable and sources shift it correctly', () => {
+  const bare = pscc({ voltage: 400, transformerKva: 500, transformerZPercent: 4.5 })
+  assert.ok(!('error' in bare))
+  // Ztx = (400²/500e3)×0.045 = 0.0144 Ω → 400/(√3×0.0144) ≈ 16038 A
+  assert.ok(Math.abs(bare.zTransformer - 0.0144) < 1e-6)
+  assert.ok(Math.abs(bare.pscc3phA - 16037) < 5)
+
+  const withCable = pscc({ voltage: 400, transformerKva: 500, transformerZPercent: 4.5, cable: { sizeMm2: 95, lengthM: 50, material: 'cu' }, switchgearKa: 10 })
+  assert.ok(!('error' in withCable))
+  assert.ok(withCable.pscc3phA < bare.pscc3phA) // cable impedance reduces fault current
+  assert.ok(withCable.verdicts.some((v) => v.headline.startsWith('Switchgear')))
+
+  const withSources = pscc({ voltage: 400, transformerKva: 500, transformerZPercent: 4.5, parallelSourcesKa: 3, switchgearKa: 18 })
+  assert.ok(!('error' in withSources))
+  assert.ok(Math.abs(withSources.totalWithSourcesA - (withSources.pscc3phA + 3000)) < 1)
+  assert.equal(withSources.verdicts.find((v) => v.headline.startsWith('Switchgear'))?.status, 'fail') // 19 kA > 18 kA rating
 })
 
 test('correction factors — conservative rounding', () => {
