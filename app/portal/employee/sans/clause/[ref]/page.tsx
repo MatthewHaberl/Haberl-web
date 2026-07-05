@@ -6,6 +6,7 @@ import { requireSection } from '@/lib/auth/permissions'
 import { ancestorsOf, FRONT_MATTER_TITLES, TAG_LABELS } from '@/lib/sans/refs'
 import { amdt3ChangesFor } from '@/lib/sans/amdt3-changes'
 import { BookPanel } from '@/components/sans/BookPanel'
+import { ClauseSplit } from '@/components/sans/ClauseSplit'
 import type { SansClause, SansRule } from '@/types/database'
 
 interface ClauseWithDoc extends SansClause {
@@ -112,7 +113,8 @@ export default async function SansClausePage({
         </div>
       </div>
 
-      <div className={showBook ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,42%)]' : 'contents'}>
+      <ClauseSplit
+        left={
       <div className="flex min-w-0 flex-col gap-5">
       {/* Amdt 3 heads-up */}
       {amdtChanges.length > 0 && (
@@ -216,20 +218,19 @@ export default async function SansClausePage({
         </div>
       )}
       </div>
-
-      {/* The actual book page, clause highlighted — admin split view */}
-      {showBook && (
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          <BookPanel
-            docPage={clause.doc_page as number}
-            y0={clause.doc_y0}
-            y1={clause.doc_y1}
-            printedPage={clause.page_number}
-            clauseRef={ref}
-          />
-        </div>
-      )}
-      </div>
+        }
+        right={
+          showBook ? (
+            <BookPanel
+              docPage={clause.doc_page as number}
+              y0={clause.doc_y0}
+              y1={clause.doc_y1}
+              printedPage={clause.page_number}
+              clauseRef={ref}
+            />
+          ) : null
+        }
+      />
     </div>
   )
 }
