@@ -92,6 +92,29 @@ export default function SansGuidePage() {
           </p>
         </Card>
 
+        <Card title="Conductor colours (6.3.3)" refs={['6.3.3.2', '6.3.3.3']}>
+          <p className="font-semibold text-foreground">a.c. circuits:</p>
+          <ul className="list-inside list-disc space-y-1">
+            <li>Neutral = <strong className="text-foreground">black only</strong>. Earth = <strong className="text-foreground">green/yellow only</strong> (or bare) — never as a live conductor.</li>
+            <li>Phase = any colour <strong className="text-foreground">except</strong> green/yellow, green or black.</li>
+            <li>Multicore ends may be re-identified with durable sleeves or tape (wound more than once).</li>
+          </ul>
+          <p className="mt-2 font-semibold text-foreground">d.c. circuits (PV strings, battery runs):</p>
+          <ul className="list-inside list-disc space-y-1">
+            <li>Positive = <strong className="text-foreground">red only</strong> · Negative = <strong className="text-foreground">black or blue</strong> · earth/bonding = green/yellow only or bare.</li>
+            <li>Or mark polarity with + / − symbols at the conductor ends.</li>
+          </ul>
+        </Card>
+
+        <Card title="Buried cables (6.4.4)" refs={['6.4.4.1', '6.4.4.2']}>
+          <ul className="list-inside list-disc space-y-1">
+            <li>Unarmoured (insulated + sheathed) buried <strong className="text-foreground">shallower than 0,5 m</strong>: enclose in conduit / mechanically protect (paving, concrete) — or protect the circuit with a ≤ 30 mA earth-leakage device.</li>
+            <li>Buried <strong className="text-foreground">at 0,5 m or deeper</strong>: no sharp objects in the backfill + <strong className="text-foreground">marker tape above the route at 0,3–0,4 m</strong> deep.</li>
+            <li>Armoured cable&apos;s armouring counts as adequate mechanical protection in most cases.</li>
+            <li>Buried ratings and soil derating are their own tables (6.8, 6.11, 6.12) — don&apos;t use the in-air numbers.</li>
+          </ul>
+        </Card>
+
         <Card title="PV & alternative supplies — where to look" refs={['7.12', '7.12.2', '7.12.3']}>
           <ul className="list-inside list-disc space-y-1">
             <li><ClauseLink refId="7.12.2" /> — requirements for the alternative source itself.</li>

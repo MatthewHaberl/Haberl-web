@@ -40,6 +40,12 @@ const LIVE = [
     blurb: '§8.4 — fault current from transformer + cable (table D.1), Amdt 3 paralleled-source summation, switchgear-rating check.',
   },
   {
+    href: '/portal/employee/sans/calculators/spd-risk',
+    icon: ShieldAlert,
+    title: 'SPD risk assessment',
+    blurb: 'Annex Q — pick the town (180 SA lightning densities), environment and service-line length; get the SPD class and rating required.',
+  },
+  {
     href: '/portal/employee/sans/calculators/tables',
     icon: Table2,
     title: 'Reference tables',
@@ -47,9 +53,7 @@ const LIVE = [
   },
 ]
 
-const COMING = [
-  { icon: ShieldAlert, title: 'SPD risk assessment', blurb: 'Annex Q — does this site need surge protection? Town lightning density + environment + service-line length.' },
-]
+const COMING: { icon: typeof Calculator; title: string; blurb: string }[] = []
 
 export default function SansCalculatorsPage() {
   return (

@@ -8,6 +8,8 @@ import { ambientFactor, groupingFactor, GROUPING_SCENARIOS } from '../tables/cor
 import { conduitFill } from '../tables/conduit-fill'
 import { earthLoop } from '../earth-loop'
 import { pscc } from '../pscc'
+import { spdRisk, townNg } from '../spd-risk-calc'
+import { LIGHTNING_TOWNS } from '../tables/spd-risk'
 
 test('table data is internally consistent (z ≈ √(r²+x²), ampacity monotonic)', () => {
   for (const cable of VD_CABLE_TYPES) {
@@ -164,6 +166,30 @@ test('PSCC — 500 kVA 4,5% transformer gives ~16 kA at the terminals; cable and
   assert.ok(!('error' in withSources))
   assert.ok(Math.abs(withSources.totalWithSourcesA - (withSources.pscc3phA + 3000)) < 1)
   assert.equal(withSources.verdicts.find((v) => v.headline.startsWith('Switchgear'))?.status, 'fail') // 19 kA > 18 kA rating
+})
+
+test('SPD risk — reproduces the Annex Q worked example (Johannesburg residential, 30 m)', () => {
+  // Q.1.2.6 example: JHB Ng 13.4 → Ng ≥ 11 band, suburban critical length 17 m, 30 m line → SPD required
+  assert.equal(townNg('Johannesburg'), 13.4)
+  assert.equal(townNg('Klerksdorp'), 9.6)
+  const r = spdRisk({ structure: 'residential', ng: 13.4, environment: 'suburban', serviceLineM: 30, externalLps: false })
+  assert.ok(!('error' in r))
+  assert.equal(r.criticalLengthM, 17)
+  assert.equal(r.required, true)
+  assert.equal(r.spdType, 'T2')
+  assert.equal(r.ratingKa, 20)
+
+  // low-density urban site: 425 m critical → 100 m line passes without SPD
+  const low = spdRisk({ structure: 'residential', ng: 0.1, environment: 'urban', serviceLineM: 100, externalLps: false })
+  assert.ok(!('error' in low))
+  assert.equal(low.required, false)
+
+  // external LPS adds the class I verdict
+  const withLps = spdRisk({ structure: 'commercial', ng: 13.4, environment: 'rural', serviceLineM: 30, externalLps: true })
+  assert.ok(!('error' in withLps))
+  assert.ok(withLps.verdicts.some((v) => v.headline.includes('class I')))
+
+  assert.equal(LIGHTNING_TOWNS.length, 180)
 })
 
 test('correction factors — conservative rounding', () => {
