@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronRight, Lightbulb, ShieldCheck, GitCompareArrows, Lock } from 'lucide-react'
+import { ChevronRight, Lightbulb, ShieldCheck, GitCompareArrows, Lock, Columns2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
 import { ancestorsOf, FRONT_MATTER_TITLES, TAG_LABELS } from '@/lib/sans/refs'
@@ -80,16 +80,24 @@ export default async function SansClausePage({
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-primary">
-          {clause.title ? (
-            <>
-              <span className="mr-2 font-mono text-accent">{ref}</span>
-              {clause.title}
-            </>
-          ) : (
-            <span className="font-mono">{displayTitle}</span>
-          )}
-        </h1>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h1 className="text-2xl font-bold text-primary">
+            {clause.title ? (
+              <>
+                <span className="mr-2 font-mono text-accent">{ref}</span>
+                {clause.title}
+              </>
+            ) : (
+              <span className="font-mono">{displayTitle}</span>
+            )}
+          </h1>
+          <Link
+            href={`/portal/employee/sans/read/${encodeURIComponent(ref)}`}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:border-accent"
+          >
+            <Columns2 className="h-4 w-4" /> Read side-by-side
+          </Link>
+        </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {clause.page_number && (
             <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">

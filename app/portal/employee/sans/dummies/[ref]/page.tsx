@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronLeft, Lightbulb } from 'lucide-react'
+import { ChevronLeft, Columns2, Lightbulb } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { sortKeyFor } from '@/lib/sans/refs'
 import type { SansClause } from '@/types/database'
@@ -31,12 +31,20 @@ export default async function SansDummiesChapterPage({
 
   return (
     <div className="flex flex-col gap-5">
-      <Link
-        href="/portal/employee/sans/dummies"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeft className="h-4 w-4" /> All chapters
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link
+          href="/portal/employee/sans/dummies"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft className="h-4 w-4" /> All chapters
+        </Link>
+        <Link
+          href={`/portal/employee/sans/read/${encodeURIComponent(ref)}`}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:border-accent"
+        >
+          <Columns2 className="h-4 w-4" /> Side-by-side with the full text
+        </Link>
+      </div>
 
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-primary">
