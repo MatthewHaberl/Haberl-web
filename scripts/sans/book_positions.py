@@ -157,6 +157,9 @@ def main():
     print('patched: %d ok, %d failed' % (ok, fail))
 
     # 4. upload PNGs (skip if present: x-upsert true makes re-runs safe)
+    if '--skip-upload' in sys.argv:
+        print('skipping upload (--skip-upload)')
+        return
     files = sorted(os.listdir(BOOK))
     up = 0
     for name in files:

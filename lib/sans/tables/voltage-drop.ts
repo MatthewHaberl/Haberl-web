@@ -5,7 +5,9 @@
  * Small sizes publish a single impedance value; 25 mm² and up publish
  * r/x/z triples. Single-phase values already account for the return path.
  * Decimal commas in the source are '.' here; null = not applicable (—).
+ * Aluminium/rubber batch (6.5(b)–6.9(b)) is generated — voltage-drop-extra.ts.
  */
+import { VD_CABLE_TYPES_EXTRA } from './voltage-drop-extra'
 
 export type VdValue = number | { r: number; x: number; z: number } | null
 
@@ -137,4 +139,4 @@ const MULTICORE_SWA: VdCableType = {
   ],
 }
 
-export const VD_CABLE_TYPES: VdCableType[] = [SINGLE_CORE_PVC, MULTICORE_PVC, MULTICORE_SWA]
+export const VD_CABLE_TYPES: VdCableType[] = [SINGLE_CORE_PVC, MULTICORE_PVC, MULTICORE_SWA, ...VD_CABLE_TYPES_EXTRA]

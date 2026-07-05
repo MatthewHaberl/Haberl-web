@@ -26,6 +26,7 @@ export function VoltageDropCalculator() {
     setCableTypeId(id)
     const next = VD_CABLE_TYPES.find((c) => c.id === id)!
     if (!next.arrangements.some((a) => a.id === arrangementId)) setArrangementId(next.arrangements[0].id)
+    if (!next.rows.some((r) => r.size === parseFloat(size))) setSize(String(next.rows[0].size))
   }
 
   function onArrangement(id: string) {

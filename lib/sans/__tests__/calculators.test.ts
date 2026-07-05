@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { voltageDrop, cableCapacity, effectiveMvPerAm } from '../calculators'
 import { VD_CABLE_TYPES } from '../tables/voltage-drop'
+import { CC_CABLE_TYPES } from '../tables/current-capacity'
 import { ECC_MAX_RESISTANCE, minProtectiveConductor } from '../tables/earthing'
 import { ambientFactor, groupingFactor, GROUPING_SCENARIOS } from '../tables/correction-factors'
 import { conduitFill } from '../tables/conduit-fill'
@@ -16,6 +17,17 @@ test('table data is internally consistent (z ≈ √(r²+x²), ampacity monotoni
           // source rounds z; allow the observed table rounding envelope
           assert.ok(Math.abs(calc - v.z) < 0.06, `${cable.table} ${row.size}mm² ${arr}: z=${v.z} vs √(r²+x²)=${calc.toFixed(3)}`)
         }
+      }
+    }
+  }
+  for (const cable of CC_CABLE_TYPES) {
+    for (const arr of cable.arrangements) {
+      let prev = 0
+      for (const row of cable.rows) {
+        const v = row.values[arr.id]
+        if (v == null) continue
+        assert.ok(v >= prev, `${cable.table} ${arr.id}: ${v} A at ${row.size}mm² not ≥ ${prev} A`)
+        prev = v
       }
     }
   }

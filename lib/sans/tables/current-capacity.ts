@@ -1,10 +1,12 @@
 /**
  * SANS 10142-1:2024 Ed 3.2 current-carrying capacity tables (amperes).
  *
- * Transcribed from tables 6.2(a), 6.3(a), 6.4(a) — copper conductors,
- * ambient 30 °C, conductor operating temperature 70 °C.
+ * Transcribed from tables 6.2(a), 6.3(a), 6.4(a), 6.6(a) — ambient 30 °C,
+ * conductor operating temperature 70 °C. Aluminium/buried/rubber batch
+ * (6.5(a), 6.7(a), 6.8, 6.9(a)) is generated — see current-capacity-extra.ts.
  * null = not applicable (—) in the source.
  */
+import { CC_CABLE_TYPES_EXTRA } from './current-capacity-extra'
 
 export interface CcArrangement {
   id: string
@@ -23,6 +25,10 @@ export interface CcCableType {
   table: string
   rows: CcRow[]
   arrangements: CcArrangement[]
+  /** Insulation class for table 6.10 ambient correction; defaults to PVC 70 °C. */
+  insulation?: 'pvc70' | 'rubber85'
+  /** Buried tables use soil factors (6.11/6.12), not the air ambient/grouping factors. */
+  buried?: boolean
 }
 
 /** Table 6.2(a) — Single-core PVC insulated cables, unarmoured. */
@@ -138,4 +144,42 @@ const MULTICORE_SWA: CcCableType = {
   ],
 }
 
-export const CC_CABLE_TYPES: CcCableType[] = [SINGLE_CORE_PVC, MULTICORE_PVC, MULTICORE_SWA]
+/** Table 6.6(a) — Multicore PVC insulated cables, unarmoured, aluminium conductors. */
+const MULTICORE_AL: CcCableType = {
+  id: 'multi-al',
+  label: 'Multicore PVC, unarmoured, aluminium',
+  table: '6.6(a)',
+  arrangements: [
+    { id: 'm1_2c', label: 'Method 1 (in insulating wall) — two-core, 1φ/d.c.', phases: 1 },
+    { id: 'm1_34c', label: 'Method 1 (in insulating wall) — three/four-core, 3φ', phases: 3 },
+    { id: 'm2_2c', label: 'Method 2 (conduit/trunking on wall) — two-core, 1φ/d.c.', phases: 1 },
+    { id: 'm2_34c', label: 'Method 2 (conduit/trunking on wall) — three/four-core, 3φ', phases: 3 },
+    { id: 'm3_2c', label: 'Method 3 (clipped direct) — two-core, 1φ/d.c.', phases: 1 },
+    { id: 'm3_34c', label: 'Method 3 (clipped direct) — three/four-core, 3φ', phases: 3 },
+    { id: 'm46_2c', label: 'Method 4 (tray) / 6 (free air) — two-core, 1φ/d.c.', phases: 1 },
+    { id: 'm46_34c', label: 'Method 4 (tray) / 6 (free air) — three/four-core, 3φ', phases: 3 },
+  ],
+  rows: [
+    { size: 16,  values: { m1_2c: 44,  m1_34c: 41,  m2_2c: 54,  m2_34c: 48,  m3_2c: 66,  m3_34c: 59,  m46_2c: 73,  m46_34c: 61 } },
+    { size: 25,  values: { m1_2c: 58,  m1_34c: 53,  m2_2c: 71,  m2_34c: 62,  m3_2c: 83,  m3_34c: 73,  m46_2c: 89,  m46_34c: 78 } },
+    { size: 35,  values: { m1_2c: 71,  m1_34c: 65,  m2_2c: 86,  m2_34c: 77,  m3_2c: 103, m3_34c: 90,  m46_2c: 111, m46_34c: 96 } },
+    { size: 50,  values: { m1_2c: 86,  m1_34c: 78,  m2_2c: 104, m2_34c: 92,  m3_2c: 125, m3_34c: 110, m46_2c: 135, m46_34c: 117 } },
+    { size: 70,  values: { m1_2c: 108, m1_34c: 98,  m2_2c: 131, m2_34c: 116, m3_2c: 160, m3_34c: 140, m46_2c: 173, m46_34c: 150 } },
+    { size: 95,  values: { m1_2c: 130, m1_34c: 118, m2_2c: 157, m2_34c: 139, m3_2c: 195, m3_34c: 170, m46_2c: 210, m46_34c: 183 } },
+    { size: 120, values: { m1_2c: null, m1_34c: 135, m2_2c: null, m2_34c: 160, m3_2c: null, m3_34c: 197, m46_2c: null, m46_34c: 212 } },
+    { size: 150, values: { m1_2c: null, m1_34c: 155, m2_2c: null, m2_34c: 184, m3_2c: null, m3_34c: 227, m46_2c: null, m46_34c: 245 } },
+    { size: 185, values: { m1_2c: null, m1_34c: 176, m2_2c: null, m2_34c: 210, m3_2c: null, m3_34c: 259, m46_2c: null, m46_34c: 280 } },
+    { size: 240, values: { m1_2c: null, m1_34c: 207, m2_2c: null, m2_34c: 248, m3_2c: null, m3_34c: 305, m46_2c: null, m46_34c: 330 } },
+    { size: 300, values: { m1_2c: null, m1_34c: 237, m2_2c: null, m2_34c: 285, m3_2c: null, m3_34c: 351, m46_2c: null, m46_34c: 381 } },
+  ],
+}
+
+export const CC_CABLE_TYPES: CcCableType[] = [
+  SINGLE_CORE_PVC,
+  MULTICORE_PVC,
+  MULTICORE_SWA,
+  MULTICORE_AL,
+  ...CC_CABLE_TYPES_EXTRA.map((t) =>
+    t.id === 'rubber-flex' ? { ...t, insulation: 'rubber85' as const } : t.id === 'buried-swa' ? { ...t, buried: true } : t,
+  ),
+]

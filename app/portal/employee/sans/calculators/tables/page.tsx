@@ -103,8 +103,9 @@ export default function SansTablesPage() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Transcribed from SANS 10142-1:2024 Ed 3.2 and arithmetically verified in tests. Aluminium and
-        rubber-insulated cable tables (6.5–6.9) load with the next content batch.
+        Transcribed from SANS 10142-1:2024 Ed 3.2, arithmetically verified in tests, and cross-checked
+        against an independent second transcription. Buried-cable ratings (table 6.8) carry their own
+        soil-based correction factors (6.11/6.12) — the air derating factors do not apply to them.
       </p>
     </div>
   )

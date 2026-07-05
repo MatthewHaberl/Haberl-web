@@ -27,6 +27,7 @@ export function CableCapacityCalculator() {
     setCableTypeId(id)
     const next = CC_CABLE_TYPES.find((c) => c.id === id)!
     if (!next.arrangements.some((a) => a.id === arrangementId)) setArrangementId(next.arrangements[0].id)
+    if (!next.rows.some((r) => r.size === parseFloat(size))) setSize(String(next.rows[0].size))
   }
 
   const result = useMemo(() => {
@@ -50,7 +51,7 @@ export function CableCapacityCalculator() {
       <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
         <FormField label="Cable type" htmlFor="cc-cable">
           <Select id="cc-cable" value={cableTypeId} onChange={(e) => onCableType(e.target.value)}>
-            {CC_CABLE_TYPES.map((c) => (
+            {CC_CABLE_TYPES.filter((c) => !c.buried).map((c) => (
               <option key={c.id} value={c.id}>{c.label} — table {c.table}</option>
             ))}
           </Select>

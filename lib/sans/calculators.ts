@@ -146,9 +146,13 @@ export function cableCapacity(input: CapacityInput): CapacityResult | { error: s
   if (!row) return { error: `No ${input.sizeMm2} mm² entry in table ${cable.table}` }
   const base = row.values[input.arrangementId]
   if (base == null) return { error: `${input.sizeMm2} mm² is not tabulated for this arrangement (— in table ${cable.table})` }
+  if (cable.buried) return { error: 'Buried cables derate by soil temperature and resistivity (tables 6.11/6.12), not the air factors — use the reference tables for the base ratings' }
 
-  const aCf = ambientFactor(input.ambientC, 'pvc70')
-  if (aCf == null) return { error: 'PVC cable cannot be used above 65 °C ambient (table 6.10)' }
+  const insulation = cable.insulation ?? 'pvc70'
+  const aCf = ambientFactor(input.ambientC, insulation)
+  if (aCf == null) {
+    return { error: insulation === 'pvc70' ? 'PVC cable cannot be used above 65 °C ambient (table 6.10)' : 'Beyond the table 6.10 ambient range for this insulation' }
+  }
 
   let gCf = 1
   if (input.groupingScenarioId && input.circuits > 1) {

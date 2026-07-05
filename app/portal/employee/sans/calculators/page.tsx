@@ -81,8 +81,8 @@ export default function SansCalculatorsPage() {
         })}
       </div>
       <p className="text-xs text-muted-foreground">
-        Aluminium-conductor and rubber-insulated cable tables (6.5–6.9) plus buried-cable factors load with the
-        next content batch. The PV string designer lives in{' '}
+        Cable tables cover copper, aluminium, rubber-insulated and buried (6.2–6.9) — every value
+        double-verified against an independent transcription. The PV string designer lives in{' '}
         <Link href="/portal/employee/settings/rules" className="font-medium text-accent hover:underline">Design Rules</Link>.
       </p>
     </div>
