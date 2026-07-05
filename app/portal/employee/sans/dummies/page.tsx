@@ -1,15 +1,20 @@
 import Link from 'next/link'
 import { Lightbulb, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { getUserAccess } from '@/lib/auth/permissions'
 import { PageHeader } from '@/components/layout/page'
 import { CHAPTER_BLURBS, isAnnexRef } from '@/lib/sans/refs'
 import type { SansClause } from '@/types/database'
 
 /** "SANS for Dummies" — pick a chapter, read it in plain English. Laid out to
  *  mirror The Standard (chapters, then a separate Annexes grid) so the two tabs
- *  feel like the same book. */
+ *  feel like the same book. Admins open straight into the side-by-side book
+ *  (verbatim left, plain right); everyone else gets the plain-only reader. */
 export default async function SansDummiesPage() {
   const supabase = await createClient()
+  const access = await getUserAccess()
+  const readerBase = access?.role === 'admin' ? 'read' : 'dummies'
+
   const { data } = await supabase
     .from('sans_clauses')
     .select('id, clause_ref, title, plain_summary, sort_key')
@@ -24,7 +29,11 @@ export default async function SansDummiesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="SANS in Plain Language"
-        description="The whole standard, chapter by chapter, in plain English — laid out exactly like The Standard tab. Open any chapter to read it top to bottom, or read it side-by-side with the verbatim text."
+        description={
+          readerBase === 'read'
+            ? 'The whole standard as a book — open any chapter to read the verbatim text on the left with the plain-English version beside it, clause for clause.'
+            : 'The whole standard, chapter by chapter, in plain English — laid out exactly like The Standard tab. Open any chapter to read it top to bottom.'
+        }
         icon={Lightbulb}
       />
 
@@ -37,7 +46,7 @@ export default async function SansDummiesPage() {
           {chapters.map((c) => (
             <Link
               key={c.id}
-              href={`/portal/employee/sans/dummies/${encodeURIComponent(c.clause_ref)}`}
+              href={`/portal/employee/sans/${readerBase}/${encodeURIComponent(c.clause_ref)}`}
               className="group rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent"
             >
               <p className="font-semibold text-foreground group-hover:text-primary">
@@ -59,7 +68,7 @@ export default async function SansDummiesPage() {
             {annexes.map((c) => (
               <Link
                 key={c.id}
-                href={`/portal/employee/sans/dummies/${encodeURIComponent(c.clause_ref)}`}
+                href={`/portal/employee/sans/${readerBase}/${encodeURIComponent(c.clause_ref)}`}
                 className="group flex items-start gap-2 rounded-lg border border-border bg-card px-3 py-2.5 transition-colors hover:border-accent"
               >
                 <FileText className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
