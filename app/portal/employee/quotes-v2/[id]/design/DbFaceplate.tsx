@@ -7,7 +7,7 @@ import {
   expandDbUnits, isDbExpanded, autoArrangeDb, mkId,
   dbPoles, dbDefaultEarth, dbPoleConductor, dbConductorColor, dbConductorLabel,
   DB_PHASE_SETS, DB_EARTH_POLE, defaultDbSection,
-  type AcCombiner, type DbComponent, type DbComponentKind,
+  type AcCombiner, type DcCombiner, type DbComponent, type DbComponentKind,
   type DbWire, type DbConductor, type DbTerminalRef, type PhaseColorSet, type DbSection,
 } from '@/lib/solar/system-design'
 import { useDesign } from './DesignProvider'
@@ -107,10 +107,14 @@ type AddTarget = { row: number; startWay: number }
 type DragState = { id: string; width: number; kind: DbComponentKind; label: string; color: string; x: number; y: number; ox: number }
 type Preview = { row: number; index: number } // row === -1 → hovering the tray (drop = unplace)
 
-export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClose: () => void }) {
+export function DbFaceplate({ combinerId, boardKind = 'ac', onClose }: { combinerId: string; boardKind?: 'ac' | 'dc'; onClose: () => void }) {
   const { design, dispatch } = useDesign()
   const { items } = useCatalog()
-  const board = design.acCombiners.find((c) => c.id === combinerId) ?? null
+  // The faceplate drives the AC board or a DC combiner — both hold DbComponent[] +
+  // wires/sections/rowHeights, so the layout/wiring engine below is shared.
+  const board: AcCombiner | DcCombiner | null = boardKind === 'dc'
+    ? (design.dcCombiners.find((c) => c.id === combinerId) ?? null)
+    : (design.acCombiners.find((c) => c.id === combinerId) ?? null)
   const phases = design.inverters[0]?.phases ?? 1
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -148,8 +152,11 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
   useEffect(() => {
     if (expandedOnce.current || !board) return
     expandedOnce.current = true
-    if (!isDbExpanded(board.components)) {
-      dispatch({ type: 'updateAcCombiner', id: board.id, patch: { components: expandDbUnits(board.components) } })
+    const comps0 = board.components ?? []
+    if (!isDbExpanded(comps0)) {
+      const patch = { components: expandDbUnits(comps0) }
+      if (boardKind === 'dc') dispatch({ type: 'updateCombiner', id: board.id, patch })
+      else dispatch({ type: 'updateAcCombiner', id: board.id, patch })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -164,7 +171,7 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
 
   const ways = Math.max(1, Math.round(board.ways || 12))
   const rows = Math.max(1, Math.round(board.rows || 1))
-  const comps = board.components
+  const comps = board.components ?? []
   const placed = comps.filter((c) => c.slot)
   const unplaced = comps.filter((c) => !c.slot)
   const railWidth = ways * MODULE_PX
@@ -182,8 +189,11 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
   const compPoles = (c: DbComponent) => Math.max(1, Math.round(c.poles ?? dbPoles(c.kind, phases)))
   const compEarth = (c: DbComponent) => c.earth ?? dbDefaultEarth(c.kind)
 
-  // ── Persistence helpers (all writes go through updateAcCombiner) ─────────────
-  const setBoard = (patch: Partial<AcCombiner>) => dispatch({ type: 'updateAcCombiner', id: board.id, patch })
+  // ── Persistence helpers (writes route to the AC board or the DC combiner) ────
+  const setBoard = (patch: Partial<AcCombiner> & Partial<DcCombiner>) => {
+    if (boardKind === 'dc') dispatch({ type: 'updateCombiner', id: board.id, patch })
+    else dispatch({ type: 'updateAcCombiner', id: board.id, patch })
+  }
   const setComponents = (next: DbComponent[]) => setBoard({ components: next })
   const setWires = (next: DbWire[]) => setBoard({ wires: next })
   // Drop any wires that reference terminals that no longer exist (device gone /
@@ -515,7 +525,7 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
   // Arrow (not a hoisted `function`) so TS keeps the `board` non-null narrowing.
   const autoArrange = () => {
     const res = autoArrangeDb(comps, ways, rows, phases)
-    dispatch({ type: 'updateAcCombiner', id: board.id, patch: { components: res.components, rows: res.rows } })
+    setBoard({ components: res.components, rows: res.rows })
     if (res.rows > rows) flash(`Grew the board to ${res.rows} rails to fit everything.`)
   }
 
@@ -568,13 +578,13 @@ export function DbFaceplate({ combinerId, onClose }: { combinerId: string; onClo
             <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
               Ways
               <input type="number" min={1} max={48} value={ways}
-                onChange={(e) => dispatch({ type: 'updateAcCombiner', id: board.id, patch: { ways: Math.max(1, Math.round(Number(e.target.value) || 1)) } })}
+                onChange={(e) => setBoard({ ways: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
                 className="h-7 w-14 rounded border border-border bg-background px-1.5 text-xs" />
             </label>
             <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
               Rails
               <input type="number" min={1} max={12} value={rows}
-                onChange={(e) => dispatch({ type: 'updateAcCombiner', id: board.id, patch: { rows: Math.max(1, Math.round(Number(e.target.value) || 1)) } })}
+                onChange={(e) => setBoard({ rows: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
                 className="h-7 w-14 rounded border border-border bg-background px-1.5 text-xs" />
             </label>
             <button type="button" onClick={() => setAddAt(firstFreeSlot())}
@@ -1050,10 +1060,10 @@ function DeviceInspector({
 }
 
 // ── Printable panel schedule (opens in its own window so app styles don't leak) ──
-function printSchedule(board: AcCombiner, phases: number) {
+function printSchedule(board: AcCombiner | DcCombiner, phases: number) {
   return () => {
     const ways = Math.max(1, Math.round(board.ways || 12))
-    const placed = expandDbUnits(board.components)
+    const placed = expandDbUnits(board.components ?? [])
       .filter((c) => c.slot)
       .sort((a, b) => (a.slot!.row - b.slot!.row) || (a.slot!.startWay - b.slot!.startWay))
     const esc = (s: string) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] as string))

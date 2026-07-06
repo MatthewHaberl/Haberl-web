@@ -214,8 +214,10 @@ export function CombinerNode({ data, selected }: NodeProps) {
     inputCount?: number; outputCount?: number
   }
   const { CLR } = useNodeColors()
-  // Inputs default to the string count; outputs default to a single combined feed.
+  // Input ports = the feeding arrays (one cable each); the Strings/Fuses figures below
+  // reflect every individual string, which can exceed the number of input cables.
   const n = Math.max(1, d.inputCount ?? d.stringCount)
+  const strN = Math.max(1, d.stringCount ?? n)
   const outN = Math.max(1, d.outputCount ?? 1)
 
   const materialChips: React.ReactNode[] = []
@@ -247,8 +249,8 @@ export function CombinerNode({ data, selected }: NodeProps) {
           />
         )
       })}
-      <Row label="Strings" value={n} />
-      <Row label="Fuses" value={`${n} × ${d.fuseRating}`} />
+      <Row label="Strings" value={strN} />
+      <Row label="Fuses" value={d.fuseRating ? `${strN} × ${d.fuseRating}` : strN} />
       {d.hasSpd && <Row label="SPD" value="Type 2 included" />}
       {/* Output ports (item 22): one combined feed by default, or `outputCount` taps.
           The first keeps id `dc-out` so existing combiner→inverter edges still resolve. */}

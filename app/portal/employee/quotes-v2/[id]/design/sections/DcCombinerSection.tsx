@@ -3,31 +3,32 @@
 import { useState } from 'react'
 import { Plus, Trash2, CircuitBoard, CornerDownRight, Pencil, ChevronDown } from 'lucide-react'
 import {
-  combinerConfigLabel, mkId, parseEnclosureSpec,
+  combinerConfigLabel, mkId, parseEnclosureSpec, enumerateStrings,
   ENCLOSURE_MATERIALS, ENCLOSURE_MOUNTS, ENCLOSURE_WAYS,
   DB_COMPONENT_KINDS, dbComponentKind, DB_SUPPLY_ID, DB_SUPPLY_LABEL,
-  type DcCombiner, type PanelGroup, type DcComponent, type DbComponentKind,
+  type DcCombiner, type DcComponent, type DbComponentKind,
 } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
 import { ProductPicker } from '../ProductPicker'
 import { SectionCard, EmptyHint, LockNote, LOCKED_FIELD, ReorderButtons, CollapsibleCard } from '../section-ui'
 
-function stringLabel(panels: PanelGroup[], id: string): string {
-  const i = panels.findIndex((p) => p.id === id)
-  const g = panels[i]
-  if (!g) return 'String'
-  return `String ${i + 1}${g.panelCount ? ` · ${g.panelCount}×${g.panelWatts}W` : ''}`
-}
-
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
 
 export function DcCombinerSection() {
   const { design, dispatch } = useDesign()
   const { items } = useCatalog()
-  const panels = design.panels
   const combiners = design.dcCombiners
   const enclosures = byCategory(items, 'enclosure')
+  // Every individual string (`${groupId}#k`) — the combiner ties in each one on its own.
+  const strings = enumerateStrings(design)
+  const stringById = new Map(strings.map((s) => [s.id, s]))
+  const strLabel = (id: string) => { const s = stringById.get(id); return s ? `String ${s.seq}` : 'String' }
+  // Strings grouped by their panel card, for the "Strings in" picker.
+  const stringGroups = design.panels
+    .filter((g) => g.panelCount > 0)
+    .map((g) => ({ g, list: strings.filter((s) => s.groupId === g.id) }))
+    .filter((x) => x.list.length > 0)
   // Enclosure detail (material / mount / ways …) is collapsed by default — the DB
   // product line is enough; click "Edit" to reveal the rest.
   const [editEnc, setEditEnc] = useState<Record<string, boolean>>({})
@@ -59,7 +60,8 @@ export function DcCombinerSection() {
   }
 
   function setOutputCount(c: DcCombiner, n: number) {
-    n = clamp(Math.round(n), 1, 4)
+    // One output per string is the physical ceiling; keep a floor of 4.
+    n = clamp(Math.round(n), 1, Math.max(4, c.inputStringIds.length))
     let outputs = c.outputs.slice()
     while (outputs.length < n) {
       outputs.push({ id: mkId('out'), label: `Output ${outputs.length + 1}`, stringIds: outputs.length === 0 ? c.inputStringIds.slice() : [], spdId: null, mainBreakerId: null })
@@ -140,6 +142,7 @@ export function DcCombinerSection() {
               combiners.flatMap((other) => other.id === c.id ? [] : other.inputStringIds),
             )
             const components = c.components ?? []
+            const maxOut = Math.max(4, c.inputStringIds.length)
             return (
             <CollapsibleCard
               key={c.id}
@@ -220,35 +223,45 @@ export function DcCombinerSection() {
               </>)}
               </>) })()}
 
-              {/* Inputs — strings already on another combiner are disabled (item 45) */}
+              {/* Inputs — every individual string, grouped by its panel card. Strings
+                  already tied to another combiner are disabled (item 45). */}
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mt-4 mb-2">Strings in</p>
-              {panels.length === 0 ? (
+              {strings.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Add panel groups first — then tick which strings feed this combiner.</p>
               ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {panels.map((g) => {
-                    const on = c.inputStringIds.includes(g.id)
-                    const taken = !on && claimedElsewhere.has(g.id)
-                    return (
-                      <button key={g.id} type="button" disabled={taken}
-                        onClick={() => { if (!taken) toggleInput(c, g.id) }}
-                        title={taken ? 'Already on another combiner' : undefined}
-                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-                          on ? 'border-primary bg-primary/10 text-primary'
-                            : taken ? 'border-border/40 text-muted-foreground/40 line-through cursor-not-allowed'
-                            : 'border-border text-muted-foreground hover:border-primary/40'
-                        }`}>
-                        {stringLabel(panels, g.id)}
-                      </button>
-                    )
-                  })}
+                <div className="flex flex-col gap-2.5">
+                  {stringGroups.map(({ g, list }) => (
+                    <div key={g.id}>
+                      <p className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                        {g.panelCount}×{g.panelWatts}W · {list.length} string{list.length === 1 ? '' : 's'}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {list.map((s) => {
+                          const on = c.inputStringIds.includes(s.id)
+                          const taken = !on && claimedElsewhere.has(s.id)
+                          return (
+                            <button key={s.id} type="button" disabled={taken}
+                              onClick={() => { if (!taken) toggleInput(c, s.id) }}
+                              title={taken ? 'Already on another combiner' : undefined}
+                              className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                                on ? 'border-primary bg-primary/10 text-primary'
+                                  : taken ? 'border-border/40 text-muted-foreground/40 line-through cursor-not-allowed'
+                                  : 'border-border text-muted-foreground hover:border-primary/40'
+                              }`}>
+                              String {s.seq}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
               {/* Outputs — each output carries its strings to the inverter MPPT(s) */}
               <div className="flex items-center gap-2 mt-4 mb-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Outputs</p>
-                <input type="number" min={1} max={4} value={c.outputs.length}
+                <input type="number" min={1} max={maxOut} value={c.outputs.length}
                   onChange={(e) => setOutputCount(c, Number(e.target.value) || 1)}
                   className="h-7 w-14 rounded-md border border-border bg-background px-2 text-xs" />
                 <span className="text-[11px] text-muted-foreground">to the inverter MPPT(s)</span>
@@ -276,7 +289,7 @@ export function DcCombinerSection() {
                                   : elsewhere ? 'border-border/40 text-muted-foreground/40 line-through cursor-not-allowed'
                                   : 'border-border text-muted-foreground hover:border-primary/40'
                               }`}>
-                              {stringLabel(panels, sid)}
+                              {strLabel(sid)}
                             </button>
                           )
                         })}
@@ -325,7 +338,7 @@ export function DcCombinerSection() {
                           <button type="button" onClick={() => removeComponent(c, comp.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
                         <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-                          <ProductPicker items={items} category={def.category} label="Product" value={comp.product} onChange={(v) => updateComponent(c, comp.id, { product: v })} />
+                          <ProductPicker items={items} category={def.category} label="Product" value={comp.productId} onChange={(v) => updateComponent(c, comp.id, { productId: v })} />
                           <div className="flex flex-col gap-1">
                             {Array.from({ length: def.inputs }).map((_, i) => (
                               <label key={i} className="flex flex-col gap-0.5">
@@ -333,7 +346,7 @@ export function DcCombinerSection() {
                                 <select value={(comp.fedFrom ?? [])[i] ?? ''} onChange={(e) => setSource(c, comp, i, e.target.value)} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">
                                   <option value="">— not wired —</option>
                                   <option value={DB_SUPPLY_ID}>{DB_SUPPLY_LABEL}</option>
-                                  {c.inputStringIds.map((sid) => <option key={sid} value={sid}>{stringLabel(panels, sid)}</option>)}
+                                  {c.inputStringIds.map((sid) => <option key={sid} value={sid}>{strLabel(sid)}</option>)}
                                   {candidates.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
                                 </select>
                               </label>

@@ -170,7 +170,7 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
     // Energy shaping profiles (items 37–40) — harmless to key on; only matters if they drive flow.
     ep: JSON.stringify([d.energy.weekly ?? null, d.energy.monthlyProfile ?? null, d.energy.annualProfile ?? null]),
     // DC combiners (items 34/44): per-combiner string assignment + output count + internals.
-    dc: JSON.stringify(d.dcCombiners.map((c) => [c.id, c.inputStringIds, c.outputs.length, (c.components ?? []).map((k) => [k.id, k.product, k.qty, k.fedFrom])])),
+    dc: JSON.stringify(d.dcCombiners.map((c) => [c.id, c.inputStringIds, c.outputs.length, (c.components ?? []).map((k) => [k.id, k.productId, k.qty, k.fedFrom])])),
     // Inverter phaseConfig + PV/battery capability toggles (items 50/51) reshape the AC + DC topology.
     i: d.inverters.map((u) => [u.catalogId, u.kw, u.model, u.qty, u.phases, u.phaseConfig, u.acceptsPv, u.acceptsBattery]),
     b: d.batteries.map((b) => [b.catalogId, b.kwh, b.qty, b.model]),
@@ -198,7 +198,7 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
   })
 }
 
-function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onClose: () => void; onOpenLayout: (boardId: string) => void }) {
+function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onClose: () => void; onOpenLayout: (boardId: string, kind: 'ac' | 'dc') => void }) {
   const { design, dispatch, setActiveStep } = useDesign()
   const ref = nodeIdToRef(nodeId)
   if (!ref) return null
@@ -334,7 +334,7 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
             </p>
             <button
               type="button"
-              onClick={() => onOpenLayout(board.id)}
+              onClick={() => onOpenLayout(board.id, 'ac')}
               className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
             >
               <LayoutGrid className="h-3.5 w-3.5" /> Open board layout
@@ -348,10 +348,39 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
     )
   }
 
-  // combiner / grid — informational in Phase 1
+  // DC combiner opens the same physical faceplate as the AC board.
+  if (ref.kind === 'combiner') {
+    const comb = design.dcCombiners[ref.index]
+    const n = comb?.components?.length ?? 0
+    return (
+      <div>
+        <Header title="DC combiner" />
+        {comb ? (
+          <>
+            <p className="mb-3 text-xs text-muted-foreground">
+              {n} device{n === 1 ? '' : 's'} · {comb.ways}-way{(comb.rows ?? 1) > 1 ? ` × ${comb.rows} rails` : ''}
+            </p>
+            <button
+              type="button"
+              onClick={() => onOpenLayout(comb.id, 'dc')}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" /> Open box layout
+            </button>
+            <p className="mt-2 text-[11px] text-muted-foreground">Lay out the breakers, fuses &amp; SPD in their physical spaces.</p>
+            <GoTo step={2} label="Edit strings &amp; outputs" />
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">Add a DC combiner in the DC combiner section first, then lay it out here.</p>
+        )}
+      </div>
+    )
+  }
+
+  // grid — informational in Phase 1
   return (
     <div>
-      <Header title={ref.kind === 'combiner' ? 'DC combiner' : 'Grid supply'} />
+      <Header title="Grid supply" />
       <p className="text-xs text-muted-foreground">Derived automatically from the design. Editing arrives in a later phase.</p>
     </div>
   )
@@ -585,8 +614,8 @@ function CanvasInner({ height = 560, fill }: { height?: number; fill?: boolean }
   const [allowOverlap, setAllowOverlap] = useState(false)
   const [showTerminations, setShowTerminations] = useState(false) // off by default to reduce clutter (item 21)
   const [fullscreen, setFullscreen] = useState(false)
-  // The DB board's physical faceplate overlay (opened from the DB inspector).
-  const [layoutBoardId, setLayoutBoardId] = useState<string | null>(null)
+  // The physical faceplate overlay — opened from the AC-board OR the DC-combiner node.
+  const [layoutBoardId, setLayoutBoardId] = useState<{ id: string; kind: 'ac' | 'dc' } | null>(null)
   // Level of detail (item: readability) — Simple collapses the battery bank + DB
   // internals to summaries; Detailed shows every unit + disconnect + device.
   const [detail, setDetail] = useState<'simple' | 'detailed'>('simple')
@@ -884,14 +913,14 @@ function CanvasInner({ height = 560, fill }: { height?: number; fill?: boolean }
           const node = nodes.find((nn) => nn.id === selected.id)
           return node?.type === 'busblock'
             ? <ComponentInspector node={node} onClose={() => setSelected(null)} />
-            : <NodeInspector nodeId={selected.id} onClose={() => setSelected(null)} onOpenLayout={setLayoutBoardId} />
+            : <NodeInspector nodeId={selected.id} onClose={() => setSelected(null)} onOpenLayout={(id, kind) => setLayoutBoardId({ id, kind })} />
         })()
       )}
     </div>
   ) : null
 
   const boardLayout = layoutBoardId
-    ? <DbFaceplate combinerId={layoutBoardId} onClose={() => setLayoutBoardId(null)} />
+    ? <DbFaceplate combinerId={layoutBoardId.id} boardKind={layoutBoardId.kind} onClose={() => setLayoutBoardId(null)} />
     : null
 
   if (fullscreen) {

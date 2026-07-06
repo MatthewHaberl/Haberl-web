@@ -118,11 +118,12 @@ export function designToBom(
     const components = c.components ?? []
     if (components.length > 0) {
       // New internals model (item 44) — itemise the inside list like the AC board.
-      for (const comp of components) add('DC combiner', comp.product, Math.max(1, comp.qty || 1), { label: `${comp.label}${where}` })
+      for (const comp of components) add('DC combiner', comp.productId, Math.max(1, comp.qty || 1), { label: `${comp.label}${where}` })
     } else {
       // Legacy per-string connection products (parseable; the new UI uses components).
-      for (const sid of c.inputStringIds) {
-        const k = c.stringConnections[sid]
+      // Keyed by the old panel-group ids — iterate the values directly so it works
+      // regardless of whether inputStringIds now hold individual logical-string ids.
+      for (const k of Object.values(c.stringConnections)) {
         if (!k) continue
         add('DC combiner', k.breakerId, 1, { label: `String breaker${where}` })
         add('DC combiner', k.fuseHolderId, 1, { label: `Fuse holder${where}` })

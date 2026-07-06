@@ -9,6 +9,7 @@ import {
   nodeIdToRef,
   mkId,
   defaultCombiner,
+  enumerateStrings,
   enclosureCode,
   phaseConfigToPhases,
   DEFAULT_SITE_CONDITIONS,
@@ -354,7 +355,9 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
       return { ...d, supply: { ...(d.supply ?? defaultSupply()), ...action.patch } }
 
     case 'addCombiner':
-      return { ...d, dcCombiners: [...d.dcCombiners, defaultCombiner(d.panels.map((p) => p.id))] }
+      // Seed with every individual string (`${groupId}#k`) so each parallel string can
+      // be tied into an output on its own — not just the whole panel group.
+      return { ...d, dcCombiners: [...d.dcCombiners, defaultCombiner(enumerateStrings(d).map((s) => s.id))] }
 
     case 'updateCombiner':
       return {

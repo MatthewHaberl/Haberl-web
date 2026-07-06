@@ -432,23 +432,15 @@ export function defaultStringConnection(): StringConnection {
   return { breakerId: null, fuseHolderId: null, fuseId: null, fuseQty: 1, isolatorId: null }
 }
 
-/** A device inside a DC combiner (item 44) — mirrors AcCombiner's DbComponent
- *  shape/kinds so the same "inside component list" UI + BOM itemisation apply.
- *  `kind` reuses DbComponentKind; `product` mirrors DbComponent.productId. */
-export interface DcComponent {
-  id: string
-  kind: DbComponentKind
-  label: string
-  /** Catalog product id (null = spec'd but no product → goes to quote). */
-  product: string | null
-  qty: number
-  /** Upstream source ids — other DC component ids, a string id, or DB_SUPPLY_ID. */
-  fedFrom?: string[]
-}
+/** @deprecated The DC combiner's internals now share the AC board's {@link DbComponent}
+ *  shape (item 44 → faceplate parity), so the same "inside" list + physical faceplate +
+ *  BOM itemisation apply to DC and AC boards alike. Kept as an alias so old imports still
+ *  resolve; `parseDesign` migrates the legacy `product` field → `productId`. */
+export type DcComponent = DbComponent
 
-export function defaultDcComponent(kind: DbComponentKind = 'breaker', fedFrom: string[] = []): DcComponent {
-  const def = dbComponentKind(kind)
-  return { id: mkId('dcc'), kind, label: def.label, product: null, qty: 1, fedFrom }
+/** @deprecated Use {@link defaultDbComponent}. */
+export function defaultDcComponent(kind: DbComponentKind = 'breaker', fedFrom: string[] = []): DbComponent {
+  return defaultDbComponent(kind, fedFrom)
 }
 
 export interface DcCombiner {
@@ -473,9 +465,18 @@ export interface DcCombiner {
    *  @deprecated legacy — the new UI uses `components`. Kept parseable so old
    *  designs don't crash; design-bom still itemises it when components are empty. */
   stringConnections: Record<string, StringConnection>
-  /** Devices mounted inside the box (item 44; mirrors AcCombiner.components).
+  /** Devices mounted inside the box (item 44; shares the AC board's DbComponent shape).
    *  Default EMPTY — protection is left OUT until the user adds it. */
-  components?: DcComponent[]
+  components?: DbComponent[]
+  // ── Physical faceplate (parity with the AC board — item: DC box layout) ──
+  /** Coloured conductors drawn terminal-to-terminal on the faceplate. */
+  wires?: DbWire[]
+  /** Named regions spanning an area of the board (a group of ways/rows). */
+  sections?: DbSection[]
+  /** Per-rail height in px (index = row). Absent/short → default rail height. */
+  rowHeights?: number[]
+  /** Three-phase colour convention used when drawing wires (default 'rwy'). */
+  phaseColors?: PhaseColorSet
 }
 
 export const ENCLOSURE_MATERIALS: Array<{ value: EnclosureMaterial; label: string }> = [
@@ -1333,6 +1334,23 @@ export function parseDesign(raw: unknown): SystemDesign | null {
   energy.weekly = Array.isArray(src.energy?.weekly) ? src.energy!.weekly!.map((v) => num(v)) : (src.energy?.weekly ?? null)
   energy.monthlyProfile = Array.isArray(src.energy?.monthlyProfile) ? src.energy!.monthlyProfile!.map((v) => num(v)) : (src.energy?.monthlyProfile ?? null)
   energy.annualProfile = Array.isArray(src.energy?.annualProfile) ? src.energy!.annualProfile!.map((v) => num(v)) : (src.energy?.annualProfile ?? null)
+  // Migrate DC combiners that addressed whole panel GROUPS (legacy: inputStringIds /
+  // output stringIds held group ids) to individual logical strings (`${groupId}#k`),
+  // so each parallel string can be tied in on its own. Ids already carrying `#` and
+  // ids that match no group are left untouched.
+  const dcGroupById = new Map((src.panels ?? []).map((g) => [g.id, g] as const))
+  const expandStringIds = (ids: unknown): string[] => {
+    const list = Array.isArray(ids) ? (ids as unknown[]) : []
+    const out: string[] = []
+    for (const id of list) {
+      if (typeof id !== 'string') continue
+      if (id.includes('#')) { out.push(id); continue }
+      const g = dcGroupById.get(id)
+      if (g) { const n = Math.max(1, Math.round(g.strings ?? 1)); for (let k = 0; k < n; k++) out.push(`${id}#${k}`) }
+      else out.push(id)
+    }
+    return out.filter((x, i) => out.indexOf(x) === i)
+  }
   return {
     ...base,
     ...src,
@@ -1383,8 +1401,16 @@ export function parseDesign(raw: unknown): SystemDesign | null {
       ...c,
       enclosureCatalogId: c.enclosureCatalogId ?? null,
       stringConnections: c.stringConnections ?? {},
-      outputs: (c.outputs ?? []).map((o) => ({ ...o, spdId: o.spdId ?? null, mainBreakerId: o.mainBreakerId ?? null })),
-      components: (c.components ?? []).map((k) => ({ ...k, product: k.product ?? null, qty: k.qty || 1, fedFrom: Array.isArray(k.fedFrom) ? k.fedFrom : [] })),
+      inputStringIds: expandStringIds(c.inputStringIds),
+      outputs: (c.outputs ?? []).map((o) => ({ ...o, stringIds: expandStringIds(o.stringIds), spdId: o.spdId ?? null, mainBreakerId: o.mainBreakerId ?? null })),
+      components: (c.components ?? []).map((k) => {
+        const kk = k as DbComponent & { product?: string | null }
+        return { ...kk, productId: kk.productId ?? kk.product ?? null, qty: kk.qty || 1, fedFrom: Array.isArray(kk.fedFrom) ? kk.fedFrom : [] }
+      }),
+      wires: c.wires ?? [],
+      sections: c.sections ?? [],
+      rowHeights: c.rowHeights ?? undefined,
+      phaseColors: c.phaseColors ?? undefined,
     })),
     // Inverter phase config + capability toggles (items 50/51). Derive `phases`
     // from phaseConfig when present so existing logic still reads a 1|3.
@@ -1618,6 +1644,11 @@ export function enumerateStrings(d: SystemDesign): LogicalString[] {
     }
   })
   return out
+}
+
+/** Chip label for one logical string — "String 3 · 18×360W". */
+export function logicalStringLabel(s: LogicalString): string {
+  return `String ${s.seq}${s.panels ? ` · ${s.panels}×${s.panelWatts}W` : ''}`
 }
 
 /** Even, contiguous auto-distribution of logical strings across `mpptCount` MPPTs:
@@ -1963,14 +1994,21 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
   // combiner but multiple strings exist, a single implicit combiner is emitted.
   const panelIndexById = new Map<string, number>()
   d.panels.forEach((g, i) => panelIndexById.set(g.id, i))
-  // The string node-indices feeding each combiner. Explicit combiners use their
-  // inputStringIds (falling back to all strings when empty); the implicit combiner
-  // gathers every string.
-  const combinerStringIdx = (c: DcCombiner | undefined): number[] => {
+  // A combiner's inputStringIds are individual logical strings (`${groupId}#k`). The
+  // diagram draws ONE cable per feeding array (dedupe by group), while the node's
+  // Strings/Fuses figures reflect every individual string.
+  const combinerGroupIdx = (c: DcCombiner | undefined): number[] => {
     if (!c) return d.panels.map((_, i) => i)
-    const idx = c.inputStringIds.map((sid) => panelIndexById.get(sid)).filter((x): x is number => x != null)
+    const seen = new Set<number>()
+    const idx: number[] = []
+    for (const sid of c.inputStringIds) {
+      const gi = panelIndexById.get(sid.split('#')[0])
+      if (gi != null && !seen.has(gi)) { seen.add(gi); idx.push(gi) }
+    }
     return idx.length ? idx : d.panels.map((_, i) => i)
   }
+  const combinerStringCount = (c: DcCombiner | undefined): number =>
+    !c ? designStringCount(d) : (c.inputStringIds.length || designStringCount(d))
   // The list of combiners to render: explicit entries, or one implicit when needed.
   const renderCombiners: Array<DcCombiner | undefined> =
     d.dcCombiners.length > 0 ? d.dcCombiners : (useCombiner && groupCount > 0 ? [undefined] : [])
@@ -1979,7 +2017,8 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
   if (groupCount > 0) {
     renderCombiners.forEach((explicit, ci) => {
       const id = NODE.combinerN(ci)
-      const strIdx = combinerStringIdx(explicit)
+      const grpIdx = combinerGroupIdx(explicit)
+      const strCount = combinerStringCount(explicit)
       const outCount = explicit ? Math.max(1, explicit.outputs.length) : 1
       nodes.push({
         id,
@@ -1987,16 +2026,16 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
         position: pos(id, { x: combStartX + ci * COMB_GAP, y: Y_COMB }),
         data: {
           label: explicit?.label || 'DC Combiner Box',
-          stringCount: strIdx.length || groupCount,
+          stringCount: strCount,
           hasSpd: explicit ? explicit.outputs.some((o) => !!o.spdId) : true,
-          config: explicit ? combinerConfigLabel(explicit) : `${groupCount}-string`,
-          // Ports (item 22/44): inputs = wired strings, outputs = combined feeds.
-          inputCount: strIdx.length || groupCount,
+          config: explicit ? combinerConfigLabel(explicit) : `${strCount}-string`,
+          // Ports (item 22/44): inputs = feeding arrays (one cable each), outputs = combined feeds.
+          inputCount: grpIdx.length || groupCount,
           outputCount: outCount,
         },
       })
-      // Input edges from each assigned string.
-      strIdx.forEach((pi, k) => {
+      // One input edge per feeding array.
+      grpIdx.forEach((pi, k) => {
         edges.push({
           id: ci === 0 ? `e-panel${pi}-comb` : `e-panel${pi}-comb${ci}`,
           source: NODE.panel(pi),
