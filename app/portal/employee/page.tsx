@@ -139,6 +139,7 @@ export default async function EmployeePortalRoot() {
 
   let needs: NeedRow[] = []
   let planItems: PlanListItem[] = []
+  let briefingIncomplete = false
   let openQuotes = 0
   let activeJobs = 0
   let proofs = 0
@@ -161,6 +162,7 @@ export default async function EmployeePortalRoot() {
         .order('code', { ascending: true }),
     ])
 
+    briefingIncomplete = briefing.incomplete
     openQuotes = openQuotesRes.count ?? 0
     activeJobs = activeJobsRes.count ?? 0
     proofs = proofsRes.count ?? 0
@@ -359,6 +361,11 @@ export default async function EmployeePortalRoot() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {briefingIncomplete && (
+            <p className="mb-3 text-sm text-destructive">
+              ⚠️ Some data couldn&apos;t be loaded, so this list may be missing items. Refresh in a moment.
+            </p>
+          )}
           <NeedsList rows={needs} />
         </CardContent>
       </Card>
