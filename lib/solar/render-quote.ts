@@ -245,9 +245,27 @@ export function renderCustomerQuote(data: AnyQuoteData): string {
 
 // ── Single-option renderer ────────────────────────────────────────────────────
 
+/**
+ * HTML-escape an interpolated value. Several quote fields (customerName,
+ * siteAddress, municipality, customerEmail) are user-supplied — via the public
+ * lead form among others — and end up in quote_html, which the Print/PDF button
+ * writes into a live document. Without escaping, a `<script>` smuggled into a
+ * name would execute in the app origin. Escape at every interpolation point.
+ */
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function val(data: Record<string, unknown>, key: string): string {
   const v = data[key]
-  return v !== undefined && v !== null ? String(v) : `{{${key}}}`
+  // Missing keys keep the {{key}} placeholder so the section injectors that run
+  // after this pass (MONTHLY_GEN_SECTION, TWENTY_YEAR_SECTION, …) still match.
+  return v !== undefined && v !== null ? escapeHtml(v) : `{{${key}}}`
 }
 
 function renderSingleOptionHtml(data: QuoteData, tierLabel?: string): string {
@@ -256,7 +274,7 @@ function renderSingleOptionHtml(data: QuoteData, tierLabel?: string): string {
 
   // Inject tier badge if part of multi-option
   if (tierLabel) {
-    html = html.replace('{{TIER_BADGE}}', `<div class="tier-badge">${tierLabel}</div>`)
+    html = html.replace('{{TIER_BADGE}}', `<div class="tier-badge">${escapeHtml(tierLabel)}</div>`)
   } else {
     html = html.replace('{{TIER_BADGE}}', '')
   }
@@ -292,10 +310,10 @@ function renderSingleOptionHtml(data: QuoteData, tierLabel?: string): string {
 function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
   const comparisonRows = (data.comparisonTable ?? []).map(row => `
     <tr>
-      <td class="comp-label">${row.label}</td>
-      <td class="comp-cell">${row.premium}</td>
-      <td class="comp-cell comp-recommended">${row.recommended}</td>
-      <td class="comp-cell">${row.budget}</td>
+      <td class="comp-label">${escapeHtml(row.label)}</td>
+      <td class="comp-cell">${escapeHtml(row.premium)}</td>
+      <td class="comp-cell comp-recommended">${escapeHtml(row.recommended)}</td>
+      <td class="comp-cell">${escapeHtml(row.budget)}</td>
     </tr>`).join('')
 
   // Merge top-level header fields into each option — the agent puts shared fields
@@ -329,7 +347,7 @@ function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${data.quoteNumber} — Haberl Solar Proposal</title>
+  <title>${escapeHtml(data.quoteNumber)} — Haberl Solar Proposal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -378,12 +396,12 @@ function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
       </div>
     </div>
     <div class="quote-meta">
-      <div class="quo-number">${data.quoteNumber}</div>
+      <div class="quo-number">${escapeHtml(data.quoteNumber)}</div>
       <table>
-        <tr><td>Date</td><td>${data.dateIssued}</td></tr>
-        <tr><td>Valid until</td><td>${data.dateExpires}</td></tr>
-        <tr><td>Customer</td><td>${data.customerName}</td></tr>
-        <tr><td>Municipality</td><td>${data.municipality}</td></tr>
+        <tr><td>Date</td><td>${escapeHtml(data.dateIssued)}</td></tr>
+        <tr><td>Valid until</td><td>${escapeHtml(data.dateExpires)}</td></tr>
+        <tr><td>Customer</td><td>${escapeHtml(data.customerName)}</td></tr>
+        <tr><td>Municipality</td><td>${escapeHtml(data.municipality)}</td></tr>
       </table>
     </div>
   </header>
@@ -454,7 +472,7 @@ function renderCustomerSingleHtml(data: QuoteData, tierLabel?: string): string {
   let html = CUSTOMER_TEMPLATE.replace(/\{\{(\w+)\}\}/g, (_, key: string) => val(d, key))
 
   if (tierLabel) {
-    html = html.replace('{{TIER_BADGE}}', `<div class="tier-badge">${tierLabel}</div>`)
+    html = html.replace('{{TIER_BADGE}}', `<div class="tier-badge">${escapeHtml(tierLabel)}</div>`)
   } else {
     html = html.replace('{{TIER_BADGE}}', '')
   }
@@ -483,10 +501,10 @@ function renderCustomerSingleHtml(data: QuoteData, tierLabel?: string): string {
 function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
   const comparisonRows = (data.comparisonTable ?? []).map(row => `
     <tr>
-      <td class="comp-label">${row.label}</td>
-      <td class="comp-cell">${row.premium}</td>
-      <td class="comp-cell comp-recommended">${row.recommended}</td>
-      <td class="comp-cell">${row.budget}</td>
+      <td class="comp-label">${escapeHtml(row.label)}</td>
+      <td class="comp-cell">${escapeHtml(row.premium)}</td>
+      <td class="comp-cell comp-recommended">${escapeHtml(row.recommended)}</td>
+      <td class="comp-cell">${escapeHtml(row.budget)}</td>
     </tr>`).join('')
 
   const optionSections = data.options.map(opt => {
@@ -515,7 +533,7 @@ function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${data.quoteNumber} — Haberl Solar Proposal</title>
+  <title>${escapeHtml(data.quoteNumber)} — Haberl Solar Proposal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -553,12 +571,12 @@ function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
       </div>
     </div>
     <div class="quote-meta">
-      <div class="quo-number">${data.quoteNumber}</div>
+      <div class="quo-number">${escapeHtml(data.quoteNumber)}</div>
       <table>
-        <tr><td>Date</td><td>${data.dateIssued}</td></tr>
-        <tr><td>Valid until</td><td>${data.dateExpires}</td></tr>
-        <tr><td>Customer</td><td>${data.customerName}</td></tr>
-        <tr><td>Municipality</td><td>${data.municipality}</td></tr>
+        <tr><td>Date</td><td>${escapeHtml(data.dateIssued)}</td></tr>
+        <tr><td>Valid until</td><td>${escapeHtml(data.dateExpires)}</td></tr>
+        <tr><td>Customer</td><td>${escapeHtml(data.customerName)}</td></tr>
+        <tr><td>Municipality</td><td>${escapeHtml(data.municipality)}</td></tr>
       </table>
     </div>
   </header>

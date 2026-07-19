@@ -43,28 +43,44 @@ async function resolveCustomerSite(
   const customerId = quote.customer_id as string | null
   if (!customerId) return null
 
-  const { data: site } = await supabase
+  const address = String(quote.address ?? '')
+
+  // Match an existing site by address for this customer. Escape LIKE
+  // metacharacters (%, _, \) so they match literally, and take the first row via
+  // limit(1) rather than maybeSingle(): maybeSingle() throws when a customer has
+  // more than one site at the same address, and that error was swallowed —
+  // silently creating a duplicate site on every acceptance.
+  const escaped = address.replace(/([\\%_])/g, '\\$1')
+  const { data: sites, error: findError } = await supabase
     .from('sites')
     .select('id')
     .eq('customer_id', customerId)
-    .ilike('address', quote.address ?? '')
-    .maybeSingle()
+    .ilike('address', escaped)
+    .limit(1)
+  if (findError) {
+    // Don't fall through to an insert on a read error — that would create a
+    // duplicate. Skip linking; the caller surfaces a "no site linked" warning.
+    console.error('[create-from-quote] site lookup failed', findError)
+    return null
+  }
+  if (sites && sites.length > 0) return sites[0].id
 
-  if (site) return site.id
-
-  const { data: newSite } = await supabase
+  const { data: newSite, error: insertError } = await supabase
     .from('sites')
     .insert({
       customer_id: customerId,
       name: `${quote.customer_name} - Site ${quote.site_number ?? 1}`,
-      address: quote.address ?? '',
+      address,
       system_type: 'Solar PV',
       status: 'pending',
     })
     .select('id')
     .single()
-
-  return newSite?.id ?? null
+  if (insertError || !newSite) {
+    console.error('[create-from-quote] site creation failed', insertError)
+    return null
+  }
+  return newSite.id
 }
 
 // Pull the supplier BOM out of the saved quote JSON. Multi-option quotes use

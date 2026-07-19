@@ -29,9 +29,13 @@ export async function GET(req: Request) {
     return Response.json({ suggestions: [] }, { status: 429 })
   }
 
-  // Use the Maps key — confirmed to have Places API (New) enabled.
-  // Server-to-server calls skip referrer restrictions entirely.
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? process.env.GOOGLE_SOLAR_API_KEY
+  // This is a server-to-server Places call, so it needs a key WITHOUT HTTP-referrer
+  // restrictions. Never fall back to NEXT_PUBLIC_GOOGLE_MAPS_KEY: that key is
+  // shipped in the browser bundle and should be referrer-locked to our domains —
+  // Google rejects a referrer-restricted key on a request that carries no referrer.
+  // Use a dedicated server key (Places API enabled), falling back to the existing
+  // server-only Solar key.
+  const apiKey = process.env.GOOGLE_MAPS_SERVER_KEY ?? process.env.GOOGLE_SOLAR_API_KEY
   if (!apiKey) return Response.json({ suggestions: [] })
 
   const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
@@ -47,9 +51,11 @@ export async function GET(req: Request) {
   })
 
   if (!res.ok) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const errBody: any = await res.json().catch(() => ({}))
-    return Response.json({ suggestions: [], _debug: { status: res.status, error: errBody } })
+    // Log the upstream error server-side; never echo Google's error body to the
+    // caller (it can leak key/quota/config detail to anonymous visitors).
+    const errBody = await res.text().catch(() => '')
+    console.error('[places/autocomplete] upstream error', res.status, errBody.slice(0, 500))
+    return Response.json({ suggestions: [] })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,5 +65,5 @@ export async function GET(req: Request) {
     .map((s: any) => s.placePrediction?.text?.text as string | undefined)
     .filter(Boolean)
 
-  return Response.json({ suggestions, _debug: { count: suggestions.length } })
+  return Response.json({ suggestions })
 }

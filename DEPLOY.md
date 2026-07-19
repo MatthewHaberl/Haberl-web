@@ -19,8 +19,9 @@ The repo is already prepared: `vercel.json` configures the daily quote-followups
 | `NEXT_PUBLIC_APP_URL` | `https://haberl.co.za` (drives links in emails + public quote URLs) | ✅ |
 | `RESEND_API_KEY` | resend.com → API Keys (verify the haberl.co.za domain first) | ✅ for emails |
 | `CRON_SECRET` | any long random string — Vercel Cron sends it automatically as a Bearer token | ✅ for follow-ups |
-| `GOOGLE_SOLAR_API_KEY` | Google Cloud console (server-only) | ✅ for roof designer |
-| `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | Google Cloud console — restrict to haberl.co.za + vercel.app preview domain | ✅ for roof designer |
+| `GOOGLE_SOLAR_API_KEY` | Google Cloud console (server-only, **no** referrer restriction) | ✅ for roof designer |
+| `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | Google Cloud console — **browser key**, restrict by HTTP referrer to haberl.co.za + vercel.app preview domain (Maps JS only) | ✅ for roof designer |
+| `GOOGLE_MAPS_SERVER_KEY` | Google Cloud console — **server key** for address autocomplete (Places API enabled, **no** referrer restriction; restrict by API instead). Keep separate from the browser key so one can be referrer-locked and the other used server-to-server. Falls back to `GOOGLE_SOLAR_API_KEY` if unset | ✅ for address autocomplete |
 | `NOMINATIM_USER_AGENT` | `haberl-web/1.0 (matthew@haberl.co.za)` | ✅ |
 | `MONITORING_CRON_SECRET` | existing value (VPS crontab for /api/monitoring/collect) | if monitoring used |
 | `MONITORING_CREDENTIALS_KEY` | existing 64-hex value | if monitoring used |

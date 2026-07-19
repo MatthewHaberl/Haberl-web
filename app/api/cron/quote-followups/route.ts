@@ -89,10 +89,16 @@ export async function GET(req: NextRequest) {
         flaggedForFollowup++
       }
 
-      await supabase
+      const { error: counterError } = await supabase
         .from('quote_requests')
         .update({ reminder_count: nextReminderCount(action), last_reminder_at: new Date().toISOString() })
         .eq('id', quote.id)
+      if (counterError) {
+        // The nudge was already sent; if the counter didn't advance, tomorrow's
+        // run would send the same reminder again. Surface it instead of looping
+        // silently.
+        failures.push(`${quote.id}: reminder sent but counter update failed — ${counterError.message}`)
+      }
     } catch (err) {
       failures.push(`${quote.id}: ${err instanceof Error ? err.message : String(err)}`)
     }

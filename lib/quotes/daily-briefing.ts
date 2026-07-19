@@ -102,6 +102,14 @@ export interface DailyBriefing {
   overduePOs: BriefingItem[]
   totalAuto: number
   totalAttention: number
+  /**
+   * Data sources that failed to load on this run. When non-empty the counts above
+   * are PARTIAL — a query error must never be silently rendered as "all clear",
+   * or the operator stops seeing real deposits / leads / expiring quotes with no
+   * signal that anything broke.
+   */
+  errors: string[]
+  incomplete: boolean
 }
 
 function rands(cents: number | null | undefined): string {
@@ -162,6 +170,21 @@ export async function buildDailyBriefing(
       .in('status', ['sent', 'partial']).not('expected_date', 'is', null)
       .lt('expected_date', today).order('expected_date', { ascending: true }),
   ])
+
+  // A failed query returns { data: null, error }. Without checking, `data ?? []`
+  // turns every failure into an empty section and the briefing cheerfully reports
+  // "all clear". Collect the failures so the email can flag itself as incomplete.
+  const errors: string[] = []
+  const checkError = (label: string, res: { error: { message?: string } | null }) => {
+    if (res.error) errors.push(`${label}: ${res.error.message ?? 'query failed'}`)
+  }
+  checkError('quotes to follow up', sentRes)
+  checkError('draft quotes', draftRes)
+  checkError('viewed quotes', viewedRes)
+  checkError('deposits to confirm', depositRes)
+  checkError('new leads', leadRes)
+  checkError('contacted leads', contactedLeadRes)
+  checkError('overdue purchase orders', poRes)
 
   const sentQuotes = (sentRes.data ?? []) as Array<PlannableQuote & { id: string; customer_name: string; quote_number: string | null }>
   const customerSends: BriefingQuoteRef[] = []
@@ -285,6 +308,8 @@ export async function buildDailyBriefing(
     overduePOs,
     totalAuto: customerSends.length,
     totalAttention,
+    errors,
+    incomplete: errors.length > 0,
   }
 }
 
@@ -340,15 +365,28 @@ export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
     emailList('📦 Overdue purchase orders', b.overduePOs, baseUrl),
   ].join('')
 
+  const incompleteBanner = b.incomplete
+    ? `<div style="margin:12px 0;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:13px;line-height:1.5;">
+         ⚠️ <strong>This briefing is incomplete.</strong> ${b.errors.length} data source${b.errors.length === 1 ? '' : 's'} failed to load, so the counts below may be missing items — don't treat a quiet inbox as "all clear" today.
+         <span style="color:#6b7280;">(${b.errors.map((e) => e.split(':')[0]).join(', ')})</span>
+       </div>`
+    : ''
+
+  // Only claim "all clear" when nothing needs attention AND every source loaded.
+  const allClear = !b.totalAttention && !b.incomplete
+
   const body = `
     <p style="font-size:15px;line-height:1.6;">Good morning. Here's your day at a glance for <strong>${b.dateLabel}</strong>.</p>
+    ${incompleteBanner}
 
     <h2 style="font-size:16px;color:#1e3a5f;margin:22px 0 2px;">📤 Going out automatically today (${b.totalAuto})</h2>
     <p style="font-size:13px;color:#6b7280;margin:0 0 8px;">These send on their own — no action needed from you.</p>
     ${autoBlock}
 
     <h2 style="font-size:16px;color:#1e3a5f;margin:24px 0 2px;">✅ Needs you today (${b.totalAttention})</h2>
-    ${b.totalAttention ? attention : `<p style="font-size:14px;color:#16a34a;margin:6px 0;">All clear — nothing needs you right now.</p>`}
+    ${b.totalAttention ? attention : allClear
+      ? `<p style="font-size:14px;color:#16a34a;margin:6px 0;">All clear — nothing needs you right now.</p>`
+      : `<p style="font-size:14px;color:#991b1b;margin:6px 0;">Nothing loaded — but a data source failed, so this isn't confirmed. Please open the full briefing.</p>`}
 
     ${emailButton(`${baseUrl}/portal/employee/briefing`, 'Open full briefing')}
   `
@@ -357,6 +395,11 @@ export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
 
 export function renderBriefingText(b: DailyBriefing, baseUrl: string): string {
   const lines: string[] = [`Haberl daily briefing — ${b.dateLabel}`, '']
+  if (b.incomplete) {
+    lines.push(`⚠️ INCOMPLETE — ${b.errors.length} data source(s) failed to load; counts below may be partial:`)
+    for (const e of b.errors) lines.push(`  - ${e}`)
+    lines.push('')
+  }
   lines.push(`GOING OUT AUTOMATICALLY (${b.totalAuto}):`)
   if (b.customerSends.length) {
     for (const q of b.customerSends) lines.push(`  - ${q.customerName}${q.quoteNumber ? ` (${q.quoteNumber})` : ''} — ${q.detail}`)
@@ -376,7 +419,7 @@ export function renderBriefingText(b: DailyBriefing, baseUrl: string): string {
     lines.push(`  - [follow up] ${l.label}${l.sub ? ` (${l.sub})` : ''}${l.phone ? ` — call ${l.phone}` : ''}`)
   }
   push('PO overdue', b.overduePOs)
-  if (!b.totalAttention) lines.push('  - All clear')
+  if (!b.totalAttention) lines.push(b.incomplete ? '  - Nothing loaded (a source failed — not confirmed)' : '  - All clear')
   lines.push('', `Full briefing: ${baseUrl}/portal/employee/briefing`)
   return lines.join('\n')
 }
@@ -410,7 +453,7 @@ export async function emailDailyBriefing(opts: {
   const briefing = await buildDailyBriefing(opts.supabase, now)
   const result = await sendEmail({
     to: opts.to,
-    subject: `Haberl daily briefing — ${briefing.totalAttention} need you, ${briefing.totalAuto} auto-sending`,
+    subject: `${briefing.incomplete ? '⚠️ ' : ''}Haberl daily briefing — ${briefing.totalAttention} need you, ${briefing.totalAuto} auto-sending${briefing.incomplete ? ' (incomplete)' : ''}`,
     html: renderBriefingHtml(briefing, opts.baseUrl),
     text: renderBriefingText(briefing, opts.baseUrl),
   })
