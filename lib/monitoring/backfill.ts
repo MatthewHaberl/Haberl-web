@@ -200,10 +200,14 @@ export async function runBackfillChunk(
 }
 
 async function persist(supabase: AnySupabaseClient, job: BackfillJob): Promise<BackfillJob> {
-  await supabase.from('monitoring_backfill_jobs').update({
+  const { error } = await supabase.from('monitoring_backfill_jobs').update({
     cursor_day: job.cursor_day, earliest_day: job.earliest_day, empty_streak: job.empty_streak,
     days_done: job.days_done, rows_written: job.rows_written, updated_at: new Date().toISOString(),
   }).eq('id', job.id)
+  // If the cursor doesn't advance in the DB, the client (which reloads the job
+  // each chunk) re-fetches the same days from the brand cloud forever. Fail loudly
+  // — the route catches and 500s rather than looping.
+  if (error) throw new Error(`backfill persist failed: ${error.message}`)
   return job
 }
 
@@ -212,11 +216,14 @@ async function finish(
   status: 'done' | 'error' | 'cancelled', error?: string,
 ): Promise<BackfillJob> {
   job.status = status
-  await supabase.from('monitoring_backfill_jobs').update({
+  const { error: writeError } = await supabase.from('monitoring_backfill_jobs').update({
     status, error: error ?? null, cursor_day: job.cursor_day, earliest_day: job.earliest_day,
     empty_streak: job.empty_streak, days_done: job.days_done, rows_written: job.rows_written,
     updated_at: new Date().toISOString(),
   }).eq('id', job.id)
+  // If the terminal status doesn't persist, the DB row stays 'running' forever
+  // and no new backfill can be started for this system. Surface it.
+  if (writeError) throw new Error(`backfill finish failed: ${writeError.message}`)
   return job
 }
 

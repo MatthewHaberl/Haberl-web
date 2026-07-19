@@ -46,6 +46,25 @@ async function getAdminProfiles(supabase: AnySupabaseClient): Promise<AdminProfi
   return ((data ?? []) as AdminProfile[]).filter((a) => !!a.email)
 }
 
+async function resolveOpenEvent(
+  supabase: AnySupabaseClient,
+  ruleId: string,
+  systemId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('monitoring_alert_events')
+    .update({ resolved_at: new Date().toISOString() })
+    .eq('rule_id', ruleId)
+    .eq('system_id', systemId)
+    .is('resolved_at', null)
+  if (error) {
+    // If the resolve silently fails the event stays "open", and evaluateRule
+    // gates all notifications on !hasOpenEvent — so the NEXT genuine incident of
+    // this type would fire no alert at all (permanent suppression). Surface it.
+    console.error('[alert-engine] failed to auto-resolve event (future alerts may be suppressed)', error)
+  }
+}
+
 async function fireNotifications(
   supabase: AnySupabaseClient,
   ruleId: string | null,
@@ -154,12 +173,7 @@ async function evaluateRule(
         )
       } else if (!isOffline && hasOpenEvent) {
         // Auto-resolve
-        await supabase
-          .from('monitoring_alert_events')
-          .update({ resolved_at: new Date().toISOString() })
-          .eq('rule_id', rule.id)
-          .eq('system_id', systemId)
-          .is('resolved_at', null)
+        await resolveOpenEvent(supabase, rule.id, systemId)
       }
       break
     }
@@ -172,12 +186,7 @@ async function evaluateRule(
           rule.severity, rule.notify_channels, admins
         )
       } else if (reading.fault_codes.length === 0 && hasOpenEvent) {
-        await supabase
-          .from('monitoring_alert_events')
-          .update({ resolved_at: new Date().toISOString() })
-          .eq('rule_id', rule.id)
-          .eq('system_id', systemId)
-          .is('resolved_at', null)
+        await resolveOpenEvent(supabase, rule.id, systemId)
       }
       break
     }
@@ -193,12 +202,7 @@ async function evaluateRule(
         )
       } else if (soc != null && soc >= threshold + 5 && hasOpenEvent) {
         // 5% hysteresis before auto-resolving
-        await supabase
-          .from('monitoring_alert_events')
-          .update({ resolved_at: new Date().toISOString() })
-          .eq('rule_id', rule.id)
-          .eq('system_id', systemId)
-          .is('resolved_at', null)
+        await resolveOpenEvent(supabase, rule.id, systemId)
       }
       break
     }

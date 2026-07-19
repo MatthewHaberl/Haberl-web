@@ -117,10 +117,20 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   if (po.status === 'draft') {
-    await supabase
+    const { error: statusError } = await supabase
       .from('purchase_orders')
       .update({ status: 'sent', sent_at: new Date().toISOString() })
       .eq('id', id)
+    if (statusError) {
+      // The email already reached the supplier. If the status didn't flip to
+      // 'sent', the PO still shows "Draft" and staff may click "Email supplier"
+      // again — sending the same order twice. Warn instead of silently ok-ing.
+      console.error('[procurement/email] status update failed after send', statusError)
+      return NextResponse.json({
+        ok: true,
+        warning: 'Emailed to the supplier, but the status could not be updated to "sent". Do NOT resend — confirm with the supplier first.',
+      })
+    }
   }
 
   return NextResponse.json({ ok: true })
