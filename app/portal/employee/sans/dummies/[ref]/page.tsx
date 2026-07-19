@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ChevronLeft, Columns2, Lightbulb } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { inForceDocId } from '@/lib/sans/documents'
 import { sortKeyFor } from '@/lib/sans/refs'
 import type { SansClause } from '@/types/database'
 
@@ -14,11 +15,14 @@ export default async function SansDummiesChapterPage({
   const { ref: rawRef } = await params
   const ref = decodeURIComponent(rawRef)
   const supabase = await createClient()
+  const docId = await inForceDocId(supabase)
+  if (!docId) notFound()
 
   const key = sortKeyFor(ref)
   const { data } = await supabase
     .from('sans_clauses')
     .select('id, clause_ref, parent_ref, title, kind, plain_summary, sort_key')
+    .eq('document_id', docId)
     .gte('sort_key', key)
     .lte('sort_key', key + '.zzz')
     .order('sort_key')

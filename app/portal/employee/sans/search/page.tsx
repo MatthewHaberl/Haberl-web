@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/layout/page'
+import { inForceDocId } from '@/lib/sans/documents'
 import type { SansClause } from '@/types/database'
 
 /** Search hits from clause metadata/summaries, plus verbatim-text hits for admin. */
@@ -17,18 +18,21 @@ export default async function SansSearchPage({
   let results: SansClause[] = []
   let bodyHitIds = new Set<string>()
 
-  if (query) {
+  const docId = query ? await inForceDocId(supabase) : null
+
+  if (query && docId) {
     // Direct clause-ref lookup ("6.7.5") beats full-text when it matches.
     const refPattern = /^[0-9A-Za-z]+(\.[0-9]+)*$/.test(query)
     const [meta, refHits, bodies] = await Promise.all([
       supabase
         .from('sans_clauses')
         .select('*')
+        .eq('document_id', docId)
         .textSearch('search', query, { type: 'websearch' })
         .order('sort_key')
         .limit(60),
       refPattern
-        ? supabase.from('sans_clauses').select('*').ilike('clause_ref', `${query}%`).order('sort_key').limit(30)
+        ? supabase.from('sans_clauses').select('*').eq('document_id', docId).ilike('clause_ref', `${query}%`).order('sort_key').limit(30)
         : Promise.resolve({ data: [] as SansClause[] }),
       supabase
         .from('sans_clause_bodies')
@@ -45,7 +49,12 @@ export default async function SansSearchPage({
     bodyHitIds = new Set(((bodies.data as { clause_id: string }[]) ?? []).map((b) => b.clause_id))
     const missingBodyIds = [...bodyHitIds].filter((id) => !byId.has(id))
     if (missingBodyIds.length) {
-      const { data: extra } = await supabase.from('sans_clauses').select('*').in('id', missingBodyIds)
+      // Document filter also drops body hits from any non-in-force edition.
+      const { data: extra } = await supabase
+        .from('sans_clauses')
+        .select('*')
+        .eq('document_id', docId)
+        .in('id', missingBodyIds)
       for (const c of (extra as SansClause[]) ?? []) byId.set(c.id, c)
     }
 

@@ -20,14 +20,17 @@ const QUICK_LINKS = [
 export default async function SansOverviewPage() {
   const supabase = await createClient()
 
-  const [{ data: docs }, { count: clauseCount }, { count: ruleCount }] = await Promise.all([
-    supabase.from('sans_documents').select('*').eq('code', '10142-1').order('edition'),
-    supabase.from('sans_clauses').select('id', { count: 'exact', head: true }),
-    supabase.from('sans_rules').select('id', { count: 'exact', head: true }),
-  ])
-
+  const { data: docs } = await supabase
+    .from('sans_documents').select('*').eq('code', '10142-1').order('edition')
   const inForce = (docs as SansDocument[] | null)?.find((d) => d.status === 'in_force')
   const draft = (docs as SansDocument[] | null)?.find((d) => d.status === 'draft')
+
+  const [{ count: clauseCount }, { count: ruleCount }] = await Promise.all([
+    inForce
+      ? supabase.from('sans_clauses').select('id', { count: 'exact', head: true }).eq('document_id', inForce.id)
+      : Promise.resolve({ count: 0 }),
+    supabase.from('sans_rules').select('id', { count: 'exact', head: true }),
+  ])
 
   return (
     <div className="flex flex-col gap-6">

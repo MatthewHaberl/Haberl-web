@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { ChevronRight, Lightbulb, ShieldCheck, GitCompareArrows, Lock, Columns2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
+import { inForceDocId } from '@/lib/sans/documents'
 import { ancestorsOf, FRONT_MATTER_TITLES, TAG_LABELS } from '@/lib/sans/refs'
 import { amdt3ChangesFor } from '@/lib/sans/amdt3-changes'
 import { BookPanel } from '@/components/sans/BookPanel'
@@ -25,10 +26,13 @@ export default async function SansClausePage({
   const ref = decodeURIComponent(rawRef)
   const { role } = await requireSection('sans')
   const supabase = await createClient()
+  const docId = await inForceDocId(supabase)
+  if (!docId) notFound()
 
   const { data: clauseRow } = await supabase
     .from('sans_clauses')
     .select('*')
+    .eq('document_id', docId)
     .eq('clause_ref', ref)
     .maybeSingle()
   if (!clauseRow) notFound()
@@ -41,10 +45,11 @@ export default async function SansClausePage({
       supabase
         .from('sans_clauses')
         .select('id, clause_ref, title, kind, plain_summary, sort_key, page_number')
+        .eq('document_id', docId)
         .eq('parent_ref', ref)
         .order('sort_key'),
       ancestors.length
-        ? supabase.from('sans_clauses').select('clause_ref, title').in('clause_ref', ancestors)
+        ? supabase.from('sans_clauses').select('clause_ref, title').eq('document_id', docId).in('clause_ref', ancestors)
         : Promise.resolve({ data: [] }),
       supabase.from('sans_rules').select('*').overlaps('clause_refs', [ref, ...ancestors]),
     ])

@@ -2,17 +2,22 @@ import Link from 'next/link'
 import { ListTree, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/layout/page'
+import { inForceDocId } from '@/lib/sans/documents'
 import { CHAPTER_BLURBS, FRONT_MATTER_TITLES, isAnnexRef } from '@/lib/sans/refs'
 import type { SansClause } from '@/types/database'
 
 /** Top-level table of contents: front matter, chapters 1–8, annexes. */
 export default async function SansBrowsePage() {
   const supabase = await createClient()
-  const { data } = await supabase
-    .from('sans_clauses')
-    .select('id, clause_ref, title, kind, page_number, plain_summary, sort_key')
-    .is('parent_ref', null)
-    .order('sort_key')
+  const docId = await inForceDocId(supabase)
+  const { data } = docId
+    ? await supabase
+        .from('sans_clauses')
+        .select('id, clause_ref, title, kind, page_number, plain_summary, sort_key')
+        .eq('document_id', docId)
+        .is('parent_ref', null)
+        .order('sort_key')
+    : { data: null }
 
   const top = (data as SansClause[] | null) ?? []
   const frontMatter = top.filter((c) => FRONT_MATTER_TITLES[c.clause_ref.toLowerCase()])

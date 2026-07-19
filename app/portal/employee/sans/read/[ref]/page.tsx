@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ChevronLeft, Columns2, Lightbulb, ScrollText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { inForceDocId } from '@/lib/sans/documents'
 import { sortKeyFor, FRONT_MATTER_TITLES } from '@/lib/sans/refs'
 
 interface ReadRow {
@@ -34,11 +35,14 @@ export default async function SansReadPage({
   const { ref: rawRef } = await params
   const ref = decodeURIComponent(rawRef)
   const supabase = await createClient()
+  const docId = await inForceDocId(supabase)
+  if (!docId) notFound()
 
   const key = sortKeyFor(ref)
   const { data } = await supabase
     .from('sans_clauses')
     .select('id, clause_ref, parent_ref, title, kind, page_number, plain_summary, sort_key, sans_clause_bodies(body)')
+    .eq('document_id', docId)
     .gte('sort_key', key)
     .lte('sort_key', key + '.zzz')
     .order('sort_key')

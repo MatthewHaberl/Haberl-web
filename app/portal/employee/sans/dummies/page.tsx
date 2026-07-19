@@ -3,6 +3,7 @@ import { Lightbulb, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getUserAccess } from '@/lib/auth/permissions'
 import { PageHeader } from '@/components/layout/page'
+import { inForceDocId } from '@/lib/sans/documents'
 import { CHAPTER_BLURBS, isAnnexRef } from '@/lib/sans/refs'
 import type { SansClause } from '@/types/database'
 
@@ -15,11 +16,15 @@ export default async function SansDummiesPage() {
   const access = await getUserAccess()
   const readerBase = access?.role === 'admin' ? 'read' : 'dummies'
 
-  const { data } = await supabase
-    .from('sans_clauses')
-    .select('id, clause_ref, title, plain_summary, sort_key')
-    .is('parent_ref', null)
-    .order('sort_key')
+  const docId = await inForceDocId(supabase)
+  const { data } = docId
+    ? await supabase
+        .from('sans_clauses')
+        .select('id, clause_ref, title, plain_summary, sort_key')
+        .eq('document_id', docId)
+        .is('parent_ref', null)
+        .order('sort_key')
+    : { data: null }
 
   const top = (data as SansClause[] | null) ?? []
   const chapters = top.filter((c) => /^\d+$/.test(c.clause_ref))
