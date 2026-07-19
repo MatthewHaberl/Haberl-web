@@ -2,6 +2,8 @@
 // Mirrors migration 083_budget.sql. The Supabase client in this app is untyped,
 // so these describe the rows we read/write and back the UI.
 
+import { parseZarAmount } from '@/lib/utils'
+
 export type BudgetScope = 'business' | 'personal'
 export type BudgetKind = 'expense' | 'income'
 export type Cadence = 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'once'
@@ -99,9 +101,11 @@ export function monthLabel(month: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
 }
 
-/** Parse a free-typed Rand amount ("1 500.50", "R1500") into integer cents, or null. */
+/** Parse a free-typed Rand amount ("1 500,50", "R1 500.50", "1500") into integer cents, or null. */
 export function randToCents(v: string): number | null {
-  const n = parseFloat(String(v).replace(/[^0-9.]/g, ''))
+  // parseZarAmount handles the en-ZA comma decimal; a naive [^0-9.] strip used to
+  // drop the comma and inflate a value like "1 500,50" 100x.
+  const n = parseZarAmount(v)
   return Number.isFinite(n) ? Math.round(n * 100) : null
 }
 

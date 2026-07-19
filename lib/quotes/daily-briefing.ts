@@ -12,6 +12,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { emailButton, emailLayout, sendEmail } from '@/lib/email/send'
+import { escapeHtml } from '@/lib/utils'
 
 // ── Follow-up planner (shared with /api/cron/quote-followups) ──────────────────
 
@@ -323,7 +324,7 @@ function emailList(
   if (!items.length) return ''
   const rows = items.map((i) =>
     `<li style="margin:5px 0;font-size:14px;line-height:1.5;">
-       <a href="${baseUrl}${i.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${i.label}</a>${i.sub ? ` <span style="color:#6b7280;font-weight:normal;">— ${i.sub}</span>` : ''}
+       <a href="${baseUrl}${i.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${escapeHtml(i.label)}</a>${i.sub ? ` <span style="color:#6b7280;font-weight:normal;">— ${escapeHtml(i.sub)}</span>` : ''}
      </li>`).join('')
   return `<p style="margin:16px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;">${title}</p>
     <ul style="margin:0;padding-left:18px;">${rows}</ul>`
@@ -335,10 +336,10 @@ function emailLeadsList(title: string, items: BriefingItem[], baseUrl: string): 
   const rows = items.map((i) => {
     const tel = i.phone ? i.phone.replace(/[^\d+]/g, '') : ''
     const call = i.phone
-      ? ` — <a href="tel:${tel}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">📞 ${i.phone}</a>`
+      ? ` — <a href="tel:${tel}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">📞 ${escapeHtml(i.phone)}</a>`
       : ''
     return `<li style="margin:5px 0;font-size:14px;line-height:1.5;">
-       <a href="${baseUrl}${i.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${i.label}</a>${i.sub ? ` <span style="color:#6b7280;font-weight:normal;">(${i.sub})</span>` : ''}${call}
+       <a href="${baseUrl}${i.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${escapeHtml(i.label)}</a>${i.sub ? ` <span style="color:#6b7280;font-weight:normal;">(${escapeHtml(i.sub)})</span>` : ''}${call}
      </li>`
   }).join('')
   return `<p style="margin:16px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;">${title}</p>
@@ -348,7 +349,7 @@ function emailLeadsList(title: string, items: BriefingItem[], baseUrl: string): 
 export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
   const autoBlock = b.customerSends.length
     ? `<ul style="margin:0;padding-left:18px;">${b.customerSends.map((q) =>
-        `<li style="margin:5px 0;font-size:14px;line-height:1.5;">${q.customerName}${q.quoteNumber ? ` <span style="color:#6b7280;">(${q.quoteNumber})</span>` : ''} — ${q.detail}</li>`).join('')}</ul>`
+        `<li style="margin:5px 0;font-size:14px;line-height:1.5;">${escapeHtml(q.customerName)}${q.quoteNumber ? ` <span style="color:#6b7280;">(${escapeHtml(q.quoteNumber)})</span>` : ''} — ${escapeHtml(q.detail)}</li>`).join('')}</ul>`
     : `<p style="font-size:14px;color:#6b7280;margin:4px 0;">Nothing emails customers automatically today.</p>`
 
   const attention = [
@@ -356,7 +357,7 @@ export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
     b.personalFollowups.length
       ? `<p style="margin:16px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;">📞 Personal follow-up (call them)</p>
          <ul style="margin:0;padding-left:18px;">${b.personalFollowups.map((q) =>
-           `<li style="margin:5px 0;font-size:14px;line-height:1.5;"><a href="${baseUrl}${q.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${q.customerName}${q.quoteNumber ? ` (${q.quoteNumber})` : ''}</a> <span style="color:#6b7280;">— ${q.detail}</span></li>`).join('')}</ul>`
+           `<li style="margin:5px 0;font-size:14px;line-height:1.5;"><a href="${baseUrl}${q.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${escapeHtml(q.customerName)}${q.quoteNumber ? ` (${escapeHtml(q.quoteNumber)})` : ''}</a> <span style="color:#6b7280;">— ${escapeHtml(q.detail)}</span></li>`).join('')}</ul>`
       : '',
     emailList('👀 Viewed — waiting on their reply', b.awaitingResponse, baseUrl),
     emailList('💰 Deposits to confirm', b.depositsToConfirm, baseUrl),

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { sendAdminNotice } from '@/lib/email/quotes'
 import { getBaseUrl, getCompanySettings, getQuoteByToken } from '@/lib/quotes/server'
+import { escapeHtml } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -74,7 +75,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       settings?.contact_email ?? null,
       `Proof of payment uploaded — ${quote.quote_number ?? quote.customer_name}`,
       [
-        `<strong>${quote.customer_name}</strong> uploaded proof of payment for quote <strong>${quote.quote_number ?? ''}</strong>.`,
+        `<strong>${escapeHtml(quote.customer_name)}</strong> uploaded proof of payment for quote <strong>${escapeHtml(quote.quote_number ?? '')}</strong>.`,
         'Review it on the job page and confirm the deposit to advance the pipeline.',
       ],
       `${getBaseUrl()}/portal/employee/jobs/${job.id}`,

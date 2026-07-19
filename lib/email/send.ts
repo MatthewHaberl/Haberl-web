@@ -5,6 +5,8 @@
  * callers receive { sent: false } so the UI can fall back gracefully.
  */
 
+import { escapeHtml } from '@/lib/utils'
+
 const FROM = 'Haberl Solar <quotes@haberl.co.za>'
 
 export interface SendResult {
@@ -71,7 +73,7 @@ export function emailLayout(title: string, bodyHtml: string): string {
         </tr>
         <tr>
           <td style="padding:28px;">
-            <h1 style="margin:0 0 16px;font-size:20px;color:#1e3a5f;">${title}</h1>
+            <h1 style="margin:0 0 16px;font-size:20px;color:#1e3a5f;">${escapeHtml(title)}</h1>
             ${bodyHtml}
           </td>
         </tr>
