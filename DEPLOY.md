@@ -54,8 +54,14 @@ The repo is already prepared: `vercel.json` configures the daily quote-followups
 
 ## Notes
 
-- The cron route accepts Vercel's `Authorization: Bearer $CRON_SECRET` header **or**
+- The cron routes accept Vercel's `Authorization: Bearer $CRON_SECRET` header **or**
   `?secret=` for VPS crontabs — both check the same secret.
+- `key-refresh` (05:45 SAST daily) re-walks Key Electric's public store and refreshes
+  supplier offer prices + stock, backfills missing catalog images/datasheets, and
+  reports (never auto-creates) products we don't stock. Progress + the last sweep's
+  summary live in the `supplier_refresh_state` table. A partial sweep resumes on the
+  next day's run; to force a full sweep immediately:
+  `node scripts/key-electric-refresh.mjs https://haberl.co.za "$CRON_SECRET"`.
 - `/api/monitoring/collect` remains designed for a VPS crontab (60s budget). If monitoring
   should run from Vercel too, add a second cron entry the same way.
 - Region: Vercel auto-selects; Supabase is EU-Central. If latency matters later, pin the
