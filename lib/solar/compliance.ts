@@ -305,18 +305,23 @@ export function computeStringLayout(opts: {
   }
 }
 
-// DC string voltage drop in percent for a given one-way route length and cable size
+// DC string voltage drop in percent for a given one-way route length and cable size.
+// Uses datasheet Vmp/Imp when supplied; falls back to the Voc/Isc estimates.
 export function estimateDcVoltageDropPct(opts: {
   routeMetres: number
   iscAmps: number
   panelsPerString: number
   vocVolts: number
   cableSizeMm2?: number
+  /** Datasheet Vmp per panel (V) — overrides the Voc × 0.82 estimate. */
+  vmpVolts?: number | null
+  /** Datasheet Imp (A) — overrides the Isc × 0.93 estimate. */
+  impAmps?: number | null
 }) {
   const { routeMetres, iscAmps, panelsPerString, vocVolts } = opts
   const cableSize = opts.cableSizeMm2 ?? 4
-  const imp = iscAmps * IMP_FROM_ISC
-  const stringVmp = panelsPerString * vocVolts * VMP_FROM_VOC
+  const imp = opts.impAmps ?? iscAmps * IMP_FROM_ISC
+  const stringVmp = panelsPerString * (opts.vmpVolts ?? vocVolts * VMP_FROM_VOC)
   if (stringVmp <= 0) return null
   const resistancePerMetre = COPPER_RESISTIVITY / cableSize
   const dropVolts = 2 * routeMetres * imp * resistancePerMetre
@@ -438,17 +443,23 @@ export function runComplianceChecks(ctx: ComplianceContext): ComplianceCheck[] {
 
   // ── Voltage drop (§5.3.2) ───────────────────────────────────────────────────
   if (panel.isc_amps && panel.voc_volts) {
+    // Use recorded datasheet Vmp/Imp when the catalog has them (panelThermal
+    // falls back to the same Voc/Isc estimates otherwise, so this is a strict
+    // improvement, not a behaviour fork).
+    const { vmp: panelVmp, imp: panelImp } = panelThermal(panel)
     const dropPct = estimateDcVoltageDropPct({
       routeMetres,
       iscAmps: panel.isc_amps,
       panelsPerString: layout.panelsPerString,
       vocVolts: panel.voc_volts,
+      vmpVolts: panelVmp,
+      impAmps: panelImp,
     })
     if (dropPct != null) {
       if (dropPct > MAX_DC_VOLTAGE_DROP_PCT) {
         const dropAt6 = estimateDcVoltageDropPct({
           routeMetres, iscAmps: panel.isc_amps, panelsPerString: layout.panelsPerString,
-          vocVolts: panel.voc_volts, cableSizeMm2: 6,
+          vocVolts: panel.voc_volts, cableSizeMm2: 6, vmpVolts: panelVmp, impAmps: panelImp,
         })
         add('dc-voltage-drop', 'DC cable voltage drop', 'SANS 10142-1 §5.3.2', 'warning',
           `≈ ${dropPct}% drop on 4mm² over ${routeMetres}m (limit ${MAX_DC_VOLTAGE_DROP_PCT}%). Upgrade the run to 6mm² (≈ ${dropAt6}%).`)
@@ -518,6 +529,37 @@ export function runComplianceChecks(ctx: ComplianceContext): ComplianceCheck[] {
     } else {
       add('battery-class', 'Battery ↔ inverter voltage class', 'RULE-INV-06', 'info',
         'Voltage class missing on inverter or battery catalog notes — add battery_class to enable this check.')
+    }
+  }
+
+  // ── Inverter phase ↔ site supply (RULE-INV-07 / NRS 097-2-1) ───────────────
+  // A three-phase inverter cannot commission on a single-phase supply; a
+  // single-phase inverter on a three-phase site is allowed on one phase but
+  // trips the municipal unbalance limit above ~4.6kVA (NRS 097-2-1).
+  {
+    const supply = ctx.gridSupply ?? ''
+    const gridPhase: 'single' | 'three' | null = /three|3[\s-]?ph/i.test(supply)
+      ? 'three'
+      : supply.trim() ? 'single' : null
+    const specPhase = (ctx.inverter.specs as Record<string, unknown> | null | undefined)?.phase
+    const inverterPhase: 'single' | 'three' | null =
+      ctx.inverter.phase === 'single' || ctx.inverter.phase === 'three'
+        ? ctx.inverter.phase
+        : specPhase === 'single' || specPhase === 'three' ? specPhase : null
+    if (gridPhase == null || inverterPhase == null) {
+      add('inverter-phase', 'Inverter phase vs site supply', 'RULE-INV-07', 'info',
+        gridPhase == null
+          ? 'Site grid supply (single/three-phase) not recorded — capture it on the quote request to enable the phase check.'
+          : `Inverter phase unknown for ${ctx.inverter.description} — set the catalog phase (single/three) to enable the phase check.`)
+    } else if (inverterPhase === 'three' && gridPhase === 'single') {
+      add('inverter-phase', 'Inverter phase vs site supply', 'RULE-INV-07', 'blocker',
+        `${ctx.inverter.description} is a three-phase inverter but the site has a single-phase supply — it cannot be commissioned. Select a single-phase model.`)
+    } else if (inverterPhase === 'single' && gridPhase === 'three') {
+      add('inverter-phase', 'Inverter phase vs site supply', 'RULE-INV-07 / NRS 097-2-1', 'warning',
+        `Single-phase inverter on a three-phase supply — permissible on one phase, but check the municipal per-phase embedded-generation/unbalance limit (~4.6kVA under NRS 097-2-1) and balance the essential loads.`)
+    } else {
+      add('inverter-phase', 'Inverter phase vs site supply', 'RULE-INV-07', 'pass',
+        `${inverterPhase === 'three' ? 'Three' : 'Single'}-phase inverter matches the site's ${gridPhase}-phase supply.`)
     }
   }
 

@@ -61,10 +61,67 @@ const DOC_TYPE_COLORS: Record<ProductDocType, string> = {
   other:              'bg-muted text-muted-foreground',
 }
 
+const DEVICE_TYPE_LABELS: Record<string, string> = {
+  mcb: 'MCB (miniature circuit breaker)',
+  mccb: 'MCCB (moulded-case circuit breaker)',
+  rcbo: 'RCBO (combined breaker + earth leakage)',
+  rccb: 'RCCB (earth-leakage device)',
+  mpcb: 'Motor protection circuit breaker',
+  spd: 'Surge protection device',
+  fuse: 'Fuse',
+  fuseholder: 'Fuse holder',
+  isolator: 'Isolator',
+  changeover: 'Changeover switch',
+  disconnect: 'Disconnect switch',
+  inverter: 'Inverter',
+  ups: 'UPS',
+  battery: 'Storage battery',
+  panel: 'Solar panel',
+  combiner: 'Combiner box',
+}
+
+// Structured specs extracted from the catalog (migration 091) → display rows.
+// Ordered so protection specs read the way an electrician expects.
+function structuredSpecRows(specs: Record<string, unknown> | null | undefined) {
+  if (!specs) return []
+  const v = (key: string) => specs[key]
+  const num = (key: string) => (typeof specs[key] === 'number' ? (specs[key] as number) : null)
+  const str = (key: string) => (typeof specs[key] === 'string' ? (specs[key] as string) : null)
+  const rows: Array<{ label: string; value: string | null }> = [
+    { label: 'Device Type',        value: str('device_type') ? (DEVICE_TYPE_LABELS[str('device_type')!] ?? str('device_type')) : null },
+    { label: 'Current Type',       value: str('current_type') },
+    { label: 'Phase Configuration', value: str('phase_class') ? `${str('phase_class')}-phase` : null },
+    { label: 'Rated Current',      value: num('amperage_a') != null ? `${num('amperage_a')} A` : null },
+    { label: 'Poles',              value: str('pole_config') ?? (num('poles') != null ? `${num('poles')}P` : null) },
+    { label: 'Trip Curve',         value: str('curve') ? `${str('curve')}-curve` : null },
+    { label: 'Breaking Capacity',  value: num('breaking_capacity_ka') != null ? `${num('breaking_capacity_ka')} kA` : null },
+    { label: 'DC Voltage Rating',  value: num('voltage_dc_v') != null ? `${num('voltage_dc_v')} V DC` : null },
+    { label: 'AC Voltage Rating',  value: num('voltage_ac_v') != null ? `${num('voltage_ac_v')} V AC` : null },
+    { label: 'SPD Class',          value: str('spd_class') ? `Type ${str('spd_class')}` : null },
+    { label: 'Earth-Leakage Sensitivity', value: num('sensitivity_ma') != null ? `${num('sensitivity_ma')} mA` : null },
+    { label: 'Transfer',           value: str('transfer') ? (str('transfer') === 'auto' ? 'Automatic' : 'Manual') : null },
+    // Battery
+    { label: 'Nominal Voltage',    value: num('voltage_v') != null && str('voltage_class') ? `${num('voltage_v')} V` : null },
+    { label: 'Voltage Class',      value: str('voltage_class') ? (str('voltage_class') === 'HV' ? 'High voltage (HV)' : `${str('voltage_class')}V class`) : null },
+    { label: 'Capacity (Ah)',      value: num('amp_hours') != null ? `${num('amp_hours')} Ah` : null },
+    { label: 'Chemistry',          value: str('chemistry') },
+    // Inverter
+    { label: 'Battery Voltage',    value: num('battery_voltage_v') != null ? `${num('battery_voltage_v')} V` : null },
+    { label: 'Battery Class',      value: str('battery_class') === 'HV' ? 'High voltage (HV)' : str('battery_class') === 'LV' ? 'Low voltage (LV)' : null },
+    { label: 'MPPT Voltage Range', value: num('mppt_min_v') != null && num('mppt_max_v') != null ? `${num('mppt_min_v')}–${num('mppt_max_v')} V` : null },
+    { label: 'Max PV Voltage',     value: num('max_pv_voc_v') != null ? `${num('max_pv_voc_v')} V` : null },
+    { label: 'Inverter Type',      value: str('inverter_type') === 'gridtie' ? 'Grid-tie' : str('inverter_type') === 'offgrid' ? 'Off-grid' : str('inverter_type') === 'hybrid' ? 'Hybrid' : null },
+    // Panel
+    { label: 'Cell Technology',    value: str('technology') ? str('technology')!.charAt(0).toUpperCase() + str('technology')!.slice(1) : null },
+    { label: 'Tier 1',             value: v('tier1') === true ? 'Yes' : null },
+  ]
+  return rows.filter((r) => r.value != null) as Array<{ label: string; value: string }>
+}
+
 export function ProductTabs({ product, catalogItem, productDocs }: Props) {
   const [tab, setTab] = useState<Tab>('Overview')
 
-  const specs = [
+  const baseSpecs = [
     { label: 'Category',             value: product.category ? (categoryLabel[product.category] ?? product.category) : null },
     { label: 'Brand',                value: product.brand },
     { label: 'SKU',                  value: product.sku },
@@ -76,6 +133,12 @@ export function ProductTabs({ product, catalogItem, productDocs }: Props) {
     { label: 'Max Solar Current',    value: catalogItem?.isc_amps ? `${catalogItem.isc_amps} A` : null },
     { label: 'Open-Circuit Voltage', value: catalogItem?.voc_volts ? `${catalogItem.voc_volts} V` : null },
   ].filter(r => r.value != null) as { label: string; value: string }[]
+
+  // Merge in the structured specs (091), skipping labels the base rows already cover.
+  const covered = new Set(baseSpecs.map(r => r.label))
+  const extraSpecs = structuredSpecRows(catalogItem?.specs).filter(r => !covered.has(r.label))
+  // Drop the redundant phase row when both sources agree it's shown.
+  const specs = [...baseSpecs, ...extraSpecs.filter(r => !(r.label === 'Phase Configuration' && covered.has('Phase')))]
 
   // Merge legacy datasheet_url into productDocs (won't duplicate if already present)
   const legacyUrl = catalogItem?.datasheet_url

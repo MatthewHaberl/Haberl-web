@@ -1,5 +1,6 @@
 import type { Node, Edge } from '@xyflow/react'
 import type { QuoteData } from './render-quote'
+import { getEarthingSpikeCount } from './quote-calculator'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -76,10 +77,13 @@ export function buildSLDFromQuote(
   const panelCount = parseInt(quote.panelCount) || 0
   const batteryQty = parseInt(quote.batteryQty) || 1
   const batteryKwh = parseNum(quote.batteryKwh)
+  // Phase comes from the SITE SUPPLY only — inverter size is no proxy for it
+  // (16kW single-phase hybrids are common; the old `kw >= 10 ⇒ 3-phase` rule
+  // drew them with a 400V grid node and L1/L2/L3 cabling).
   const is3Phase =
-    gridSupply?.toLowerCase().includes('three') ||
-    gridSupply?.toLowerCase().includes('3 phase') ||
-    kw >= 10
+    (gridSupply?.toLowerCase().includes('three') ||
+      gridSupply?.toLowerCase().includes('3 phase') ||
+      gridSupply?.toLowerCase().includes('3-phase')) ?? false
 
   const stringCount = inferStringCount(quote.dcCombinerConfig || '', panelCount)
   const useCombiner = stringCount > 1
@@ -301,7 +305,9 @@ export function buildSLDFromQuote(
   })
 
   // ── Earthing System — below DB ─────────────────────────────────────────────
-  const earthSpikes = kw <= 3 ? 2 : kw <= 6 ? 2 : kw <= 10 ? 3 : 4
+  // Same rule the BOM prices (quote-calculator getEarthingSpikeCount) — the
+  // diagram and the bill of materials must never disagree on spike count.
+  const earthSpikes = getEarthingSpikeCount(kw)
   nodes.push({
     id: 'earth',
     type: 'earthing',

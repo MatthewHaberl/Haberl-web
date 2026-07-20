@@ -38,6 +38,12 @@ function getSeasonalIrradiance(season: Season): number {
   }
 }
 
+// Sun GEOMETRY must match the season the irradiance claims: December sun for
+// summer, June for winter, an equinox month for average. (Previously June
+// geometry was used for every season, so "summer" combined summer irradiance
+// with winter sun angles.)
+const SEASON_MONTH: Record<Season, number> = { summer: 12, winter: 6, average: 9 }
+
 // Solar position calculation using simplified method
 // Returns solar elevation angle (0-90°) and solar azimuth (0-360°)
 function getSolarPosition(
@@ -45,8 +51,9 @@ function getSolarPosition(
   hour: number, // 0-23
   latitude: number,
 ): { elevation: number; azimuth: number } {
-  // Day of year estimate
-  const dayOfYear = Math.floor((month * 365) / 12)
+  // Day of year at the MIDDLE of the month (month 6 → ~day 167, mid-June;
+  // the old `month × 365/12` landed a half-month late).
+  const dayOfYear = Math.round((month - 0.5) * 30.44)
 
   // Solar declination (Woolf approximation)
   const declination = 23.45 * Math.sin((2 * Math.PI * (dayOfYear - 81)) / 365)
@@ -132,7 +139,7 @@ export function calculateStringGeneration(
 
   // Calculate for each hour from 6am to 6pm (typical solar hours)
   for (let hour = 6; hour <= 18; hour++) {
-    const { elevation, azimuth } = getSolarPosition(6, hour, GAUTENG_LATITUDE) // Use June for consistency
+    const { elevation, azimuth } = getSolarPosition(SEASON_MONTH[season], hour, GAUTENG_LATITUDE)
 
     const irradiance = getIrradianceOnTiltedSurface(
       elevation,

@@ -7,6 +7,7 @@ import { CartButton } from '../components/CartButton'
 import { CartSidebar } from '../components/CartSidebar'
 import { AddToCartButton } from './AddToCartButton'
 import { ProductTabs } from './ProductTabs'
+import { CompatibleProducts } from './CompatibleProducts'
 import { Badge } from '@/components/ui/badge'
 import { ChevronRight, Zap, Battery, Sun, Package } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
@@ -230,6 +231,9 @@ export default async function ProductDetailPage({
           <div className="mt-10 bg-card border border-border rounded-2xl overflow-hidden">
             <ProductTabs product={product} catalogItem={catalogItem} productDocs={productDocs} />
           </div>
+
+          {/* Works with — SANS-rule compatibility links (migration 092) */}
+          {product.external_id && <CompatibleProducts externalId={product.external_id} />}
         </div>
       </main>
 

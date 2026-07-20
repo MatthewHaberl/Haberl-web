@@ -1122,7 +1122,8 @@ export function getStoreysPremium(storeys: string, premium2 = 2000, premium3 = 5
 
 // Matthew's confirmed rule: ≤3kW → 2, 4–5kW → 4, 6–10kW → 6, 11kW+ → 6
 // (final count always confirmed on site by soil resistivity test)
-function getEarthingSpikeCount(inverterKw: number) {
+// Exported so the SLD builder draws the same count the BOM prices.
+export function getEarthingSpikeCount(inverterKw: number) {
   if (inverterKw <= 3) return 2
   if (inverterKw <= 5) return 4
   return 6
@@ -1352,6 +1353,19 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   // isolation + SPD on every install, even single strings. String fuses only
   // when parallel strings share an MPPT (gPV, both poles).
   const dcBreakerStandard = getDcBreakerStandard(estimatedIsc * 1.25)
+  // IEC 62548 also bounds the string OCPD from above: In ≤ 2.4 × Isc, and never
+  // above the module's max series fuse rating when the datasheet records one.
+  if (dcBreakerStandard > estimatedIsc * 2.4) {
+    warnings.push(
+      `${dcBreakerStandard}A DC string breaker exceeds 2.4×Isc (${(estimatedIsc * 2.4).toFixed(1)}A) — over the IEC 62548 upper bound; confirm the panel's max series fuse rating.`,
+    )
+  }
+  const maxSeriesFuseA = Number((panel.specs as Record<string, unknown> | null | undefined)?.max_series_fuse_a)
+  if (Number.isFinite(maxSeriesFuseA) && maxSeriesFuseA > 0 && dcBreakerStandard > maxSeriesFuseA) {
+    warnings.push(
+      `${dcBreakerStandard}A DC string breaker exceeds the panel's ${maxSeriesFuseA}A max series fuse rating — use a lower rating or re-check the panel datasheet.`,
+    )
+  }
   const dcBreakerSell = DC_BREAKER_SELL_BY_STANDARD[dcBreakerStandard]
   const stringFuseCount = stringLayout.parallelStringsPerMppt > 1 ? stringLayout.stringCount * 2 : 0
   const dcProtectionSubtotalRands = roundCurrency(

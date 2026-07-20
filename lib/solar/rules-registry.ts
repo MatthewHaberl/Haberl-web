@@ -218,6 +218,12 @@ export const DESIGN_RULES: DesignRule[] = [
     why: 'An HV battery on an LV inverter (or vice versa) destroys equipment instantly. E.g. Sungrow SH20T takes 100–700V — a 51.2V Sunsynk LFP can never connect to it.',
     reference: 'RULE-INV-06 / datasheets', enforcement: 'verifier', checkId: 'battery-class',
   },
+  {
+    id: 'INV-07', category: 'System Sizing', title: 'Inverter phase must match the site supply',
+    rule: 'A three-phase inverter never goes on a single-phase supply. A single-phase inverter on a three-phase site is allowed on one phase, subject to the municipal per-phase embedded-generation/unbalance limit (~4.6kVA).',
+    why: 'A 3-phase unit cannot commission on 1-phase mains; an oversized single-phase hybrid on one phase of a 3-phase site can breach NRS 097-2-1 unbalance limits and fail SSEG approval.',
+    reference: 'RULE-INV-07 / NRS 097-2-1', enforcement: 'verifier', checkId: 'inverter-phase',
+  },
 
   // ── EV Charger ──────────────────────────────────────────────────────────────
   {
