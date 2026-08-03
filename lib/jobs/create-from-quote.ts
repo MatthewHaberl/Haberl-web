@@ -143,11 +143,17 @@ export async function createJobFromQuote(
     if (!linkedSiteId) {
       linkedSiteId = await resolveCustomerSite(supabase, quote)
       if (linkedSiteId) {
-        await supabase
+        const { error: linkError } = await supabase
           .from('jobs')
           .update({ site_id: linkedSiteId })
           .eq('id', existing.id)
           .is('site_id', null)
+        if (linkError) {
+          // Don't report success with an empty warning list while the job stays
+          // unlinked — fall through to the "No customer linked" warning below.
+          console.error('[create-from-quote] link existing job to site', linkError)
+          linkedSiteId = null
+        }
       }
     }
 

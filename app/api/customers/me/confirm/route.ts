@@ -17,20 +17,29 @@ export async function POST() {
   const admin = createAdminClient()
 
   // Link by auth id, or by email if the trigger hasn't linked yet.
-  const { data: linked } = await admin
+  const { data: linked, error: linkErr } = await admin
     .from('customers')
     .update({ registered_at: new Date().toISOString() })
     .eq('auth_user_id', user.id)
     .is('registered_at', null)
     .select('id')
+  if (linkErr) console.error('[customers/me/confirm] link by auth id', linkErr)
 
+  let linkedByEmail = false
   if ((linked?.length ?? 0) === 0 && user.email) {
-    await admin
+    const { data: emailLinked, error: emailErr } = await admin
       .from('customers')
       .update({ auth_user_id: user.id, registered_at: new Date().toISOString() })
       .ilike('email', user.email)
       .is('auth_user_id', null)
+      .select('id')
+    if (emailErr) console.error('[customers/me/confirm] link by email', emailErr)
+    linkedByEmail = (emailLinked?.length ?? 0) > 0
   }
 
-  return NextResponse.json({ ok: true })
+  // `linked` tells the set-password page whether the account actually attached to
+  // a customer record — a silent failure here otherwise looks like success while
+  // the customer's portal shows no sites/jobs.
+  const linkedOk = (linked?.length ?? 0) > 0 || linkedByEmail
+  return NextResponse.json({ ok: true, linked: linkedOk })
 }
