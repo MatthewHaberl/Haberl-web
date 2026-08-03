@@ -43,3 +43,8 @@ next-env.d.ts
 
 # local archives (demo clones, scratch zips — not source)
 /archives/
+
+# Licensed SABS/SANS standards. Copyrighted — Matthew's personal licence covers
+# internal use only, never redistribution, and this repo pushes to GitHub.
+# Keep the PDFs in claude-obsidian/.raw/documents/, outside the working tree.
+*.pdf
