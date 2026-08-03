@@ -69,10 +69,12 @@ export default async function SansOverviewPage() {
             <p className="text-sm font-semibold text-foreground">
               Edition {draft?.edition ?? '3.03'} <span className="text-muted-foreground">(Amendment 3, {draft?.published ?? '2026'})</span>
             </p>
-            <span className="rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-600">COMING</span>
+            <span className="rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-600">ENFORCED NOW</span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Change register loaded — new PV/battery test report (Annex S), PSCC for paralleled sources, island-mode earthing.{' '}
+            Published and supersedes Ed 3.2. Every design is checked against Amendment 3 today — Annex S
+            report, PSCC across paralleled sources, island-mode earthing, PV insulation test, structural
+            and fire sign-off.{' '}
             <Link href="/portal/employee/sans/changes" className="font-medium text-accent hover:underline">See what changes →</Link>
           </p>
         </div>

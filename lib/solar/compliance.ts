@@ -597,11 +597,79 @@ export function runComplianceChecks(ctx: ComplianceContext): ComplianceCheck[] {
       ? 'COC line included (fixed R1,500).'
       : 'COC missing — legally required on every installation.')
 
-  add('ne-bonding', 'Neutral-earth bonding in backup mode', 'SANS 10142-1 §7.12.3', 'info',
-    'Verify the N-E bonding arrangement covers backup mode at commissioning — earth leakage must function in grid AND backup mode. Common CoC failure point.')
-
   add('sseg', 'SSEG registration (grid-tied)', 'SANS 10142-1 §7.12.7 / NRS 097-2-1', 'info',
     'Grid-tied embedded generation requires SSEG approval from the municipality/Eskom before connection.')
+
+  checks.push(...amendment3Checks(ctx))
+
+  return checks
+}
+
+/**
+ * SANS 10142-1:2026 Ed 3.3 (Amendment 3).
+ *
+ * Enforced as binding from now rather than from the effective date: a system
+ * designed to Ed 3.2 today may still be inspected against Amdt 3 by the time
+ * its CoC is issued, and every one of these rules is strictly additive — a
+ * design that satisfies them also satisfies Ed 3.2. Any PV/battery install is
+ * a "generating plant" under Amdt 3, so these apply to essentially every job.
+ *
+ * Severity reflects what the BOM can actually prove. Where non-compliance is
+ * visible in the BOM it blocks; where the requirement is a site or paperwork
+ * action the BOM cannot evidence, it warns rather than sitting silently green.
+ */
+function amendment3Checks(ctx: ComplianceContext): ComplianceCheck[] {
+  const { bom, battery, panelCount } = ctx
+  const checks: ComplianceCheck[] = []
+  const add = (id: string, title: string, reference: string, status: ComplianceStatus, detail: string) =>
+    checks.push({ id, title, reference, status, detail })
+
+  const hasBattery = Boolean(battery.kwh)
+  const hasPv = panelCount > 0
+
+  // §7.12.3.1.5 — the N-E reference must be INSIDE the converter. An external
+  // relay/contactor doing the bond is exactly what Amdt 3 stopped accepting,
+  // and it is the one failure mode visible on a BOM.
+  const externalNeBond = bomLines(bom, /(?:n-?e|neutral[\s-]*earth)[^,]*(?:relay|contactor)|(?:relay|contactor)[^,]*(?:n-?e|neutral[\s-]*earth)/i)
+  if (externalNeBond.length > 0) {
+    add('amdt3-ne-bond', 'Island-mode neutral-earth reference', 'SANS 10142-1:2026 §7.12.3.1.5 (Amdt 3)', 'blocker',
+      `The N-E reference must be internal to the inverter or its manufacturer-supplied control gear. The BOM carries an external switching arrangement (${externalNeBond.map((l) => l.description).join(', ')}) — Amendment 3 no longer accepts a separate relay/contactor doing the bond.`)
+  } else if (hasBattery) {
+    add('amdt3-ne-bond', 'Island-mode neutral-earth reference', 'SANS 10142-1:2026 §7.12.3.1.5 (Amdt 3)', 'warning',
+      'Backup-capable system: neutral and PE may be bonded ONLY while intentionally in island mode, and the reference must sit inside the inverter or its manufacturer control gear — never an external relay. Confirm the inverter does this internally, and prove earth leakage trips in BOTH grid and island mode at commissioning.')
+  }
+
+  // §6.1.13 + §6.9.1.4 — cable routing decision, made before anyone pulls cable.
+  add('amdt3-multicore', 'One source per multicore cable', 'SANS 10142-1:2026 §6.1.13 / §6.9.1.4 (Amdt 3)', 'warning',
+    'Conductors from circuits fed by different sources may no longer share one multicore cable — inverter input and inverter output must not run in the same multicore. Each multicore also gets exactly one disconnecting device. Settle the AC route before pulling cable; this is expensive to fix afterwards.')
+
+  // §8.4.7 — PSCC summation across sources that can parallel.
+  if (hasBattery) {
+    add('amdt3-pscc', 'PSCC summed across paralleled sources', 'SANS 10142-1:2026 §8.4.7 (Amdt 3)', 'warning',
+      'Grid, inverter and battery can operate in parallel, so prospective short-circuit current must be SUMMED across sources rather than taken from the grid alone. Battery PSCC must come from the BMS nameplate or datasheet. Record the summed figure and confirm every protective device is rated for it — a breaker sized on grid PSCC alone can be under-rated.')
+  }
+
+  if (hasPv) {
+    // §8.6.8.2 — new, separate from the AC insulation tests.
+    add('amdt3-pv-insulation', 'PV array DC insulation-resistance test', 'SANS 10142-1:2026 §8.6.8.2 / IEC 62446-1 (Amdt 3)', 'warning',
+      'The PV array DC circuits need their own insulation-resistance test to IEC 62446-1:2018, separate from the AC tests, minimum 1,0 MΩ. Budget the time at commissioning and record the result on the Annex S report.')
+
+    // §8.6.15 — structural sign-off, needed before install day not after.
+    add('amdt3-structural', 'PV mounting structural sign-off', 'SANS 10142-1:2026 §8.6.15 (Amdt 3)', 'warning',
+      `Mounting for ${panelCount} panel(s) must satisfy building regulations and SANS 60364-7-712 structural loads. Mechanical soundness may require a competent person's opinion, and every roof penetration must be weatherproofed. Get this on record before install day.`)
+
+    // §8.6.16 — fire risk.
+    add('amdt3-fire', 'PV fire-risk compliance', 'SANS 10142-1:2026 §8.6.16 (Amdt 3)', 'warning',
+      'Fire risk must comply with SANS 60364-7-712 plus national and local fire regulations — check DC cable routing, isolation points, and any rapid-shutdown requirement the local authority applies.')
+  }
+
+  // §8.7 + Annex S — the paperwork that now rides with the CoC.
+  const annexS = bomQty(bom, /annex\s*s|generating[\s-]*plant test report|gp test report/i)
+  add('amdt3-annex-s', 'Annex S test report for the PV/battery portion', 'SANS 10142-1:2026 §8.7 / Annex S (Amdt 3)',
+    annexS > 0 ? 'pass' : 'warning',
+    annexS > 0
+      ? 'Annex S generating-plant test report included on the BOM.'
+      : 'An Annex S test report for the generating-plant portion must be attached to the CoC, with a registered person\'s declaration — covering converters, storage, PV modules, DC voltage, islanding settings, SLD, bonding continuity, ECC sizing, neutral loop impedance, PSCC and elevated neutral-earth voltage. It is not on the BOM.')
 
   return checks
 }

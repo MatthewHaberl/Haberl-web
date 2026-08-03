@@ -17,6 +17,13 @@ export default function SansChangesPage() {
         icon={GitCompareArrows}
       />
 
+      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm text-muted-foreground">
+        <span className="font-semibold text-emerald-700">Enforced from today.</span>{' '}
+        Rather than waiting for the effective date, the quote and design engine already checks every job
+        against Amendment 3 — a system designed now may well be inspected against it by the time its CoC
+        is issued, and every Amdt 3 rule is additive over Ed 3.2, so satisfying them satisfies both.
+      </div>
+
       <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-muted-foreground">
         <span className="font-semibold text-amber-700">The headline for Haberl:</span>{' '}
         every PV/battery installation gets its own test report (new Annex S) attached to the CoC,
