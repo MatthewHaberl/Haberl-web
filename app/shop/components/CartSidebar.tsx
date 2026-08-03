@@ -1,6 +1,6 @@
 'use client'
 
-import { X, ShoppingCart, Trash2, Plus, Minus, ArrowRight } from 'lucide-react'
+import { X, ShoppingCart, Trash2, Plus, Minus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { useCart } from '@/lib/store/cart-context'
@@ -109,11 +109,13 @@ export function CartSidebar() {
               <span className="text-sm text-muted-foreground">Subtotal ({itemCount} item{itemCount !== 1 ? 's' : ''})</span>
               <span className="font-bold text-primary text-lg">{formatCurrency(totalCents)}</span>
             </div>
-            <p className="text-xs text-muted-foreground">Shipping calculated at checkout</p>
-            <Button variant="accent" size="lg" className="w-full" asChild>
-              <Link href="/shop/checkout" onClick={closeCart}>
-                Proceed to checkout <ArrowRight className="h-4 w-4" />
-              </Link>
+            <p className="text-xs text-muted-foreground">
+              Online checkout is coming soon. To order now, call us on{' '}
+              <a href="tel:+27615193016" className="font-medium text-accent">+27 61 519 3016</a>{' '}
+              or <Link href="/quote-request" className="font-medium text-accent" onClick={closeCart}>request a quote</Link>.
+            </p>
+            <Button variant="accent" size="lg" className="w-full" disabled>
+              Checkout coming soon
             </Button>
             <Button variant="ghost" size="sm" className="w-full" onClick={closeCart}>
               Continue shopping
