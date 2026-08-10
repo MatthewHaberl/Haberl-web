@@ -37,6 +37,11 @@ export interface BomLine {
   lineCostR: number
   lineSellR: number
   approx?: boolean
+  /**
+   * Optional extra (scope engine only) — listed on the quote but excluded from
+   * section and grand totals. The solar path never sets this.
+   */
+  optional?: boolean
   /** False when no product is chosen, the product is gone, or it has no cost yet. */
   priced: boolean
   status: BomLineStatus

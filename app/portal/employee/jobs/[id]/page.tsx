@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MapPin, Calendar, ChevronLeft, FileText, Briefcase } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { STAGE_META } from '@/lib/jobs/stages'
+import { pipelineKindFor, stageMetaFor } from '@/lib/jobs/stages'
 import type { Job, JobTask, JobMaterial, JobStatusHistory } from '@/types/database'
 import type { Supplier } from '@/types/database'
 import { JobActions } from './JobActions'
@@ -51,7 +51,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const isManager = role === 'manager' || role === 'admin'
   const canAdvance = isManager || job.assigned_to === user.id
 
-  const stageMeta = STAGE_META[job.stage]
+  // Which pipeline this job runs — lite (non-solar) skips procurement,
+  // commissioning and handover, and relabels installation (W97).
+  const pipeline = pipelineKindFor(job.work_type)
+  const stageMeta = stageMetaFor(pipeline, job.stage)
 
   // 3D layout: design segments + cable routes from the linked quote
   let quoteDesign: {
@@ -207,6 +210,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       <StagePipeline
         job={{ id: job.id, stage: job.stage, on_hold_reason: job.on_hold_reason }}
+        pipeline={pipeline}
         history={history}
         tasks={tasks}
         canAdvance={canAdvance}
@@ -248,7 +252,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         )}
       </div>
 
-      <JobActions initialJob={job} initialTasks={tasks} stage={job.stage} />
+      <JobActions initialJob={job} initialTasks={tasks} stage={job.stage} pipeline={pipeline} />
 
       <JobLayout3DPanel
         quoteRequest={quoteDesign}

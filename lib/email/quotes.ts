@@ -1,5 +1,6 @@
 import { emailButton, emailLayout, formatCents, sendEmail, type SendResult } from './send'
 import { escapeHtml } from '@/lib/utils'
+import { engineFor } from '@/lib/quotes/work-types'
 
 /** The slice of a quote_requests row the emails need. */
 export interface QuoteEmailFields {
@@ -10,6 +11,14 @@ export interface QuoteEmailFields {
   deposit_amount: number | null
   share_token: string
   expiry_date: string | null
+  /** Drives solar vs electrical wording (W97). Missing → solar. */
+  work_type?: string | null
+}
+
+// Solar quotes keep their historical wording; scope-engine quotes (electrical,
+// CoC, …) drop the solar branding.
+function isSolarQuote(quote: Pick<QuoteEmailFields, 'work_type'>): boolean {
+  return engineFor(quote.work_type) === 'solar'
 }
 
 export interface BankingDetails {
@@ -57,29 +66,35 @@ export function bankingHtml(banking: BankingDetails, reference: string, amountCe
 
 export async function sendQuoteEmail(quote: QuoteEmailFields, baseUrl: string): Promise<SendResult> {
   if (!quote.customer_email) return { sent: false, error: 'No customer email on this quote' }
+  const solar = isSolarQuote(quote)
+  const noun = solar ? 'solar quote' : 'quote'
+  const brand = solar ? 'Haberl Solar' : 'Haberl Electrical & Solar'
   const link = quoteLink(baseUrl, quote.share_token)
   const ref = quote.quote_number ?? 'your quote'
   const html = emailLayout(
-    `Your solar quote ${quote.quote_number ?? ''}`.trim(),
+    `Your ${noun} ${quote.quote_number ?? ''}`.trim(),
     `<p style="font-size:15px;line-height:1.6;">Hi ${escapeHtml(quote.customer_name)},</p>
-     <p style="font-size:15px;line-height:1.6;">Your solar installation quote is ready. The total comes to <strong>${formatCents(quote.total_amount)}</strong>${quote.deposit_amount != null ? ` with a deposit of <strong>${formatCents(quote.deposit_amount)}</strong>` : ''}.</p>
+     <p style="font-size:15px;line-height:1.6;">${solar ? 'Your solar installation quote is ready.' : 'Your quote is ready.'} The total comes to <strong>${formatCents(quote.total_amount)}</strong>${quote.deposit_amount != null ? ` with a deposit of <strong>${formatCents(quote.deposit_amount)}</strong>` : ''}.</p>
      <p style="font-size:15px;line-height:1.6;">View the full quote online — you can accept it there in one step, no login needed:</p>
      ${emailButton(link, 'View your quote')}
      ${expiryLine(quote.expiry_date)}
      <p style="font-size:13px;color:#6b7280;">Questions? Just reply to this email or call us.</p>`,
   )
-  const text = `Hi ${quote.customer_name},\n\nYour solar quote ${ref} is ready. Total: ${formatCents(quote.total_amount)}.\n\nView and accept it here: ${link}\n\nHaberl Electrical & Solar`
-  return sendEmail({ to: [quote.customer_email], subject: `Your solar quote ${quote.quote_number ?? ''} — Haberl Solar`.replace('  ', ' '), html, text, replyTo: 'info@haberl.co.za' })
+  const text = `Hi ${quote.customer_name},\n\nYour ${noun} ${ref} is ready. Total: ${formatCents(quote.total_amount)}.\n\nView and accept it here: ${link}\n\nHaberl Electrical & Solar`
+  return sendEmail({ to: [quote.customer_email], subject: `Your ${noun} ${quote.quote_number ?? ''} — ${brand}`.replace('  ', ' '), html, text, replyTo: 'info@haberl.co.za' })
 }
 
 export async function sendFollowUpEmail(quote: QuoteEmailFields, baseUrl: string, reminderNumber: number): Promise<SendResult> {
   if (!quote.customer_email) return { sent: false, error: 'No customer email' }
+  const solar = isSolarQuote(quote)
+  const noun = solar ? 'solar quote' : 'quote'
+  const brand = solar ? 'Haberl Solar' : 'Haberl Electrical & Solar'
   const link = quoteLink(baseUrl, quote.share_token)
   const intro = reminderNumber === 1
-    ? 'Just a friendly reminder that your solar quote is ready for review.'
-    : 'Your solar quote is still open — we wanted to check in before it expires.'
+    ? `Just a friendly reminder that your ${noun} is ready for review.`
+    : `Your ${noun} is still open — we wanted to check in before it expires.`
   const html = emailLayout(
-    'Your solar quote is waiting',
+    `Your ${noun} is waiting`,
     `<p style="font-size:15px;line-height:1.6;">Hi ${escapeHtml(quote.customer_name)},</p>
      <p style="font-size:15px;line-height:1.6;">${intro}</p>
      ${emailButton(link, 'View your quote')}
@@ -87,19 +102,26 @@ export async function sendFollowUpEmail(quote: QuoteEmailFields, baseUrl: string
      <p style="font-size:13px;color:#6b7280;">If anything is unclear or you'd like changes, just reply — we're happy to adjust.</p>`,
   )
   const text = `Hi ${quote.customer_name},\n\n${intro}\n\n${link}\n\nHaberl Electrical & Solar`
-  return sendEmail({ to: [quote.customer_email], subject: `Reminder: your solar quote ${quote.quote_number ?? ''} — Haberl Solar`.replace('  ', ' '), html, text, replyTo: 'info@haberl.co.za' })
+  return sendEmail({ to: [quote.customer_email], subject: `Reminder: your ${noun} ${quote.quote_number ?? ''} — ${brand}`.replace('  ', ' '), html, text, replyTo: 'info@haberl.co.za' })
 }
 
 export async function sendDepositReceiptEmail(quote: QuoteEmailFields): Promise<SendResult> {
   if (!quote.customer_email) return { sent: false, error: 'No customer email' }
+  const solar = isSolarQuote(quote)
+  const nextStep = solar
+    ? "Your installation is now moving into procurement — we're ordering your equipment."
+    : "We're ordering your materials and will be in touch to book the work."
+  const dateLine = solar
+    ? "We'll be in touch shortly to confirm your installation date."
+    : "We'll be in touch shortly to confirm a date."
   const html = emailLayout(
     'Deposit received — thank you!',
     `<p style="font-size:15px;line-height:1.6;">Hi ${escapeHtml(quote.customer_name)},</p>
-     <p style="font-size:15px;line-height:1.6;">We've received your deposit of <strong>${formatCents(quote.deposit_amount)}</strong> for quote <strong>${quote.quote_number ?? ''}</strong>. Your installation is now moving into procurement — we're ordering your equipment.</p>
-     <p style="font-size:15px;line-height:1.6;">We'll be in touch shortly to confirm your installation date.</p>`,
+     <p style="font-size:15px;line-height:1.6;">We've received your deposit of <strong>${formatCents(quote.deposit_amount)}</strong> for quote <strong>${quote.quote_number ?? ''}</strong>. ${nextStep}</p>
+     <p style="font-size:15px;line-height:1.6;">${dateLine}</p>`,
   )
-  const text = `Hi ${quote.customer_name},\n\nWe've received your deposit of ${formatCents(quote.deposit_amount)} for quote ${quote.quote_number ?? ''}. Equipment is being ordered — we'll confirm your installation date shortly.\n\nHaberl Electrical & Solar`
-  return sendEmail({ to: [quote.customer_email], subject: `Deposit received — ${quote.quote_number ?? 'your solar installation'}`, html, text, replyTo: 'info@haberl.co.za' })
+  const text = `Hi ${quote.customer_name},\n\nWe've received your deposit of ${formatCents(quote.deposit_amount)} for quote ${quote.quote_number ?? ''}. ${nextStep}\n\nHaberl Electrical & Solar`
+  return sendEmail({ to: [quote.customer_email], subject: `Deposit received — ${quote.quote_number ?? (solar ? 'your solar installation' : 'your job')}`, html, text, replyTo: 'info@haberl.co.za' })
 }
 
 export async function sendProofRejectedEmail(quote: QuoteEmailFields, reason: string | null, baseUrl: string): Promise<SendResult> {
@@ -118,7 +140,7 @@ export async function sendProofRejectedEmail(quote: QuoteEmailFields, reason: st
      <p style="font-size:13px;color:#6b7280;">If you think this is a mistake or need a hand, just reply to this email or call us on +27 61 519 3016.</p>`,
   )
   const text = `Hi ${quote.customer_name},\n\nWe weren't able to confirm your proof of payment for quote ${quote.quote_number ?? ''}.${reason ? `\n\nReason: ${reason}` : ''}\n\nPlease check the details and upload it again here: ${link}\n\nHaberl Electrical & Solar`
-  return sendEmail({ to: [quote.customer_email], subject: `Action needed: proof of payment for ${quote.quote_number ?? 'your solar installation'}`, html, text, replyTo: 'info@haberl.co.za' })
+  return sendEmail({ to: [quote.customer_email], subject: `Action needed: proof of payment for ${quote.quote_number ?? (isSolarQuote(quote) ? 'your solar installation' : 'your job')}`, html, text, replyTo: 'info@haberl.co.za' })
 }
 
 // ── Admin notifications ───────────────────────────────────────────────────────

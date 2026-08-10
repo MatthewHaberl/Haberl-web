@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { PIPELINE_STAGES } from '@/lib/jobs/stages'
+import { pipelineKindFor, stagesFor } from '@/lib/jobs/stages'
 import { checklistRowsFor } from '@/lib/jobs/checklist'
+import { DEFAULT_WORK_TYPES } from '@/lib/quotes/work-types'
 import type { JobPriority, JobStage } from '@/types/database'
 
 export const runtime = 'nodejs'
 
 const PRIORITIES = new Set<JobPriority>(['low', 'medium', 'high', 'urgent'])
-const STAGES = new Set<JobStage>(PIPELINE_STAGES)
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -33,7 +33,11 @@ export async function POST(req: Request) {
   const siteIdInput = String(body.siteId ?? '').trim()
   const scheduledDate = String(body.scheduledDate ?? '').trim()
   const priority = PRIORITIES.has(body.priority) ? body.priority as JobPriority : 'medium'
-  const stage = STAGES.has(body.stage) ? body.stage as JobStage : 'scheduled'
+  // Work type picks the stage pipeline + checklist (W97) — unknown codes fall
+  // back to solar so the route can never write a work_type the UI can't render.
+  const workType = DEFAULT_WORK_TYPES.some((w) => w.code === body.workType) ? String(body.workType) : 'solar'
+  const pipelineStages = stagesFor(pipelineKindFor(workType))
+  const stage = pipelineStages.includes(body.stage) ? body.stage as JobStage : 'scheduled'
 
   if (!title) return new Response('Job title is required', { status: 400 })
 
@@ -109,6 +113,7 @@ export async function POST(req: Request) {
       scheduled_date: scheduledDate || null,
       stage,
       priority,
+      work_type: workType,
     })
     .select('id')
     .single()
@@ -117,7 +122,7 @@ export async function POST(req: Request) {
     return new Response(jobError?.message ?? 'Could not create job', { status: 400 })
   }
 
-  const { error: tasksError } = await admin.from('job_tasks').insert(checklistRowsFor(job.id))
+  const { error: tasksError } = await admin.from('job_tasks').insert(checklistRowsFor(job.id, workType))
 
   if (tasksError) {
     await admin.from('jobs').delete().eq('id', job.id)

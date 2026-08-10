@@ -27,7 +27,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { data: job } = await supabase
     .from('jobs')
-    .select('id, stage, scheduled_date, quote_request_id')
+    .select('id, stage, scheduled_date, quote_request_id, work_type')
     .eq('id', id)
     .maybeSingle()
   if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
@@ -50,6 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     customer_email: customer.customer_email,
     quote_number: customer.quote_number,
     scheduled_date: job.scheduled_date,
+    work_type: job.work_type,
   }, baseUrl)
 
   return NextResponse.json({ ok: true, sent: result.sent })

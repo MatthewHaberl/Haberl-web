@@ -21,6 +21,8 @@ import { ActiveSection } from './design/sections/ActiveSection'
 import { DesignBomPanel } from './design/DesignBomPanel'
 import { DesignCanvasPanel } from './design/DesignCanvasPanel'
 import { DesignStudio } from './design/DesignStudio'
+import { ScopeWorkspace } from './scope/ScopeWorkspace'
+import type { WorkType } from '@/lib/quotes/work-types'
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,9 +31,11 @@ interface Props {
   photoUrls: string[]
   nextQuoteNum: string
   linkedJobId: string | null
+  engine: 'solar' | 'scope'
+  workType: WorkType
 }
 
-export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
+export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }: Props) {
   const siteLabel = req.site_label?.trim() || req.address?.trim() || `Site ${req.site_number ?? 1}`
   const optionLabel = req.option_label?.trim() || req.quote_number || 'Option'
 
@@ -90,7 +94,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
   }, [req.system_design, req.generated_quote])
 
   return (
-    <div className={`flex flex-col gap-4 ${isAdmin && layout === 'studio' ? 'pb-4' : 'pb-20'}`}>
+    <div className={`flex flex-col gap-4 ${isAdmin && engine !== 'scope' && layout === 'studio' ? 'pb-4' : 'pb-20'}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -101,19 +105,23 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
             <h1 className="text-2xl font-bold text-primary">{req.customer_name}</h1>
             <Badge variant="default" className="gap-1"><MapPin className="h-3 w-3" />{siteLabel}</Badge>
             <span className="text-sm font-medium">{optionLabel}</span>
+            {workType.code !== 'solar' && <Badge variant="outline">{workType.label}</Badge>}
             {req.is_amendment && <Badge variant="warning">Amendment</Badge>}
           </div>
         </div>
         {isAdmin ? (
           <div className="flex flex-col items-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={flipLayout}
-              title={layout === 'studio' ? 'Switch back to the classic layout' : 'Try the new canvas-forward studio layout'}
-            >
-              {layout === 'studio' ? 'Classic layout' : 'Try new layout'}
-            </Button>
+            {/* Classic/studio is a canvas-only choice — the scope builder has one layout. */}
+            {engine !== 'scope' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={flipLayout}
+                title={layout === 'studio' ? 'Switch back to the classic layout' : 'Try the new canvas-forward studio layout'}
+              >
+                {layout === 'studio' ? 'Classic layout' : 'Try new layout'}
+              </Button>
+            )}
             <div id="quote-status-bar">
               <QuoteStatusBar
                 requestId={req.id}
@@ -134,35 +142,42 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId }: Props) {
       </div>
 
       {isAdmin ? (
-        <CanvasThemeProvider value={canvasColors}>
-          <DesignProvider
-            requestId={req.id}
-            initialDesign={initialDesign}
-            gridSupply={req.grid_supply as string | undefined}
-            record={{ monthly_kwh: req.monthly_kwh ?? null, municipality: req.municipality ?? null }}
-            canSave
-          >
-            {layout === 'studio' ? (
-              <DesignStudio
-                consoleOpen={consoleOpen}
-                setConsoleOpen={setConsoleOpen}
-                overviewOpen={overviewOpen}
-                setOverviewOpen={setOverviewOpen}
-                viewMode={viewMode}
-                setViewMode={setViewMode}
-              />
-            ) : (
-              <>
-                <BalanceHeader />
-                <Walkthrough />
-                <BuildRail />
-                <ActiveSection />
-                <DesignCanvasPanel />
-                <DesignBomPanel />
-              </>
-            )}
-          </DesignProvider>
-        </CanvasThemeProvider>
+        // Engine branch (W97): 'scope' work types get the line-item scope builder;
+        // everything else keeps the solar design canvas. Header + status bar above
+        // and the non-admin iframe below are shared by both engines.
+        engine === 'scope' ? (
+          <ScopeWorkspace requestId={req.id} rawScope={req.scope} workType={workType} />
+        ) : (
+          <CanvasThemeProvider value={canvasColors}>
+            <DesignProvider
+              requestId={req.id}
+              initialDesign={initialDesign}
+              gridSupply={req.grid_supply as string | undefined}
+              record={{ monthly_kwh: req.monthly_kwh ?? null, municipality: req.municipality ?? null }}
+              canSave
+            >
+              {layout === 'studio' ? (
+                <DesignStudio
+                  consoleOpen={consoleOpen}
+                  setConsoleOpen={setConsoleOpen}
+                  overviewOpen={overviewOpen}
+                  setOverviewOpen={setOverviewOpen}
+                  viewMode={viewMode}
+                  setViewMode={setViewMode}
+                />
+              ) : (
+                <>
+                  <BalanceHeader />
+                  <Walkthrough />
+                  <BuildRail />
+                  <ActiveSection />
+                  <DesignCanvasPanel />
+                  <DesignBomPanel />
+                </>
+              )}
+            </DesignProvider>
+          </CanvasThemeProvider>
+        )
       ) : (
         <div className="rounded-xl border border-border bg-card p-4">
           {req.quote_html ? (

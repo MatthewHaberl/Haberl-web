@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { PIPELINE_STAGES, STAGE_META } from '@/lib/jobs/stages'
+import { pipelineKindFor, stageMetaFor, stagesFor } from '@/lib/jobs/stages'
+import { DEFAULT_WORK_TYPES } from '@/lib/quotes/work-types'
 import type { JobPriority, JobStage } from '@/types/database'
 
 type Assignee = {
@@ -43,6 +44,7 @@ export function NewJobForm({
 }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
+  const [workType, setWorkType] = useState('solar')
   const [description, setDescription] = useState('')
   const [assignedTo, setAssignedTo] = useState(assignees.some((a) => a.id === currentUserId) ? currentUserId : assignees[0]?.id ?? '')
   const [customerId, setCustomerId] = useState('')
@@ -56,6 +58,16 @@ export function NewJobForm({
   const selectedCustomer = customers.find((c) => c.id === customerId)
   const sites = selectedCustomer?.sites ?? []
 
+  // The work type picks the stage pipeline (W97) — lite jobs skip procurement,
+  // commissioning and handover, so the stage options follow the selection.
+  const pipeline = pipelineKindFor(workType)
+  const stageOptions = stagesFor(pipeline)
+
+  function changeWorkType(next: string) {
+    setWorkType(next)
+    if (!stagesFor(pipelineKindFor(next)).includes(stage)) setStage('scheduled')
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaving(true)
@@ -64,7 +76,7 @@ export function NewJobForm({
       const response = await fetch('/api/jobs/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, assignedTo, customerId, siteId, scheduledDate, priority, stage }),
+        body: JSON.stringify({ title, workType, description, assignedTo, customerId, siteId, scheduledDate, priority, stage }),
       })
       if (!response.ok) {
         setError(await response.text() || `Could not create job (HTTP ${response.status})`)
@@ -84,6 +96,16 @@ export function NewJobForm({
         <form onSubmit={submit} className="grid gap-4">
           <Field label="Job title">
             <Input value={title} onChange={(event) => setTitle(event.target.value)} required placeholder="Solar installation - customer name" />
+          </Field>
+
+          <Field label="Work type">
+            <Select value={workType} onChange={(event) => changeWorkType(event.target.value)}>
+              {DEFAULT_WORK_TYPES.map((w) => (
+                <option key={w.code} value={w.code}>
+                  {w.label}
+                </option>
+              ))}
+            </Select>
           </Field>
 
           <Field label="Assigned to">
@@ -158,9 +180,9 @@ export function NewJobForm({
 
           <Field label="Starting stage">
             <Select value={stage} onChange={(event) => setStage(event.target.value as JobStage)}>
-              {PIPELINE_STAGES.map((s) => (
+              {stageOptions.map((s) => (
                 <option key={s} value={s}>
-                  {STAGE_META[s].label}
+                  {stageMetaFor(pipeline, s).label}
                 </option>
               ))}
             </Select>

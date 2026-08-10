@@ -64,11 +64,19 @@ export function bomToSupplierBom(bom: DesignBom): SupplierBomItem[] {
   return out
 }
 
-/** Deposit line items from the BOM — one per starred equipment section present. */
-export function computeDeposit(bom: DesignBom): { items: DepositItem[]; totalR: number } {
+/**
+ * Deposit line items from the BOM — one per starred equipment section present.
+ * `sections` defaults to the solar starred-equipment list; the scope engine
+ * passes its own (every section holding material lines — see
+ * scopeDepositSections in lib/quotes/scope.ts).
+ */
+export function computeDeposit(
+  bom: DesignBom,
+  sections: string[] = DEPOSIT_SECTIONS,
+): { items: DepositItem[]; totalR: number } {
   const items: DepositItem[] = []
   for (const s of bom.sections) {
-    if (!DEPOSIT_SECTIONS.includes(s.name) || s.sellR <= 0) continue
+    if (!sections.includes(s.name) || s.sellR <= 0) continue
     items.push({ name: s.name, amountRands: round2(s.sellR) })
   }
   return { items, totalR: round2(items.reduce((t, i) => t + i.amountRands, 0)) }

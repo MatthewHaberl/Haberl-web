@@ -19,6 +19,7 @@ import type { QuoteRequestStatus } from '@/types/database'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { RecordShareControl } from '@/components/records/RecordShareControl'
 import type { StaffMember } from '@/lib/records/sharing'
+import { workTypeFor } from '@/lib/quotes/work-types'
 
 const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success'> = {
   pending: 'warning',
@@ -39,6 +40,7 @@ export type QuoteRow = {
   quote_number: string | null
   address: string | null
   system_type: string
+  work_type: string | null
   monthly_kwh: string | null
   created_at: string
   status: QuoteRequestStatus
@@ -439,6 +441,11 @@ export function QuotesV2List({
                               {editingOption !== option.id && (
                                 <div className="flex items-center gap-2 shrink-0">
                                   {option.archived_at && <Badge variant="outline">archived</Badge>}
+                                  {/* Work type (W97) — only 'solar' is the unmarked default; every other
+                                      offering (incl. backup_inverter) gets its badge. */}
+                                  {option.work_type && option.work_type !== 'solar' && (
+                                    <Badge variant="outline">{workTypeFor(option.work_type)?.label ?? option.work_type}</Badge>
+                                  )}
                                   <Badge variant={statusVariant[option.status]}>{option.status}</Badge>
                                   <Link href={`/portal/employee/quotes-v2/${option.id}`} title="Open">
                                     <ChevronRight className="h-4 w-4 text-muted-foreground" />

@@ -4,13 +4,15 @@ import { useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Circle } from 'lucide-react'
-import { PIPELINE_STAGES, STAGE_META, stageIndex } from '@/lib/jobs/stages'
+import { stageIndexIn, stageMetaFor, stagesFor, type JobPipelineKind } from '@/lib/jobs/stages'
 import type { Job, JobStage, JobTask } from '@/types/database'
 
 interface Props {
   initialJob?: Job
   initialTasks: JobTask[]
   stage: JobStage
+  /** Which stage pipeline this job runs (W97) — 'full' solar or 'lite' scope work. */
+  pipeline?: JobPipelineKind
 }
 
 interface StageGroup {
@@ -20,10 +22,11 @@ interface StageGroup {
   tasks: JobTask[]
 }
 
-function TaskRow({ task, onToggle, showStage = false }: {
+function TaskRow({ task, onToggle, showStage = false, pipeline = 'full' }: {
   task: JobTask
   onToggle: (task: JobTask) => void
   showStage?: boolean
+  pipeline?: JobPipelineKind
 }) {
   return (
     <button
@@ -38,7 +41,7 @@ function TaskRow({ task, onToggle, showStage = false }: {
         {task.description}
         {showStage && task.stage && (
           <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-            {STAGE_META[task.stage]?.label ?? task.stage}
+            {stageMetaFor(pipeline, task.stage)?.label ?? task.stage}
           </span>
         )}
       </span>
@@ -50,7 +53,7 @@ function TaskRow({ task, onToggle, showStage = false }: {
 // current stage is open; earlier work that never got ticked is flagged; later
 // stages collapse to a one-line preview so the crew can see what's coming
 // without wading through it. Stage progression itself lives in StagePipeline.
-export function JobActions({ initialTasks, stage }: Props) {
+export function JobActions({ initialTasks, stage, pipeline = 'full' }: Props) {
   const supabase = createClient()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [showDone, setShowDone] = useState(false)
@@ -76,18 +79,19 @@ export function JobActions({ initialTasks, stage }: Props) {
     }
   }
 
-  const currentIndex = stageIndex(stage) // -1 when on hold or cancelled
+  const stages = stagesFor(pipeline)
+  const currentIndex = stageIndexIn(stages, stage) // -1 when on hold or cancelled
 
   const { now, outstanding, upcoming, doneElsewhere } = useMemo(() => {
     const groupFor = (s: JobStage | null): StageGroup => ({
       key: s ?? 'unstaged',
       stage: s,
-      label: s ? STAGE_META[s].label : 'Any stage',
+      label: s ? stageMetaFor(pipeline, s).label : 'Any stage',
       tasks: [],
     })
 
     const byStage = new Map<string, StageGroup>()
-    for (const s of PIPELINE_STAGES) byStage.set(s, groupFor(s))
+    for (const s of stages) byStage.set(s, groupFor(s))
     byStage.set('unstaged', groupFor(null))
 
     for (const task of tasks) {
@@ -106,11 +110,11 @@ export function JobActions({ initialTasks, stage }: Props) {
     const upcomingGroups: StageGroup[] = []
     const doneTasks: JobTask[] = []
 
-    for (const s of PIPELINE_STAGES) {
+    for (const s of stages) {
       if (s === stage) continue
       const group = byStage.get(s)!
       if (group.tasks.length === 0) continue
-      const index = stageIndex(s)
+      const index = stageIndexIn(stages, s)
       const isPast = currentIndex !== -1 && index < currentIndex
 
       if (isPast) {
@@ -131,13 +135,13 @@ export function JobActions({ initialTasks, stage }: Props) {
       upcoming: upcomingGroups,
       doneElsewhere: doneTasks,
     }
-  }, [tasks, stage, currentIndex])
+  }, [tasks, stage, currentIndex, stages, pipeline])
 
   if (tasks.length === 0) return null
 
   const completedCount = tasks.filter((t) => t.completed).length
   const nowDone = now.filter((t) => t.completed).length
-  const stageLabel = STAGE_META[stage]?.label ?? stage
+  const stageLabel = stageMetaFor(pipeline, stage)?.label ?? stage
 
   return (
     <Card>
@@ -182,7 +186,7 @@ export function JobActions({ initialTasks, stage }: Props) {
               Still open from earlier stages ({outstanding.length})
             </p>
             <div className="flex flex-col gap-1">
-              {outstanding.map((task) => <TaskRow key={task.id} task={task} onToggle={toggleTask} showStage />)}
+              {outstanding.map((task) => <TaskRow key={task.id} task={task} onToggle={toggleTask} showStage pipeline={pipeline} />)}
             </div>
           </div>
         )}
@@ -235,7 +239,7 @@ export function JobActions({ initialTasks, stage }: Props) {
             </button>
             {showDone && (
               <div className="flex flex-col gap-1 pl-5 pt-1">
-                {doneElsewhere.map((task) => <TaskRow key={task.id} task={task} onToggle={toggleTask} showStage />)}
+                {doneElsewhere.map((task) => <TaskRow key={task.id} task={task} onToggle={toggleTask} showStage pipeline={pipeline} />)}
               </div>
             )}
           </div>

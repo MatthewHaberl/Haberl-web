@@ -7,9 +7,12 @@ import type { ReactNode } from 'react'
  */
 export function PublicShell({
   quoteNumber,
+  solar = true,
   children,
 }: {
   quoteNumber?: string | null
+  /** Solar-engine quote — false shows the electrical wordmark (W97). */
+  solar?: boolean
   children: ReactNode
 }) {
   return (
@@ -17,7 +20,7 @@ export function PublicShell({
       <header className="bg-primary text-primary-foreground">
         <div className="mx-auto max-w-3xl px-4 py-4 flex items-center justify-between">
           <span className="text-lg font-bold">
-            Haberl <span className="text-accent">Solar</span>
+            Haberl <span className="text-accent">{solar ? 'Solar' : 'Electrical'}</span>
           </span>
           {quoteNumber && <span className="text-sm font-mono opacity-90">{quoteNumber}</span>}
         </div>

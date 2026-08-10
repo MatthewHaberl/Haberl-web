@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
   //    lists them under "personal follow-up", so there's no separate alert email.
   const { data: quotes, error } = await supabase
     .from('quote_requests')
-    .select('id, customer_name, customer_email, quote_number, total_amount, deposit_amount, share_token, expiry_date, sent_at, reminder_count')
+    .select('id, customer_name, customer_email, quote_number, total_amount, deposit_amount, share_token, expiry_date, sent_at, reminder_count, work_type')
     .eq('status', 'sent')
     .not('sent_at', 'is', null)
     .lt('reminder_count', 3)

@@ -1,6 +1,7 @@
 import { createClient, getUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { QuoteFormV2, type PrefillV2 } from './QuoteFormV2'
+import { fetchWorkTypes } from '@/lib/quotes/work-types'
 import type { EquipmentBrand } from '@/types/database'
 
 export default async function NewQuoteV2Page({
@@ -14,18 +15,19 @@ export default async function NewQuoteV2Page({
   const supabase = await createClient()
   const { from, lead, newSite } = await searchParams
 
-  const [{ data: brands }, prefillResult, leadResult] = await Promise.all([
+  const [{ data: brands }, prefillResult, leadResult, workTypes] = await Promise.all([
     supabase.from('equipment_brands').select('*').eq('active', true).order('category').order('brand'),
     from
       ? supabase
           .from('quote_requests')
           .select(
-            'customer_name, customer_phone, customer_email, customer_address, is_business, contact_name, contact_email, address, site_label, municipality, site_number, grid_supply, roof_type, storeys, monthly_kwh, load_profile, inverter_brand, battery_brand, panel_brand',
+            'customer_name, customer_phone, customer_email, customer_address, is_business, contact_name, contact_email, address, site_label, municipality, site_number, grid_supply, roof_type, storeys, monthly_kwh, load_profile, inverter_brand, battery_brand, panel_brand, work_type',
           )
           .eq('id', from)
           .single()
       : Promise.resolve({ data: null }),
     lead ? supabase.from('leads').select('id, name, phone, suburb').eq('id', lead).single() : Promise.resolve({ data: null }),
+    fetchWorkTypes(supabase),
   ])
 
   const leadPrefill: PrefillV2 | null = leadResult.data
@@ -42,6 +44,7 @@ export default async function NewQuoteV2Page({
   return (
     <QuoteFormV2
       brands={(brands ?? []) as EquipmentBrand[]}
+      workTypes={workTypes}
       prefill={prefill}
       leadId={leadResult.data?.id ?? null}
     />

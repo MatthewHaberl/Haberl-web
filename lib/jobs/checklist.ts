@@ -29,9 +29,70 @@ export const INSTALL_CHECKLIST: ChecklistItem[] = [
   { description: 'Testimonial requested (video if they\'re willing)', stage: 'follow_up' },
 ]
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-work-type checklists (W97). Scope-engine jobs run the LITE pipeline
+// (deposit → scheduled → installation → coc → follow_up → completed), so their
+// stages must stay inside that set — job_tasks.stage has a DB check constraint
+// (migration 100) limited to the solar slugs, which the lite set is a subset of.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ELECTRICAL_CHECKLIST: ChecklistItem[] = [
+  { description: 'Deposit received & reconciled', stage: 'deposit_pending' },
+  { description: 'Date agreed with customer', stage: 'scheduled' },
+  { description: 'Materials on hand', stage: 'scheduled' },
+  { description: 'Work completed & tested', stage: 'installation' },
+  { description: 'COC issued and filed', stage: 'coc' },
+  { description: 'Follow-up call', stage: 'follow_up' },
+]
+
+const DB_REWIRE_CHECKLIST: ChecklistItem[] = [
+  { description: 'Deposit received & reconciled', stage: 'deposit_pending' },
+  { description: 'Isolation & outage window agreed with customer', stage: 'scheduled' },
+  { description: 'Materials on hand', stage: 'scheduled' },
+  { description: 'Board removed / installed', stage: 'installation' },
+  { description: 'Circuits labelled & tested', stage: 'installation' },
+  { description: 'Earth & bonding verified', stage: 'installation' },
+  { description: 'COC issued and filed', stage: 'coc' },
+  { description: 'Handover pack sent (quote, COC, circuit chart)', stage: 'follow_up' },
+]
+
+const COC_CHECKLIST: ChecklistItem[] = [
+  { description: 'Inspection booked', stage: 'scheduled' },
+  { description: 'Inspection completed', stage: 'installation' },
+  { description: 'Remedial list issued to customer', stage: 'installation' },
+  { description: 'Remedials completed', stage: 'installation' },
+  { description: 'Certificate issued and filed', stage: 'coc' },
+]
+
+const INSTALL_UNIT_CHECKLIST: ChecklistItem[] = [
+  { description: 'Deposit received & reconciled', stage: 'deposit_pending' },
+  { description: 'Equipment on hand', stage: 'scheduled' },
+  { description: 'Supply & protection installed', stage: 'installation' },
+  { description: 'Unit installed & commissioned', stage: 'installation' },
+  { description: 'Customer walkthrough', stage: 'installation' },
+  { description: 'COC issued and filed', stage: 'coc' },
+]
+
+// Keyed by work_types.code. Unknown scope-engine codes fall back to the
+// general electrical list; solar codes get the full install checklist.
+const CHECKLISTS: Record<string, ChecklistItem[]> = {
+  solar: INSTALL_CHECKLIST,
+  backup_inverter: INSTALL_CHECKLIST,
+  electrical: ELECTRICAL_CHECKLIST,
+  db_rewire: DB_REWIRE_CHECKLIST,
+  coc: COC_CHECKLIST,
+  generator: INSTALL_UNIT_CHECKLIST,
+  ev_charger: INSTALL_UNIT_CHECKLIST,
+}
+
+export function checklistForWorkType(workType: string | null | undefined): ChecklistItem[] {
+  if (!workType) return INSTALL_CHECKLIST
+  return CHECKLISTS[workType] ?? ELECTRICAL_CHECKLIST
+}
+
 /** Rows ready for `insert into job_tasks` — one per checklist item. */
-export function checklistRowsFor(jobId: string) {
-  return INSTALL_CHECKLIST.map((item, index) => ({
+export function checklistRowsFor(jobId: string, workType?: string | null) {
+  return checklistForWorkType(workType ?? 'solar').map((item, index) => ({
     job_id: jobId,
     description: item.description,
     stage: item.stage,

@@ -8,7 +8,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useConfirm } from '@/components/ui/confirm-dialog'
-import { PIPELINE_STAGES, STAGE_META, nextStage, prevStage, stageIndex } from '@/lib/jobs/stages'
+import {
+  nextStageIn, prevStageIn, stageIndexIn, stageMetaFor, stagesFor, type JobPipelineKind,
+} from '@/lib/jobs/stages'
 import type { Job, JobStage, JobStatusHistory, JobTask } from '@/types/database'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Circle, Eye, EyeOff, Loader2,
@@ -17,12 +19,14 @@ import {
 
 interface Props {
   job: Pick<Job, 'id' | 'stage' | 'on_hold_reason'>
+  /** Which stage pipeline this job runs (W97) — 'full' solar or 'lite' scope work. */
+  pipeline?: JobPipelineKind
   history: JobStatusHistory[]
   tasks: JobTask[]
   canAdvance: boolean
 }
 
-export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
+export function StagePipeline({ job, pipeline = 'full', history, tasks, canAdvance }: Props) {
   const router = useRouter()
   const confirm = useConfirm()
   const supabase = createClient()
@@ -40,17 +44,18 @@ export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
   const [ticked, setTicked] = useState<Record<string, boolean>>({})
 
   const stage = job.stage
+  const stages = stagesFor(pipeline)
   const isOnHold = stage === 'on_hold'
   const isCancelled = stage === 'cancelled'
-  const currentIndex = stageIndex(stage)
-  const next = nextStage(stage)
-  const prev = prevStage(stage)
+  const currentIndex = stageIndexIn(stages, stage)
+  const next = nextStageIn(stages, stage)
+  const prev = prevStageIn(stages, stage)
 
   // Stage to return to when resuming a hold: last linear stage in history
   const resumeStage: JobStage = (() => {
     for (let i = history.length - 1; i >= 0; i--) {
       const s = history[i].stage as JobStage
-      if (PIPELINE_STAGES.includes(s)) return s
+      if (stages.includes(s)) return s
     }
     return 'deposit_pending'
   })()
@@ -69,7 +74,7 @@ export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
     else {
       // Fire-and-forget customer notification for the stages that warrant one —
       // only when moving forward, never on a backward correction.
-      const movingForward = stageIndex(nextValue) > currentIndex
+      const movingForward = stageIndexIn(stages, nextValue) > currentIndex
       if (movingForward && (nextValue === 'scheduled' || nextValue === 'installation' || nextValue === 'handover')) {
         fetch(`/api/jobs/${job.id}/notify-stage`, { method: 'POST' }).catch(() => {})
       }
@@ -147,8 +152,8 @@ export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
       <Card>
         <CardContent className="pt-5 pb-5">
           <div className="flex items-center gap-0 overflow-x-auto pb-1">
-            {PIPELINE_STAGES.map((s, i) => {
-              const meta = STAGE_META[s]
+            {stages.map((s, i) => {
+              const meta = stageMetaFor(pipeline, s)
               const done = !isCancelled && !isOnHold && i < currentIndex
               const active = s === stage
               return (
@@ -176,7 +181,7 @@ export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
 
           {(isOnHold || isCancelled) && (
             <div className="mt-3 rounded-md bg-warning/10 border border-warning/40 px-3 py-2 text-sm">
-              <span className="font-medium">{STAGE_META[stage].label}</span>
+              <span className="font-medium">{stageMetaFor(pipeline, stage).label}</span>
               {job.on_hold_reason && <span className="text-muted-foreground"> — {job.on_hold_reason}</span>}
             </div>
           )}
@@ -187,17 +192,17 @@ export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
               {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
               {!busy && isOnHold && (
                 <Button variant="accent" size="sm" onClick={() => setStage(resumeStage)}>
-                  <PlayCircle className="h-3.5 w-3.5" /> Resume — {STAGE_META[resumeStage].label}
+                  <PlayCircle className="h-3.5 w-3.5" /> Resume — {stageMetaFor(pipeline, resumeStage).label}
                 </Button>
               )}
               {!busy && !isOnHold && prev && (
                 <Button variant="outline" size="sm" onClick={() => setStage(prev)}>
-                  <ArrowLeft className="h-3.5 w-3.5" /> Back to {STAGE_META[prev].label}
+                  <ArrowLeft className="h-3.5 w-3.5" /> Back to {stageMetaFor(pipeline, prev).label}
                 </Button>
               )}
               {!busy && !isOnHold && next && (
                 <Button variant="accent" size="sm" onClick={() => requestAdvance(next)}>
-                  Advance to {STAGE_META[next].label} <ArrowRight className="h-3.5 w-3.5" />
+                  Advance to {stageMetaFor(pipeline, next).label} <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               )}
               {!busy && !isOnHold && stage !== 'completed' && (
@@ -263,7 +268,7 @@ export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
               </div>
               <div className="min-w-0">
                 <h2 id="advance-dialog-title" className="text-base font-semibold text-foreground">
-                  {openHere.length} {openHere.length === 1 ? 'task' : 'tasks'} still open at {STAGE_META[stage].label}
+                  {openHere.length} {openHere.length === 1 ? 'task' : 'tasks'} still open at {stageMetaFor(pipeline, stage).label}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Tick what&apos;s done — anything left unticked stays flagged as outstanding on the checklist.
@@ -306,7 +311,7 @@ export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
                 <Button variant="accent" size="sm" onClick={confirmAdvance} disabled={busy}>
                   {busy
                     ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <>Advance to {STAGE_META[advanceTo].label} <ArrowRight className="h-3.5 w-3.5" /></>}
+                    : <>Advance to {stageMetaFor(pipeline, advanceTo).label} <ArrowRight className="h-3.5 w-3.5" /></>}
                 </Button>
               </div>
             </div>
@@ -357,7 +362,7 @@ export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
           ) : (
             <ol className="flex flex-col gap-0">
               {[...history].reverse().map((entry) => {
-                const meta = STAGE_META[entry.stage as JobStage]
+                const meta = stageMetaFor(pipeline, entry.stage as JobStage)
                 return (
                   <li key={entry.id} className="flex gap-3 text-sm py-2 border-b border-border last:border-0">
                     <div className="w-36 shrink-0 text-xs text-muted-foreground pt-0.5">

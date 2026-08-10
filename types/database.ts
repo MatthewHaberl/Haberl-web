@@ -242,6 +242,9 @@ export interface Job {
   created_by: string
   created_at: string
   completed_at: string | null
+  // Work type carried from the quote — picks the stage pipeline + checklist
+  // (W97, migration 105). Defaults 'solar' for every pre-W97 job.
+  work_type?: string
   // EFT deposit reconciliation (migration 024)
   deposit_proof_url: string | null
   deposit_proof_uploaded_at: string | null
@@ -577,6 +580,13 @@ export interface QuoteRequest {
   // Energy-first design canvas — single source of truth (migration 039)
   system_design: unknown | null
 
+  // Work-type discriminator + scope-engine payload (W97, migration 105).
+  // work_type picks the engine: 'solar'/'backup_inverter' → design canvas,
+  // scope-engine codes (electrical, db_rewire, coc, …) → the scope builder,
+  // whose QuoteScope lives in `scope` (see lib/quotes/scope.ts).
+  work_type?: string
+  scope?: unknown | null
+
   // Public share + online acceptance (migration 024)
   share_token: string
   expiry_date: string | null
@@ -732,6 +742,10 @@ export interface CompanySettings {
   // defaults in lib/solar/canvas-theme.ts (CIRCUIT_THEME). Shape mirrors
   // CanvasColorOverrides there — Partial<Record<CircuitLayer, Partial<CircuitStyle>>>.
   canvas_colors?: Record<string, { label?: string; stroke?: string; fill?: string; striped?: boolean; stripe?: string }> | null
+  // Scope-engine labour defaults (W97, migration 105). Placeholders until real
+  // rates are captured — every scope quote's labour is wrong until then.
+  labour_hourly_rate_rands?: number
+  callout_fee_rands?: number
   updated_at: string
 }
 

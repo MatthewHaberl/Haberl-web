@@ -24,10 +24,12 @@ interface Props {
   banking: BankingDetails | null
   proof: { uploaded: boolean; confirmed: boolean; rejected: boolean; rejectedReason: string | null } | null
   contactPhone: string | null
+  /** Solar-engine quote — drives installation-flavoured copy (W97). */
+  isSolar?: boolean
 }
 
 export function PublicQuoteActions({
-  token, state, quoteNumber, depositCents, tierOptions, banking, proof, contactPhone,
+  token, state, quoteNumber, depositCents, tierOptions, banking, proof, contactPhone, isSolar = true,
 }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -129,8 +131,10 @@ export function PublicQuoteActions({
           </h2>
           {proof?.confirmed ? (
             <p className="flex items-center gap-2 text-sm text-green-700 dark:text-green-300">
-              <Check className="h-4 w-4" /> Deposit confirmed — your installation is moving into
-              procurement. We&apos;ll contact you to book the installation date.
+              <Check className="h-4 w-4" />{' '}
+              {isSolar
+                ? <>Deposit confirmed — your installation is moving into procurement. We&apos;ll contact you to book the installation date.</>
+                : <>Deposit confirmed — we&apos;ll contact you to book a date for the work.</>}
             </p>
           ) : (
             <>
@@ -228,8 +232,11 @@ export function PublicQuoteActions({
           className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
         />
         <span className="text-muted-foreground">
-          I accept this quote and authorise Haberl Electrical &amp; Solar to proceed with the
-          installation as quoted. The deposit secures equipment and the installation date.
+          {isSolar
+            ? <>I accept this quote and authorise Haberl Electrical &amp; Solar to proceed with the
+              installation as quoted. The deposit secures equipment and the installation date.</>
+            : <>I accept this quote and authorise Haberl Electrical &amp; Solar to proceed with the
+              work as quoted. The deposit secures materials and the booking.</>}
         </span>
       </label>
 

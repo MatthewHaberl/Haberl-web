@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { checklistRowsFor } from './checklist'
+import { workTypeFor } from '@/lib/quotes/work-types'
 
 interface BomLine {
   section?: string
@@ -47,13 +48,20 @@ async function resolveCustomerSite(
   }
   if (sites && sites.length > 0) return sites[0].id
 
+  // Sites created off a scope-engine quote describe the actual work, not
+  // 'Solar PV' (W97). Solar-engine codes keep the historical value.
+  const wt = quote.work_type as string | null
+  const siteSystemType = !wt || wt === 'solar' || wt === 'backup_inverter'
+    ? 'Solar PV'
+    : workTypeFor(wt)?.label ?? 'Electrical'
+
   const { data: newSite, error: insertError } = await supabase
     .from('sites')
     .insert({
       customer_id: customerId,
       name: `${quote.customer_name} - Site ${quote.site_number ?? 1}`,
       address,
-      system_type: 'Solar PV',
+      system_type: siteSystemType,
       status: 'pending',
     })
     .select('id')
@@ -70,6 +78,10 @@ async function resolveCustomerSite(
 function extractBom(generatedQuote: string, acceptedTier?: string | null): BomLine[] {
   try {
     const data = JSON.parse(generatedQuote)
+    // The v2 generate route stores bom_snapshot as the bare SupplierBomItem[]
+    // (bomToSupplierBom output) — without this branch every v2 acceptance
+    // seeded zero materials, because an array has no .supplierBom.
+    if (Array.isArray(data)) return data
     if (data?.type === 'multi-option' && Array.isArray(data.options)) {
       const wanted = acceptedTier ?? 'recommended'
       const option =
@@ -153,6 +165,12 @@ export async function createJobFromQuote(
   // Link to (or create) the customer's site via the quote's customer record.
   const siteId = await resolveCustomerSite(supabase, quote)
 
+  // Work type rides from quote → job and picks the pipeline + checklist (W97).
+  const workType = (quote.work_type as string | null) ?? 'solar'
+  const title = workType === 'solar'
+    ? `Solar Installation — ${quote.quote_number ?? quote.customer_name}`
+    : `${workTypeFor(workType)?.label ?? 'Electrical work'} — ${quote.quote_number ?? quote.customer_name}`
+
   const { data: job, error: jobError } = await supabase
     .from('jobs')
     .insert({
@@ -160,7 +178,8 @@ export async function createJobFromQuote(
       assigned_to: actorId,
       created_by: actorId,
       quote_request_id: quote.id,
-      title: `Solar Installation — ${quote.quote_number ?? quote.customer_name}`,
+      work_type: workType,
+      title,
       description: [
         quote.customer_name,
         quote.address,
@@ -178,7 +197,7 @@ export async function createJobFromQuote(
     return { ok: false, error: jobError?.message ?? 'Could not create job', status: 400 }
   }
 
-  const { error: tasksError } = await supabase.from('job_tasks').insert(checklistRowsFor(job.id))
+  const { error: tasksError } = await supabase.from('job_tasks').insert(checklistRowsFor(job.id, workType))
   if (tasksError) {
     await supabase.from('jobs').delete().eq('id', job.id)
     return { ok: false, error: `Checklist not created: ${tasksError.message}`, status: 500 }

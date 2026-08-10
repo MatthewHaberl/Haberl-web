@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 
 /** Renders the saved quote HTML isolated in an iframe, sized to its content. */
-export function QuoteFrame({ html }: { html: string }) {
+export function QuoteFrame({ html, title = 'Quote' }: { html: string; title?: string }) {
   const ref = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(900)
 
@@ -11,7 +11,7 @@ export function QuoteFrame({ html }: { html: string }) {
     <iframe
       ref={ref}
       srcDoc={html}
-      title="Solar quote"
+      title={title}
       sandbox="allow-same-origin"
       className="w-full rounded-lg border border-border bg-white"
       style={{ height }}

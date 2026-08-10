@@ -1,11 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Check, Hammer } from 'lucide-react'
-import { PIPELINE_STAGES, STAGE_META, stageIndex } from '@/lib/jobs/stages'
+import { pipelineKindFor, stageIndexIn, stageMetaFor, stagesFor } from '@/lib/jobs/stages'
 import type { Job, JobStage, JobStatusHistory } from '@/types/database'
 
 interface Props {
-  job: Pick<Job, 'id' | 'title' | 'stage' | 'scheduled_date'>
+  job: Pick<Job, 'id' | 'title' | 'stage' | 'scheduled_date' | 'work_type'>
   history: JobStatusHistory[]
 }
 
@@ -13,10 +13,13 @@ interface Props {
 // Only customer_visible history reaches this component (enforced by RLS).
 export function InstallationTracker({ job, history }: Props) {
   const stage = job.stage
+  // Non-solar work runs the lite pipeline with customer-friendly relabels (W97).
+  const pipeline = pipelineKindFor(job.work_type)
+  const stages = stagesFor(pipeline)
   const isCancelled = stage === 'cancelled'
   const isOnHold = stage === 'on_hold'
-  const currentIndex = stageIndex(stage)
-  const meta = STAGE_META[stage]
+  const currentIndex = stageIndexIn(stages, stage)
+  const meta = stageMetaFor(pipeline, stage)
 
   const updates = [...history].reverse().slice(0, 6)
 
@@ -36,8 +39,8 @@ export function InstallationTracker({ job, history }: Props) {
 
         {/* Stepper */}
         <div className="flex items-center gap-0 overflow-x-auto pb-1">
-          {PIPELINE_STAGES.map((s, i) => {
-            const sMeta = STAGE_META[s]
+          {stages.map((s, i) => {
+            const sMeta = stageMetaFor(pipeline, s)
             const done = !isCancelled && !isOnHold && i < currentIndex
             const active = s === stage
             return (
@@ -64,7 +67,7 @@ export function InstallationTracker({ job, history }: Props) {
         </div>
 
         {!isCancelled && meta && (
-          <p className="text-sm text-muted-foreground -mt-2">{STAGE_META[stage].description}</p>
+          <p className="text-sm text-muted-foreground -mt-2">{meta.description}</p>
         )}
 
         {/* Latest updates */}
@@ -81,7 +84,7 @@ export function InstallationTracker({ job, history }: Props) {
                   </span>
                   <span>
                     <span className="font-medium">
-                      {STAGE_META[entry.stage as JobStage]?.customerLabel ?? entry.stage}
+                      {stageMetaFor(pipeline, entry.stage as JobStage)?.customerLabel ?? entry.stage}
                     </span>
                     {entry.note && <span className="text-muted-foreground"> — {entry.note}</span>}
                   </span>

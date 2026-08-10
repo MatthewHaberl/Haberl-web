@@ -9,6 +9,8 @@ import { Select as UiSelect } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
 import { resolveOrCreateCustomer } from '@/lib/customers/resolve'
+import { workTypeFor, type WorkType } from '@/lib/quotes/work-types'
+import { emptyScope } from '@/lib/quotes/scope'
 import { detectMunicipality, MUNICIPALITIES } from '@/lib/solar/municipalities'
 import { getTariffRateForMunicipality } from '@/lib/solar/quote-calculator'
 import { AddressAutocomplete } from '@/components/ui/AddressAutocomplete'
@@ -78,6 +80,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 }
 
 export interface PrefillV2 {
+  work_type?: string | null
   customer_name?: string | null
   customer_phone?: string | null
   customer_email?: string | null
@@ -101,6 +104,7 @@ export interface PrefillV2 {
 
 interface Props {
   brands: EquipmentBrand[]
+  workTypes: WorkType[]
   prefill?: PrefillV2 | null
   leadId?: string | null
 }
@@ -116,8 +120,13 @@ interface CustomerHit {
   contact_name: string | null
 }
 
-export function QuoteFormV2({ brands, prefill, leadId }: Props) {
+export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
   const router = useRouter()
+
+  // Work type — picks the engine ('solar' canvas vs 'scope' line-item builder)
+  const [workType, setWorkType] = useState(prefill?.work_type ?? 'solar')
+  const selectedType = workTypeFor(workType, workTypes) ?? workTypes[0]
+  const engine = selectedType.engine
 
   const [isAmendment, setIsAmendment] = useState(false)
 
@@ -203,6 +212,9 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
   const [existingPanels, setExistingPanels]       = useState('')
   const [amendmentScope, setAmendmentScope]       = useState('')
   const [existingArray, setExistingArray]         = useState<ArrayString[]>([])
+
+  // Scope of work (scope engine only)
+  const [scopeSummary, setScopeSummary] = useState('')
 
   // Photos + notes
   const [photoUrls, setPhotoUrls] = useState<string[]>([])
@@ -292,10 +304,16 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
             created_by: user.id,
           })).id
 
+      // Scope quotes never carry solar-only fields, even if their hidden cards
+      // still hold state from before the work-type switch.
+      const isScope = engine === 'scope'
+      const amendment = !isScope && isAmendment
+
       const payload = {
         submitted_by:    user.id,
         customer_id:     customerId,
         site_number:     prefill?.site_number ?? 1,
+        work_type:       workType,
         // Customer
         customer_name:    customerName,
         customer_phone:   customerPhone || null,
@@ -309,29 +327,32 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
         address:      siteAddress || null,
         municipality,
         grid_supply:  gridSupply,
-        roof_type:    roofType,
-        storeys,
+        // Omitted for scope so the DB defaults apply — storeys is NOT NULL
+        // (default '1') and a scope quote has no meaningful roof/storey answer.
+        ...(isScope ? {} : { roof_type: roofType, storeys }),
         // Usage (optional)
         usage_mode:   usageMode,
-        monthly_kwh:  usage || null,
-        ...(usageMode === 'advanced' && Object.fromEntries(MONTHS.map((m) => [`monthly_kwh_${m}`, monthlyBreakdown[m] || null]))),
-        load_profile:   loadProfile || null,
-        upgrade_reason: isAmendment ? upgradeReason || null : null,
-        // System auto-sized
-        system_type:   AUTO,
-        battery_hours: AUTO,
+        monthly_kwh:  isScope ? null : usage || null,
+        ...(!isScope && usageMode === 'advanced' && Object.fromEntries(MONTHS.map((m) => [`monthly_kwh_${m}`, monthlyBreakdown[m] || null]))),
+        load_profile:   isScope ? null : loadProfile || null,
+        upgrade_reason: amendment ? upgradeReason || null : null,
+        // System — auto-sized for solar; the work-type label for scope
+        system_type:   isScope ? selectedType.label : AUTO,
+        battery_hours: isScope ? 'n/a' : AUTO,
         essential_load: '0',
         // Brand preference
-        inverter_brand: inverterBrand === NO_PREF ? NO_PREF : inverterBrand,
-        battery_brand:  batteryBrand === NO_PREF ? NO_PREF : batteryBrand,
-        panel_brand:    panelBrand === NO_PREF ? NO_PREF : panelBrand,
+        inverter_brand: isScope ? null : inverterBrand === NO_PREF ? NO_PREF : inverterBrand,
+        battery_brand:  isScope ? null : batteryBrand === NO_PREF ? NO_PREF : batteryBrand,
+        panel_brand:    isScope ? null : panelBrand === NO_PREF ? NO_PREF : panelBrand,
         // Existing
-        is_amendment:       isAmendment,
-        existing_inverter:  isAmendment ? existingInverter || null : null,
-        existing_batteries: isAmendment ? existingBatteries || null : null,
-        existing_panels:    isAmendment ? existingPanels || null : null,
-        existing_array:     isAmendment && existingArray.length ? existingArray : null,
-        amendment_scope:    isAmendment ? amendmentScope || null : null,
+        is_amendment:       amendment,
+        existing_inverter:  amendment ? existingInverter || null : null,
+        existing_batteries: amendment ? existingBatteries || null : null,
+        existing_panels:    amendment ? existingPanels || null : null,
+        existing_array:     amendment && existingArray.length ? existingArray : null,
+        amendment_scope:    amendment ? amendmentScope || null : null,
+        // Scope model — seeded with the work type's default sections
+        ...(isScope && { scope: { ...emptyScope({ sections: selectedType.default_sections }), summary: scopeSummary.trim() } }),
         // Photos + notes
         photo_urls: photoUrls,
         notes:      notes || null,
@@ -370,6 +391,11 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
     )
   }
 
+  // Section numbers shift by engine — scope hides the solar-only cards, so the
+  // headings count whatever actually renders (JSX evaluates in source order).
+  let sectionNo = 0
+  const sectionTitle = (title: string) => `${++sectionNo} · ${title}`
+
   return (
     <PageShell width="form">
       <PageHeader
@@ -379,10 +405,34 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
       />
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-        {/* 1 · Customer */}
+        {/* 1 · What are we quoting? */}
         <Card>
           <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-            <SectionHead title="1 · Customer" />
+            <SectionHead title={sectionTitle('What are we quoting?')} />
+            <div className="grid sm:grid-cols-2 gap-3">
+              {workTypes.map((t) => (
+                <button
+                  key={t.code}
+                  type="button"
+                  onClick={() => setWorkType(t.code)}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    t.code === selectedType.code
+                      ? 'border-primary ring-1 ring-primary bg-primary/5'
+                      : 'border-border hover:border-primary/40'
+                  }`}
+                >
+                  <p className="text-sm font-medium text-foreground">{t.label}</p>
+                  {t.description && <p className="text-xs text-muted-foreground mt-0.5">{t.description}</p>}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 2 · Customer */}
+        <Card>
+          <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+            <SectionHead title={sectionTitle('Customer')} />
 
             {/* Existing-customer search — pick from the CRM instead of re-typing. */}
             {linkedCustomer ? (
@@ -469,10 +519,10 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
           </CardContent>
         </Card>
 
-        {/* 2 · Site */}
+        {/* Site */}
         <Card>
           <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-            <SectionHead title="2 · Site" hint="A customer can have more than one site — give it a name." />
+            <SectionHead title={sectionTitle('Site')} hint="A customer can have more than one site — give it a name." />
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Site Label">
                 <Input value={siteLabel} onChange={(e) => setSiteLabel(e.target.value)} placeholder="Home, Business, Boksburg branch…" />
@@ -488,32 +538,56 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
               <Field label="Grid Supply" required>
                 <Select value={gridSupply} onChange={setGridSupply} options={['Single Phase', 'Three Phase']} />
               </Field>
-              <Field label="Roof Type">
-                <Select value={roofType} onChange={setRoofType} options={['IBR', 'Corrugated Iron', 'Kliplok', 'Tile', 'Flat/Concrete', 'Other']} />
-              </Field>
-              <Field label="Storeys">
-                <Select value={storeys} onChange={setStoreys} options={['1', '2', '3+']} />
-              </Field>
+              {engine === 'solar' && (
+                <>
+                  <Field label="Roof Type">
+                    <Select value={roofType} onChange={setRoofType} options={['IBR', 'Corrugated Iron', 'Kliplok', 'Tile', 'Flat/Concrete', 'Other']} />
+                  </Field>
+                  <Field label="Storeys">
+                    <Select value={storeys} onChange={setStoreys} options={['1', '2', '3+']} />
+                  </Field>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        {/* 3 · Job type */}
-        <Card>
-          <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-            <SectionHead title="3 · Job type" />
-            <div className="flex items-center gap-4">
-              <Toggle value={isAmendment} onChange={setIsAmendment} />
-              <div>
-                <p className="text-sm font-medium">{isAmendment ? 'Existing system — upgrade / amendment' : 'New installation'}</p>
-                <p className="text-xs text-muted-foreground">{isAmendment ? 'We capture what exists and what must change' : 'Brand new solar installation'}</p>
+        {/* Scope of work (scope engine only) */}
+        {engine === 'scope' && (
+          <Card>
+            <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+              <SectionHead title={sectionTitle('Scope of work')} hint="A rough brief is enough — the detailed line items come next." />
+              <Field label="What needs doing?">
+                <Textarea
+                  value={scopeSummary}
+                  onChange={(e) => setScopeSummary(e.target.value)}
+                  rows={4}
+                  placeholder="e.g. Replace the DB board, add three plugs in the garage, issue a CoC…"
+                  className="resize-none"
+                />
+              </Field>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Job type (solar only) */}
+        {engine === 'solar' && (
+          <Card>
+            <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+              <SectionHead title={sectionTitle('Job type')} />
+              <div className="flex items-center gap-4">
+                <Toggle value={isAmendment} onChange={setIsAmendment} />
+                <div>
+                  <p className="text-sm font-medium">{isAmendment ? 'Existing system — upgrade / amendment' : 'New installation'}</p>
+                  <p className="text-xs text-muted-foreground">{isAmendment ? 'We capture what exists and what must change' : 'Brand new solar installation'}</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Existing system (conditional) */}
-        {isAmendment && (
+        {engine === 'solar' && isAmendment && (
           <Card className="border-warning">
             <CardContent className="pt-5 pb-5 flex flex-col gap-4">
               <SectionHead title="Existing system" hint="Once monitoring is integrated, usage auto-fills from the inverter." />
@@ -538,62 +612,66 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
           </Card>
         )}
 
-        {/* 4 · Usage (optional) */}
-        <Card>
-          <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-            <SectionHead title="4 · Usage" hint="Optional. Leave blank and we forecast generation; fill it in to compare against the old bill." />
-            <div className="flex items-center justify-end">
-              <div className="flex items-center gap-1 rounded-md border border-border p-0.5 text-xs">
-                <button type="button" onClick={() => setUsageMode('monthly')}
-                  className={`px-2.5 py-1 rounded ${usageMode === 'monthly' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>Monthly avg</button>
-                <button type="button" onClick={() => setUsageMode('advanced')}
-                  className={`px-2.5 py-1 rounded ${usageMode === 'advanced' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>12-month</button>
+        {/* Usage (optional, solar only) */}
+        {engine === 'solar' && (
+          <Card>
+            <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+              <SectionHead title={sectionTitle('Usage')} hint="Optional. Leave blank and we forecast generation; fill it in to compare against the old bill." />
+              <div className="flex items-center justify-end">
+                <div className="flex items-center gap-1 rounded-md border border-border p-0.5 text-xs">
+                  <button type="button" onClick={() => setUsageMode('monthly')}
+                    className={`px-2.5 py-1 rounded ${usageMode === 'monthly' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>Monthly avg</button>
+                  <button type="button" onClick={() => setUsageMode('advanced')}
+                    className={`px-2.5 py-1 rounded ${usageMode === 'advanced' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`}>12-month</button>
+                </div>
               </div>
-            </div>
-            {usageMode === 'monthly' ? (
+              {usageMode === 'monthly' ? (
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <Field label="Average monthly usage (kWh)">
+                    <Input value={monthlyKwh} onChange={(e) => { setMonthlyKwh(e.target.value); setMonthlyBill(''); setDailyKwh('') }} type="number" min="0" placeholder="e.g. 850" />
+                  </Field>
+                  <Field label="…or average daily usage (kWh)">
+                    <Input value={dailyKwh} onChange={(e) => handleDailyChange(e.target.value)} type="number" min="0" placeholder="e.g. 28" />
+                  </Field>
+                  <Field label="…or average monthly bill">
+                    <Input leadingText="R" value={monthlyBill} onChange={(e) => handleBillChange(e.target.value)} type="number" min="0" placeholder="e.g. 2 400" />
+                  </Field>
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                  {MONTHS.map((m, i) => (
+                    <label key={m} className="flex flex-col gap-0.5">
+                      <span className="text-xs text-muted-foreground">{MONTH_LABELS[i]}</span>
+                      <Input value={monthlyBreakdown[m]} onChange={(e) => setMonthlyBreakdown((p) => ({ ...p, [m]: e.target.value }))} type="number" min="0" className="h-8 text-xs px-2" />
+                    </label>
+                  ))}
+                </div>
+              )}
+              <Field label="Load profile (guides battery sizing)">
+                <Select value={loadProfile} onChange={setLoadProfile} options={LOAD_PROFILES} />
+              </Field>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Brand preference (solar only) */}
+        {engine === 'solar' && (
+          <Card>
+            <CardContent className="pt-5 pb-5 flex flex-col gap-4">
+              <SectionHead title={sectionTitle('Brand preference')} hint="Optional." />
               <div className="grid sm:grid-cols-3 gap-4">
-                <Field label="Average monthly usage (kWh)">
-                  <Input value={monthlyKwh} onChange={(e) => { setMonthlyKwh(e.target.value); setMonthlyBill(''); setDailyKwh('') }} type="number" min="0" placeholder="e.g. 850" />
-                </Field>
-                <Field label="…or average daily usage (kWh)">
-                  <Input value={dailyKwh} onChange={(e) => handleDailyChange(e.target.value)} type="number" min="0" placeholder="e.g. 28" />
-                </Field>
-                <Field label="…or average monthly bill">
-                  <Input leadingText="R" value={monthlyBill} onChange={(e) => handleBillChange(e.target.value)} type="number" min="0" placeholder="e.g. 2 400" />
-                </Field>
+                <Field label="Inverter"><Select value={inverterBrand} onChange={setInverterBrand} options={[NO_PREF, ...inverterBrands]} /></Field>
+                <Field label="Battery"><Select value={batteryBrand} onChange={setBatteryBrand} options={[NO_PREF, ...batteryBrands]} /></Field>
+                <Field label="Panel"><Select value={panelBrand} onChange={setPanelBrand} options={[NO_PREF, ...panelBrands]} /></Field>
               </div>
-            ) : (
-              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                {MONTHS.map((m, i) => (
-                  <label key={m} className="flex flex-col gap-0.5">
-                    <span className="text-xs text-muted-foreground">{MONTH_LABELS[i]}</span>
-                    <Input value={monthlyBreakdown[m]} onChange={(e) => setMonthlyBreakdown((p) => ({ ...p, [m]: e.target.value }))} type="number" min="0" className="h-8 text-xs px-2" />
-                  </label>
-                ))}
-              </div>
-            )}
-            <Field label="Load profile (guides battery sizing)">
-              <Select value={loadProfile} onChange={setLoadProfile} options={LOAD_PROFILES} />
-            </Field>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* 5 · Brand preference */}
+        {/* Photos + notes */}
         <Card>
           <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-            <SectionHead title="5 · Brand preference" hint="Optional." />
-            <div className="grid sm:grid-cols-3 gap-4">
-              <Field label="Inverter"><Select value={inverterBrand} onChange={setInverterBrand} options={[NO_PREF, ...inverterBrands]} /></Field>
-              <Field label="Battery"><Select value={batteryBrand} onChange={setBatteryBrand} options={[NO_PREF, ...batteryBrands]} /></Field>
-              <Field label="Panel"><Select value={panelBrand} onChange={setPanelBrand} options={[NO_PREF, ...panelBrands]} /></Field>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 6 · Photos + notes */}
-        <Card>
-          <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-            <SectionHead title="6 · Photos & notes" />
+            <SectionHead title={sectionTitle('Photos & notes')} />
             <label className="flex items-center gap-2 cursor-pointer self-start">
               <input type="file" accept="image/*" multiple onChange={handlePhotoSelect} className="sr-only" />
               <Button type="button" variant="outline" size="sm" disabled={uploading} asChild>

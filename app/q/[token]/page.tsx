@@ -10,13 +10,15 @@ import {
   parseTierOptions,
   publicQuoteState,
 } from '@/lib/quotes/public'
+import { engineFor, fetchWorkTypes } from '@/lib/quotes/work-types'
 import { QuoteFrame } from './QuoteFrame'
 import { PublicQuoteActions } from './PublicQuoteActions'
 import { PrintQuoteButton } from './PrintQuoteButton'
 import { PublicShell } from './PublicShell'
 
 export const metadata: Metadata = {
-  title: 'Your Solar Quote',
+  // Work-type-agnostic — this page serves solar and electrical quotes (W97).
+  title: 'Your Quote — Haberl Electrical & Solar',
   robots: { index: false, follow: false },
 }
 
@@ -38,13 +40,15 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   if (!quote) notFound()
 
   const state = publicQuoteState(quote)
+  const workTypes = await fetchWorkTypes(supabase)
+  const isSolar = engineFor(quote.work_type, workTypes) === 'solar'
 
   // Archived or deleted: the link stops serving the quote entirely. The customer
   // isn't dead-ended though — they can ask for fresh pricing in one tap, which
   // lands as a lead on the staff to-do list.
   if (state === 'closed') {
     return (
-      <PublicShell quoteNumber={quote.quote_number}>
+      <PublicShell quoteNumber={quote.quote_number} solar={isSolar}>
         <div className="rounded-lg border border-border bg-white p-8 flex flex-col items-center gap-3 text-center">
           <Archive className="h-10 w-10 text-muted-foreground" />
           <h1 className="text-xl font-bold text-primary">This quote is no longer available</h1>
@@ -105,11 +109,11 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
     : null
 
   return (
-    <PublicShell quoteNumber={quote.quote_number}>
+    <PublicShell quoteNumber={quote.quote_number} solar={isSolar}>
       {/* Greeting + summary */}
       <div>
         <h1 className="text-xl font-bold text-primary">
-          Solar quote for {quote.customer_name}
+          {isSolar ? 'Solar quote' : 'Quote'} for {quote.customer_name}
         </h1>
         {quote.address && <p className="text-sm text-muted-foreground mt-0.5">{quote.address}</p>}
       </div>
@@ -133,7 +137,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
             <> on {new Date(quote.accepted_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}</>
           )}
           {quote.acceptance_name && <> by {quote.acceptance_name}</>}
-          . Next step: pay the deposit below to secure your equipment and installation date.
+          . Next step: pay the deposit below to secure {isSolar ? 'your equipment and installation date' : 'your materials and booking'}.
         </div>
       )}
       {state === 'declined' && (
@@ -165,6 +169,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
           banking={banking}
           proof={proof}
           contactPhone={contactPhone}
+          isSolar={isSolar}
         />
       )}
 
@@ -182,7 +187,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
       <div className="flex justify-end">
         <PrintQuoteButton html={quote.quote_html} />
       </div>
-      <QuoteFrame html={quote.quote_html} />
+      <QuoteFrame html={quote.quote_html} title={isSolar ? 'Solar quote' : 'Quote'} />
     </PublicShell>
   )
 }

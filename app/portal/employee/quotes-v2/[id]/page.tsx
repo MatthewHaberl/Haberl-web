@@ -4,6 +4,7 @@ import { createClient, getUser } from '@/lib/supabase/server'
 import { DesignWorkspace } from './DesignWorkspace'
 import { QuoteVersionHistory } from './QuoteVersionHistory'
 import { listQuoteVersions } from '@/lib/quotes/versions'
+import { fetchWorkTypes, workTypeFor } from '@/lib/quotes/work-types'
 
 // Peek the next quote number for display only (atomic rpc consumes it at save).
 async function getNextQuoteNumber(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
@@ -40,6 +41,13 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
   // Visibility is enforced by RLS (migration 072): if the row came back, this
   // user is allowed to see it — as submitter, manager/admin, or via a share.
 
+  // Which engine drives this quote (W97): 'scope' work types get the line-item
+  // builder, everything else (incl. pre-W97 rows with no work_type) the canvas.
+  const workTypes = await fetchWorkTypes(supabase)
+  const workType = workTypeFor((req as { work_type?: string }).work_type, workTypes)
+    ?? workTypes.find((w) => w.code === 'solar')
+    ?? workTypes[0]
+
   const photoUrls    = (req.photo_urls ?? []) as string[]
   const nextQuoteNum = isAdmin ? await getNextQuoteNumber(supabase) : ''
 
@@ -72,6 +80,8 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
         photoUrls={photoUrls}
         nextQuoteNum={nextQuoteNum}
         linkedJobId={linkedJob?.id ?? null}
+        engine={workType.engine}
+        workType={workType}
       />
     </>
   )

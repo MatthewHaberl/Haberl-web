@@ -93,3 +93,73 @@ export function prevStage(stage: JobStage): JobStage | null {
   if (index <= 0) return null
   return PIPELINE_STAGES[index - 1]
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-work-type pipelines (W97). The lite pipeline is a SUBSET of the existing
+// job_stage enum — no enum DDL, no risk to live jobs. The module-level helpers
+// above close over the full solar pipeline and stay for solar-only callers;
+// pipeline-aware surfaces use stagesFor()/stageMetaFor() + the *In helpers.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type JobPipelineKind = 'full' | 'lite'
+
+// Repairs/rewires skip procurement (materials are van stock or a single trip),
+// commissioning and handover.
+const LITE_STAGES: JobStage[] = [
+  'deposit_pending',
+  'scheduled',
+  'installation',
+  'coc',
+  'follow_up',
+  'completed',
+]
+
+export function stagesFor(pipeline: JobPipelineKind): JobStage[] {
+  return pipeline === 'lite' ? LITE_STAGES : PIPELINE_STAGES
+}
+
+/** Which pipeline a job runs, from its work_type ('solar' → full). */
+export function pipelineKindFor(workType: string | null | undefined): JobPipelineKind {
+  if (!workType || workType === 'solar' || workType === 'backup_inverter') return 'full'
+  return 'lite'
+}
+
+// 'Installation' reads wrong for a repair — label overrides instead of new
+// enum values.
+const LITE_META_OVERRIDES: Partial<Record<JobStage, Partial<StageMeta>>> = {
+  scheduled: {
+    customerLabel: 'Work booked',
+    description: 'Materials on hand and a date agreed with the customer.',
+  },
+  installation: {
+    label: 'Work in progress',
+    customerLabel: 'Work in progress',
+    description: 'Crew on site doing the quoted work.',
+  },
+  follow_up: {
+    description: 'Post-work check-in — everything working, questions answered.',
+  },
+}
+
+export function stageMetaFor(pipeline: JobPipelineKind, stage: JobStage): StageMeta {
+  const base = STAGE_META[stage]
+  if (pipeline !== 'lite') return base
+  const override = LITE_META_OVERRIDES[stage]
+  return override ? { ...base, ...override } : base
+}
+
+export function stageIndexIn(stages: JobStage[], stage: JobStage) {
+  return stages.indexOf(stage)
+}
+
+export function nextStageIn(stages: JobStage[], stage: JobStage): JobStage | null {
+  const index = stages.indexOf(stage)
+  if (index === -1 || index >= stages.length - 1) return null
+  return stages[index + 1]
+}
+
+export function prevStageIn(stages: JobStage[], stage: JobStage): JobStage | null {
+  const index = stages.indexOf(stage)
+  if (index <= 0) return null
+  return stages[index - 1]
+}

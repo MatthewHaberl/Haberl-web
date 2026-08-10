@@ -19,12 +19,12 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
     supabase.from('sites').select('*').eq('id', id).eq('customer_id', customerId).single(),
     supabase.from('documents').select('*').eq('site_id', id).order('created_at', { ascending: false }),
     supabase.from('service_records').select('*, technician:user_profiles(full_name)').eq('site_id', id).order('date', { ascending: false }).limit(10),
-    supabase.from('jobs').select('id, title, stage, scheduled_date').eq('site_id', id).neq('stage', 'completed').neq('stage', 'cancelled').order('created_at', { ascending: false }),
+    supabase.from('jobs').select('id, title, stage, scheduled_date, work_type').eq('site_id', id).neq('stage', 'completed').neq('stage', 'cancelled').order('created_at', { ascending: false }),
   ])
 
   if (!site) notFound()
 
-  const activeJobs = (jobs ?? []) as Pick<Job, 'id' | 'title' | 'stage' | 'scheduled_date'>[]
+  const activeJobs = (jobs ?? []) as Pick<Job, 'id' | 'title' | 'stage' | 'scheduled_date' | 'work_type'>[]
   const jobHistories = new Map<string, JobStatusHistory[]>()
   if (activeJobs.length) {
     const { data: historyRows } = await supabase

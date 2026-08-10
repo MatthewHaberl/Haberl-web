@@ -31,6 +31,8 @@ export interface SnapshotSource {
   id: string
   quote_html?: string | null
   system_design?: unknown
+  /** Scope-engine payload (W97, migration 105) — the non-solar sibling of system_design. */
+  scope?: unknown
   bom_snapshot?: unknown
   generated_quote?: unknown
   total_amount?: number | null
@@ -55,6 +57,7 @@ function contentKey(q: Omit<SnapshotSource, 'id'>): string {
     q.tariff_rate ?? null,
     q.system_design ?? null,
     q.bom_snapshot ?? null,
+    q.scope ?? null,
   ])
 }
 
@@ -74,7 +77,7 @@ export async function snapshotQuoteVersion(
 
     const { data: latest } = await admin
       .from('quote_versions')
-      .select('version, quote_html, total_amount, deposit_amount, tariff_rate, system_design, bom_snapshot')
+      .select('version, quote_html, total_amount, deposit_amount, tariff_rate, system_design, bom_snapshot, scope')
       .eq('quote_id', quote.id)
       .order('version', { ascending: false })
       .limit(1)
@@ -90,6 +93,7 @@ export async function snapshotQuoteVersion(
       version,
       quote_html: quote.quote_html ?? null,
       system_design: quote.system_design ?? null,
+      scope: quote.scope ?? null,
       bom_snapshot: quote.bom_snapshot ?? null,
       generated_quote: quote.generated_quote ?? null,
       total_amount: quote.total_amount ?? null,
