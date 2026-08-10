@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -64,15 +65,21 @@ export default async function ProductDetailPage({
   if (!rawProduct) notFound()
   const product = rawProduct as Product
 
-  // Fetch catalog item for extra specs + datasheet
+  // Fetch catalog item for extra specs + datasheet.
+  //
+  // Uses the service-role client with an EXPLICIT column allowlist: equipment_catalog
+  // is staff-only under RLS (it holds cost_rands / margin data), and `select('*')` on
+  // the session client used to hand wholesale cost to any logged-in customer while
+  // returning nothing at all to anonymous visitors. Listing the public-safe columns
+  // fixes both: no cost leaves the server, and the specs now render for everyone.
   let catalogItem: EquipmentCatalogItem | null = null
   if (product.external_id) {
-    const { data } = await supabase
+    const { data } = await createAdminClient()
       .from('equipment_catalog')
-      .select('*')
+      .select('id, phase, isc_amps, voc_volts, datasheet_url, shop_description, notes')
       .eq('id', product.external_id)
       .single()
-    catalogItem = data ?? null
+    catalogItem = (data as EquipmentCatalogItem | null) ?? null
   }
 
   // Fetch published product documents for this product's brand
