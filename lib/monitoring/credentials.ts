@@ -46,6 +46,16 @@ export function decryptCredentialsLoose(stored: string | null | undefined): Bran
   try {
     return decryptCredentials(stored)
   } catch {
-    try { return JSON.parse(stored) as BrandCredentials } catch { return {} }
+    try {
+      const parsed: unknown = JSON.parse(stored)
+      // A bare JSON.parse would hand back whatever the blob happened to contain —
+      // `null`, a number, a string, an array. Callers then do `creds.app_id` and
+      // crash on null, which is the exact failure this "loose" variant exists to
+      // prevent. Only a plain object is a credentials bag; anything else is {}.
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+      return parsed as BrandCredentials
+    } catch {
+      return {}
+    }
   }
 }

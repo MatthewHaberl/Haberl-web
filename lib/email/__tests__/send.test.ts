@@ -106,13 +106,15 @@ test('emailButton renders a real anchor with the href and label given', () => {
   assert.ok(html.includes('<table'))
 })
 
-test('emailButton does NOT escape its href or label (current behaviour)', () => {
-  // Documenting reality, not endorsing it: every call site today passes a
-  // code-built URL and a literal label, so nothing user-supplied reaches here —
-  // but the function itself offers no protection if that ever changes.
+test('emailButton escapes its href and label', () => {
   const html = emailButton('https://x.co/?a=1&b=2', 'Pay & accept')
-  assert.ok(html.includes('href="https://x.co/?a=1&b=2"'), 'ampersand is passed through raw')
-  assert.ok(html.includes('Pay & accept'))
+  assert.ok(html.includes('href="https://x.co/?a=1&amp;b=2"'), 'ampersand is escaped in the href')
+  assert.ok(html.includes('Pay &amp; accept'))
+
+  // The attack this closes: a quote in the href would otherwise break out of it.
+  const evil = emailButton('https://x.co/" onclick="alert(1)', '<script>alert(1)</script>')
+  assert.ok(!evil.includes('onclick="alert(1)"'), 'must not allow attribute injection')
+  assert.ok(!evil.includes('<script>'), 'must not allow tag injection in the label')
 })
 
 // ── sendEmail ─────────────────────────────────────────────────────────────────

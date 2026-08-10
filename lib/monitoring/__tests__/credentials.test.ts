@@ -131,12 +131,24 @@ test('decryptCredentialsLoose returns {} for garbage rather than throwing', () =
   }
 })
 
-test('decryptCredentialsLoose passes through non-object JSON as-is (current behaviour)', () => {
-  // Documenting reality: the fallback is a bare JSON.parse, so a stored value that
-  // is valid JSON but not an object comes back as that value — including null,
-  // which is NOT the {} the docstring promises. See the note in the test report.
-  assert.equal(decryptCredentialsLoose('null'), null)
-  assert.equal(decryptCredentialsLoose('123') as unknown, 123)
-  assert.equal(decryptCredentialsLoose('"abc"') as unknown, 'abc')
-  assert.deepEqual(decryptCredentialsLoose('[]') as unknown, [])
+test('decryptCredentialsLoose returns {} for JSON that parses but is not a credentials object', () => {
+  // Regression guard. The fallback used to be a bare JSON.parse, so a stored value
+  // that was valid JSON but not an object came back as that value. That broke the
+  // one promise this "loose" variant makes — never hand the caller something that
+  // crashes. Concretely:
+  //   'null'  -> backfill.ts does Object.keys(creds) and throws a TypeError
+  //   '"abc"' -> monitoring/test spreads it, yielding {0:'a',1:'b',2:'c'}
+  for (const notAnObject of ['null', '123', '"abc"', '[]', '[1,2,3]', 'true']) {
+    assert.deepEqual(
+      decryptCredentialsLoose(notAnObject), {},
+      `expected {} for the non-object JSON ${notAnObject}`,
+    )
+  }
+})
+
+test('decryptCredentialsLoose still returns real credential objects untouched', () => {
+  // The narrowing must not over-reach: a genuine object still comes through whole.
+  assert.deepEqual(decryptCredentialsLoose('{"api_key":"abc","nested":{"a":1}}'), {
+    api_key: 'abc', nested: { a: 1 },
+  } as unknown as BrandCredentials)
 })

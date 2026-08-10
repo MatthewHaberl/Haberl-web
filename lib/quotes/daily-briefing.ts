@@ -435,12 +435,35 @@ export function parseBriefingRecipients(
   briefingEmails: string | null | undefined,
   contactEmail: string | null | undefined,
 ): string[] {
-  const list = (briefingEmails ?? '')
+  // A bare `includes('@')` used to be the only check, which let two bad values
+  // through to Resend — and Resend rejects the whole send, so ONE malformed entry
+  // silently killed the morning briefing:
+  //   "Matthew <matthew@haberl.co.za>" split on the space and kept the angle
+  //   brackets, and the contact_email fallback was never validated at all.
+  const looksLikeEmail = (s: string) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(s)
+
+  // Unwrap the "Name <addr>" display form before splitting, so the address survives.
+  const unwrapped = (briefingEmails ?? '').replace(/^[^<]*<([^>]+)>/gm, '$1')
+
+  const candidates = unwrapped
     .split(/[,;\s]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.includes('@'))
-  if (list.length) return Array.from(new Set(list))
-  return contactEmail ? [contactEmail] : []
+    .map((s) => s.trim().replace(/^<|>$/g, ''))
+    .filter(looksLikeEmail)
+
+  // De-duplicate case-insensitively — the same mailbox typed two ways is still one
+  // mailbox — while keeping the first spelling and its position.
+  const seen = new Set<string>()
+  const list: string[] = []
+  for (const address of candidates) {
+    const key = address.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    list.push(address)
+  }
+  if (list.length) return list
+
+  const fallback = (contactEmail ?? '').trim().replace(/^[^<]*<([^>]+)>$/, '$1')
+  return looksLikeEmail(fallback) ? [fallback] : []
 }
 
 /** Build + email the briefing in one call (used by the daily cron). */

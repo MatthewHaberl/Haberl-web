@@ -91,9 +91,13 @@ export function emailLayout(title: string, bodyHtml: string): string {
 }
 
 export function emailButton(href: string, label: string): string {
+  // Escape both: the href lands in an attribute (an unescaped quote would break
+  // out of it) and the label in element text. Call sites pass code-built URLs
+  // today, but this is the same sink class as the quote-HTML XSS — the helper
+  // should not depend on every future caller remembering.
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;">
     <tr><td style="background:#f97316;border-radius:6px;">
-      <a href="${href}" style="display:inline-block;padding:12px 28px;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">${label}</a>
+      <a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 28px;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">${escapeHtml(label)}</a>
     </td></tr>
   </table>`
 }

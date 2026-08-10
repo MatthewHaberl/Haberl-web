@@ -224,11 +224,11 @@ test('parseBriefingRecipients de-duplicates so nobody gets the briefing twice', 
     parseBriefingRecipients('b@x.co.za a@x.co.za b@x.co.za', null),
     ['b@x.co.za', 'a@x.co.za'],
   )
-  // De-duplication is exact-string, so case variants are NOT merged (current
-  // behaviour — the same mailbox typed two ways gets two copies).
+  // De-duplication is case-insensitive — the same mailbox typed two ways is still
+  // one mailbox — and the first spelling wins.
   assert.deepEqual(
     parseBriefingRecipients('Matt@x.co.za matt@x.co.za', null),
-    ['Matt@x.co.za', 'matt@x.co.za'],
+    ['Matt@x.co.za'],
   )
 })
 
@@ -248,12 +248,27 @@ test('parseBriefingRecipients returns nothing rather than inventing a recipient'
   assert.deepEqual(parseBriefingRecipients('garbage', ''), [])
 })
 
-test('parseBriefingRecipients keeps only tokens containing @, verbatim', () => {
+test('parseBriefingRecipients only emits addresses Resend will accept', () => {
+  // Regression guard. Resend rejects the WHOLE send on one bad recipient, so a
+  // single malformed entry used to silently kill the morning briefing.
+
   // Tokens without an @ are dropped rather than passed to the mail API.
   assert.deepEqual(parseBriefingRecipients('Matt matt@x.co.za Admin', null), ['matt@x.co.za'])
-  // CURRENT behaviour: a "Name <addr>" display form is split on the space and the
-  // angle brackets survive, so the recipient becomes '<matt@x.co.za>'.
-  assert.deepEqual(parseBriefingRecipients('Matt <matt@x.co.za>', null), ['<matt@x.co.za>'])
-  // The contact_email fallback is NOT validated the same way — it is used as-is.
-  assert.deepEqual(parseBriefingRecipients('', 'not-an-address'), ['not-an-address'])
+
+  // The "Name <addr>" display form is unwrapped to the bare address instead of
+  // being split on the space and keeping the angle brackets.
+  assert.deepEqual(parseBriefingRecipients('Matt <matt@x.co.za>', null), ['matt@x.co.za'])
+  assert.deepEqual(
+    parseBriefingRecipients('Matt <matt@x.co.za>, Byron <byron@x.co.za>', null),
+    ['matt@x.co.za', 'byron@x.co.za'],
+  )
+
+  // The contact_email fallback is validated the same way as the list.
+  assert.deepEqual(parseBriefingRecipients('', 'not-an-address'), [])
+  assert.deepEqual(parseBriefingRecipients('', 'Info <info@x.co.za>'), ['info@x.co.za'])
+
+  // Things that merely contain an @ are not addresses.
+  for (const junk of ['@', 'a@b', 'foo@', '@bar.com', 'a b@c']) {
+    assert.deepEqual(parseBriefingRecipients(junk, null), [], `expected [] for ${junk}`)
+  }
 })
