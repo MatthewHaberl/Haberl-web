@@ -98,8 +98,8 @@ function compassLabel(azimuth: number): string {
 
 // ── Panel grid geometry ────────────────────────────────────────────────────────
 
-/** Compute (cols, rows) for N panels that best fit the face dimensions. */
-export function panelGrid(panelCount: number, faceW: number, faceH: number): { cols: number; rows: number } {
+/** Compute (cols, rows) for N panels that best fit the face width. */
+export function panelGrid(panelCount: number, faceW: number): { cols: number; rows: number } {
   if (panelCount <= 0) return { cols: 0, rows: 0 }
   // Fit as many columns as possible given face width
   const maxCols = Math.max(1, Math.floor((faceW + PANEL_GAP) / (PANEL_W + PANEL_GAP)))

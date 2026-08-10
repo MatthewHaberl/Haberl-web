@@ -24,7 +24,6 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
 
   const role = profile?.role ?? 'field_worker'
   const isAdmin = role === 'admin'
-  const isManager = role === 'manager' || isAdmin
 
   const { data: req } = await supabase
     .from('quote_requests')

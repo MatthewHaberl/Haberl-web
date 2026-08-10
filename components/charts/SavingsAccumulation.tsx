@@ -3,6 +3,14 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { formatCurrency } from '@/lib/utils'
 
+/** Minimal shape of the recharts tooltip payload this chart reads. */
+interface TooltipEntry {
+  color?: string
+  name?: string
+  value: number
+  payload?: { year: number }
+}
+
 interface SavingsAccumulationProps {
   annualSavingR: number
   tariffEscalationPctPerYear?: number
@@ -36,12 +44,12 @@ export function SavingsAccumulation({
     }
   })
 
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: TooltipEntry[] }) => {
     if (!active || !payload) return null
     return (
       <div className="bg-white p-3 rounded shadow-lg border border-gray-200">
         <p className="font-semibold text-sm">Year {payload[0]?.payload?.year}</p>
-        {payload.map((entry: any, idx: number) => (
+        {payload.map((entry, idx) => (
           <p key={idx} style={{ color: entry.color }} className="text-sm">
             {entry.name}: {formatCurrency(entry.value)}
           </p>

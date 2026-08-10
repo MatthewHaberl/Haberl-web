@@ -6,7 +6,6 @@
  * the app's CSS being present — hence the inline styles.
  */
 export default function GlobalError({
-  error,
   reset,
 }: {
   error: Error & { digest?: string }

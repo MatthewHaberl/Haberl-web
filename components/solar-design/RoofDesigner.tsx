@@ -166,12 +166,12 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
   }
 
   const handleTogglePanel = useCallback((idx: number) => {
-    setEnabledPanels(prev => { const n = new Set(prev); n.has(idx) ? n.delete(idx) : n.add(idx); return n })
+    setEnabledPanels(prev => { const n = new Set(prev); if (n.has(idx)) n.delete(idx); else n.add(idx); return n })
     setSaved(false)
   }, [])
 
   const handleToggleCustomPanel = useCallback((id: number) => {
-    setEnabledCustomPanels(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+    setEnabledCustomPanels(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
     setSaved(false)
   }, [])
 

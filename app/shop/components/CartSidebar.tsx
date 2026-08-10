@@ -56,7 +56,11 @@ export function CartSidebar() {
                 <li key={item.product_id} className="px-4 py-3 flex gap-3">
                   {/* Thumbnail */}
                   <div className="h-14 w-14 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+                    {/* Product image URLs are arbitrary manufacturer/CDN hosts entered by staff;
+                        next/image throws for any host not in next.config remotePatterns, so a plain
+                        <img> is used deliberately to keep unknown hosts rendering. */}
                     {item.image_url
+                      // eslint-disable-next-line @next/next/no-img-element
                       ? <img src={item.image_url} alt={item.name} className="h-full w-full object-contain p-1" />
                       : <ShoppingCart className="h-5 w-5 text-muted-foreground/40" />
                     }

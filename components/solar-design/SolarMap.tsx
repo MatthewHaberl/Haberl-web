@@ -10,6 +10,17 @@ declare global {
   interface Window { google: any } // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
+/**
+ * Minimal shape of the google.maps mouse events this component consumes.
+ * The Maps JS API is loaded at runtime via a <script> tag (no @types/google.maps
+ * dependency), so only the fields actually read are declared here.
+ */
+interface MapsMouseEvent {
+  latLng: { lat(): number; lng(): number }
+  domEvent?: MouseEvent
+  stop?: () => void
+}
+
 // ── Geometry helpers ──────────────────────────────────────────────────────────
 
 function panelCorners(
@@ -282,7 +293,7 @@ export function SolarMap({
     document.addEventListener('mouseup', onMouseUp)
 
     // ── map click = single panel placement (empty area only, not polygons) ─
-    map.addListener('click', (e: any) => {
+    map.addListener('click', (e: MapsMouseEvent) => {
       if (modeRef.current !== 'place' || justDragged || armedRef.current) return
       const lat: number = e.latLng.lat()
       const lng: number = e.latLng.lng()
@@ -358,13 +369,13 @@ export function SolarMap({
       clearDraw()
     }
 
-    map.addListener('click', (e: any) => {
+    map.addListener('click', (e: MapsMouseEvent) => {
       if (!armedRef.current) return
       drawPointsRef.current = [...drawPointsRef.current, { lat: e.latLng.lat(), lng: e.latLng.lng() }]
       renderDraw()
     })
 
-    map.addListener('dblclick', (e: any) => {
+    map.addListener('dblclick', (e: MapsMouseEvent) => {
       if (!armedRef.current) return
       e.stop?.()
       finishDraw()
@@ -408,12 +419,12 @@ export function SolarMap({
         fillColor: colors.fill, fillOpacity: colors.fillOpacity,
         strokeColor: colors.stroke, strokeWeight: colors.strokeWeight, clickable: true,
       })
-      polygon.addListener('click', (e: any) => {
+      polygon.addListener('click', (e: MapsMouseEvent) => {
         e.stop?.()
         if (e.domEvent?.shiftKey) cbRef.current.onShiftClickPanel(idx)
         else cbRef.current.onTogglePanel(idx)
       })
-      polygon.addListener('rightclick', (e: any) => { e.stop?.(); cbRef.current.onShiftClickPanel(idx) })
+      polygon.addListener('rightclick', (e: MapsMouseEvent) => { e.stop?.(); cbRef.current.onShiftClickPanel(idx) })
       apiPolygonsRef.current.push(polygon)
     })
 
@@ -461,12 +472,12 @@ export function SolarMap({
         fillColor: colors.fill, fillOpacity: colors.fillOpacity,
         strokeColor: colors.stroke, strokeWeight: 1.5, strokeOpacity: 0.9, clickable: true,
       })
-      polygon.addListener('click', (e: any) => {
+      polygon.addListener('click', (e: MapsMouseEvent) => {
         e.stop?.()
         cbRef.current.onSelectCustomPanel(cp.id)
         cbRef.current.onToggleCustomPanel(cp.id)
       })
-      polygon.addListener('rightclick', (e: any) => { e.stop?.(); cbRef.current.onRemoveCustomPanel(cp.id) })
+      polygon.addListener('rightclick', (e: MapsMouseEvent) => { e.stop?.(); cbRef.current.onRemoveCustomPanel(cp.id) })
       customPolygonsRef.current.set(cp.id, polygon)
     })
   }, [customPanels, enabledCustomPanels, selectedCustomPanelId, buildingInsights])
@@ -497,7 +508,7 @@ export function SolarMap({
       })
       const dirCopy = dir
       const idCopy = selectedCustomPanelId
-      ghost.addListener('click', (e: any) => { e.stop?.(); cbRef.current.onExtendRow(idCopy, dirCopy) })
+      ghost.addListener('click', (e: MapsMouseEvent) => { e.stop?.(); cbRef.current.onExtendRow(idCopy, dirCopy) })
       extendGhostsRef.current.push(ghost)
     }
   }, [selectedCustomPanelId, customPanels, buildingInsights])

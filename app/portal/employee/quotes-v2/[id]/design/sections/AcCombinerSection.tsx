@@ -92,10 +92,6 @@ export function AcCombinerSection() {
     updateComponent(c, comp.id, { fedFrom: next })
   }
 
-  function sourceLabel(c: AcCombiner, id: string) {
-    if (id === DB_SUPPLY_ID) return DB_SUPPLY_LABEL
-    return c.components.find((x) => x.id === id)?.label ?? '—'
-  }
   function feedsLabels(c: AcCombiner, comp: DbComponent) {
     return c.components.filter((x) => x.fedFrom.includes(comp.id)).map((x) => x.label)
   }

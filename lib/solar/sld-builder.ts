@@ -26,14 +26,6 @@ function cableSpecs(kw: number) {
   return { dcStr: 'H1Z2Z2 6mm²', dcMain: 'H1Z2Z2 10mm²', bat: 'CU 50mm²', ac: 'CU 16mm²' }
 }
 
-function conductors(type: 'dc' | 'ac1p' | 'ac3p' | 'battery' | 'earth'): string {
-  if (type === 'dc') return '+/−'
-  if (type === 'ac1p') return 'L/N/E'
-  if (type === 'ac3p') return 'L1/L2/L3/N/E'
-  if (type === 'battery') return '+/−'
-  return 'E'
-}
-
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface CableEdgeData extends Record<string, unknown> {
@@ -58,11 +50,23 @@ export interface CableEdgeData extends Record<string, unknown> {
   /** AC output topology hint (item 50) so labels can show split-phase L1/L2/N/E. */
   phaseConfig?: 'single_230' | 'split_phase' | 'american_120' | 'three_phase'
   isDirect?: boolean          // direct bus / stackable connection — no cable
+  /** Render the per-end termination strip above the cable label (item 21). */
+  showTerminations?: boolean
+  /** Manual label nudge (px, flow space) persisted after a label drag. */
+  labelOffsetX?: number
+  labelOffsetY?: number
   // Communication-specific
   sourceProtocol?: string[]
   targetProtocol?: string[]
   compatible?: boolean
   overrideProtocolMismatch?: boolean
+}
+
+/** Shape of a cable entry inside a quote's persisted `components_config`. */
+type SavedCable = {
+  id?: string
+  waypoints?: CableEdgeData['waypoints']
+  circuitLayer?: CableEdgeData['circuitLayer']
 }
 
 // ── Builder ───────────────────────────────────────────────────────────────────
@@ -87,7 +91,6 @@ export function buildSLDFromQuote(
 
   const panelsPerStr = panelCount > 0 ? Math.ceil(panelCount / stringCount) : 0
   const wpPerPanel = panelCount > 0 && kwp > 0 ? Math.round((kwp * 1000) / panelCount) : 0
-  const acCond = conductors(is3Phase ? 'ac3p' : 'ac1p')
 
   // ── Layout ─────────────────────────────────────────────────────────────────
   // New layout: Grid LEFT | Inverter CENTER | DB RIGHT
@@ -113,12 +116,13 @@ export function buildSLDFromQuote(
   const edges: Edge[] = []
 
   // Restore component configs from quote if saved
-  const savedConfig = (quote as any).components_config as Record<string, unknown> | undefined
+  const savedConfig = (quote as QuoteData & { components_config?: Record<string, unknown> })
+    .components_config
 
   // ── Solar Arrays ───────────────────────────────────────────────────────────
   for (let i = 0; i < stringCount; i++) {
     const x = arrayStartX + i * ARRAY_GAP - 110
-    const savedStr = (savedConfig?.strings as any[])?.[i]
+    const savedStr = (savedConfig?.strings as Array<Record<string, unknown>> | undefined)?.[i]
     nodes.push({
       id: `array-${i}`,
       type: 'solarArray',
@@ -163,8 +167,10 @@ export function buildSLDFromQuote(
       },
     })
 
+    const savedCables = savedConfig?.cables as SavedCable[] | undefined
+
     for (let i = 0; i < stringCount; i++) {
-      const savedEdge = (savedConfig?.cables as any[])?.find((c: any) => c.id === `e-arr${i}-comb`)
+      const savedEdge = savedCables?.find((c) => c.id === `e-arr${i}-comb`)
       edges.push({
         id: `e-arr${i}-comb`,
         source: `array-${i}`,

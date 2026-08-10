@@ -48,19 +48,6 @@ interface TimelineItem {
   docAllocs?: DocAllocSummary[]
 }
 
-function buildHref(base: SP, override: Partial<SP>): string {
-  const m = { ...base, ...override }
-  const p = new URLSearchParams()
-  if (m.q) p.set('q', m.q)
-  if (m.from) p.set('from', m.from)
-  if (m.to) p.set('to', m.to)
-  if (m.source && m.source !== 'all') p.set('source', m.source)
-  if (m.dir && m.dir !== 'all') p.set('dir', m.dir)
-  if (m.sort && m.sort !== 'newest') p.set('sort', m.sort)
-  const qs = p.toString()
-  return `/portal/employee/finance/timeline${qs ? `?${qs}` : ''}`
-}
-
 export default async function FinanceTimelinePage({
   searchParams,
 }: {
@@ -247,7 +234,6 @@ export default async function FinanceTimelinePage({
   const totalIn = bankRows.reduce((s, r) => s + (r.amount_cents > 0 ? r.amount_cents : 0), 0)
   const totalOut = bankRows.reduce((s, r) => s + (r.amount_cents < 0 ? r.amount_cents : 0), 0)
   const filtered = !!(q || from || to || source !== 'all' || dir !== 'all' || sort !== 'newest')
-  const base: SP = { q, from, to, source, dir, sort }
   const fieldCls = 'h-10 rounded-md border border-border bg-background px-3 text-sm'
 
   return (

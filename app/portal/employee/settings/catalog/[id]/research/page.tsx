@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import type { EquipmentCatalogItem, ProductResearch, ResearchResourceType } from '@/types/database'
 import {
   ArrowLeft, Check, ChevronDown, ChevronUp, ExternalLink,
-  FileText, Image, Loader2, Search, X, Zap,
+  FileText, Image as ImageIcon, Loader2, Search, X, Zap,
 } from 'lucide-react'
 import { PageShell, PageHeader } from '@/components/layout/page'
 
@@ -154,7 +154,7 @@ function ResearchCard({
           )}
           {item.status === 'accepted' && item.resource_type === 'photo' && (item.thumbnail_url ?? item.url) && (
             <Button size="sm" variant="accent" onClick={() => onSetPrimaryImage((item.thumbnail_url ?? item.url)!)}>
-              <Image className="h-3.5 w-3.5" /> Set as primary image
+              <ImageIcon className="h-3.5 w-3.5" /> Set as primary image
             </Button>
           )}
           {item.status === 'accepted' && item.resource_type === 'datasheet' && item.url && (
@@ -264,8 +264,8 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     return <p className="py-8 text-sm text-destructive">Catalog item not found.</p>
   }
 
-  const ranAt = (item as any).research_ran_at
-    ? new Date((item as any).research_ran_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const ranAt = item.research_ran_at
+    ? new Date(item.research_ran_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : null
 
   return (
@@ -314,19 +314,19 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
       )}
 
       {/* Applied fields summary */}
-      {((item as any).shop_description || (item as any).primary_image_url || (item as any).datasheet_url) && (
+      {(item.shop_description || item.primary_image_url || item.datasheet_url) && (
         <Card className="border-accent/30 bg-accent/5">
           <CardContent className="pt-4">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-accent">Applied to catalog item</p>
             <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-              {(item as any).shop_description && (
-                <span>✓ Shop description: {String((item as any).shop_description).slice(0, 80)}…</span>
+              {item.shop_description && (
+                <span>✓ Shop description: {String(item.shop_description).slice(0, 80)}…</span>
               )}
-              {(item as any).primary_image_url && (
-                <span>✓ Primary image: <a href={(item as any).primary_image_url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{(item as any).primary_image_url}</a></span>
+              {item.primary_image_url && (
+                <span>✓ Primary image: <a href={item.primary_image_url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{item.primary_image_url}</a></span>
               )}
-              {(item as any).datasheet_url && (
-                <span>✓ Datasheet: <a href={(item as any).datasheet_url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{(item as any).datasheet_url}</a></span>
+              {item.datasheet_url && (
+                <span>✓ Datasheet: <a href={item.datasheet_url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{item.datasheet_url}</a></span>
               )}
             </div>
           </CardContent>
@@ -344,7 +344,7 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
                   key={key}
                   variant={activeTab === key ? 'accent' : 'outline'}
                   size="sm"
-                  onClick={() => setActiveTab(key as any)}
+                  onClick={() => setActiveTab(key as 'all' | ResearchResourceType)}
                 >
                   {label}
                 </Button>

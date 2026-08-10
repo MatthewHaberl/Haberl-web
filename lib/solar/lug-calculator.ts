@@ -246,14 +246,12 @@ export function estimateEarthingStructure(earthPointCount: number): MountingStru
  * Build complete lug BOM line items from cable specification
  *
  * @param cableSpec e.g., "CU 16mm²"
- * @param circuitType 'dc' | 'ac' | 'battery'
  * @param outputCount Number of outputs/cables (for multi-core cables)
  * @param connectorType Optional: 'MC4', 'bootlace', etc.
  * @returns Array of BOM line items
  */
 export function calculateLugsForOutput(
   cableSpec: string,
-  circuitType: 'dc' | 'ac' | 'battery' = 'dc',
   outputCount: number = 1,
   connectorType?: string,
 ): Array<{ description: string; quantity: number; unit: string }> {

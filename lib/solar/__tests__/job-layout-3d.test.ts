@@ -7,9 +7,6 @@ import {
   panelOffsets,
   projectToBuilding,
   buildLayoutModel,
-  PANEL_W,
-  PANEL_H,
-  PANEL_GAP,
 } from '../job-layout-3d'
 
 const EPS = 0.01  // tolerance in metres
@@ -49,31 +46,31 @@ test('Flat roof face — center Y equals wallH, faceH proportional', () => {
 
 test('panelGrid — 7 panels on narrow face (4 m) → 3 cols × 3 rows', () => {
   // 4 m face: floor((4+0.05)/(1.134+0.05)) = 3 cols max
-  const { cols, rows } = panelGrid(7, 4.0, 8)
+  const { cols, rows } = panelGrid(7, 4.0)
   assert.equal(cols, 3)
   assert.equal(rows, 3)
 })
 
 test('panelGrid — 7 panels on wide face (10 m) → 7 cols × 1 row (all fit in one row)', () => {
-  const { cols, rows } = panelGrid(7, 10, 8)
+  const { cols, rows } = panelGrid(7, 10)
   assert.equal(cols, 7)
   assert.equal(rows, 1)
 })
 
 test('panelGrid — 1 panel → 1 col × 1 row', () => {
-  const { cols, rows } = panelGrid(1, 10, 8)
+  const { cols, rows } = panelGrid(1, 10)
   assert.equal(cols, 1)
   assert.equal(rows, 1)
 })
 
 test('panelGrid — 0 panels → 0 cols × 0 rows', () => {
-  const { cols, rows } = panelGrid(0, 10, 8)
+  const { cols, rows } = panelGrid(0, 10)
   assert.equal(cols, 0)
   assert.equal(rows, 0)
 })
 
 test('panelGrid — 14 panels on 10 m face → fits in ≤ 3 rows', () => {
-  const { rows } = panelGrid(14, 10, 8)
+  const { rows } = panelGrid(14, 10)
   assert.ok(rows <= 3, `Expected rows ≤ 3, got ${rows}`)
 })
 

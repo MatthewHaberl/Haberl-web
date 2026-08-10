@@ -196,7 +196,7 @@ export function InverterSection() {
               />
               <span className="text-xs">
                 <span className="font-medium text-foreground">Batteries</span>
-                <span className="block text-[11px] text-muted-foreground">Turn off for a grid-tie inverter that can't take a battery.</span>
+                <span className="block text-[11px] text-muted-foreground">Turn off for a grid-tie inverter that can&apos;t take a battery.</span>
               </span>
             </label>
           </div>

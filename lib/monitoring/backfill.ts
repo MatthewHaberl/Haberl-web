@@ -163,7 +163,7 @@ export async function runBackfillChunk(
   const { data: jobRow, error: jobErr } = await supabase
     .from('monitoring_backfill_jobs').select('*').eq('id', jobId).single()
   if (jobErr || !jobRow) throw new Error('Backfill job not found')
-  let job = jobRow as BackfillJob
+  const job = jobRow as BackfillJob
   if (job.status !== 'running') return job
 
   const system = await loadSystem(supabase, job.system_id)

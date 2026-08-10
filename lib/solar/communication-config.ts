@@ -26,18 +26,22 @@ export interface CommunicationValidation {
  * @returns Array of protocol names (e.g., ["Modbus", "CAN"])
  */
 export function getDeviceProtocol(node: Node): string[] {
+  const data = node.data as
+    | { protocols?: string | string[]; notes?: string }
+    | undefined;
+
   // Try to get protocols from node data
-  if ((node.data as any)?.protocols) {
-    const protocols = (node.data as any).protocols;
+  if (data?.protocols) {
+    const protocols = data.protocols;
     return Array.isArray(protocols) ? protocols : [protocols];
   }
 
   // Try to parse from equipment catalog notes (JSON format)
-  if ((node.data as any)?.notes) {
+  if (data?.notes) {
     try {
-      const notes = (node.data as any).notes;
+      const notes = data.notes;
       if (typeof notes === 'string') {
-        const parsed = JSON.parse(notes);
+        const parsed = JSON.parse(notes) as { protocols?: string | string[] };
         if (parsed.protocols) {
           return Array.isArray(parsed.protocols) ? parsed.protocols : [parsed.protocols];
         }
@@ -230,7 +234,7 @@ export function getDeviceTypeFromNodeType(nodeType: string): string {
  * @param edgeData Edge data containing circuitLayer
  * @returns true if this is a communication edge
  */
-export function isCommunicationEdge(edgeData: any): boolean {
+export function isCommunicationEdge(edgeData: { circuitLayer?: unknown } | null | undefined): boolean {
   return edgeData?.circuitLayer === 'communication';
 }
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import Link from 'next/link'
 
 /**
  * Route-level error boundary for the app. Catches render/runtime errors in any
@@ -35,12 +36,12 @@ export default function Error({
           >
             Try again
           </button>
-          <a
+          <Link
             href="/"
             className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:border-accent"
           >
             Back to home
-          </a>
+          </Link>
         </div>
       </div>
     </main>

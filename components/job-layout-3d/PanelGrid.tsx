@@ -10,10 +10,10 @@ interface PanelGridProps {
 }
 
 /** Renders a grid of solar panel meshes in the local space of a RoofFace. */
-export function PanelGrid({ panelCount, faceW, faceH }: PanelGridProps) {
+export function PanelGrid({ panelCount, faceW }: PanelGridProps) {
   const { cols, rows } = useMemo(
-    () => panelGrid(panelCount, faceW, faceH),
-    [panelCount, faceW, faceH],
+    () => panelGrid(panelCount, faceW),
+    [panelCount, faceW],
   )
   const offsets = useMemo(
     () => panelOffsets(panelCount, cols, rows),
