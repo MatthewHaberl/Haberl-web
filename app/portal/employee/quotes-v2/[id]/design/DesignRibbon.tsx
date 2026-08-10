@@ -41,6 +41,10 @@ export function DesignRibbon({
   const detailsOpen = showDetails || DETAIL_STEPS.includes(activeStep)
   const balance = useMemo(() => computeBalance(design, record), [design, record])
   const coverage = balance.coveragePct
+  // Energy is pure demand entry — nothing to overview yet, so the trigger stays
+  // out of the way until the first component step (DesignStudio closes the panel
+  // if the user steps back here with it open).
+  const showOverview = activeStep !== 0
 
   const coverageCls = coverage == null ? '' : coverage >= 90
     ? 'border-success/40 bg-success/10 text-success'
@@ -133,14 +137,16 @@ export function DesignRibbon({
           {viewMode === 'bom' ? <LayoutPanelLeft className="h-3.5 w-3.5" /> : <PackageCheck className="h-3.5 w-3.5" />}
           {viewMode === 'bom' ? 'Back to canvas' : 'Review BOM'}
         </button>
-        <button
-          type="button"
-          onClick={onOpenOverview}
-          title="Design overview — specs, SANS compliance & BOM readiness"
-          className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-accent/50 bg-accent/15 px-2.5 py-1.5 text-xs font-semibold text-accent transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <ClipboardList className="h-3.5 w-3.5" /> Design overview
-        </button>
+        {showOverview && (
+          <button
+            type="button"
+            onClick={onOpenOverview}
+            title="Design overview — specs, SANS compliance & BOM readiness"
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-accent/50 bg-accent/15 px-2.5 py-1.5 text-xs font-semibold text-accent transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <ClipboardList className="h-3.5 w-3.5" /> Design overview
+          </button>
+        )}
       </div>
     </div>
   )

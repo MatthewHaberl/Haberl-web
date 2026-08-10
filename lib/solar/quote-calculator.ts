@@ -337,6 +337,8 @@ export interface EquipmentCatalogItem {
   store_price_rands?: number | null
   shop_description?: string | null
   primary_image_url?: string | null
+  /** Extra photos beyond the hero shot (migration 096). Ignored by the calculator. */
+  gallery_image_urls?: string[] | null
   datasheet_url?: string | null
   model_3d_url?: string | null
   // "To-add" queue placeholder created from the design canvas (migration 049). Ignored by the calculator.

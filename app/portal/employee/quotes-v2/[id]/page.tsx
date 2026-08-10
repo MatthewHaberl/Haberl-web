@@ -1,6 +1,9 @@
 import { notFound, redirect } from 'next/navigation'
+import { Archive } from 'lucide-react'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { DesignWorkspace } from './DesignWorkspace'
+import { QuoteVersionHistory } from './QuoteVersionHistory'
+import { listQuoteVersions } from '@/lib/quotes/versions'
 
 // Peek the next quote number for display only (atomic rpc consumes it at save).
 async function getNextQuoteNumber(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
@@ -24,6 +27,7 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
 
   const role = profile?.role ?? 'field_worker'
   const isAdmin = role === 'admin'
+  const isManager = role === 'manager' || isAdmin
 
   const { data: req } = await supabase
     .from('quote_requests')
@@ -42,14 +46,33 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
   const { data: linkedJob } = await supabase
     .from('jobs').select('id').eq('quote_request_id', id).maybeSingle()
 
+  // What the customer has actually been sent (W56). Managers only — this is the
+  // audit trail, not customer-facing, and it returns [] for a never-sent quote.
+  const versions = isManager ? await listQuoteVersions(id) : []
+
   return (
-    <DesignWorkspace
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      req={req as Record<string, any>}
-      isAdmin={isAdmin}
-      photoUrls={photoUrls}
-      nextQuoteNum={nextQuoteNum}
-      linkedJobId={linkedJob?.id ?? null}
-    />
+    <>
+      {req.archived_at && (
+        <div className="mx-auto mb-4 flex max-w-5xl items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300">
+          <Archive className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            <strong>Archived</strong> on{' '}
+            {new Date(req.archived_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}.
+            It&apos;s off the quotes list and the to-do list, and the customer&apos;s link now offers
+            them an updated quote instead of this one.
+            {isManager ? ' Restore it from the Archived view to send or change it.' : ''}
+          </p>
+        </div>
+      )}
+      <QuoteVersionHistory versions={versions} />
+      <DesignWorkspace
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        req={req as Record<string, any>}
+        isAdmin={isAdmin}
+        photoUrls={photoUrls}
+        nextQuoteNum={nextQuoteNum}
+        linkedJobId={linkedJob?.id ?? null}
+      />
+    </>
   )
 }

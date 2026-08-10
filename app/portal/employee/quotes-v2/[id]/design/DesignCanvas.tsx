@@ -24,6 +24,7 @@ import {
 } from '@/lib/solar/system-design'
 import { useCircuitTheme, type CircuitLayer } from '@/lib/solar/canvas-theme'
 import type { CableEdgeData } from '@/lib/solar/sld-builder'
+import { kindFromRouteType, TRUNKING_SIZES } from '@/lib/solar/containment-fill'
 import { useDesign } from './DesignProvider'
 import { DbFaceplate } from './DbFaceplate'
 
@@ -37,7 +38,12 @@ const SEGMENT_ROUTE_TYPES = [
 const TERMINATION_TYPES = ['Direct', 'Lug', 'Pin lug', 'Bootlace', 'MC4', 'Anderson', 'Screw terminal']
 const termNeedsSize = (type: string) => /lug|bootlace/i.test(type)
 
-type RouteSeg = { id: string; routeType: string; lengthM: number }
+// A segment can also declare the physical wireway it shares with other cables,
+// which is what the SANS fill check (lib/solar/containment-fill.ts) groups on.
+type RouteSeg = {
+  id: string; routeType: string; lengthM: number
+  containment?: string; conduitMm?: number; widthMm?: number; heightMm?: number
+}
 let segSeq = 0
 const newSegId = () => `seg-${Date.now().toString(36)}-${++segSeq}`
 
@@ -480,21 +486,60 @@ function CableInspector({ edge, fromLabel, toLabel, onClose }: { edge: Edge; fro
               </>
             ) : (
               <div className="flex flex-col gap-1.5">
-                {segments.map((s, i) => (
-                  <div key={s.id} className="flex items-center gap-1.5">
-                    <select className="h-8 flex-1 rounded-md border border-border bg-background px-1.5 text-xs" value={s.routeType}
-                      onChange={(e) => setSegs(segments.map((x, idx) => (idx === i ? { ...x, routeType: e.target.value } : x)))}>
-                      {SEGMENT_ROUTE_TYPES.map((r) => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                    <input type="number" min={0} step={0.5} value={s.lengthM || ''} placeholder="0"
-                      className="h-8 w-16 rounded-md border border-border bg-background px-1.5 text-xs text-right"
-                      onChange={(e) => setSegs(segments.map((x, idx) => (idx === i ? { ...x, lengthM: Math.max(0, Number(e.target.value) || 0) } : x)))} />
-                    <span className="text-[10px] text-muted-foreground">m</span>
-                    <button type="button" onClick={() => setSegs(segments.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
+                {segments.map((s, i) => {
+                  const patchSeg = (patch: Partial<RouteSeg>) =>
+                    setSegs(segments.map((x, idx) => (idx === i ? { ...x, ...patch } : x)))
+                  // Only an enclosed run can be over-full, so the fill fields
+                  // appear exactly when the route type is a conduit/trunking one.
+                  const kind = kindFromRouteType(s.routeType)
+                  return (
+                    <div key={s.id} className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5">
+                        <select className="h-8 flex-1 rounded-md border border-border bg-background px-1.5 text-xs" value={s.routeType}
+                          onChange={(e) => patchSeg({ routeType: e.target.value })}>
+                          {SEGMENT_ROUTE_TYPES.map((r) => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                        <input type="number" min={0} step={0.5} value={s.lengthM || ''} placeholder="0"
+                          className="h-8 w-16 rounded-md border border-border bg-background px-1.5 text-xs text-right"
+                          onChange={(e) => patchSeg({ lengthM: Math.max(0, Number(e.target.value) || 0) })} />
+                        <span className="text-[10px] text-muted-foreground">m</span>
+                        <button type="button" onClick={() => setSegs(segments.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {kind && (
+                        <div className="flex items-center gap-1.5 pl-1">
+                          <input
+                            type="text" value={s.containment ?? ''} placeholder="Shared run name (e.g. Roof → DB)"
+                            title="Give every cable in the same physical pipe the same name — the BOM then checks the fill against SANS."
+                            className="h-8 flex-1 rounded-md border border-dashed border-border bg-background px-1.5 text-xs"
+                            onChange={(e) => patchSeg({ containment: e.target.value })}
+                          />
+                          {kind === 'conduit' ? (
+                            <select className="h-8 w-[5.5rem] rounded-md border border-border bg-background px-1 text-xs"
+                              value={s.conduitMm ?? ''} onChange={(e) => patchSeg({ conduitMm: e.target.value ? Number(e.target.value) : undefined })}>
+                              <option value="">Ø …</option>
+                              {[20, 25, 32, 40, 50].map((d) => <option key={d} value={d}>{d} mm</option>)}
+                            </select>
+                          ) : (
+                            <select className="h-8 w-[5.5rem] rounded-md border border-border bg-background px-1 text-xs"
+                              value={s.widthMm && s.heightMm ? `${s.widthMm}x${s.heightMm}` : ''}
+                              onChange={(e) => {
+                                if (!e.target.value) { patchSeg({ widthMm: undefined, heightMm: undefined }); return }
+                                const [w, h] = e.target.value.split('x').map(Number)
+                                patchSeg({ widthMm: w, heightMm: h })
+                              }}>
+                              <option value="">Size …</option>
+                              {TRUNKING_SIZES.map((t) => (
+                                <option key={`${t.widthMm}x${t.heightMm}`} value={`${t.widthMm}x${t.heightMm}`}>{t.widthMm}×{t.heightMm}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
                 <div className="flex items-center justify-between border-t border-border pt-1 text-xs">
                   <span className="text-muted-foreground">Total route</span>
                   <span className="font-semibold text-foreground">{routeTotal.toFixed(1)} m</span>

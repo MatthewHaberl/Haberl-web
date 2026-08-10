@@ -12,6 +12,7 @@ import type { CableEdgeData } from './sld-builder'
 import {
   designBatteryKwh, designToFlow, panelGroupPanels, panelGroupStrings, type SystemDesign,
 } from './system-design'
+import { mountingForGroup, panelDimensionsFrom } from './mounting-bom'
 
 // Defensive mirror of ProductPicker's custom sentinel (CUSTOM_PREFIX). A finished
 // design should only carry real catalog ids (custom quick-adds become `pending`
@@ -101,6 +102,23 @@ export function designToBom(
 
   // Panels — physical total = series panels × parallel strings.
   for (const g of design.panels) add('Panels', g.catalogId, panelGroupPanels(g), { label: g.panelModel || 'PV module' })
+
+  // Mounting / racking (W55) — Lumax hardware generated per physical ROW, since
+  // one string can span two roof surfaces that need different fixings. Parts are
+  // looked up by SKU (the engine speaks Lumax part numbers, not catalog ids) so
+  // they price the moment Lumax costs land in the catalog and read as "Quote"
+  // until then.
+  const bySku = new Map<string, EquipmentCatalogItem>()
+  for (const item of catalog.values()) if (item.sku) bySku.set(item.sku, item)
+  for (const g of design.panels) {
+    const panelItem = g.catalogId ? catalog.get(g.catalogId) : undefined
+    const dims = panelDimensionsFrom(panelItem as { width_mm?: number | null; height_mm?: number | null; frame_mm?: number | null } | undefined)
+    const mounting = mountingForGroup(g, dims)
+    for (const line of mounting.consolidated) {
+      const item = bySku.get(line.sku)
+      add('Mounting', item?.id ?? null, line.qty, { label: `${line.description} (${line.sku})` })
+    }
+  }
 
   // MC4 jumpers (item 42) — each jumper pair is two MC4 connectors (male + female
   // extension lead). Surfaced as a "Quote" line (no catalog field yet), per string,

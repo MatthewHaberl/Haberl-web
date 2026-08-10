@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
@@ -13,6 +13,7 @@ import { formatCurrency } from '@/lib/utils'
 import {
   FileText, Plus, ChevronRight, Clock, Sparkles, Map as MapIcon,
   MapPin, Copy, Pencil, Check, X, Loader2, Trash2, UserCog,
+  Archive, ArchiveRestore, Undo2,
 } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
 import { PageShell, PageHeader } from '@/components/layout/page'
@@ -43,8 +44,13 @@ export type QuoteRow = {
   status: QuoteRequestStatus
   total_amount: number | null
   submitted_by: string | null
+  archived_at: string | null
   submitter?: { full_name: string } | null
 }
+
+// Local-only: hiding the intro banner is a per-browser preference, not
+// something worth a profile column.
+const BANNER_KEY = 'quotes-v2-intro-dismissed'
 
 type SiteGroup = { key: string; label: string; sortKey: number; options: QuoteRow[] }
 type CustomerGroup = { key: string; name: string; latest: number; optionCount: number; sites: SiteGroup[] }
@@ -124,13 +130,31 @@ export function QuotesV2List({
 }) {
   const router = useRouter()
   const confirm = useConfirm()
-  const groups = buildGroups(rows)
 
   const [editingSite, setEditingSite] = useState<string | null>(null)
   const [editingOption, setEditingOption] = useState<string | null>(null)
   const [sharingOption, setSharingOption] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+  // null until the browser preference is read, so a dismissed banner never flashes.
+  const [bannerDismissed, setBannerDismissed] = useState<boolean | null>(null)
+
+  // Post-hydration read of external state: localStorage does not exist during SSR,
+  // so the preference cannot be seeded during render without a hydration mismatch.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads the saved dismissal after mount
+    setBannerDismissed(window.localStorage.getItem(BANNER_KEY) === '1')
+  }, [])
+
+  function dismissBanner() {
+    window.localStorage.setItem(BANNER_KEY, '1')
+    setBannerDismissed(true)
+  }
+
+  const activeRows = rows.filter((r) => !r.archived_at)
+  const archivedRows = rows.filter((r) => r.archived_at)
+  const groups = buildGroups(showArchived ? archivedRows : activeRows)
 
   async function saveSite(optionIds: string[]) {
     setSaving(true)
@@ -150,6 +174,29 @@ export function QuotesV2List({
       const supabase = createClient()
       await supabase.from('quote_requests').update({ option_label: draft.trim() || null }).eq('id', id)
       setEditingOption(null)
+      router.refresh()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Archive: keep the quote whole, just take it off the active list (and out of
+  // the follow-up chase + daily briefing). Reversible by any manager — unlike
+  // delete, which shrinks the row and needs an admin to restore.
+  async function setArchived(id: string, label: string, archive: boolean) {
+    if (archive && !(await confirm({
+      title: `Archive "${label}"?`,
+      body: 'Nothing is lost — it drops off the active list and stops appearing in follow-ups and the daily briefing. You can restore it any time.',
+      confirmText: 'Archive',
+    }))) return
+    setSaving(true)
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('quote_requests').update({
+        archived_at: archive ? new Date().toISOString() : null,
+        archived_by: archive ? user?.id ?? null : null,
+      }).eq('id', id)
       router.refresh()
     } finally {
       setSaving(false)
@@ -185,10 +232,24 @@ export function QuotesV2List({
     <PageShell width="wide">
       <PageHeader
         icon={Sparkles}
-        title="Quotes"
-        description={`${groups.length} ${groups.length === 1 ? 'customer' : 'customers'} · ${rows.length} ${rows.length === 1 ? 'option' : 'options'}`}
+        title={showArchived ? 'Archived quotes' : 'Quotes'}
+        description={
+          showArchived
+            ? `${archivedRows.length} archived ${archivedRows.length === 1 ? 'option' : 'options'} · kept whole, restore any time`
+            : `${groups.length} ${groups.length === 1 ? 'customer' : 'customers'} · ${activeRows.length} ${activeRows.length === 1 ? 'option' : 'options'}`
+        }
         actions={
           <>
+            {archivedRows.length > 0 && (
+              <Button
+                variant={showArchived ? 'outline' : 'ghost'}
+                size="sm"
+                onClick={() => setShowArchived((v) => !v)}
+              >
+                {showArchived ? <Undo2 className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                {showArchived ? 'Back to active' : `Archived (${archivedRows.length})`}
+              </Button>
+            )}
             {isAdmin && deletedCount > 0 && (
               <Button asChild variant="ghost" size="sm">
                 <Link href="/portal/employee/quotes-v2/deleted">
@@ -213,17 +274,36 @@ export function QuotesV2List({
         }
       />
 
-      <div className="flex items-start gap-3 rounded-lg border border-accent/40 bg-accent/5 px-4 py-3">
-        <Sparkles className="h-5 w-5 text-accent shrink-0 mt-0.5" />
-        <div className="text-sm">
-          <p className="font-medium text-foreground">New Quotes workspace</p>
-          <p className="text-muted-foreground">
-            Customer → site → option. Rename a site or option inline, duplicate an option, or add a new site for the same customer.
-          </p>
+      {bannerDismissed === false && !showArchived && (
+        <div className="flex items-start gap-3 rounded-lg border border-accent/40 bg-accent/5 px-4 py-3">
+          <Sparkles className="h-5 w-5 text-accent shrink-0 mt-0.5" />
+          <div className="text-sm flex-1">
+            <p className="font-medium text-foreground">New Quotes workspace</p>
+            <p className="text-muted-foreground">
+              Customer → site → option. Rename a site or option inline, duplicate an option, or add a new site for the same customer.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={dismissBanner}
+            className="shrink-0 -mr-1 -mt-1 rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            title="Dismiss"
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-      </div>
+      )}
 
-      {rows.length === 0 ? (
+      {showArchived && archivedRows.length === 0 ? (
+        <Card>
+          <CardContent className="py-16 text-center">
+            <Archive className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+            <p className="font-medium">Nothing archived</p>
+            <p className="text-muted-foreground text-sm mt-1">Archived quotes land here and can be restored any time.</p>
+          </CardContent>
+        </Card>
+      ) : !showArchived && activeRows.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center">
             <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
@@ -358,6 +438,7 @@ export function QuotesV2List({
                               </div>
                               {editingOption !== option.id && (
                                 <div className="flex items-center gap-2 shrink-0">
+                                  {option.archived_at && <Badge variant="outline">archived</Badge>}
                                   <Badge variant={statusVariant[option.status]}>{option.status}</Badge>
                                   <Link href={`/portal/employee/quotes-v2/${option.id}`} title="Open">
                                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -365,13 +446,38 @@ export function QuotesV2List({
                                 </div>
                               )}
                             </div>
-                            <Link
-                              href={`/portal/employee/quotes-v2/new?from=${option.id}`}
-                              className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors whitespace-nowrap"
-                              title="Duplicate this option"
-                            >
-                              <Copy className="h-3 w-3" /> Duplicate
-                            </Link>
+                            {!option.archived_at && (
+                              <Link
+                                href={`/portal/employee/quotes-v2/new?from=${option.id}`}
+                                className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors whitespace-nowrap"
+                                title="Duplicate this option"
+                              >
+                                <Copy className="h-3 w-3" /> Duplicate
+                              </Link>
+                            )}
+                            {isManager && (
+                              option.archived_at ? (
+                                <button
+                                  type="button"
+                                  disabled={saving}
+                                  onClick={() => setArchived(option.id, optionDisplay(option, i), false)}
+                                  className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors whitespace-nowrap disabled:opacity-50"
+                                  title="Restore this quote to the active list"
+                                >
+                                  <ArchiveRestore className="h-3 w-3" /> Restore
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={saving}
+                                  onClick={() => setArchived(option.id, optionDisplay(option, i), true)}
+                                  className="shrink-0 flex items-center justify-center px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors disabled:opacity-50"
+                                  title="Archive this quote (kept whole; restore any time)"
+                                >
+                                  <Archive className="h-3 w-3" />
+                                </button>
+                              )
+                            )}
                             {isManager && (
                               <button
                                 type="button"

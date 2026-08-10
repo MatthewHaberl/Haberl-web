@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ChevronRight, PackageSearch, Truck, ClipboardList } from 'lucide-react'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { CollapsibleSection } from '@/components/ui/collapsible-section'
 
 const STATUS_VARIANT: Record<string, 'default' | 'warning' | 'success' | 'destructive'> = {
   draft: 'default',
@@ -95,16 +96,18 @@ export default async function ProcurementPage() {
       ) : (
         <>
           {open.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Open ({open.length})</h2>
-              {open.map((po) => <PoRow key={po.id} po={po} />)}
-            </div>
+            <CollapsibleSection storageKey="procurement:open" title="Open" count={open.length}>
+              <div className="flex flex-col gap-2">
+                {open.map((po) => <PoRow key={po.id} po={po} />)}
+              </div>
+            </CollapsibleSection>
           )}
           {closed.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Completed ({closed.length})</h2>
-              {closed.map((po) => <PoRow key={po.id} po={po} />)}
-            </div>
+            <CollapsibleSection storageKey="procurement:completed" title="Completed" count={closed.length} defaultOpen={false}>
+              <div className="flex flex-col gap-2">
+                {closed.map((po) => <PoRow key={po.id} po={po} />)}
+              </div>
+            </CollapsibleSection>
           )}
         </>
       )}

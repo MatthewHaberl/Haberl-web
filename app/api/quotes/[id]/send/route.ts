@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendQuoteEmail } from '@/lib/email/quotes'
 import { getBaseUrl } from '@/lib/quotes/server'
+import { snapshotQuoteVersion } from '@/lib/quotes/versions'
 
 export const runtime = 'nodejs'
 
@@ -22,7 +23,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return new Response('Forbidden', { status: 403 })
   }
 
-  let body: { manual?: boolean; resend?: boolean } = {}
+  let body: { manual?: boolean; resend?: boolean; amendmentReason?: string } = {}
   try {
     body = await req.json()
   } catch { /* empty body is fine */ }
@@ -30,6 +31,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { data: quote } = await supabase
     .from('quote_requests').select('*').eq('id', id).maybeSingle()
   if (!quote) return new Response('Quote not found', { status: 404 })
+  // The share link is closed for archived/deleted quotes, so emailing one would
+  // send the customer to a dead end. Restore it first.
+  if (quote.archived_at) {
+    return new Response('This quote is archived — restore it before sending', { status: 409 })
+  }
+  if (quote.deleted_at) {
+    return new Response('This quote is deleted — restore it before sending', { status: 409 })
+  }
   if (!quote.quote_html) {
     return new Response('Generate and save the quote first', { status: 400 })
   }
@@ -57,7 +66,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       .from('quote_requests')
       .update({ sent_at: new Date().toISOString() })
       .eq('id', id)
-    return NextResponse.json({ ok: true, sent: true, resent: true, shareUrl })
+    // A resend of unchanged content is the SAME document sent twice, so this
+    // returns the existing version rather than minting one. If the quote was
+    // edited since, it correctly records the amendment (W56).
+    const resendVersion = await snapshotQuoteVersion(quote, { sentBy: user.id })
+    return NextResponse.json({ ok: true, sent: true, resent: true, shareUrl, version: resendVersion.version })
   }
 
   async function markSent() {
@@ -67,10 +80,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       .eq('id', id)
   }
 
+  /**
+   * Archive what the customer was just sent (W56). Best-effort by design: the
+   * quote has already gone out, so a failed snapshot is logged, not surfaced as
+   * a send failure.
+   */
+  async function recordVersion() {
+    const result = await snapshotQuoteVersion(quote, {
+      sentBy: user!.id,
+      expiryDate,
+      amendmentReason: body.amendmentReason ?? null,
+    })
+    if (result.error) console.error('[quotes/send] version snapshot', { id, error: result.error })
+    return result
+  }
+
   if (body.manual) {
     const { error } = await markSent()
     if (error) return new Response(error.message, { status: 400 })
-    return NextResponse.json({ ok: true, sent: false, manual: true, shareUrl })
+    const version = await recordVersion()
+    return NextResponse.json({ ok: true, sent: false, manual: true, shareUrl, version: version.version })
   }
 
   if (!quote.customer_email) {
@@ -90,5 +119,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { error } = await markSent()
   if (error) return new Response(error.message, { status: 400 })
-  return NextResponse.json({ ok: true, sent: true, shareUrl })
+  const version = await recordVersion()
+  return NextResponse.json({ ok: true, sent: true, shareUrl, version: version.version })
 }

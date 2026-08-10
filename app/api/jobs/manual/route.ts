@@ -2,28 +2,13 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { PIPELINE_STAGES } from '@/lib/jobs/stages'
+import { checklistRowsFor } from '@/lib/jobs/checklist'
 import type { JobPriority, JobStage } from '@/types/database'
 
 export const runtime = 'nodejs'
 
 const PRIORITIES = new Set<JobPriority>(['low', 'medium', 'high', 'urgent'])
 const STAGES = new Set<JobStage>(PIPELINE_STAGES)
-const INSTALL_CHECKLIST = [
-  'Deposit invoice sent to customer',
-  'Deposit received & reconciled',
-  'Starred equipment ordered from supplier',
-  'Stock received - checked against picking list',
-  'Installation date agreed with customer',
-  'Body corporate / HOA approval confirmed (if applicable)',
-  'Site prep check: roof access, DB space, monitoring signal',
-  'Panels & mounting installed',
-  'Inverter & battery mounted and wired',
-  'DB integration, earthing & surge protection complete',
-  'System commissioned - monitoring set up for customer',
-  'COC issued and filed',
-  'Handover pack sent (quote, COC, warranties, user guide)',
-  'Follow-up call - 7 days after handover',
-]
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -132,9 +117,7 @@ export async function POST(req: Request) {
     return new Response(jobError?.message ?? 'Could not create job', { status: 400 })
   }
 
-  const { error: tasksError } = await admin.from('job_tasks').insert(
-    INSTALL_CHECKLIST.map((task) => ({ job_id: job.id, description: task })),
-  )
+  const { error: tasksError } = await admin.from('job_tasks').insert(checklistRowsFor(job.id))
 
   if (tasksError) {
     await admin.from('jobs').delete().eq('id', job.id)

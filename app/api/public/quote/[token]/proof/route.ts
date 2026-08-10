@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { sendAdminNotice } from '@/lib/email/quotes'
+import { CLOSED_QUOTE_MESSAGE } from '@/lib/quotes/public'
 import { getBaseUrl, getCompanySettings, getQuoteByToken } from '@/lib/quotes/server'
 import { escapeHtml } from '@/lib/utils'
 
@@ -18,6 +19,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const { token } = await params
   const { supabase, quote } = await getQuoteByToken(token)
   if (!quote) return new Response('Quote not found', { status: 404 })
+  // Deleted means the quote was a mistake. Archiving an accepted quote does NOT
+  // close this route — the job is live and the customer still owes a deposit.
+  if (quote.deleted_at) return new Response(CLOSED_QUOTE_MESSAGE, { status: 410 })
   if (quote.status !== 'accepted') {
     return new Response('Accept the quote first, then upload proof of payment', { status: 409 })
   }

@@ -20,6 +20,41 @@ export function isQuoteExpired(quote: { expiry_date?: string | null }): boolean 
   return Date.now() > new Date(`${quote.expiry_date}T23:59:59`).getTime()
 }
 
+/**
+ * What the share link should do right now. One resolver so the page and every
+ * public API agree — a quote we have archived or deleted must never be
+ * acceptable, no matter which route the customer reaches it through.
+ *
+ * `accepted` deliberately wins over archive/delete: once a quote is accepted the
+ * link is the customer's deposit page for a live job, and closing that mid-
+ * installation would strand them.
+ */
+export type PublicQuoteState = 'open' | 'accepted' | 'declined' | 'expired' | 'closed'
+
+export interface PublicQuoteStateInput {
+  status?: string | null
+  expiry_date?: string | null
+  archived_at?: string | null
+  deleted_at?: string | null
+}
+
+export function publicQuoteState(quote: PublicQuoteStateInput): PublicQuoteState {
+  if (quote.status === 'accepted') return 'accepted'
+  if (quote.deleted_at || quote.archived_at) return 'closed'
+  if (quote.status === 'declined') return 'declined'
+  if (quote.status !== 'generated' && quote.status !== 'sent') return 'closed'
+  return isQuoteExpired(quote) ? 'expired' : 'open'
+}
+
+/** States where the only sensible next step is asking us for a fresh quote. */
+export function canRequestUpdatedQuote(state: PublicQuoteState): boolean {
+  return state === 'closed' || state === 'expired' || state === 'declined'
+}
+
+/** Why the link no longer accepts — shown to the customer, sent by the APIs. */
+export const CLOSED_QUOTE_MESSAGE =
+  'This quote is no longer available — request an updated one and we will send you fresh pricing.'
+
 export interface PublicTierOption {
   tier: string
   label: string

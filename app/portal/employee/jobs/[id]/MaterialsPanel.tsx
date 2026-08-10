@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { ProductThumb, type ProductImageSource } from '@/components/catalog/ProductImages'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import type { JobMaterial } from '@/types/database'
@@ -30,6 +31,32 @@ export function MaterialsPanel({ jobTitle, materials: initialMaterials, showPric
   const [materials, setMaterials] = useState(initialMaterials)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [error, setError] = useState('')
+
+  // Job materials are a frozen snapshot (sku + description, no catalog FK), so
+  // photos are looked up by SKU. Only the SKUs actually on this job are fetched.
+  const [photosBySku, setPhotosBySku] = useState<Map<string, ProductImageSource>>(new Map())
+  const skuKey = useMemo(
+    () => [...new Set(initialMaterials.map((m) => m.sku).filter(Boolean))].sort().join('|'),
+    [initialMaterials],
+  )
+  useEffect(() => {
+    const skus = skuKey ? skuKey.split('|') : []
+    if (skus.length === 0) return
+    let active = true
+    void supabase
+      .from('equipment_catalog')
+      .select('sku, primary_image_url, gallery_image_urls')
+      .in('sku', skus)
+      .then(({ data }) => {
+        if (!active || !data) return
+        const next = new Map<string, ProductImageSource>()
+        for (const row of data as Array<{ sku: string } & ProductImageSource>) {
+          if (row.sku) next.set(row.sku, row)
+        }
+        setPhotosBySku(next)
+      })
+    return () => { active = false }
+  }, [skuKey, supabase])
 
   const sections = useMemo(() => {
     const grouped = new Map<string, JobMaterial[]>()
@@ -171,6 +198,7 @@ export function MaterialsPanel({ jobTitle, materials: initialMaterials, showPric
                 savingId={savingId}
                 onQtyChange={updateQty}
                 variance={variance}
+                photosBySku={photosBySku}
               />
             ))}
           </tbody>
@@ -181,13 +209,15 @@ export function MaterialsPanel({ jobTitle, materials: initialMaterials, showPric
   )
 }
 
-function SectionGroup({ section, items, showPrices, savingId, onQtyChange, variance }: {
+function SectionGroup({ section, items, showPrices, savingId, onQtyChange, variance, photosBySku }: {
   section: string
   items: JobMaterial[]
   showPrices: boolean
   savingId: string | null
   onQtyChange: (id: string, field: QtyField, value: number) => void
   variance: (item: JobMaterial) => number
+  /** Catalog photos keyed by SKU — empty until the lookup resolves. */
+  photosBySku: Map<string, ProductImageSource>
 }) {
   return (
     <>
@@ -201,8 +231,15 @@ function SectionGroup({ section, items, showPrices, savingId, onQtyChange, varia
         return (
           <tr key={item.id} className="border-b border-border last:border-0">
             <td className="py-1.5 pr-3">
-              <span className="block">{item.description}</span>
-              {item.sku && <span className="text-xs font-mono text-muted-foreground">{item.sku}</span>}
+              <div className="flex items-start gap-2">
+                {/* What the part looks like — terminals, mounting, nameplate — so
+                    the tech on site can tell two similar SKUs apart (W53). */}
+                <ProductThumb item={photosBySku.get(item.sku)} alt={item.description} size={32} className="mt-0.5" />
+                <div className="min-w-0">
+                  <span className="block">{item.description}</span>
+                  {item.sku && <span className="text-xs font-mono text-muted-foreground">{item.sku}</span>}
+                </div>
+              </div>
             </td>
             <td className="py-1.5 px-2 text-center font-medium">{item.qty_planned}</td>
             {QTY_FIELDS.map(({ field }) => (

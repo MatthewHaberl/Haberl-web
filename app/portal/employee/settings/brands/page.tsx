@@ -10,6 +10,7 @@ import { Plus, Trash2, Loader2, Eye, EyeOff, Tag } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { BrandCategory, EquipmentBrand } from '@/types/database'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { CollapsibleSection } from '@/components/ui/collapsible-section'
 
 const CATEGORIES: { key: BrandCategory; label: string; colour: string }[] = [
   { key: 'inverter', label: 'Inverters', colour: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/60'  },
@@ -101,8 +102,8 @@ export default function BrandsPage() {
         return (
           <Card key={key} className={`border ${colour}`}>
             <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{label}</h2>
-
+              <CollapsibleSection storageKey={`brands:${key}`} title={label} count={categoryBrands.length}>
+              <div className="flex flex-col gap-4">
               {/* Brand list */}
               <div className="flex flex-col gap-1">
                 {categoryBrands.map((brand) => (
@@ -164,6 +165,8 @@ export default function BrandsPage() {
                     : <Plus className="h-3.5 w-3.5" />}
                 </Button>
               </div>
+              </div>
+              </CollapsibleSection>
             </CardContent>
           </Card>
         )

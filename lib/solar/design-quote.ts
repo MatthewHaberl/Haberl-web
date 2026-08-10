@@ -23,9 +23,10 @@ import {
   type SystemDesign,
 } from './system-design'
 import { computeStringLayout, runComplianceChecks, type ComplianceCheck } from './compliance'
+import { assessDesignContainment, containmentChecks } from './containment-fill'
 import { buildSavingsSummary } from './savings'
 import type { DesignBom } from './design-bom'
-import type { QuoteData, SupplierBomItem, DepositItem } from './render-quote'
+import type { QuoteData, SupplierBomItem, DepositItem, EquipmentPhoto } from './render-quote'
 
 const DAYS_PER_MONTH = 30.4
 
@@ -85,13 +86,19 @@ export function designComplianceChecks(opts: {
   gridSupply?: string
 }): ComplianceCheck[] {
   const { design, bom, catalog, gridSupply } = opts
+
+  // Wireway fill (SP4) is independent of the string physics — a conduit can be
+  // over-full on a design that has no catalog panel yet — so it is computed
+  // first and always returned, even when the string checks below bail out.
+  const containment = containmentChecks(assessDesignContainment(design, { gridSupply }))
+
   const panelItem = design.panels.map((g) => (g.catalogId ? catalog.get(g.catalogId) : undefined)).find(Boolean)
   const inverterItem = design.inverters[0]?.catalogId ? catalog.get(design.inverters[0].catalogId!) : undefined
-  if (!panelItem || !inverterItem) return []
+  if (!panelItem || !inverterItem) return containment
   const batteryItem = design.batteries[0]?.catalogId ? catalog.get(design.batteries[0].catalogId!) : undefined
 
   const panelCount = designPanelCount(design)
-  if (panelCount <= 0) return []
+  if (panelCount <= 0) return containment
   const spec = parseInverterSizingSpec(inverterItem.notes)
   const layout = computeStringLayout({
     panelCount, panel: panelItem, spec,
@@ -111,7 +118,7 @@ export function designComplianceChecks(opts: {
     notes: null,
   } as unknown as EquipmentCatalogItem
 
-  return runComplianceChecks({
+  return [...runComplianceChecks({
     bom: bomToSupplierBom(bom),
     layout,
     spec,
@@ -124,7 +131,7 @@ export function designComplianceChecks(opts: {
     evChargerKw: design.extras.some((x) => x.type === 'evCharger') ? 'EV' : '',
     routeMetres,
     gridSupply: gridSupply ?? '',
-  })
+  }), ...containment]
 }
 
 export interface DesignQuoteArgs {
@@ -152,8 +159,40 @@ export interface DesignQuoteArgs {
  * field is populated (the renderer prints literal `{{key}}` for anything
  * missing), with section subtotals mapped from the DesignBom's sections.
  */
+/**
+ * Photos of the major kit for the customer quote's "What you're getting" panel
+ * (W53). Reads the catalog's hero shot, falling back to the first gallery image,
+ * so an item with no photography is simply left out rather than showing a gap.
+ */
+export function equipmentPhotosFromDesign(
+  design: SystemDesign,
+  catalog: Map<string, EquipmentCatalogItem>,
+): EquipmentPhoto[] {
+  const photos: EquipmentPhoto[] = []
+  const push = (label: string, catalogId: string | null | undefined, fallbackModel: string) => {
+    if (!catalogId) return
+    const item = catalog.get(catalogId)
+    if (!item) return
+    const url = (item.primary_image_url ?? '').trim() || (item.gallery_image_urls ?? []).map((u) => u.trim()).find(Boolean) || ''
+    if (!url) return
+    const model = fallbackModel.trim() || item.description || item.sku
+    // The same product picked twice (two identical inverters) is one photo.
+    if (photos.some((p) => p.imageUrl === url)) return
+    photos.push({ label, model, imageUrl: url })
+  }
+
+  push('Solar panels', design.panels[0]?.catalogId, design.panels[0]?.panelModel ?? '')
+  push('Inverter', design.inverters[0]?.catalogId, design.inverters[0]?.model ?? '')
+  push('Battery', design.batteries[0]?.catalogId, design.batteries[0]?.model ?? '')
+  // Anything else the customer will physically see on the wall.
+  for (const c of design.acCombiners) push('Distribution board', c.enclosureCatalogId, 'AC board')
+  for (const c of design.dcCombiners) push('DC combiner', c.enclosureCatalogId, 'DC combiner')
+
+  return photos
+}
+
 export function buildQuoteDataFromDesign(args: DesignQuoteArgs): QuoteData {
-  const { design, bom, req, quoteNumber, expiryDays, tariffRate } = args
+  const { design, bom, catalog, req, quoteNumber, expiryDays, tariffRate } = args
 
   const sell = (name: string) => bom.sections.find((s) => s.name === name)?.sellR ?? 0
   const balance = computeBalance(design, { monthly_kwh: req.monthly_kwh ?? null })
@@ -285,6 +324,7 @@ export function buildQuoteDataFromDesign(args: DesignQuoteArgs): QuoteData {
     // Deposit + supplier BOM + verification
     depositItems: deposit.items,
     supplierBom: bomToSupplierBom(bom),
+    equipmentPhotos: equipmentPhotosFromDesign(design, catalog),
     complianceChecks: args.complianceChecks ?? [],
     calculationWarnings: [],
   }

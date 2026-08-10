@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { sendAdminNotice } from '@/lib/email/quotes'
+import { CLOSED_QUOTE_MESSAGE } from '@/lib/quotes/public'
 import { getBaseUrl, getCompanySettings, getQuoteByToken } from '@/lib/quotes/server'
 import { escapeHtml } from '@/lib/utils'
 
@@ -11,6 +12,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   if (!quote) return new Response('Quote not found', { status: 404 })
 
   if (quote.status === 'declined') return NextResponse.json({ ok: true })
+  // Closed on our side — there's nothing left to decline.
+  if (quote.archived_at || quote.deleted_at) {
+    return new Response(CLOSED_QUOTE_MESSAGE, { status: 410 })
+  }
   if (!['generated', 'sent'].includes(quote.status)) {
     return new Response('This quote is no longer open', { status: 409 })
   }

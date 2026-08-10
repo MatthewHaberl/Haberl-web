@@ -148,9 +148,13 @@ export default async function EmployeePortalRoot() {
   if (isManager) {
     const [briefing, openQuotesRes, activeJobsRes, proofsRes, revenueRes, planRes] = await Promise.all([
       buildDailyBriefing(supabase, now.getTime()),
-      supabase.from('quote_requests').select('id', { count: 'exact', head: true }).in('status', ['pending', 'generated', 'sent']),
+      // Archived / deleted quotes and cancelled jobs are off the workload, so the
+      // KPIs above the list count the same things the list itself shows.
+      supabase.from('quote_requests').select('id', { count: 'exact', head: true }).in('status', ['pending', 'generated', 'sent'])
+        .is('archived_at', null).is('deleted_at', null),
       supabase.from('jobs').select('id', { count: 'exact', head: true }).in('status', ['pending', 'in_progress']),
-      supabase.from('jobs').select('id', { count: 'exact', head: true }).not('deposit_proof_url', 'is', null).is('deposit_confirmed_at', null),
+      supabase.from('jobs').select('id', { count: 'exact', head: true }).not('deposit_proof_url', 'is', null).is('deposit_confirmed_at', null)
+        .neq('status', 'cancelled'),
       supabase.from('orders').select('total').eq('status', 'paid').gte('created_at', thisMonthStart),
       supabase
         .from('plan_items')
@@ -262,8 +266,10 @@ export default async function EmployeePortalRoot() {
     // Field worker: their own active jobs are the "needs you" list.
     const [activeJobsRes, openQuotesRes, proofsRes, myJobsRes] = await Promise.all([
       supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('assigned_to', user.id).in('status', ['pending', 'in_progress']),
-      supabase.from('quote_requests').select('id', { count: 'exact', head: true }).eq('submitted_by', user.id).in('status', ['pending', 'generated', 'sent']),
-      supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('assigned_to', user.id).not('deposit_proof_url', 'is', null).is('deposit_confirmed_at', null),
+      supabase.from('quote_requests').select('id', { count: 'exact', head: true }).eq('submitted_by', user.id).in('status', ['pending', 'generated', 'sent'])
+        .is('archived_at', null).is('deleted_at', null),
+      supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('assigned_to', user.id).not('deposit_proof_url', 'is', null).is('deposit_confirmed_at', null)
+        .neq('status', 'cancelled'),
       supabase
         .from('jobs')
         .select('id, title, status, priority, scheduled_date, site:sites(name)')

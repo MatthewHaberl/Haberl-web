@@ -13,6 +13,7 @@
 import type { Node, Edge } from '@xyflow/react'
 import type { QuoteData } from './render-quote'
 import { buildEdgeLabel, type CableEdgeData } from './sld-builder'
+import { roofTypeFromLabel, type MountingRow } from './mounting-bom'
 import { calculateStringGeneration, type Season } from './generation-calculator'
 import {
   PSH_GAUTENG,
@@ -84,6 +85,10 @@ export interface PanelGroup {
   /** MC4 jumper pairs for a string spanning rows / roofs (item 42). Each pair is
    *  two MC4 connectors (a male + female extension), costed in design-bom.ts. */
   jumpers?: number
+  /** Physical rows this string is split into (W55). A 10-panel string is often
+   *  a row of 6 and a row of 4, sometimes on two different roof surfaces which
+   *  need different mounting hardware. Empty/absent = one row on `roofType`. */
+  rows?: MountingRow[]
 }
 
 // 8-way compass → azimuth degrees (0 = North), matching generation-calculator.
@@ -1394,6 +1399,16 @@ export function parseDesign(raw: unknown): SystemDesign | null {
       ...p,
       distanceFromCombinerM: p.distanceFromCombinerM ?? undefined,
       jumpers: p.jumpers ?? undefined,
+      // Mounting rows (W55): normalise so a row saved before the roof-type enum
+      // existed still resolves, and an absent list stays absent (= one auto row).
+      rows: (p.rows ?? []).map((r, i) => ({
+        id: r.id || `row-${i + 1}`,
+        panelCount: Math.max(0, Math.round(Number(r.panelCount) || 0)),
+        roofType: roofTypeFromLabel(String(r.roofType ?? p.roofType)),
+        orientation: r.orientation === 'landscape' ? 'landscape' : 'portrait',
+        panelWidthMm: r.panelWidthMm ?? null,
+        panelHeightMm: r.panelHeightMm ?? null,
+      })) as MountingRow[],
     })),
     // Backfill combiners saved before the product-driven protection model. The new
     // internals list (item 44) defaults EMPTY; legacy stringConnections stay parseable.

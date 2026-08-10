@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Geist } from 'next/font/google'
 import './globals.css'
 import { WhatsAppFabGate } from '@/components/layout/WhatsAppFabGate'
+import { DatePickerBehavior } from '@/components/ui/date-picker-behavior'
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-sans', display: 'swap' })
 
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-full flex flex-col">
         {children}
+        <DatePickerBehavior />
         <WhatsAppFabGate />
       </body>
     </html>

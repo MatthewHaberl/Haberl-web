@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Plus, Pencil, Trash2, Check, X, Loader2, ShieldAlert } from 'lucide-react'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { CollapsibleSection } from '@/components/ui/collapsible-section'
 
 type Severity = 'block' | 'warn' | 'info'
 
@@ -162,8 +163,7 @@ export function AuditRulesManager({ initialRules }: { initialRules: AuditRule[] 
       {error && <p className="text-sm text-destructive bg-destructive/10 rounded-md px-4 py-2">{error}</p>}
 
       {categories.map((cat) => (
-        <div key={cat} className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{cat}</h2>
+        <CollapsibleSection key={cat} storageKey={`audit-rules:${cat}`} title={cat}>
           <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
             {rules.filter((r) => r.category === cat).sort((a, b) => a.code.localeCompare(b.code)).map((r) => (
               <div key={r.id} className={`px-4 py-3 ${r.active ? '' : 'opacity-50'}`}>
@@ -203,7 +203,7 @@ export function AuditRulesManager({ initialRules }: { initialRules: AuditRule[] 
               </div>
             ))}
           </div>
-        </div>
+        </CollapsibleSection>
       ))}
     </PageShell>
   )

@@ -1,23 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-
-// Standard install checklist — the process every accepted quote runs through.
-// Order matters: it mirrors the pipeline stages on the job detail page.
-const INSTALL_CHECKLIST = [
-  'Deposit invoice sent to customer',
-  'Deposit received & reconciled',
-  'Starred equipment ordered from supplier',
-  'Stock received — checked against picking list',
-  'Installation date agreed with customer',
-  'Body corporate / HOA approval confirmed (if applicable)',
-  'Site prep check: roof access, DB space, monitoring signal',
-  'Panels & mounting installed',
-  'Inverter & battery mounted and wired',
-  'DB integration, earthing & surge protection complete',
-  'System commissioned — monitoring set up for customer',
-  'COC issued and filed',
-  'Handover pack sent (quote, COC, warranties, user guide)',
-  'Follow-up call — 7 days after handover',
-]
+import { checklistRowsFor } from './checklist'
 
 interface BomLine {
   section?: string
@@ -196,9 +178,7 @@ export async function createJobFromQuote(
     return { ok: false, error: jobError?.message ?? 'Could not create job', status: 400 }
   }
 
-  const { error: tasksError } = await supabase.from('job_tasks').insert(
-    INSTALL_CHECKLIST.map((description) => ({ job_id: job.id, description })),
-  )
+  const { error: tasksError } = await supabase.from('job_tasks').insert(checklistRowsFor(job.id))
   if (tasksError) {
     await supabase.from('jobs').delete().eq('id', job.id)
     return { ok: false, error: `Checklist not created: ${tasksError.message}`, status: 500 }

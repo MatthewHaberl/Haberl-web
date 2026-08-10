@@ -22,6 +22,8 @@ function timeAgo(iso: string) {
 
 const SOURCE_LABELS: Record<string, string> = {
   whatsapp: 'WhatsApp', phone: 'Phone', 'walk-in': 'Walk-in', referral: 'Referral', other: 'Other',
+  // Followed an old quote link and asked for fresh pricing (/q/<token>/renew).
+  requote: 'Re-quote request',
 }
 
 export interface StaffMember { id: string; full_name: string }

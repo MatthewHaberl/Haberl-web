@@ -70,6 +70,8 @@ export interface EquipmentCatalogItem {
   notes: string | null
   shop_description: string | null
   primary_image_url: string | null
+  /** Extra photos beyond the hero shot — angles, terminals, nameplate (migration 096). */
+  gallery_image_urls?: string[] | null
   datasheet_url: string | null
   research_ran_at: string | null
   // Store-facing fields (migration 048).
@@ -291,6 +293,10 @@ export interface JobTask {
   completed: boolean
   completed_at: string | null
   notes: string | null
+  // Pipeline stage this task belongs to + stable ordering (migration 095).
+  // stage is null for ad-hoc tasks that sit outside the standard checklist.
+  stage: JobStage | null
+  sort_order: number
 }
 
 export interface ServiceRecord {
@@ -583,6 +589,13 @@ export interface QuoteRequest {
   acceptance_ip: string | null
   reminder_count: number
   last_reminder_at: string | null
+
+  // Soft-delete (shrinks the row, admin-only restore) vs archive (kept whole,
+  // manager can restore) — migration 094
+  deleted_at: string | null
+  deleted_by: string | null
+  archived_at: string | null
+  archived_by: string | null
 
   // Joined
   submitter?: { full_name: string }

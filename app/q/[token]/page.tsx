@@ -1,10 +1,19 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { Archive } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { formatCents, isQuoteExpired, isValidShareToken, parseTierOptions } from '@/lib/quotes/public'
+import {
+  canRequestUpdatedQuote,
+  formatCents,
+  isValidShareToken,
+  parseTierOptions,
+  publicQuoteState,
+} from '@/lib/quotes/public'
 import { QuoteFrame } from './QuoteFrame'
 import { PublicQuoteActions } from './PublicQuoteActions'
 import { PrintQuoteButton } from './PrintQuoteButton'
+import { PublicShell } from './PublicShell'
 
 export const metadata: Metadata = {
   title: 'Your Solar Quote',
@@ -26,7 +35,35 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
     .eq('share_token', token)
     .maybeSingle()
 
-  if (!quote || !quote.quote_html || !VIEWABLE.includes(quote.status)) notFound()
+  if (!quote) notFound()
+
+  const state = publicQuoteState(quote)
+
+  // Archived or deleted: the link stops serving the quote entirely. The customer
+  // isn't dead-ended though — they can ask for fresh pricing in one tap, which
+  // lands as a lead on the staff to-do list.
+  if (state === 'closed') {
+    return (
+      <PublicShell quoteNumber={quote.quote_number}>
+        <div className="rounded-lg border border-border bg-white p-8 flex flex-col items-center gap-3 text-center">
+          <Archive className="h-10 w-10 text-muted-foreground" />
+          <h1 className="text-xl font-bold text-primary">This quote is no longer available</h1>
+          <p className="text-sm text-muted-foreground max-w-sm">
+            Equipment prices and system designs move on, so we&apos;ve closed this one.
+            Still interested? Ask us for an updated quote — it only takes a moment.
+          </p>
+          <Link
+            href={`/q/${token}/renew`}
+            className="mt-1 inline-flex items-center justify-center rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground hover:opacity-90"
+          >
+            Request an updated quote
+          </Link>
+        </div>
+      </PublicShell>
+    )
+  }
+
+  if (!quote.quote_html || !VIEWABLE.includes(quote.status)) notFound()
 
   // First-open tracking
   if (!quote.viewed_at) {
@@ -36,8 +73,8 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
       .eq('id', quote.id)
   }
 
-  const isOpen = quote.status === 'sent' || quote.status === 'generated'
-  const expired = isOpen && isQuoteExpired(quote)
+  const isOpen = state === 'open'
+  const expired = state === 'expired'
   const tierOptions = parseTierOptions(quote)
 
   // Accepted state: banking details for EFT + deposit/proof progress
@@ -68,92 +105,84 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
     : null
 
   return (
-    <div className="min-h-screen bg-muted/40">
-      {/* Brand header */}
-      <header className="bg-primary text-primary-foreground">
-        <div className="mx-auto max-w-3xl px-4 py-4 flex items-center justify-between">
-          <span className="text-lg font-bold">
-            Haberl <span className="text-accent">Solar</span>
-          </span>
-          {quote.quote_number && (
-            <span className="text-sm font-mono opacity-90">{quote.quote_number}</span>
+    <PublicShell quoteNumber={quote.quote_number}>
+      {/* Greeting + summary */}
+      <div>
+        <h1 className="text-xl font-bold text-primary">
+          Solar quote for {quote.customer_name}
+        </h1>
+        {quote.address && <p className="text-sm text-muted-foreground mt-0.5">{quote.address}</p>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-border bg-white p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total</p>
+          <p className="text-lg font-bold text-primary mt-1">{formatCents(quote.total_amount)}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-white p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Deposit</p>
+          <p className="text-lg font-bold text-primary mt-1">{formatCents(quote.deposit_amount)}</p>
+        </div>
+      </div>
+
+      {/* Status banners */}
+      {state === 'accepted' && (
+        <div className="rounded-lg border border-green-300 dark:border-green-800/60 bg-green-50 dark:bg-green-950/40 px-4 py-3 text-sm text-green-800 dark:text-green-300">
+          <strong>Quote accepted</strong>
+          {quote.accepted_at && (
+            <> on {new Date(quote.accepted_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}</>
           )}
+          {quote.acceptance_name && <> by {quote.acceptance_name}</>}
+          . Next step: pay the deposit below to secure your equipment and installation date.
         </div>
-      </header>
-
-      <main className="mx-auto max-w-3xl px-4 py-6 flex flex-col gap-5">
-        {/* Greeting + summary */}
-        <div>
-          <h1 className="text-xl font-bold text-primary">
-            Solar quote for {quote.customer_name}
-          </h1>
-          {quote.address && <p className="text-sm text-muted-foreground mt-0.5">{quote.address}</p>}
+      )}
+      {state === 'declined' && (
+        <div className="rounded-lg border border-border bg-white px-4 py-3 text-sm text-muted-foreground">
+          This quote was declined. Changed your mind, or want an adjusted version? Ask us for an
+          updated quote below — no obligation.
         </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg border border-border bg-white p-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Total</p>
-            <p className="text-lg font-bold text-primary mt-1">{formatCents(quote.total_amount)}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-white p-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Deposit</p>
-            <p className="text-lg font-bold text-primary mt-1">{formatCents(quote.deposit_amount)}</p>
-          </div>
+      )}
+      {expired && (
+        <div className="rounded-lg border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+          This quote expired on <strong>{expiryFormatted}</strong>. Equipment prices change over
+          time — ask us for an updated one below and we&apos;ll refresh it for you.
         </div>
+      )}
+      {isOpen && expiryFormatted && (
+        <p className="text-xs text-muted-foreground">
+          Valid until <strong className="text-foreground">{expiryFormatted}</strong>.
+        </p>
+      )}
 
-        {/* Status banners */}
-        {quote.status === 'accepted' && (
-          <div className="rounded-lg border border-green-300 dark:border-green-800/60 bg-green-50 dark:bg-green-950/40 px-4 py-3 text-sm text-green-800 dark:text-green-300">
-            <strong>Quote accepted</strong>
-            {quote.accepted_at && (
-              <> on {new Date(quote.accepted_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}</>
-            )}
-            {quote.acceptance_name && <> by {quote.acceptance_name}</>}
-            . Next step: pay the deposit below to secure your equipment and installation date.
-          </div>
-        )}
-        {quote.status === 'declined' && (
-          <div className="rounded-lg border border-border bg-white px-4 py-3 text-sm text-muted-foreground">
-            This quote was declined. Changed your mind, or want an adjusted version? Reply to the
-            quote email or call us — we&apos;ll gladly revise it.
-          </div>
-        )}
-        {expired && (
-          <div className="rounded-lg border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
-            This quote expired on <strong>{expiryFormatted}</strong>. Equipment prices change over
-            time — contact us and we&apos;ll refresh it for you.
-          </div>
-        )}
-        {isOpen && !expired && expiryFormatted && (
-          <p className="text-xs text-muted-foreground">
-            Valid until <strong className="text-foreground">{expiryFormatted}</strong>.
-          </p>
-        )}
+      {/* Accept / decline / deposit actions */}
+      {(isOpen || state === 'accepted') && (
+        <PublicQuoteActions
+          token={token}
+          state={state === 'accepted' ? 'accepted' : 'open'}
+          quoteNumber={quote.quote_number}
+          depositCents={quote.deposit_amount}
+          tierOptions={isOpen ? tierOptions : null}
+          banking={banking}
+          proof={proof}
+          contactPhone={contactPhone}
+        />
+      )}
 
-        {/* Accept / decline / deposit actions */}
-        {((isOpen && !expired) || quote.status === 'accepted') && (
-          <PublicQuoteActions
-            token={token}
-            state={quote.status === 'accepted' ? 'accepted' : 'open'}
-            quoteNumber={quote.quote_number}
-            depositCents={quote.deposit_amount}
-            tierOptions={isOpen ? tierOptions : null}
-            banking={banking}
-            proof={proof}
-            contactPhone={contactPhone}
-          />
-        )}
+      {/* Expired or declined: the quote below is history — this is the way forward. */}
+      {canRequestUpdatedQuote(state) && (
+        <Link
+          href={`/q/${token}/renew`}
+          className="inline-flex items-center justify-center rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground hover:opacity-90"
+        >
+          Request an updated quote
+        </Link>
+      )}
 
-        {/* The quote itself */}
-        <div className="flex justify-end">
-          <PrintQuoteButton html={quote.quote_html} />
-        </div>
-        <QuoteFrame html={quote.quote_html} />
-
-        <footer className="pb-8 pt-2 text-center text-xs text-muted-foreground">
-          Haberl Electrical &amp; Solar · Designed to SANS 10142-1 · info@haberl.co.za
-        </footer>
-      </main>
-    </div>
+      {/* The quote itself */}
+      <div className="flex justify-end">
+        <PrintQuoteButton html={quote.quote_html} />
+      </div>
+      <QuoteFrame html={quote.quote_html} />
+    </PublicShell>
   )
 }

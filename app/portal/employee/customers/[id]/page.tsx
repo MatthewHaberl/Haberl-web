@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, MapPin, FileText, Wrench, Clock, ChevronRight, Users, Trash2 } from 'lucide-react'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { CollapsibleSection } from '@/components/ui/collapsible-section'
 import { formatDate } from '@/lib/utils'
 import { customerAccountStatus, type Customer } from '@/types/database'
 import { getSharingContext } from '@/lib/records/sharing'
@@ -180,14 +181,14 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
       {/* Sites */}
       <AddSiteProvider>
-      <section>
-        <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            <MapPin className="h-4 w-4" /> Sites ({sites?.length ?? 0})
-          </h2>
-          <AddSiteTrigger />
-        </div>
-        <AddSitePanel customerId={id} defaultAddress={customer.address} />
+      <CollapsibleSection
+        storageKey="customer:sites"
+        icon={MapPin}
+        title="Sites"
+        count={sites?.length ?? 0}
+        actions={<AddSiteTrigger />}
+        alwaysVisible={<AddSitePanel customerId={id} defaultAddress={customer.address} />}
+      >
         {!sites?.length ? (
           <p className="text-sm text-muted-foreground">
             No sites yet. A site is created automatically when a quote is accepted — or add one by hand
@@ -200,14 +201,11 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             ))}
           </div>
         )}
-      </section>
+      </CollapsibleSection>
       </AddSiteProvider>
 
       {/* Quotes */}
-      <section>
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          <FileText className="h-4 w-4" /> Quotes ({quotes?.length ?? 0})
-        </h2>
+      <CollapsibleSection storageKey="customer:quotes" icon={FileText} title="Quotes" count={quotes?.length ?? 0}>
         {!quotes?.length ? (
           <p className="text-sm text-muted-foreground">No quotes yet.</p>
         ) : (
@@ -233,13 +231,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             ))}
           </div>
         )}
-      </section>
+      </CollapsibleSection>
 
       {/* Jobs */}
-      <section>
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          <Wrench className="h-4 w-4" /> Jobs ({jobs?.length ?? 0})
-        </h2>
+      <CollapsibleSection storageKey="customer:jobs" icon={Wrench} title="Jobs" count={jobs?.length ?? 0}>
         {!jobs?.length ? (
           <p className="text-sm text-muted-foreground">No installation jobs yet.</p>
         ) : (
@@ -259,13 +254,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             ))}
           </div>
         )}
-      </section>
+      </CollapsibleSection>
 
       {/* Activity */}
-      <section>
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          <Clock className="h-4 w-4" /> Activity
-        </h2>
+      <CollapsibleSection storageKey="customer:activity" icon={Clock} title="Activity" defaultOpen={false}>
         <Card>
           <CardContent className="py-4">
             <ol className="flex flex-col gap-3">
@@ -281,7 +273,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             </ol>
           </CardContent>
         </Card>
-      </section>
+      </CollapsibleSection>
     </PageShell>
   )
 }

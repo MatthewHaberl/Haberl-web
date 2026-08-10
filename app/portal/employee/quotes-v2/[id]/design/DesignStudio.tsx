@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+import { useDesign } from './DesignProvider'
 import { DesignRibbon } from './DesignRibbon'
 import { DesignConsole } from './DesignConsole'
 import { DesignOverview } from './DesignOverview'
@@ -26,6 +28,14 @@ export function DesignStudio({
   viewMode: 'canvas' | 'bom'
   setViewMode: (m: 'canvas' | 'bom') => void
 }) {
+  const { activeStep } = useDesign()
+
+  // Energy is demand entry only — the overview has nothing to show, and its
+  // trigger is hidden there, so close the panel if the user steps back to it.
+  useEffect(() => {
+    if (activeStep === 0 && overviewOpen) setOverviewOpen(false)
+  }, [activeStep, overviewOpen, setOverviewOpen])
+
   return (
     <div className="-mx-4 flex h-[82dvh] min-h-[600px] flex-col overflow-hidden border-y border-border bg-background md:-mx-6">
       <DesignRibbon

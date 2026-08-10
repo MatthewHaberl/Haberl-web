@@ -5,6 +5,7 @@ import { Plus, Trash2, Sun, Zap, Copy, ChevronRight } from 'lucide-react'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY, parseInverterSizingSpec } from '@/lib/solar/quote-calculator'
 import { stringVoltageProfile, computeStringLayout, hotCellTempC, type StringVoltageProfile } from '@/lib/solar/compliance'
 import { panelGroupKwp, panelGroupStrings, panelGroupPanels, DIRECTIONS, ROOF_TYPES, DEFAULT_SITE_CONDITIONS, type SiteConditions, type PanelGroup } from '@/lib/solar/system-design'
+import { MOUNTING_ROOF_TYPES, roofTypeFromLabel, type MountingRow } from '@/lib/solar/mounting-bom'
 import { useDesign } from '../DesignProvider'
 import { useCatalog, byCategory } from '../useCatalog'
 import { SectionCard, EmptyHint, LockNote, LOCKED_FIELD, SearchableSelect } from '../section-ui'
@@ -324,6 +325,7 @@ export function PanelsSection() {
                         />
                         <span className="text-[10px] text-muted-foreground">For a string spanning two rows/roofs — adds MC4s.</span>
                       </label>
+                      <MountingRowsEditor group={g} dispatch={dispatch} />
                     </div>
                   </details>
                 </div>
@@ -484,6 +486,110 @@ function StringVoltageTable({ profile, strings = 1 }: { profile: StringVoltagePr
       )}
       {profile.maxDcVoltage == null && (
         <p className="mt-1.5 text-muted-foreground">Select an inverter with a max-DC-voltage spec to check these against its window.</p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Physical rows within one string (W55). A string is electrical; a row is a run
+ * of panels on ONE roof surface. Splitting a 10-panel string into 6 + 4 — and
+ * letting each half pick its own roof type — is what lets the mounting engine
+ * generate the right Lumax hardware instead of guessing one roof for the lot.
+ *
+ * Left alone, the string stays a single implicit row on the group's roof type,
+ * so nobody has to touch this to get a sane mounting BOM.
+ */
+function MountingRowsEditor({
+  group, dispatch,
+}: {
+  group: PanelGroup
+  dispatch: (action: { type: 'updatePanelGroup'; id: string; patch: Partial<PanelGroup> }) => void
+}) {
+  const rows = group.rows ?? []
+  const setRows = (next: MountingRow[]) => dispatch({ type: 'updatePanelGroup', id: group.id, patch: { rows: next } })
+  const assigned = rows.reduce((s, r) => s + (r.panelCount || 0), 0)
+  const unassigned = group.panelCount - assigned
+
+  const addRow = () => setRows([
+    ...rows,
+    {
+      id: `row-${rows.length + 1}-${Math.random().toString(36).slice(2, 7)}`,
+      // Default the new row to whatever is still unplaced, so the common case
+      // (split a 10 into 6 and 4) is two clicks and one number.
+      panelCount: rows.length === 0 ? group.panelCount : Math.max(0, unassigned),
+      roofType: roofTypeFromLabel(group.roofType),
+      orientation: 'portrait',
+    },
+  ])
+
+  return (
+    <div className="flex w-full flex-col gap-1.5 border-t border-border pt-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-medium">
+          Mounting rows
+          <span className="ml-1 font-normal text-muted-foreground">
+            {rows.length === 0 ? '— one row on the roof type above' : `${rows.length} row${rows.length === 1 ? '' : 's'}`}
+          </span>
+        </span>
+        <button type="button" onClick={addRow} className="text-[11px] font-medium text-primary hover:underline">
+          + Add row
+        </button>
+      </div>
+
+      {rows.map((r, i) => (
+        <div key={r.id} className="flex flex-wrap items-center gap-1.5">
+          <input
+            type="number" min={0} step={1} value={r.panelCount || ''} placeholder="0"
+            aria-label={`Row ${i + 1} panel count`}
+            className="h-8 w-16 rounded border border-border bg-background px-1.5 text-xs text-right"
+            onChange={(ev) => setRows(rows.map((x, idx) => (idx === i
+              ? { ...x, panelCount: Math.max(0, Math.round(Number(ev.target.value) || 0)) } : x)))}
+          />
+          <span className="text-[10px] text-muted-foreground">panels on</span>
+          <select
+            value={r.roofType}
+            aria-label={`Row ${i + 1} roof type`}
+            className="h-8 flex-1 min-w-[9rem] rounded border border-border bg-background px-1.5 text-xs"
+            onChange={(ev) => setRows(rows.map((x, idx) => (idx === i
+              ? { ...x, roofType: ev.target.value as MountingRow['roofType'] } : x)))}
+          >
+            {MOUNTING_ROOF_TYPES.map((rt) => (
+              <option key={rt.value} value={rt.value} title={rt.hint}>{rt.label}</option>
+            ))}
+          </select>
+          <select
+            value={r.orientation}
+            aria-label={`Row ${i + 1} orientation`}
+            className="h-8 w-24 rounded border border-border bg-background px-1.5 text-xs"
+            onChange={(ev) => setRows(rows.map((x, idx) => (idx === i
+              ? { ...x, orientation: ev.target.value as MountingRow['orientation'] } : x)))}
+          >
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
+          <button
+            type="button"
+            aria-label={`Remove row ${i + 1}`}
+            onClick={() => setRows(rows.filter((_, idx) => idx !== i))}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+
+      {rows.length > 0 && unassigned !== 0 && (
+        <p className={`text-[10px] ${unassigned < 0 ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'}`}>
+          {unassigned > 0
+            ? `${unassigned} panel${unassigned === 1 ? '' : 's'} not placed in a row yet — they won't get mounting hardware.`
+            : `${-unassigned} more panel${unassigned === -1 ? '' : 's'} in rows than in the string.`}
+        </p>
+      )}
+      {rows.length > 0 && (
+        <p className="text-[10px] text-muted-foreground">
+          Each row generates its own Lumax hardware in the BOM&apos;s Mounting section.
+        </p>
       )}
     </div>
   )

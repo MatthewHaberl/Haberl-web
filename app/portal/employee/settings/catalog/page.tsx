@@ -17,6 +17,7 @@ import {
 } from '@/lib/solar/system-design'
 import { Loader2, Pencil, Plus, Search, X } from 'lucide-react'
 import OffersPanel from './OffersPanel'
+import { ProductImageStrip } from '@/components/catalog/ProductImages'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { fetchAllRows } from '@/lib/supabase/fetch-all'
 
@@ -119,9 +120,16 @@ type FormState = {
   store_price_rands: string
   shop_description: string
   primary_image_url: string
+  /** Extra photos beyond the hero shot (migration 096), one URL per line. */
+  gallery_image_urls: string
   datasheet_url: string
   model_3d_url: string
   specs: CatalogSpecs
+}
+
+/** Textarea (one URL per line) ⇄ text[] column. */
+function parseImageUrls(text: string): string[] {
+  return text.split('\n').map((l) => l.trim()).filter(Boolean)
 }
 
 const EMPTY_FORM: FormState = {
@@ -144,6 +152,7 @@ const EMPTY_FORM: FormState = {
   store_price_rands: '',
   shop_description: '',
   primary_image_url: '',
+  gallery_image_urls: '',
   datasheet_url: '',
   model_3d_url: '',
   specs: {},
@@ -225,6 +234,7 @@ function itemToForm(item: EquipmentCatalogItem): FormState {
     store_price_rands: item.store_price_rands?.toString() ?? '',
     shop_description: item.shop_description ?? '',
     primary_image_url: item.primary_image_url ?? '',
+    gallery_image_urls: (item.gallery_image_urls ?? []).join('\n'),
     datasheet_url: item.datasheet_url ?? '',
     model_3d_url: item.model_3d_url ?? '',
     specs: (item.specs ?? {}) as CatalogSpecs,
@@ -351,6 +361,7 @@ export default function CatalogPage() {
       store_price_rands: coerceNumber(editing.store_price_rands),
       shop_description: editing.shop_description.trim() || null,
       primary_image_url: editing.primary_image_url.trim() || null,
+      gallery_image_urls: parseImageUrls(editing.gallery_image_urls),
       datasheet_url: editing.datasheet_url.trim() || null,
       model_3d_url: editing.model_3d_url.trim() || null,
       supplier: editing.supplier.trim() || null,
@@ -800,15 +811,37 @@ export default function CatalogPage() {
                   />
                 </FormField>
               )}
-              {(editing.show_on_store || editing.primary_image_url.trim() !== '') && (
-                <FormField label="Primary image URL" hint="Shown on the store; reusable on quotes.">
-                  <Input
-                    type="url"
-                    value={editing.primary_image_url}
-                    onChange={(event) => setEditing({ ...editing, primary_image_url: event.target.value })}
-                    placeholder="https://…"
+              {/* Photos are no longer store-only (W53): the quote BOM and the job
+                  material list read them too, so these fields always show. */}
+              <FormField label="Primary image URL" hint="The hero shot — store, quote BOM and job materials.">
+                <Input
+                  type="url"
+                  value={editing.primary_image_url}
+                  onChange={(event) => setEditing({ ...editing, primary_image_url: event.target.value })}
+                  placeholder="https://…"
+                />
+              </FormField>
+              <FormField
+                label="More photos"
+                hint="One URL per line — other angles, terminal layout, mounting detail, nameplate. Customers and technicians see these next to the item."
+              >
+                <Textarea
+                  value={editing.gallery_image_urls}
+                  onChange={(event) => setEditing({ ...editing, gallery_image_urls: event.target.value })}
+                  rows={3}
+                  placeholder={'https://…/side.jpg\nhttps://…/terminals.jpg'}
+                />
+              </FormField>
+              {(editing.primary_image_url.trim() !== '' || editing.gallery_image_urls.trim() !== '') && (
+                <div className="md:col-span-2">
+                  <ProductImageStrip
+                    item={{
+                      primary_image_url: editing.primary_image_url.trim() || null,
+                      gallery_image_urls: parseImageUrls(editing.gallery_image_urls),
+                    }}
+                    alt={editing.description || editing.sku || 'Product'}
                   />
-                </FormField>
+                </div>
               )}
               {(editing.show_on_store || editing.shop_description.trim() !== '') && (
                 <FormField label="Shop description" className="md:col-span-2">

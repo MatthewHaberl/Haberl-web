@@ -40,6 +40,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { data: quote } = await supabase
     .from('quote_requests').select('*').eq('id', id).maybeSingle()
   if (!quote) return new Response('Quote not found', { status: 404 })
+  if (quote.archived_at || quote.deleted_at) {
+    return NextResponse.json(
+      { error: `This quote is ${quote.deleted_at ? 'deleted' : 'archived'} — restore it before regenerating.` },
+      { status: 409 },
+    )
+  }
   if (!['pending', 'generated'].includes(quote.status)) {
     return NextResponse.json(
       { error: `This quote is already ${quote.status} — it can't be regenerated. Create a new option for changes.` },

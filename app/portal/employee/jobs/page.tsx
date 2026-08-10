@@ -8,6 +8,7 @@ import { formatDate } from '@/lib/utils'
 import { PIPELINE_STAGES, STAGE_META, stageIndex } from '@/lib/jobs/stages'
 import type { JobStage, JobPriority } from '@/types/database'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { CollapsibleSection } from '@/components/ui/collapsible-section'
 
 const stageVariant = (stage: JobStage): 'default' | 'warning' | 'success' | 'destructive' => {
   if (stage === 'completed') return 'success'
@@ -157,24 +158,18 @@ export default async function JobsPage() {
       ) : (
         <>
           {active.length > 0 && (
-            <div>
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Active ({active.length})
-              </h2>
+            <CollapsibleSection storageKey="jobs:active" title="Active" count={active.length}>
               <div className="grid sm:grid-cols-2 gap-3">
                 {active.map((job) => <JobCard key={job.id} job={job} />)}
               </div>
-            </div>
+            </CollapsibleSection>
           )}
           {done.length > 0 && (
-            <div>
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Completed ({done.length})
-              </h2>
+            <CollapsibleSection storageKey="jobs:completed" title="Completed" count={done.length} defaultOpen={false}>
               <div className="grid sm:grid-cols-2 gap-3">
                 {done.map((job) => <JobCard key={job.id} job={job} />)}
               </div>
-            </div>
+            </CollapsibleSection>
           )}
         </>
       )}

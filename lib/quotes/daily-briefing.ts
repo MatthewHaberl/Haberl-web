@@ -139,37 +139,52 @@ export async function buildDailyBriefing(
     weekday: 'long', day: 'numeric', month: 'long',
   })
 
-  const [sentRes, draftRes, viewedRes, depositRes, leadRes, contactedLeadRes, poRes] = await Promise.all([
+  // Anything the business has taken off its plate must stop appearing here:
+  // archived or deleted quotes, cancelled jobs and POs, and everything belonging
+  // to an archived customer. A task you can no longer act on is noise, and noise
+  // is how a real task gets missed. Every query below carries that filter — the
+  // dashboard, the Today page, the email and the cron all read this one function.
+  const [sentRes, draftRes, viewedRes, depositRes, leadRes, contactedLeadRes, poRes, archivedCustRes] = await Promise.all([
     supabase
       .from('quote_requests')
-      .select('id, customer_name, quote_number, expiry_date, sent_at, reminder_count')
-      .eq('status', 'sent').not('sent_at', 'is', null).lt('reminder_count', 3),
+      .select('id, customer_id, customer_name, quote_number, expiry_date, sent_at, reminder_count')
+      .eq('status', 'sent').not('sent_at', 'is', null).lt('reminder_count', 3)
+      .is('archived_at', null).is('deleted_at', null),
     supabase
       .from('quote_requests')
-      .select('id, customer_name, quote_number, total_amount, created_at')
-      .eq('status', 'generated').order('created_at', { ascending: true }),
+      .select('id, customer_id, customer_name, quote_number, total_amount, created_at')
+      .eq('status', 'generated').order('created_at', { ascending: true })
+      .is('archived_at', null).is('deleted_at', null),
     supabase
       .from('quote_requests')
-      .select('id, customer_name, quote_number, viewed_at, sent_at')
-      .eq('status', 'sent').not('viewed_at', 'is', null).order('viewed_at', { ascending: true }),
+      .select('id, customer_id, customer_name, quote_number, viewed_at, sent_at')
+      .eq('status', 'sent').not('viewed_at', 'is', null).order('viewed_at', { ascending: true })
+      .is('archived_at', null).is('deleted_at', null),
     supabase
       .from('jobs')
-      .select('id, title, deposit_proof_uploaded_at')
+      // A cancelled job's deposit is never getting confirmed — drop it.
+      .select('id, title, deposit_proof_uploaded_at, site:sites(customer_id)')
       .not('deposit_proof_uploaded_at', 'is', null).is('deposit_confirmed_at', null)
+      .neq('status', 'cancelled')
       .order('deposit_proof_uploaded_at', { ascending: true }),
     supabase
       .from('leads')
-      .select('id, name, phone, suburb, created_at')
+      .select('id, name, phone, suburb, created_at, customer_id')
       .eq('status', 'new').order('created_at', { ascending: true }),
     supabase
       .from('leads')
-      .select('id, name, phone, suburb, created_at, contacted_at')
+      .select('id, name, phone, suburb, created_at, contacted_at, customer_id')
       .eq('status', 'contacted').order('contacted_at', { ascending: true }),
     supabase
       .from('purchase_orders')
-      .select('id, po_number, expected_date, supplier:suppliers(name)')
+      // Cancelled POs are already excluded by status; a PO on a cancelled job is
+      // just as dead, so carry the job status through and drop those too.
+      .select('id, po_number, expected_date, supplier:suppliers(name), job:jobs(status)')
       .in('status', ['sent', 'partial']).not('expected_date', 'is', null)
       .lt('expected_date', today).order('expected_date', { ascending: true }),
+    supabase
+      .from('customers')
+      .select('id').not('archived_at', 'is', null),
   ])
 
   // A failed query returns { data: null, error }. Without checking, `data ?? []`
@@ -186,8 +201,21 @@ export async function buildDailyBriefing(
   checkError('new leads', leadRes)
   checkError('contacted leads', contactedLeadRes)
   checkError('overdue purchase orders', poRes)
+  // If this one fails the set comes back empty, which silently treats every
+  // archived customer as live — the briefing would over-report, not under-report,
+  // but it's still wrong, so flag it the same way.
+  checkError('archived customers', archivedCustRes)
 
-  const sentQuotes = (sentRes.data ?? []) as Array<PlannableQuote & { id: string; customer_name: string; quote_number: string | null }>
+  // Archiving a customer archives their workload with them.
+  const archivedCustomers = new Set(
+    ((archivedCustRes.data ?? []) as Array<{ id: string }>).map((c) => c.id),
+  )
+  /** True when this record belongs to a live customer (or to none at all). */
+  const liveCustomer = (customerId: string | null | undefined): boolean =>
+    !customerId || !archivedCustomers.has(customerId)
+
+  const sentQuotes = ((sentRes.data ?? []) as Array<PlannableQuote & { id: string; customer_id: string | null; customer_name: string; quote_number: string | null }>)
+    .filter((q) => liveCustomer(q.customer_id))
   const customerSends: BriefingQuoteRef[] = []
   const personalFollowups: BriefingQuoteRef[] = []
   for (const q of sentQuotes) {
@@ -205,7 +233,8 @@ export async function buildDailyBriefing(
     else personalFollowups.push(ref)
   }
 
-  const drafts: BriefingItem[] = ((draftRes.data ?? []) as Array<{ id: string; customer_name: string; quote_number: string | null; total_amount: number | null; created_at: string | null }>)
+  const drafts: BriefingItem[] = ((draftRes.data ?? []) as Array<{ id: string; customer_id: string | null; customer_name: string; quote_number: string | null; total_amount: number | null; created_at: string | null }>)
+    .filter((q) => liveCustomer(q.customer_id))
     .map((q) => {
       const ageDays = daysSince(q.created_at, now)
       return {
@@ -218,7 +247,8 @@ export async function buildDailyBriefing(
       }
     })
 
-  const awaitingResponse: BriefingItem[] = ((viewedRes.data ?? []) as Array<{ id: string; customer_name: string; quote_number: string | null; viewed_at: string | null; sent_at: string | null }>)
+  const awaitingResponse: BriefingItem[] = ((viewedRes.data ?? []) as Array<{ id: string; customer_id: string | null; customer_name: string; quote_number: string | null; viewed_at: string | null; sent_at: string | null }>)
+    .filter((q) => liveCustomer(q.customer_id))
     .map((q) => {
       const ageDays = daysSince(q.sent_at ?? q.viewed_at, now)
       return {
@@ -231,7 +261,11 @@ export async function buildDailyBriefing(
       }
     })
 
-  const depositsToConfirm: BriefingItem[] = ((depositRes.data ?? []) as Array<{ id: string; title: string; deposit_proof_uploaded_at: string | null }>)
+  const depositsToConfirm: BriefingItem[] = ((depositRes.data ?? []) as Array<{ id: string; title: string; deposit_proof_uploaded_at: string | null; site: { customer_id: string | null } | { customer_id: string | null }[] | null }>)
+    .filter((j) => {
+      const site = Array.isArray(j.site) ? j.site[0] : j.site
+      return liveCustomer(site?.customer_id)
+    })
     .map((j) => {
       const ageDays = daysSince(j.deposit_proof_uploaded_at, now)
       return {
@@ -244,7 +278,8 @@ export async function buildDailyBriefing(
       }
     })
 
-  const newLeads: BriefingItem[] = ((leadRes.data ?? []) as Array<{ id: string; name: string; phone: string; suburb: string | null; created_at: string | null }>)
+  const newLeads: BriefingItem[] = ((leadRes.data ?? []) as Array<{ id: string; name: string; phone: string; suburb: string | null; created_at: string | null; customer_id: string | null }>)
+    .filter((l) => liveCustomer(l.customer_id))
     .map((l) => {
       const ageDays = daysSince(l.created_at, now)
       return {
@@ -262,7 +297,8 @@ export async function buildDailyBriefing(
   // Leads you've called but not yet turned into a quote. Shown every single day
   // until converted or discarded — no waiting period — so nothing dies after one
   // call (it takes ~8 touches to close). Oldest-contacted first.
-  const followupLeads: BriefingItem[] = ((contactedLeadRes.data ?? []) as Array<{ id: string; name: string; phone: string; suburb: string | null; created_at: string | null; contacted_at: string | null }>)
+  const followupLeads: BriefingItem[] = ((contactedLeadRes.data ?? []) as Array<{ id: string; name: string; phone: string; suburb: string | null; created_at: string | null; contacted_at: string | null; customer_id: string | null }>)
+    .filter((l) => liveCustomer(l.customer_id))
     .map((l) => {
       const ageDays = daysSince(l.contacted_at ?? l.created_at, now)
       return {
@@ -278,7 +314,11 @@ export async function buildDailyBriefing(
       }
     })
 
-  const overduePOs: BriefingItem[] = ((poRes.data ?? []) as Array<{ id: string; po_number: string; expected_date: string | null; supplier: { name: string } | { name: string }[] | null }>)
+  const overduePOs: BriefingItem[] = ((poRes.data ?? []) as Array<{ id: string; po_number: string; expected_date: string | null; supplier: { name: string } | { name: string }[] | null; job: { status: string } | { status: string }[] | null }>)
+    .filter((po) => {
+      const job = Array.isArray(po.job) ? po.job[0] : po.job
+      return job?.status !== 'cancelled'
+    })
     .map((po) => {
       const supplier = Array.isArray(po.supplier) ? po.supplier[0] : po.supplier
       // expected_date is in the past (query filters `< today`), so this is days overdue.

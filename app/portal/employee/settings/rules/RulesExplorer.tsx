@@ -26,6 +26,7 @@ import {
   ArrowLeft, BookOpenCheck, Calculator, Check, ChevronDown, Search, ShieldCheck, X, Zap,
 } from 'lucide-react'
 import { PageShell, PageHeader } from '@/components/layout/page'
+import { CollapsibleSection } from '@/components/ui/collapsible-section'
 
 const ENFORCEMENT_META: Record<RuleEnforcement, { label: string; variant: 'success' | 'default' | 'warning' | 'outline' }> = {
   both:       { label: 'Auto-applied + verified', variant: 'success' },
@@ -133,10 +134,7 @@ export function RulesExplorer({ inverters, panels, batteries }: Props) {
         </Card>
       ) : (
         grouped.map(([groupName, rules]) => (
-          <div key={groupName}>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-              {groupName} ({rules.length})
-            </h2>
+          <CollapsibleSection key={groupName} storageKey={`rules:${groupName}`} title={groupName} count={rules.length}>
             <Card>
               <CardContent className="py-1">
                 {rules.map((rule) => {
@@ -176,7 +174,7 @@ export function RulesExplorer({ inverters, panels, batteries }: Props) {
                 })}
               </CardContent>
             </Card>
-          </div>
+          </CollapsibleSection>
         ))
       )}
     </PageShell>

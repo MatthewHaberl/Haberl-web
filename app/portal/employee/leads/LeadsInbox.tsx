@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { PhoneIncoming, PhoneCall } from 'lucide-react'
 import { LeadCard, type LeadCardData, type StaffMember } from './LeadCard'
+import { CollapsibleSection } from '@/components/ui/collapsible-section'
 
 type Filter = 'all' | 'mine' | 'unassigned' | 'shared'
 
@@ -84,35 +85,33 @@ export function LeadsInbox({
       )}
 
       {newLeads.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <PhoneIncoming className="h-4 w-4 text-accent" />
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              New — call these ({newLeads.length})
-            </h2>
-          </div>
+        <CollapsibleSection
+          storageKey="leads:new"
+          icon={PhoneIncoming}
+          title="New — call these"
+          count={newLeads.length}
+        >
           <div className="flex flex-col gap-2">
             {newLeads.map((c) => (
               <LeadCard key={c.lead.id} data={c} staff={staff} currentUserId={currentUserId} canManage={canManage} />
             ))}
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
       {contacted.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <PhoneCall className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              Contacted — follow up ({contacted.length})
-            </h2>
-          </div>
+        <CollapsibleSection
+          storageKey="leads:contacted"
+          icon={PhoneCall}
+          title="Contacted — follow up"
+          count={contacted.length}
+        >
           <div className="flex flex-col gap-2">
             {contacted.map((c) => (
               <LeadCard key={c.lead.id} data={c} staff={staff} currentUserId={currentUserId} canManage={canManage} />
             ))}
           </div>
-        </div>
+        </CollapsibleSection>
       )}
     </div>
   )

@@ -20,6 +20,15 @@ export interface SupplierBomItem {
   lineSellRands: number
 }
 
+/** One picture of one piece of kit on the customer quote (W53). */
+export interface EquipmentPhoto {
+  /** What it is — "Inverter", "Battery", "Solar panels". */
+  label: string
+  /** What model it is, as the customer should read it. */
+  model: string
+  imageUrl: string
+}
+
 export interface MonthlyGenRow {
   month: string
   solarGenKwh: number
@@ -137,6 +146,9 @@ export interface QuoteData {
 
   // Supplier-facing itemized BOM
   supplierBom?: SupplierBomItem[]
+
+  // Product photography for the customer's "What you're getting" panel (W53).
+  equipmentPhotos?: EquipmentPhoto[]
 
   // SANS 10142-1 / design-rule verification results (internal — admin only)
   complianceChecks?: ComplianceCheck[]
@@ -495,7 +507,42 @@ function renderCustomerSingleHtml(data: QuoteData, tierLabel?: string): string {
     html = html.replace('{{EV_CHARGER_SYSTEM_ROW}}', '')
   }
 
+  html = html.replace('{{EQUIPMENT_PHOTOS_SECTION}}', renderEquipmentPhotosSection(data))
+
   return html
+}
+
+/**
+ * "What you're getting" — a photo of each major piece of kit (W53).
+ * Images come from the catalog's primary_image_url / gallery_image_urls, so a
+ * product with no photo simply doesn't appear; no photos at all → no section.
+ * Rendered as remote <img> URLs: the quote is emailed and printed, and mail
+ * clients handle absolute image URLs fine.
+ */
+function renderEquipmentPhotosSection(data: QuoteData): string {
+  const photos = (data.equipmentPhotos ?? []).filter((p) => p.imageUrl)
+  if (photos.length === 0) return ''
+  const cards = photos.map((p) => `
+        <div class="eq-photo">
+          <img src="${escapeHtml(p.imageUrl)}" alt="${escapeHtml(p.model)}" />
+          <div class="eq-photo-label">${escapeHtml(p.label)}</div>
+          <div class="eq-photo-model">${escapeHtml(p.model)}</div>
+        </div>`).join('')
+  return `
+  <div class="card no-break">
+    <div class="card-header"><h2>What You&rsquo;re Getting</h2></div>
+    <div class="card-body">
+      <style>
+        .eq-photos { display: flex; flex-wrap: wrap; gap: 16px; }
+        .eq-photo { width: 150px; text-align: center; }
+        .eq-photo img { width: 100%; height: 110px; object-fit: contain; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .eq-photo-label { margin-top: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+        .eq-photo-model { font-size: 12px; font-weight: 600; color: #111827; }
+      </style>
+      <div class="eq-photos">${cards}
+      </div>
+    </div>
+  </div>`
 }
 
 function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
@@ -1434,6 +1481,8 @@ const CUSTOMER_TEMPLATE = `<!DOCTYPE html>
       </table>
     </div>
   </div>
+
+  {{EQUIPMENT_PHOTOS_SECTION}}
 
   <div class="section-heading">Total Investment</div>
 

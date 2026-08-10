@@ -65,6 +65,9 @@ export async function GET(req: NextRequest) {
     .eq('status', 'sent')
     .not('sent_at', 'is', null)
     .lt('reminder_count', 3)
+    // Archived or deleted quotes are done with — never nudge the customer again.
+    .is('archived_at', null)
+    .is('deleted_at', null)
   if (error) {
     return NextResponse.json({ error: error.message, briefingSent }, { status: 500 })
   }

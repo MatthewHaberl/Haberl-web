@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { ensureCustomerPortalAccess } from '@/lib/auth/customer-onboarding'
 import { createJobFromQuote } from '@/lib/jobs/create-from-quote'
 import { sendAdminNotice, sendCustomerPortalOnboardingEmail } from '@/lib/email/quotes'
-import { formatCents, isQuoteExpired, parseTierOptions } from '@/lib/quotes/public'
+import { CLOSED_QUOTE_MESSAGE, formatCents, isQuoteExpired, parseTierOptions } from '@/lib/quotes/public'
 import { getBaseUrl, getClientIp, getCompanySettings, getQuoteByToken } from '@/lib/quotes/server'
 import { escapeHtml } from '@/lib/utils'
 
@@ -61,11 +61,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     }
     return NextResponse.json({ ok: true })
   }
+  // Archived or deleted here means we've taken the quote off the table — the
+  // link must not create a job. The page sends them to /q/<token>/renew instead.
+  if (quote.archived_at || quote.deleted_at) {
+    return new Response(CLOSED_QUOTE_MESSAGE, { status: 410 })
+  }
   if (!['generated', 'sent'].includes(quote.status)) {
     return new Response('This quote is no longer open for acceptance', { status: 409 })
   }
   if (isQuoteExpired(quote)) {
-    return new Response('This quote has expired — please contact us for a refreshed version', { status: 410 })
+    return new Response('This quote has expired — please request an updated version', { status: 410 })
   }
 
   let body: { name?: string; tier?: string }

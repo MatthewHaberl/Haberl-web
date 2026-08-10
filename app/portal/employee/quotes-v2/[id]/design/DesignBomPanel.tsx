@@ -6,7 +6,9 @@ import { createClient } from '@/lib/supabase/client'
 import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { consolidateBom, designToBom } from '@/lib/solar/design-bom'
 import { designComplianceChecks } from '@/lib/solar/design-quote'
+import { assessDesignContainment } from '@/lib/solar/containment-fill'
 import { SansRefLink } from '@/components/sans/SansRefLink'
+import { ProductThumb } from '@/components/catalog/ProductImages'
 import { useDesign } from './DesignProvider'
 import { useCatalog } from './useCatalog'
 
@@ -59,6 +61,13 @@ export function DesignBomPanel() {
   const [complianceOpen, setComplianceOpen] = useState(false)
   const blockers = compliance.filter((c) => c.status === 'blocker')
   const warnings = compliance.filter((c) => c.status === 'warning')
+
+  // Wireway fill (SP4) — what's actually inside each conduit/trunking run, so an
+  // over-full pipe shows up here and not on install day. Only named shared runs
+  // get a row; a lone cable in its own conduit is just a size recommendation and
+  // stays in the compliance list.
+  const containment = useMemo(() => assessDesignContainment(design, { gridSupply }), [design, gridSupply])
+  const sharedRuns = containment.filter((a) => a.run.shared)
 
   // Export just the unpriced lines as a CSV to send to a supplier for quoting.
   // Always uses the consolidated lines so each item to quote appears once.
@@ -174,6 +183,37 @@ export function DesignBomPanel() {
               )}
             </div>
           )}
+          {/* Wireway fill — one row per shared conduit/trunking run. */}
+          {sharedRuns.length > 0 && (
+            <div className="mb-3 rounded-md border border-border">
+              <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Conduit &amp; trunking fill</span>
+                <span className="text-[10px] text-muted-foreground">SANS 6.5.6.2.2 / 6.5.6.3</span>
+              </div>
+              <div className="flex flex-col gap-2 px-3 py-2">
+                {sharedRuns.map((a) => {
+                  const pct = a.fillPct
+                  const bar = a.status === 'over' ? 'bg-destructive' : a.status === 'tight' ? 'bg-amber-500' : 'bg-emerald-500'
+                  return (
+                    <div key={a.run.key} className="flex flex-col gap-0.5">
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="font-medium text-foreground truncate">{a.run.label}</span>
+                        <span className={`shrink-0 tabular-nums ${a.status === 'over' ? 'text-destructive font-semibold' : 'text-muted-foreground'}`}>
+                          {a.conductorCount} cond.{pct != null ? ` · ${pct}% full` : a.recommendedConduitMm ? ` · min Ø${a.recommendedConduitMm} mm` : ''}
+                        </span>
+                      </div>
+                      {pct != null && (
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div className={`h-full ${bar}`} style={{ width: `${Math.min(100, pct)}%` }} />
+                        </div>
+                      )}
+                      <p className={`text-[10px] ${a.status === 'over' ? 'text-destructive' : 'text-muted-foreground'}`}>{a.detail}</p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           {loading ? (
             <p className="text-xs text-muted-foreground py-4 text-center">Loading catalog…</p>
           ) : bom.sections.length === 0 ? (
@@ -208,6 +248,7 @@ export function DesignBomPanel() {
                   </div>
                   <table className="w-full table-fixed text-xs">
                     <colgroup>
+                      <col className="w-8" />
                       <col className="w-[4.5rem]" />
                       <col />
                       <col className="w-8" />
@@ -216,6 +257,11 @@ export function DesignBomPanel() {
                     <tbody>
                       {s.lines.map((l, i) => (
                         <tr key={`${l.catalogId}-${i}`} className={l.priced ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'}>
+                          {/* Product photo — click for the full gallery. Cable/labour/
+                              consumable lines have no catalog row, so this stays empty. */}
+                          <td className="py-0.5 pr-1.5 align-top">
+                            <ProductThumb item={catalog.get(l.catalogId)} alt={l.description} size={24} />
+                          </td>
                           <td className="truncate py-0.5 pr-2 align-top font-mono text-[10px]" title={l.sku}>{l.sku}</td>
                           <td className="py-0.5 pr-2 align-top">{l.description}{l.approx && <span className="text-amber-600 dark:text-amber-400" title="estimated quantity"> ~</span>}</td>
                           <td className="py-0.5 pr-1 text-right align-top tabular-nums whitespace-nowrap text-muted-foreground">{l.qty}×</td>

@@ -15,6 +15,8 @@ import { StagePipeline } from './StagePipeline'
 import { MaterialsPanel } from './MaterialsPanel'
 import { DepositPanel } from './DepositPanel'
 import { CreatePoDialog } from './CreatePoDialog'
+import { TestimonialPanel, type TestimonialSummary } from './TestimonialPanel'
+import { getBaseUrl } from '@/lib/quotes/server'
 import { JobLayout3DPanel } from './JobLayout3DPanel'
 import type { CableRouteRow } from '@/lib/solar/job-layout-3d'
 import { PageShell, PageHeader } from '@/components/layout/page'
@@ -28,7 +30,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const [{ data: jobData, error: jobError }, { data: taskData }, { data: materialData }, { data: historyData }, { data: profile }] = await Promise.all([
     supabase.from('jobs').select('*, site:sites(name, address), assignee:user_profiles!jobs_assigned_to_fkey(full_name)').eq('id', id).single(),
-    supabase.from('job_tasks').select('*').eq('job_id', id).order('id'),
+    supabase.from('job_tasks').select('*').eq('job_id', id).order('sort_order').order('id'),
     supabase.from('job_materials').select('*').eq('job_id', id).order('sort_order'),
     supabase.from('job_status_history').select('*, changer:user_profiles!changed_by(full_name)').eq('job_id', id).order('created_at'),
     supabase.from('user_profiles').select('role').eq('id', user.id).single(),
@@ -149,6 +151,29 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
+  // Testimonial (S7). RLS already limits the table to manager/admin, but the
+  // fetch is gated too so a field worker's page does no pointless work.
+  let testimonial: TestimonialSummary | null = null
+  let testimonialVideoUrl: string | null = null
+  if (isManager) {
+    const { data: t } = await supabase
+      .from('job_testimonials')
+      .select('*')
+      .eq('job_id', id)
+      .maybeSingle()
+    testimonial = (t as TestimonialSummary) ?? null
+    if (testimonial?.video_url) {
+      try {
+        const { data: signed } = await createAdminClient().storage
+          .from('testimonials')
+          .createSignedUrl(testimonial.video_url, 60 * 60)
+        testimonialVideoUrl = signed?.signedUrl ?? null
+      } catch {
+        testimonialVideoUrl = null
+      }
+    }
+  }
+
   return (
     <PageShell width="wide">
       <Button variant="ghost" size="sm" asChild className="self-start -ml-2">
@@ -183,6 +208,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       <StagePipeline
         job={{ id: job.id, stage: job.stage, on_hold_reason: job.on_hold_reason }}
         history={history}
+        tasks={tasks}
         canAdvance={canAdvance}
       />
 
@@ -222,7 +248,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         )}
       </div>
 
-      <JobActions initialJob={job} initialTasks={tasks} />
+      <JobActions initialJob={job} initialTasks={tasks} stage={job.stage} />
 
       <JobLayout3DPanel
         quoteRequest={quoteDesign}
@@ -245,6 +271,16 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         materials={materials}
         showPrices={isManager}
       />
+
+      {/* Testimonial step of the journey (S7) — request at follow-up, review here. */}
+      {isManager && (
+        <TestimonialPanel
+          jobId={job.id}
+          testimonial={testimonial}
+          baseUrl={getBaseUrl()}
+          videoSignedUrl={testimonialVideoUrl}
+        />
+      )}
     </PageShell>
   )
 }

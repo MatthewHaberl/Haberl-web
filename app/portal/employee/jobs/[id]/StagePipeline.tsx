@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,18 +9,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { PIPELINE_STAGES, STAGE_META, nextStage, prevStage, stageIndex } from '@/lib/jobs/stages'
-import type { Job, JobStage, JobStatusHistory } from '@/types/database'
+import type { Job, JobStage, JobStatusHistory, JobTask } from '@/types/database'
 import {
-  ArrowLeft, ArrowRight, Check, Eye, EyeOff, Loader2, MessageSquarePlus, PauseCircle, PlayCircle, XCircle,
+  AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Circle, Eye, EyeOff, Loader2,
+  MessageSquarePlus, PauseCircle, PlayCircle, XCircle,
 } from 'lucide-react'
 
 interface Props {
   job: Pick<Job, 'id' | 'stage' | 'on_hold_reason'>
   history: JobStatusHistory[]
+  tasks: JobTask[]
   canAdvance: boolean
 }
 
-export function StagePipeline({ job, history, canAdvance }: Props) {
+export function StagePipeline({ job, history, tasks, canAdvance }: Props) {
   const router = useRouter()
   const confirm = useConfirm()
   const supabase = createClient()
@@ -32,6 +34,10 @@ export function StagePipeline({ job, history, canAdvance }: Props) {
   const [updateNote, setUpdateNote] = useState('')
   const [updateVisible, setUpdateVisible] = useState(true)
   const [postingUpdate, setPostingUpdate] = useState(false)
+  // Advance prompt: which stage we're heading to + which of the current stage's
+  // open tasks the crew says are actually done.
+  const [advanceTo, setAdvanceTo] = useState<JobStage | null>(null)
+  const [ticked, setTicked] = useState<Record<string, boolean>>({})
 
   const stage = job.stage
   const isOnHold = stage === 'on_hold'
@@ -72,6 +78,48 @@ export function StagePipeline({ job, history, canAdvance }: Props) {
     setBusy(false)
     setShowHoldInput(false)
     setHoldReason('')
+  }
+
+  // Escape dismisses the advance prompt, matching the app's confirm dialog.
+  useEffect(() => {
+    if (!advanceTo) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAdvanceTo(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [advanceTo])
+
+  // Tasks still open at the stage we're about to leave behind.
+  const openHere = tasks.filter((t) => t.stage === stage && !t.completed)
+
+  // Moving on with unticked work is the main way the checklist goes stale, so
+  // ask once: tick what's done, leave the rest flagged as outstanding.
+  function requestAdvance(to: JobStage) {
+    if (openHere.length === 0) {
+      setStage(to)
+      return
+    }
+    setTicked(Object.fromEntries(openHere.map((t) => [t.id, true])))
+    setAdvanceTo(to)
+  }
+
+  async function confirmAdvance() {
+    if (!advanceTo) return
+    const done = openHere.filter((t) => ticked[t.id]).map((t) => t.id)
+    setBusy(true)
+    if (done.length > 0) {
+      const { error: taskError } = await supabase
+        .from('job_tasks')
+        .update({ completed: true, completed_at: new Date().toISOString() })
+        .in('id', done)
+      if (taskError) {
+        setError(taskError.message)
+        setBusy(false)
+        return
+      }
+    }
+    const to = advanceTo
+    setAdvanceTo(null)
+    await setStage(to)
   }
 
   async function postUpdate() {
@@ -148,7 +196,7 @@ export function StagePipeline({ job, history, canAdvance }: Props) {
                 </Button>
               )}
               {!busy && !isOnHold && next && (
-                <Button variant="accent" size="sm" onClick={() => setStage(next)}>
+                <Button variant="accent" size="sm" onClick={() => requestAdvance(next)}>
                   Advance to {STAGE_META[next].label} <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               )}
@@ -198,6 +246,73 @@ export function StagePipeline({ job, history, canAdvance }: Props) {
           {error && <p className="text-sm text-destructive mt-2">{error}</p>}
         </CardContent>
       </Card>
+
+      {/* Leaving a stage with tasks still open */}
+      {advanceTo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setAdvanceTo(null)} />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="advance-dialog-title"
+            className="relative w-full max-w-md rounded-2xl border border-border bg-card shadow-2xl p-6"
+          >
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/10">
+                <AlertTriangle className="h-5 w-5 text-warning" />
+              </div>
+              <div className="min-w-0">
+                <h2 id="advance-dialog-title" className="text-base font-semibold text-foreground">
+                  {openHere.length} {openHere.length === 1 ? 'task' : 'tasks'} still open at {STAGE_META[stage].label}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Tick what&apos;s done — anything left unticked stays flagged as outstanding on the checklist.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-1">
+              {openHere.map((task) => {
+                const on = ticked[task.id] ?? false
+                return (
+                  <button
+                    key={task.id}
+                    type="button"
+                    onClick={() => setTicked((prev) => ({ ...prev, [task.id]: !on }))}
+                    className="flex items-start gap-3 text-left p-2 rounded-lg hover:bg-muted transition-colors"
+                  >
+                    {on
+                      ? <CheckCircle2 className="h-5 w-5 text-success shrink-0 mt-0.5" />
+                      : <Circle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />}
+                    <span className={`text-sm ${on ? '' : 'text-muted-foreground'}`}>{task.description}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="mt-6 flex justify-between gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setTicked({})}
+                disabled={busy}
+              >
+                Leave all for later
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setAdvanceTo(null)} disabled={busy}>
+                  Cancel
+                </Button>
+                <Button variant="accent" size="sm" onClick={confirmAdvance} disabled={busy}>
+                  {busy
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <>Advance to {STAGE_META[advanceTo].label} <ArrowRight className="h-3.5 w-3.5" /></>}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Post an update */}
       <Card>
