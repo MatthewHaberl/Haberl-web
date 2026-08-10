@@ -38,7 +38,9 @@ function bundlingFor(brand: string | undefined): Bundling {
 export function MonitoringSection() {
   const { design, dispatch } = useDesign()
   const { items } = useCatalog()
-  const monitoring = design.monitoring ?? []
+  // Memoised so the `?? []` fallback doesn't hand out a fresh array every render and
+  // invalidate the deviceTargets memo below.
+  const monitoring = useMemo(() => design.monitoring ?? [], [design.monitoring])
 
   // The representative inverter and its brand drive the default state.
   const unit = design.inverters[0]

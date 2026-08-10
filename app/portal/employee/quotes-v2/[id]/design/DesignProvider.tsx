@@ -646,6 +646,7 @@ export function DesignProvider({
     if (firstRun.current) { firstRun.current = false; return }
     if (!canSave) return
     if (timer.current) clearTimeout(timer.current)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the badge must flip to "saving" the moment the design changes, not 800ms later when the debounced write fires.
     setSaveState('saving')
     timer.current = setTimeout(async () => {
       const { error } = await supabase

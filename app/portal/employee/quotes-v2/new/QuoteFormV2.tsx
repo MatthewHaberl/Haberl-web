@@ -140,7 +140,9 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
 
   useEffect(() => {
     const q = custQuery.trim()
-    if (q.length < 2) { setCustResults([]); setCustOpen(false); return }
+    // Below the 2-char floor there's nothing to fetch; clearing the previous hits is
+    // done by whoever shortened the query (see the search input's onChange).
+    if (q.length < 2) return
     let active = true
     const t = setTimeout(async () => {
       // Strip PostgREST or() delimiters so a pasted "Smith, John (082…)" can't break the filter.
@@ -404,7 +406,12 @@ export function QuoteFormV2({ brands, prefill, leadId }: Props) {
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={custQuery}
-                    onChange={(e) => setCustQuery(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setCustQuery(v)
+                      // Too short to search → drop the stale hits and close the menu.
+                      if (v.trim().length < 2) { setCustResults([]); setCustOpen(false) }
+                    }}
                     onFocus={() => { if (custResults.length) setCustOpen(true) }}
                     onBlur={() => setTimeout(() => setCustOpen(false), 150)}
                     placeholder="Search existing customers — name, phone or email… (or just type a new one below)"

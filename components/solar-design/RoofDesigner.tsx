@@ -82,8 +82,16 @@ export function RoofDesigner({ address, quoteRequestId, existingPanelCount, exis
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  const solarPanels = buildingInsights?.solarPotential?.solarPanels ?? []
-  const roofSegmentStats = buildingInsights?.solarPotential?.roofSegmentStats ?? []
+  // Memoized so the `?? []` fallback keeps a stable identity across renders —
+  // otherwise every render hands the memos/callbacks below a brand-new array.
+  const solarPanels = useMemo(
+    () => buildingInsights?.solarPotential?.solarPanels ?? [],
+    [buildingInsights],
+  )
+  const roofSegmentStats = useMemo(
+    () => buildingInsights?.solarPotential?.roofSegmentStats ?? [],
+    [buildingInsights],
+  )
 
   const totalEnabledCount = enabledPanels.size + enabledCustomPanels.size
   const totalPanelCount = solarPanels.length + customPanels.length

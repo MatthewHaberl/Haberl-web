@@ -174,8 +174,11 @@ export function PortalSidebar({ role, name, allowedSections = [] }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
-  // Restore the saved collapse preference after mount (client-only).
+  // Restore the saved collapse preference after mount (client-only). localStorage
+  // does not exist during SSR, so this cannot be read during render without
+  // breaking hydration.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot read of localStorage; must run post-hydration
     setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1')
   }, [])
 

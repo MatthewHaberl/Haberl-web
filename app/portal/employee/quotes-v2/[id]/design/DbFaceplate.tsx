@@ -315,6 +315,7 @@ export function DbFaceplate({ combinerId, boardKind = 'ac', onClose }: { combine
     movedRef.current = false
     let live: Preview | null = c.slot ? { row: c.slot.row, index: -1 } : null
     setDrag({ id: c.id, width, kind: c.kind, label: c.label, color: kindColor(c.kind), x: e.clientX, y: e.clientY, ox })
+    // eslint-disable-next-line react-hooks/immutability -- pointerdown handler, never render: suppressing text selection for the drag has to happen here and is undone in onUp.
     document.body.style.userSelect = 'none'
 
     const onMove = (ev: PointerEvent) => {
@@ -784,6 +785,7 @@ export function DbFaceplate({ combinerId, boardKind = 'ac', onClose }: { combine
                   fill={fill}
                   stroke={casingColor(fill)} strokeWidth={1.5}
                   style={{ pointerEvents: 'auto', cursor: 'crosshair' }}
+                  // eslint-disable-next-line react-hooks/refs -- startWire reads wrapRef only inside pointer handlers; this arrow just closes over it, it is never called during render.
                   onPointerDown={(e) => startWire(e, t.ref, t.conductor)}
                 >
                   <title>{dbConductorLabel(t.conductor)} · {t.ref.end}{t.ref.pole === DB_EARTH_POLE ? '' : ` pole ${t.ref.pole + 1}`}</title>

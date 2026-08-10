@@ -6,8 +6,12 @@ import { Sun, Moon } from 'lucide-react'
 export function ThemeToggle() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
+  // Adopt the theme the inline boot script already applied to <html>. This has to
+  // happen after hydration: the server can't know it, and reading it during render
+  // would make the first client render disagree with the server's markup.
   useEffect(() => {
     const current = document.documentElement.getAttribute('data-theme')
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot read of external DOM state; must run post-hydration
     setTheme(current === 'dark' ? 'dark' : 'light')
   }, [])
 

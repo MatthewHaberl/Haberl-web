@@ -77,6 +77,7 @@ export default async function SystemDetailPage({ params }: { params: Promise<{ s
   const faultCodes: string[] = latest?.fault_codes ?? []
 
   const lastPollAge = latest?.recorded_at
+    // eslint-disable-next-line react-hooks/purity -- async Server Component: request-time clock read, no effects here
     ? Math.floor((Date.now() - new Date(latest.recorded_at).getTime()) / 60000)
     : null
 

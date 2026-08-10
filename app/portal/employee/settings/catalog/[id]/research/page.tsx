@@ -190,6 +190,9 @@ export default function ResearchPage({ params }: { params: Promise<{ id: string 
     setLoading(false)
   }, [catalogId, supabase])
 
+  // `load` is a useCallback keyed on [catalogId, supabase], so this refetches only
+  // when the catalog row changes; all of its setState calls are in async callbacks.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- load-into-state on mount
   useEffect(() => { load() }, [load])
 
   async function runResearch() {

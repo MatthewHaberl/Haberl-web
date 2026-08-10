@@ -105,6 +105,7 @@ export function AcCombinerSection() {
       .order('created_at', { ascending: false })
     setSaved((data as SavedAssembly[] | null) ?? [])
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-time fetch: setSaved runs in loadSaved's async continuation, not synchronously in the effect body.
   useEffect(() => { loadSaved() }, [])
 
   function applyTemplate(c: AcCombiner, key: DbTemplateKey) {

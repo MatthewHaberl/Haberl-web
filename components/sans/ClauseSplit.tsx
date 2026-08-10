@@ -20,9 +20,13 @@ export function ClauseSplit({ left, right }: { left: ReactNode; right: ReactNode
   const dragging = useRef(false)
   const [leftPct, setLeftPct] = useState(DEFAULT_PCT)
 
+  // Restore the remembered divider position after mount. localStorage does not
+  // exist during SSR, so this cannot be read during render without breaking
+  // hydration — the first paint intentionally uses DEFAULT_PCT.
   useEffect(() => {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     const n = raw ? parseFloat(raw) : NaN
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot read of localStorage; must run post-hydration
     if (Number.isFinite(n) && n >= MIN_PCT && n <= MAX_PCT) setLeftPct(n)
   }, [])
 

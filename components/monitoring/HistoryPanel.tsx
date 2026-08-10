@@ -35,6 +35,10 @@ export function HistoryPanel({ systemId, brand }: { systemId: string; brand: str
   const [error, setError] = useState('')
   const runningRef = useRef(false)
 
+  // Stop the chunk-by-chunk backfill loop if the panel unmounts mid-run; the loop
+  // below already treats runningRef as its stop flag.
+  useEffect(() => () => { runningRef.current = false }, [])
+
   // Load any existing job on mount.
   useEffect(() => {
     if (!supportsBackfill) return
@@ -146,7 +150,11 @@ export function HistoryPanel({ systemId, brand }: { systemId: string; brand: str
 
 /** Dry-run one day to confirm the brand endpoint parses before a full backfill. */
 function PreviewDay({ systemId }: { systemId: string }) {
+  // Both dates seed an uncontrolled <input type="date"> (defaultValue/max), so they
+  // have to be read during the first render — an effect would land after the input
+  // has already taken its default and would not move it.
   const today = new Date().toISOString().slice(0, 10)
+  // eslint-disable-next-line react-hooks/purity -- intentional: seeds an uncontrolled input's initial value
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
   // Uncontrolled on purpose: a controlled <input type="date"> rejects partial
   // values mid-typing ("enter a valid date"). We read the value on click only.

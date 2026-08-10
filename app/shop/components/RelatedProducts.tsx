@@ -53,6 +53,9 @@ export function RelatedProducts() {
   const cacheKey = cartProductIds.sort().join(',')
 
   useEffect(() => {
+    // Clearing on an empty cart has to stay a setState: `recs` is otherwise owned
+    // by the fetch below, so it can't be derived from the cart during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drops stale recommendations when the cart empties
     if (!cartProductIds.length) { setRecs([]); return }
 
     setLoading(true)

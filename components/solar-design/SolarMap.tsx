@@ -162,6 +162,7 @@ export function SolarMap({
       drawPolylineRef.current = null
       drawMarkersRef.current.forEach(m => m.setMap(null))
       drawMarkersRef.current = []
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mirrors the Maps overlays torn down just above; not derivable during render
       setDrawLengthM(0)
     }
   }, [armedRouteType])
@@ -169,6 +170,10 @@ export function SolarMap({
   // ── Load Google Maps JS API ───────────────────────────────────────────────
 
   useEffect(() => {
+    // Subscribing to an external system (the Maps JS API). The synchronous branch
+    // is just the already-loaded case; `window.google` is unavailable during SSR
+    // and the first client render, so this cannot be derived during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- external script already present; same state the onload callbacks set
     if (window.google?.maps) { setMapsLoaded(true); return }
     const existing = document.querySelector<HTMLScriptElement>('script[data-gmaps]')
     if (existing) { existing.addEventListener('load', () => setMapsLoaded(true), { once: true }); return }

@@ -248,13 +248,19 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
   }, [fullscreen])
 
   useEffect(() => {
+    // Resets the spinner whenever the query window changes; `loading` tracks an
+    // async fetch, so it can't be derived during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- entering the loading state for the fetch started below
     setLoading(true)
+    // Guard against out-of-order responses, same as the summary effect below:
+    // without it a slow reply for an old window lands on top of a newer one.
+    let cancelled = false
     if (showBars) {
       fetch(`/api/monitoring/readings?systemId=${systemId}&dailyTotals=1&days=${windowDays}&end=${anchor}`)
         .then((r) => r.json())
-        .then((d: DailyTotal[]) => setDaily(Array.isArray(d) ? d : []))
-        .finally(() => setLoading(false))
-      return
+        .then((d: DailyTotal[]) => { if (!cancelled) setDaily(Array.isArray(d) ? d : []) })
+        .finally(() => { if (!cancelled) setLoading(false) })
+      return () => { cancelled = true }
     }
     // Line view. 24h "today" keeps the live rolling window; otherwise anchor a
     // single day (24h) or an N-day window ending on `anchor` (7d/30d).
@@ -264,6 +270,7 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
     fetch(`/api/monitoring/readings?systemId=${systemId}&${qs}`)
       .then((r) => r.json())
       .then((readings: Reading[]) => {
+        if (cancelled) return
         setData(
           (Array.isArray(readings) ? readings : []).map((r) => ({
             time: formatTime(r.recorded_at, hours),
@@ -275,7 +282,8 @@ export function EnergyChart({ systemId, hours: initialHours = 24 }: Props) {
           }))
         )
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [systemId, hours, view, anchor, atToday, showBars, windowDays])
 
   // Range-summary roll-up (totals + peaks for the selected window). View-independent:

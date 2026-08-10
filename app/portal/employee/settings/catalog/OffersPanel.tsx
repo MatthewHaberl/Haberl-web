@@ -68,6 +68,9 @@ export default function OffersPanel({
     setLoading(false)
   }, [supabase, catalogId])
 
+  // `load` is a useCallback keyed on [supabase, catalogId], so this refetches only
+  // when the catalog row changes. It opens with a synchronous setLoading(true).
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- load-into-state: setState happens for the spinner and then in async callbacks
   useEffect(() => { load() }, [load])
 
   // Effective offer = preferred supplier's, else cheapest.

@@ -33,11 +33,16 @@ export function AllSettingsPanel({ systemId, brand, brandLabel }: { systemId: st
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   useEffect(() => {
+    // Resets the spinner whenever the system changes; `loading` tracks an async
+    // fetch, so it can't be derived during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- entering the loading state for the fetch started below
     setLoading(true)
+    let cancelled = false
     fetch(`/api/monitoring/systems/${systemId}/settings/history`)
       .then((r) => r.json())
-      .then((d: Snapshot[]) => setHistory(Array.isArray(d) ? d : []))
-      .finally(() => setLoading(false))
+      .then((d: Snapshot[]) => { if (!cancelled) setHistory(Array.isArray(d) ? d : []) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [systemId])
 
   const latest = history.length ? history[history.length - 1] : null

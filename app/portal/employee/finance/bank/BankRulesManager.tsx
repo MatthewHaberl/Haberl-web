@@ -35,6 +35,10 @@ export function BankRulesManager({ customers, categories }: { customers: Custome
     } catch { setError('Could not load rules') } finally { setLoading(false) }
   }
 
+  // Load-into-state on open: the rules come from the network, so there is nothing
+  // to derive during render. Only the synchronous setLoading(true) inside load()
+  // is flagged; the data setState runs in the async continuation.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetches rules when the panel opens
   useEffect(() => { if (open) load() }, [open])
 
   async function addRule() {

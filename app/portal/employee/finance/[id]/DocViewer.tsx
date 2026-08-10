@@ -28,7 +28,10 @@ export function DocViewer({
   const [ready, setReady] = useState(false)
   const [rotation, setRotation] = useState(0)
 
+  // Post-hydration read of external state: localStorage does not exist during SSR,
+  // so these cannot be derived during render without breaking hydration.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restores persisted viewer prefs after mount
     setOpen(localStorage.getItem(STORE_KEY) === '1')
     const saved = parseInt(localStorage.getItem(`${ROTATE_KEY}:${previewUrl}`) ?? '0', 10)
     if ([0, 90, 180, 270].includes(saved)) setRotation(saved)
