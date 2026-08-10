@@ -45,3 +45,6 @@ next-env.d.ts
 
 # local archives (demo clones, scratch zips — not source)
 /archives/
+
+# supplier price-list working data (account pricing — never commit)
+key-import/
