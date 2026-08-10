@@ -26,7 +26,7 @@ const CombineCtx = createContext<Ctx | null>(null)
 export function CombineProvider({ docs, children }: { docs: CombineDoc[]; children: React.ReactNode }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const toggle = (id: string) =>
-    setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+    setSelected((prev) => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s })
   return (
     <CombineCtx.Provider value={{ selected, toggle }}>
       {children}

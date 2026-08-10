@@ -42,7 +42,7 @@ export function CombinePages({
   }, [q, candidates])
 
   function toggle(id: string) {
-    setPicked((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+    setPicked((prev) => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s })
   }
 
   async function combine() {

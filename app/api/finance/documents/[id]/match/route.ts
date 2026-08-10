@@ -83,8 +83,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const txnId = typeof body.txn_id === 'string' ? body.txn_id : ''
   if (!txnId) return new Response('Missing txn_id', { status: 400 })
 
-  // clear any previous link to this document, then set the chosen one
-  await supabase.from('bank_transactions').update({ matched_document_id: null }).eq('matched_document_id', id)
+  // Clear any previous link to this document, then set the chosen one. If the
+  // clear fails silently, the doc ends up matched to TWO transactions — the sync
+  // trigger books the wrong txn to the customer and the statement hides a real
+  // payment — so stop here rather than compounding it.
+  const { error: clearError } = await supabase
+    .from('bank_transactions').update({ matched_document_id: null }).eq('matched_document_id', id)
+  if (clearError) {
+    console.error('[finance/match] clear previous link', clearError)
+    return new Response('Could not update the previous link', { status: 500 })
+  }
   const { error } = await supabase
     .from('bank_transactions').update({ matched_document_id: id }).eq('id', txnId)
   if (error) {

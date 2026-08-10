@@ -3,10 +3,33 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { formatCurrency } from '@/lib/utils'
 
+/** Minimal shape of the recharts tooltip payload this chart reads. */
+interface TooltipEntry {
+  color?: string
+  name?: string
+  value: number
+  payload?: { year: number }
+}
+
 interface SavingsAccumulationProps {
   annualSavingR: number
   tariffEscalationPctPerYear?: number
   years?: number
+}
+
+/** Hoisted to module scope so recharts does not remount the tooltip subtree on every parent render. */
+function CustomTooltip({ active, payload }: { active?: boolean; payload?: TooltipEntry[] }) {
+  if (!active || !payload) return null
+  return (
+    <div className="bg-white p-3 rounded shadow-lg border border-gray-200">
+      <p className="font-semibold text-sm">Year {payload[0]?.payload?.year}</p>
+      {payload.map((entry, idx) => (
+        <p key={idx} style={{ color: entry.color }} className="text-sm">
+          {entry.name}: {formatCurrency(entry.value)}
+        </p>
+      ))}
+    </div>
+  )
 }
 
 export function SavingsAccumulation({
@@ -35,20 +58,6 @@ export function SavingsAccumulation({
       escalated: Math.round(escalatedCumulative)
     }
   })
-
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (!active || !payload) return null
-    return (
-      <div className="bg-white p-3 rounded shadow-lg border border-gray-200">
-        <p className="font-semibold text-sm">Year {payload[0]?.payload?.year}</p>
-        {payload.map((entry: any, idx: number) => (
-          <p key={idx} style={{ color: entry.color }} className="text-sm">
-            {entry.name}: {formatCurrency(entry.value)}
-          </p>
-        ))}
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-4">

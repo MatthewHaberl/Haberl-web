@@ -103,6 +103,9 @@ export function EventDialog({
     const [kind, id] = link.split(':')
     const target = linkTargets.find((t) => t.kind === kind && t.id === id)
     if (!target) return
+    // Prefills only blank fields (`prev || ...`) and must not clobber later edits,
+    // so these are seeded state, not values derivable from `link` during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-way prefill of empty fields when the user picks a link target
     setContactName((prev) => prev || target.name)
     setContactPhone((prev) => prev || target.phone || '')
     setContactEmail((prev) => prev || target.email || '')
@@ -114,6 +117,9 @@ export function EventDialog({
   useEffect(() => {
     if (isEdit || title) return
     const who = contactName ? ` — ${contactName}` : ''
+    // Only suggests a title while the field is still empty; once the user types,
+    // `title` is theirs, so this can't be derived during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-way suggestion into an untouched title field
     setTitle(`${KIND_META[type].label}${who}`)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, contactName])

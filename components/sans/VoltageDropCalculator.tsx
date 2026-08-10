@@ -37,9 +37,14 @@ export function VoltageDropCalculator() {
   }
 
   const result = useMemo(() => {
+    // Same lookup as `cable`/`arrangement` above, repeated here so every dep is
+    // a primitive state value; the compiler can't prove the imported table is
+    // frozen, so a dep derived from it blocks memoization.
+    const c = VD_CABLE_TYPES.find((x) => x.id === cableTypeId) ?? VD_CABLE_TYPES[0]
+    const arr = c.arrangements.find((a) => a.id === arrangementId) ?? c.arrangements[0]
     const inputs = {
       cableTypeId,
-      arrangementId: arrangement.id,
+      arrangementId: arr.id,
       sizeMm2: parseFloat(size),
       current: parseFloat(current),
       lengthM: parseFloat(length),
@@ -47,9 +52,12 @@ export function VoltageDropCalculator() {
       nominalVoltage: parseFloat(voltage),
       limitPercent: parseFloat(limit) || 5,
     }
-    if (!inputs.sizeMm2 || !inputs.current || !inputs.lengthM || !inputs.nominalVoltage) return null
-    return voltageDrop(inputs)
-  }, [cableTypeId, arrangement.id, size, current, length, pf, voltage, limit])
+    // Single return (no early exit) — an early `return` inside useMemo makes the
+    // compiler drop the memoization it can otherwise preserve.
+    return (!inputs.sizeMm2 || !inputs.current || !inputs.lengthM || !inputs.nominalVoltage)
+      ? null
+      : voltageDrop(inputs)
+  }, [cableTypeId, arrangementId, size, current, length, pf, voltage, limit])
 
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_1fr]">

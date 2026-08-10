@@ -28,12 +28,6 @@ export interface BankRow {
 
 interface Customer { id: string; full_name: string }
 
-const TXN_TYPE_LABEL: Record<string, string> = {
-  unallocated: 'Unallocated', customer_payment: 'Customer payment',
-  supplier_payment: 'Supplier payment', company_expense: 'Company expense',
-  transfer: 'Transfer', other: 'Other',
-}
-
 function shortAccount(label: string | null): string {
   if (!label) return '—'
   return label.replace(/^FNB\s+/, '').replace(/\s*\(.*\)$/, '')
@@ -66,7 +60,7 @@ export function BankTxnTable({
 
   const allOnPage = rows.length > 0 && rows.every((r) => selected.has(r.id))
   function toggle(id: string) {
-    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+    setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
   function toggleAll() {
     setSelected(allOnPage ? new Set() : new Set(rows.map((r) => r.id)))

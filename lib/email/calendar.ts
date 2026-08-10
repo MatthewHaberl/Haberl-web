@@ -1,5 +1,6 @@
 import { sendEmail, emailLayout, type SendResult } from './send'
 import { kindLabel } from '@/lib/calendar/events'
+import { escapeHtml } from '@/lib/utils'
 import type { CalendarEvent } from '@/types/database'
 
 /**
@@ -23,16 +24,16 @@ export async function sendEventConfirmation(
     `<tr><td style="padding:4px 0;color:#6b7280;">What</td><td style="padding:4px 0;">${kind}</td></tr>`,
   ]
   if (event.location) {
-    rows.push(`<tr><td style="padding:4px 0;color:#6b7280;">Where</td><td style="padding:4px 0;">${event.location}</td></tr>`)
+    rows.push(`<tr><td style="padding:4px 0;color:#6b7280;">Where</td><td style="padding:4px 0;">${escapeHtml(event.location)}</td></tr>`)
   }
 
   const body = `
-    <p style="margin:0 0 16px;">${greeting}</p>
+    <p style="margin:0 0 16px;">${escapeHtml(greeting)}</p>
     <p style="margin:0 0 16px;">This confirms your upcoming appointment with Haberl:</p>
     <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:14px;margin:0 0 16px;">
       ${rows.join('')}
     </table>
-    ${event.notes ? `<p style="margin:0 0 16px;color:#374151;">${event.notes}</p>` : ''}
+    ${event.notes ? `<p style="margin:0 0 16px;color:#374151;">${escapeHtml(event.notes)}</p>` : ''}
     <p style="margin:0;">If you need to reschedule, just reply to this email or give us a call.</p>
   `
 

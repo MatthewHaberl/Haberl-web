@@ -12,6 +12,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { emailButton, emailLayout, sendEmail } from '@/lib/email/send'
+import { escapeHtml } from '@/lib/utils'
 
 // ── Follow-up planner (shared with /api/cron/quote-followups) ──────────────────
 
@@ -102,6 +103,14 @@ export interface DailyBriefing {
   overduePOs: BriefingItem[]
   totalAuto: number
   totalAttention: number
+  /**
+   * Data sources that failed to load on this run. When non-empty the counts above
+   * are PARTIAL — a query error must never be silently rendered as "all clear",
+   * or the operator stops seeing real deposits / leads / expiring quotes with no
+   * signal that anything broke.
+   */
+  errors: string[]
+  incomplete: boolean
 }
 
 function rands(cents: number | null | undefined): string {
@@ -162,6 +171,21 @@ export async function buildDailyBriefing(
       .in('status', ['sent', 'partial']).not('expected_date', 'is', null)
       .lt('expected_date', today).order('expected_date', { ascending: true }),
   ])
+
+  // A failed query returns { data: null, error }. Without checking, `data ?? []`
+  // turns every failure into an empty section and the briefing cheerfully reports
+  // "all clear". Collect the failures so the email can flag itself as incomplete.
+  const errors: string[] = []
+  const checkError = (label: string, res: { error: { message?: string } | null }) => {
+    if (res.error) errors.push(`${label}: ${res.error.message ?? 'query failed'}`)
+  }
+  checkError('quotes to follow up', sentRes)
+  checkError('draft quotes', draftRes)
+  checkError('viewed quotes', viewedRes)
+  checkError('deposits to confirm', depositRes)
+  checkError('new leads', leadRes)
+  checkError('contacted leads', contactedLeadRes)
+  checkError('overdue purchase orders', poRes)
 
   const sentQuotes = (sentRes.data ?? []) as Array<PlannableQuote & { id: string; customer_name: string; quote_number: string | null }>
   const customerSends: BriefingQuoteRef[] = []
@@ -285,6 +309,8 @@ export async function buildDailyBriefing(
     overduePOs,
     totalAuto: customerSends.length,
     totalAttention,
+    errors,
+    incomplete: errors.length > 0,
   }
 }
 
@@ -298,7 +324,7 @@ function emailList(
   if (!items.length) return ''
   const rows = items.map((i) =>
     `<li style="margin:5px 0;font-size:14px;line-height:1.5;">
-       <a href="${baseUrl}${i.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${i.label}</a>${i.sub ? ` <span style="color:#6b7280;font-weight:normal;">— ${i.sub}</span>` : ''}
+       <a href="${baseUrl}${i.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${escapeHtml(i.label)}</a>${i.sub ? ` <span style="color:#6b7280;font-weight:normal;">— ${escapeHtml(i.sub)}</span>` : ''}
      </li>`).join('')
   return `<p style="margin:16px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;">${title}</p>
     <ul style="margin:0;padding-left:18px;">${rows}</ul>`
@@ -310,10 +336,10 @@ function emailLeadsList(title: string, items: BriefingItem[], baseUrl: string): 
   const rows = items.map((i) => {
     const tel = i.phone ? i.phone.replace(/[^\d+]/g, '') : ''
     const call = i.phone
-      ? ` — <a href="tel:${tel}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">📞 ${i.phone}</a>`
+      ? ` — <a href="tel:${tel}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">📞 ${escapeHtml(i.phone)}</a>`
       : ''
     return `<li style="margin:5px 0;font-size:14px;line-height:1.5;">
-       <a href="${baseUrl}${i.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${i.label}</a>${i.sub ? ` <span style="color:#6b7280;font-weight:normal;">(${i.sub})</span>` : ''}${call}
+       <a href="${baseUrl}${i.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${escapeHtml(i.label)}</a>${i.sub ? ` <span style="color:#6b7280;font-weight:normal;">(${escapeHtml(i.sub)})</span>` : ''}${call}
      </li>`
   }).join('')
   return `<p style="margin:16px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;">${title}</p>
@@ -323,7 +349,7 @@ function emailLeadsList(title: string, items: BriefingItem[], baseUrl: string): 
 export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
   const autoBlock = b.customerSends.length
     ? `<ul style="margin:0;padding-left:18px;">${b.customerSends.map((q) =>
-        `<li style="margin:5px 0;font-size:14px;line-height:1.5;">${q.customerName}${q.quoteNumber ? ` <span style="color:#6b7280;">(${q.quoteNumber})</span>` : ''} — ${q.detail}</li>`).join('')}</ul>`
+        `<li style="margin:5px 0;font-size:14px;line-height:1.5;">${escapeHtml(q.customerName)}${q.quoteNumber ? ` <span style="color:#6b7280;">(${escapeHtml(q.quoteNumber)})</span>` : ''} — ${escapeHtml(q.detail)}</li>`).join('')}</ul>`
     : `<p style="font-size:14px;color:#6b7280;margin:4px 0;">Nothing emails customers automatically today.</p>`
 
   const attention = [
@@ -331,7 +357,7 @@ export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
     b.personalFollowups.length
       ? `<p style="margin:16px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;">📞 Personal follow-up (call them)</p>
          <ul style="margin:0;padding-left:18px;">${b.personalFollowups.map((q) =>
-           `<li style="margin:5px 0;font-size:14px;line-height:1.5;"><a href="${baseUrl}${q.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${q.customerName}${q.quoteNumber ? ` (${q.quoteNumber})` : ''}</a> <span style="color:#6b7280;">— ${q.detail}</span></li>`).join('')}</ul>`
+           `<li style="margin:5px 0;font-size:14px;line-height:1.5;"><a href="${baseUrl}${q.href}" style="color:#1e3a5f;text-decoration:none;font-weight:bold;">${escapeHtml(q.customerName)}${q.quoteNumber ? ` (${escapeHtml(q.quoteNumber)})` : ''}</a> <span style="color:#6b7280;">— ${escapeHtml(q.detail)}</span></li>`).join('')}</ul>`
       : '',
     emailList('👀 Viewed — waiting on their reply', b.awaitingResponse, baseUrl),
     emailList('💰 Deposits to confirm', b.depositsToConfirm, baseUrl),
@@ -340,15 +366,28 @@ export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
     emailList('📦 Overdue purchase orders', b.overduePOs, baseUrl),
   ].join('')
 
+  const incompleteBanner = b.incomplete
+    ? `<div style="margin:12px 0;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:13px;line-height:1.5;">
+         ⚠️ <strong>This briefing is incomplete.</strong> ${b.errors.length} data source${b.errors.length === 1 ? '' : 's'} failed to load, so the counts below may be missing items — don't treat a quiet inbox as "all clear" today.
+         <span style="color:#6b7280;">(${b.errors.map((e) => e.split(':')[0]).join(', ')})</span>
+       </div>`
+    : ''
+
+  // Only claim "all clear" when nothing needs attention AND every source loaded.
+  const allClear = !b.totalAttention && !b.incomplete
+
   const body = `
     <p style="font-size:15px;line-height:1.6;">Good morning. Here's your day at a glance for <strong>${b.dateLabel}</strong>.</p>
+    ${incompleteBanner}
 
     <h2 style="font-size:16px;color:#1e3a5f;margin:22px 0 2px;">📤 Going out automatically today (${b.totalAuto})</h2>
     <p style="font-size:13px;color:#6b7280;margin:0 0 8px;">These send on their own — no action needed from you.</p>
     ${autoBlock}
 
     <h2 style="font-size:16px;color:#1e3a5f;margin:24px 0 2px;">✅ Needs you today (${b.totalAttention})</h2>
-    ${b.totalAttention ? attention : `<p style="font-size:14px;color:#16a34a;margin:6px 0;">All clear — nothing needs you right now.</p>`}
+    ${b.totalAttention ? attention : allClear
+      ? `<p style="font-size:14px;color:#16a34a;margin:6px 0;">All clear — nothing needs you right now.</p>`
+      : `<p style="font-size:14px;color:#991b1b;margin:6px 0;">Nothing loaded — but a data source failed, so this isn't confirmed. Please open the full briefing.</p>`}
 
     ${emailButton(`${baseUrl}/portal/employee/briefing`, 'Open full briefing')}
   `
@@ -357,6 +396,11 @@ export function renderBriefingHtml(b: DailyBriefing, baseUrl: string): string {
 
 export function renderBriefingText(b: DailyBriefing, baseUrl: string): string {
   const lines: string[] = [`Haberl daily briefing — ${b.dateLabel}`, '']
+  if (b.incomplete) {
+    lines.push(`⚠️ INCOMPLETE — ${b.errors.length} data source(s) failed to load; counts below may be partial:`)
+    for (const e of b.errors) lines.push(`  - ${e}`)
+    lines.push('')
+  }
   lines.push(`GOING OUT AUTOMATICALLY (${b.totalAuto}):`)
   if (b.customerSends.length) {
     for (const q of b.customerSends) lines.push(`  - ${q.customerName}${q.quoteNumber ? ` (${q.quoteNumber})` : ''} — ${q.detail}`)
@@ -376,7 +420,7 @@ export function renderBriefingText(b: DailyBriefing, baseUrl: string): string {
     lines.push(`  - [follow up] ${l.label}${l.sub ? ` (${l.sub})` : ''}${l.phone ? ` — call ${l.phone}` : ''}`)
   }
   push('PO overdue', b.overduePOs)
-  if (!b.totalAttention) lines.push('  - All clear')
+  if (!b.totalAttention) lines.push(b.incomplete ? '  - Nothing loaded (a source failed — not confirmed)' : '  - All clear')
   lines.push('', `Full briefing: ${baseUrl}/portal/employee/briefing`)
   return lines.join('\n')
 }
@@ -391,12 +435,35 @@ export function parseBriefingRecipients(
   briefingEmails: string | null | undefined,
   contactEmail: string | null | undefined,
 ): string[] {
-  const list = (briefingEmails ?? '')
+  // A bare `includes('@')` used to be the only check, which let two bad values
+  // through to Resend — and Resend rejects the whole send, so ONE malformed entry
+  // silently killed the morning briefing:
+  //   "Matthew <matthew@haberl.co.za>" split on the space and kept the angle
+  //   brackets, and the contact_email fallback was never validated at all.
+  const looksLikeEmail = (s: string) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(s)
+
+  // Unwrap the "Name <addr>" display form before splitting, so the address survives.
+  const unwrapped = (briefingEmails ?? '').replace(/^[^<]*<([^>]+)>/gm, '$1')
+
+  const candidates = unwrapped
     .split(/[,;\s]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.includes('@'))
-  if (list.length) return Array.from(new Set(list))
-  return contactEmail ? [contactEmail] : []
+    .map((s) => s.trim().replace(/^<|>$/g, ''))
+    .filter(looksLikeEmail)
+
+  // De-duplicate case-insensitively — the same mailbox typed two ways is still one
+  // mailbox — while keeping the first spelling and its position.
+  const seen = new Set<string>()
+  const list: string[] = []
+  for (const address of candidates) {
+    const key = address.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    list.push(address)
+  }
+  if (list.length) return list
+
+  const fallback = (contactEmail ?? '').trim().replace(/^[^<]*<([^>]+)>$/, '$1')
+  return looksLikeEmail(fallback) ? [fallback] : []
 }
 
 /** Build + email the briefing in one call (used by the daily cron). */
@@ -410,7 +477,7 @@ export async function emailDailyBriefing(opts: {
   const briefing = await buildDailyBriefing(opts.supabase, now)
   const result = await sendEmail({
     to: opts.to,
-    subject: `Haberl daily briefing — ${briefing.totalAttention} need you, ${briefing.totalAuto} auto-sending`,
+    subject: `${briefing.incomplete ? '⚠️ ' : ''}Haberl daily briefing — ${briefing.totalAttention} need you, ${briefing.totalAuto} auto-sending${briefing.incomplete ? ' (incomplete)' : ''}`,
     html: renderBriefingHtml(briefing, opts.baseUrl),
     text: renderBriefingText(briefing, opts.baseUrl),
   })

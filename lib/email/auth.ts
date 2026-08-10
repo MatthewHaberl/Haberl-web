@@ -1,4 +1,5 @@
 import { emailButton, emailLayout, sendEmail, type SendResult } from './send'
+import { escapeHtml } from '@/lib/utils'
 
 /**
  * Password-reset email. Sent via Resend (our reliable transactional path),
@@ -18,7 +19,7 @@ export async function sendPasswordResetEmail({
   const greeting = name?.trim() ? `Hi ${name.trim()},` : 'Hi,'
   const html = emailLayout(
     'Reset your password',
-    `<p style="font-size:15px;line-height:1.6;">${greeting}</p>
+    `<p style="font-size:15px;line-height:1.6;">${escapeHtml(greeting)}</p>
      <p style="font-size:15px;line-height:1.6;">We received a request to reset the password for your Haberl portal account. Click below to choose a new one:</p>
      ${emailButton(actionUrl, 'Choose a new password')}
      <p style="font-size:13px;color:#6b7280;">This link expires shortly and can only be used once. If you didn't request this, you can safely ignore this email — your password won't change.</p>`,

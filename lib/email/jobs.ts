@@ -1,4 +1,5 @@
 import { emailButton, emailLayout, sendEmail, type SendResult } from './send'
+import { escapeHtml } from '@/lib/utils'
 
 /**
  * Customer-facing emails fired when a job moves into a notable stage.
@@ -52,6 +53,7 @@ export async function sendJobStageEmail(
   if (!job.customer_email) return { sent: false, error: 'No customer email on this job' }
 
   const name = job.customer_name || 'there'
+  const safeName = escapeHtml(name) // HTML bodies only; plain-text keeps `name`
   const ref = job.quote_number ? ` (${job.quote_number})` : ''
   const refSubject = job.quote_number ? ` — ${job.quote_number}` : ''
 
@@ -65,7 +67,7 @@ export async function sendJobStageEmail(
     const whenText = job.scheduled_date ? ` for ${formatDate(job.scheduled_date)}` : ''
     title = 'Your installation is booked'
     subject = `Your solar installation is booked${refSubject}`
-    bodyHtml = `<p style="font-size:15px;line-height:1.6;">Hi ${name},</p>
+    bodyHtml = `<p style="font-size:15px;line-height:1.6;">Hi ${safeName},</p>
       <p style="font-size:15px;line-height:1.6;">Good news — your solar installation${ref} is booked${whenHtml}. Our team will arrive on the day to fit and commission your system.</p>
       <p style="font-size:15px;line-height:1.6;">We'll be in touch as the date approaches. You can follow every step in your portal:</p>
       ${portalButton(baseUrl)}`
@@ -73,7 +75,7 @@ export async function sendJobStageEmail(
   } else if (stage === 'installation') {
     title = 'Installation day'
     subject = `We're installing your solar system today${refSubject}`
-    bodyHtml = `<p style="font-size:15px;line-height:1.6;">Hi ${name},</p>
+    bodyHtml = `<p style="font-size:15px;line-height:1.6;">Hi ${safeName},</p>
       <p style="font-size:15px;line-height:1.6;">Our team is installing your solar system today. We'll commission and test everything before we leave, and let you know the moment it's up and running.</p>
       <p style="font-size:15px;line-height:1.6;">You can follow progress here:</p>
       ${portalButton(baseUrl)}`
@@ -82,7 +84,7 @@ export async function sendJobStageEmail(
     // handover
     title = 'Your solar system is ready'
     subject = `Your solar system is handed over${refSubject}`
-    bodyHtml = `<p style="font-size:15px;line-height:1.6;">Hi ${name},</p>
+    bodyHtml = `<p style="font-size:15px;line-height:1.6;">Hi ${safeName},</p>
       <p style="font-size:15px;line-height:1.6;">Your installation is complete and your system is now yours to enjoy. Your handover pack — including your compliance documents and equipment details — is available in your portal.</p>
       ${portalButton(baseUrl)}
       <p style="font-size:13px;color:#6b7280;">Thank you for choosing Haberl. If you have any questions about your new system, just reply to this email or call us on +27 61 519 3016.</p>`

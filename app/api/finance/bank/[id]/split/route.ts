@@ -84,7 +84,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   )
   if (insErr) { console.error('[bank/split insert]', insErr); return new Response('Could not save', { status: 500 }) }
 
-  await supabase.from('bank_transactions').update({ allocated_customer_id: null }).eq('id', id)
+  // Clear the whole-txn customer tag so it can't double-count against the split
+  // parts. If this fails silently the txn still shows under the OLD customer in
+  // the bank filter / report / timeline, so fail the request rather than lie.
+  const { error: clearErr } = await supabase
+    .from('bank_transactions').update({ allocated_customer_id: null }).eq('id', id)
+  if (clearErr) {
+    console.error('[bank/split clear whole-txn]', clearErr)
+    return new Response('Splits saved, but the whole-transaction tag could not be cleared — reload and check', { status: 500 })
+  }
 
   return NextResponse.json({ ok: true, parts: parts.length })
 }

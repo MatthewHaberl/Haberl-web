@@ -32,9 +32,14 @@ export function CableCapacityCalculator() {
 
   const result = useMemo(() => {
     const n = Math.max(1, parseInt(circuits) || 1)
+    // Same lookup as `cable`/`arrangement` above, repeated here so every dep is
+    // a primitive state value; the compiler can't prove the imported table is
+    // frozen, so a dep derived from it blocks memoization.
+    const c = CC_CABLE_TYPES.find((x) => x.id === cableTypeId) ?? CC_CABLE_TYPES[0]
+    const arr = c.arrangements.find((a) => a.id === arrangementId) ?? c.arrangements[0]
     const inputs = {
       cableTypeId,
-      arrangementId: arrangement.id,
+      arrangementId: arr.id,
       sizeMm2: parseFloat(size),
       ambientC: parseFloat(ambient) || 30,
       groupingScenarioId: n > 1 && scenarioId ? scenarioId : null,
@@ -42,9 +47,10 @@ export function CableCapacityCalculator() {
       designCurrent: parseFloat(designCurrent) || 0,
       breakerRating: parseFloat(breaker) || 0,
     }
-    if (!inputs.sizeMm2) return null
-    return cableCapacity(inputs)
-  }, [cableTypeId, arrangement.id, size, ambient, scenarioId, circuits, designCurrent, breaker])
+    // Single return (no early exit) — an early `return` inside useMemo makes the
+    // compiler drop the memoization it can otherwise preserve.
+    return !inputs.sizeMm2 ? null : cableCapacity(inputs)
+  }, [cableTypeId, arrangementId, size, ambient, scenarioId, circuits, designCurrent, breaker])
 
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_1fr]">

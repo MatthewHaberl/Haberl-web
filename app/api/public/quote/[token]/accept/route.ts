@@ -4,6 +4,7 @@ import { createJobFromQuote } from '@/lib/jobs/create-from-quote'
 import { sendAdminNotice, sendCustomerPortalOnboardingEmail } from '@/lib/email/quotes'
 import { formatCents, isQuoteExpired, parseTierOptions } from '@/lib/quotes/public'
 import { getBaseUrl, getClientIp, getCompanySettings, getQuoteByToken } from '@/lib/quotes/server'
+import { escapeHtml } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -165,8 +166,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       settings?.contact_email ?? null,
       `Quote accepted — ${quote.quote_number ?? quote.customer_name}`,
       [
-        `<strong>${quote.customer_name}</strong> accepted quote <strong>${quote.quote_number ?? ''}</strong>${chosen ? ` (${chosen.label} option)` : ''}.`,
-        `Signed: ${name}`,
+        `<strong>${escapeHtml(quote.customer_name)}</strong> accepted quote <strong>${escapeHtml(quote.quote_number ?? '')}</strong>${chosen ? ` (${escapeHtml(chosen.label)} option)` : ''}.`,
+        `Signed: ${escapeHtml(name)}`,
         ...(onboardingWarning ? [`Portal onboarding: ${onboardingWarning}`] : []),
         ...jobWarnings.map((warning) => `Job warning: ${warning}`),
         `Total: ${formatCents((update.total_amount as number) ?? quote.total_amount)} · Deposit: ${formatCents((update.deposit_amount as number) ?? quote.deposit_amount)}`,

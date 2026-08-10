@@ -3,10 +3,16 @@ import { createClient } from '@/lib/supabase/server'
 export const runtime = 'nodejs'
 
 export async function POST(req: Request) {
-  // Auth — any logged-in employee can call this (not admin-only)
+  // Staff-only: this burns paid Google Solar + Geocoding quota, so a logged-in
+  // customer must not be able to call it. (Mirrors the solar-coverage guard.)
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new Response('Unauthorized', { status: 401 })
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role').eq('id', user.id).single()
+  if (!profile || profile.role === 'customer') {
+    return new Response('Forbidden', { status: 403 })
+  }
 
   const body = await req.json() as { address?: string }
   if (!body.address?.trim()) {

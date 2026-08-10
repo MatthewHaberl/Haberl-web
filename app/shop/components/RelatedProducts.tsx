@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ShoppingCart, Zap, Battery, Sun, Package, AlertCircle } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Zap, Battery, Sun, Package, AlertCircle } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { useCart } from '@/lib/store/cart-context'
 import type { CartItem } from '@/types/database'
@@ -54,6 +53,9 @@ export function RelatedProducts() {
   const cacheKey = cartProductIds.sort().join(',')
 
   useEffect(() => {
+    // Clearing on an empty cart has to stay a setState: `recs` is otherwise owned
+    // by the fetch below, so it can't be derived from the cart during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drops stale recommendations when the cart empties
     if (!cartProductIds.length) { setRecs([]); return }
 
     setLoading(true)
@@ -98,7 +100,11 @@ export function RelatedProducts() {
           return (
             <li key={rec.id} className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-2">
               <div className="h-9 w-9 rounded bg-muted flex items-center justify-center shrink-0">
+                {/* Product image URLs are arbitrary manufacturer/CDN hosts entered by staff;
+                    next/image throws for any host not in next.config remotePatterns, so a plain
+                    <img> is used deliberately to keep unknown hosts rendering. */}
                 {p.images?.[0]
+                  // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={p.images[0]} alt={p.name} className="h-full w-full object-contain p-0.5 rounded" />
                   : categoryIcon[cat] ?? categoryIcon.other}
               </div>

@@ -24,9 +24,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([])
   const [isOpen, setIsOpen] = useState(false)
 
+  // Post-hydration read of external state: localStorage does not exist during SSR,
+  // so the cart cannot be seeded during render without a hydration mismatch.
   useEffect(() => {
     try {
       const stored = localStorage.getItem(CART_KEY)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restores the saved cart after mount
       if (stored) setItems(JSON.parse(stored))
     } catch {
       // ignore corrupt storage

@@ -130,15 +130,21 @@ export function SearchableSelect({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [open])
 
-  // Reset the query/highlight each time the menu opens, then focus the filter input.
-  // Also decide which way to open: inside the scrollable design canvas an absolute
-  // dropdown can't push page height, so when there's little room below we flip it
-  // upward and cap the list to the available space — otherwise lower options become
-  // unreachable (you can't scroll to them).
-  useEffect(() => {
-    if (!open) return
+  // Opening the menu always starts from a blank filter with the first row highlighted.
+  // Done here (in the handlers that open it) rather than in the effect below, so the
+  // reset lands in the same update as `open` instead of a follow-up render.
+  function openMenu() {
     setQuery('')
     setActive(0)
+    setOpen(true)
+  }
+
+  // Once open, focus the filter input and decide which way to open: inside the
+  // scrollable design canvas an absolute dropdown can't push page height, so when
+  // there's little room below we flip it upward and cap the list to the available
+  // space — otherwise lower options become unreachable (you can't scroll to them).
+  useEffect(() => {
+    if (!open) return
     const rect = rootRef.current?.getBoundingClientRect()
     if (rect) {
       const below = window.innerHeight - rect.bottom - 8
@@ -165,11 +171,11 @@ export function SearchableSelect({
     setActive(i)
   }
   function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) setOpen(true); else move(1) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) openMenu(); else move(1) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1) }
     else if (e.key === 'Enter') {
       e.preventDefault()
-      if (!open) { setOpen(true); return }
+      if (!open) { openMenu(); return }
       const opt = filtered[active]
       if (opt && !opt.disabled) commit(opt.value)
     } else if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
@@ -179,7 +185,7 @@ export function SearchableSelect({
     <div ref={rootRef} className={`relative ${className}`}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => { if (open) setOpen(false); else openMenu() }}
         onKeyDown={onKeyDown}
         className="flex h-7 w-full items-center justify-between gap-1 rounded border border-border bg-background px-1.5 text-left text-xs focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >

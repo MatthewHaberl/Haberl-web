@@ -117,6 +117,33 @@ test('calculator produces a deterministic Michelle quote close to the reference 
   assert.ok(Number(quote.paybackMonths) >= 68 && Number(quote.paybackMonths) <= 76, `Payback months was ${quote.paybackMonths}`)
 })
 
+test('20-year financials are derived from raw numbers, not re-parsed en-ZA strings', () => {
+  // Regression guard: formatRands emits en-ZA ("R 12 345,67" — comma decimal,
+  // space thousands). Re-parsing those strings with a naive [^0-9.-] strip used
+  // to drop the comma and inflate every figure ~100x. A ~R190k system saving
+  // ~900 kWh/month can never save hundreds of millions of rand over 20 years.
+  const parseZar = (s: string | undefined) =>
+    Number((s ?? '').replace(/[R\s]/g, '').replace(/\./g, '').replace(',', '.'))
+
+  const quote = calculateQuote(michelleFixture)
+  const lifetime = parseZar(quote.lifetimeBillSavings)
+  const netSavings = parseZar(quote.estimatedNetSavings)
+  const npv = parseZar(quote.npv)
+
+  assert.ok(
+    lifetime > 500_000 && lifetime < 20_000_000,
+    `lifetimeBillSavings out of sane range: ${quote.lifetimeBillSavings} -> ${lifetime}`,
+  )
+  assert.ok(
+    netSavings > 300_000 && netSavings < 20_000_000,
+    `estimatedNetSavings out of sane range: ${quote.estimatedNetSavings} -> ${netSavings}`,
+  )
+  assert.ok(
+    npv > 0 && npv < 10_000_000,
+    `npv out of sane range: ${quote.npv} -> ${npv}`,
+  )
+})
+
 test('SANS compliance checks pass on a standard hybrid BOM', () => {
   const quote = calculateQuote(michelleFixture)
   const checks = quote.complianceChecks ?? []

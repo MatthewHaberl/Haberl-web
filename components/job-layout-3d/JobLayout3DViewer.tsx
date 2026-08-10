@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, Grid } from '@react-three/drei'
 import { Building } from './Building'
@@ -24,8 +24,10 @@ function ScreenshotCapture({ onReady }: { onReady: (fn: () => void) => void }) {
     }, 'image/png')
   }, [gl])
 
-  const ready = useRef(false)
-  if (!ready.current) { ready.current = true; onReady(capture) }
+  // Hand the capture fn to the parent after commit. `capture` is stable (gl is
+  // stable for the Canvas lifetime) and `onReady` only stores it in a ref, so
+  // this still runs exactly once — and never before the button can be clicked.
+  useEffect(() => { onReady(capture) }, [onReady, capture])
 
   return null
 }

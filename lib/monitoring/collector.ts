@@ -287,7 +287,7 @@ async function maybeCaptureSettings(
   if (ageMs < SETTINGS_CAPTURE_INTERVAL_MS) return
 
   const result = await adapter.fetchSettings(credentials, system.plant_id, system.device_sn)
-  await supabase.from('monitoring_settings_snapshots').insert({
+  const { error } = await supabase.from('monitoring_settings_snapshots').insert({
     system_id: system.id,
     source: 'cloud',
     settings: result.settings,
@@ -295,4 +295,8 @@ async function maybeCaptureSettings(
     note: 'auto-captured',
     captured_by: null,
   })
+  // captured_at is the once-a-day dedup marker. If the insert silently fails,
+  // every 5-minute poll re-runs fetchSettings against the brand cloud (~288 extra
+  // calls/day/system), risking rate limits that break the actual readings.
+  if (error) console.error('[collector] settings snapshot insert failed', system.id, error)
 }

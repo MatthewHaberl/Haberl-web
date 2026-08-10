@@ -141,7 +141,8 @@ export function WorkflowMap({ diagrams, initialCatchPoints, currentUserId }: Pro
           <div
             className="overflow-x-auto rounded-xl border border-border bg-card p-3"
             style={diagramThemeVars}
-            // eslint-disable-next-line react/no-danger
+            // Safe: `svg` comes from the static diagrams.ts constant in this repo,
+            // never from user input or the database.
             dangerouslySetInnerHTML={{ __html: active?.svg ?? '' }}
           />
         </div>

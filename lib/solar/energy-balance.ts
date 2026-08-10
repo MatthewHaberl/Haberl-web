@@ -193,7 +193,7 @@ function steadyStateDay(
   loadH: number[],
   battery: BatteryParams | null | undefined,
 ): DayResult {
-  let soc = 0
+  const soc = 0
   let result = simulateDay(genH, loadH, battery, soc)
   for (let pass = 0; pass < 3; pass++) {
     result = simulateDay(genH, loadH, battery, result.endSoc)

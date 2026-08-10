@@ -31,14 +31,38 @@ interface AdminProfile {
   phone: string | null
 }
 
-async function getAdminProfile(supabase: AnySupabaseClient): Promise<AdminProfile | null> {
-  const { data } = await supabase
+async function getAdminProfiles(supabase: AnySupabaseClient): Promise<AdminProfile[]> {
+  // Notify EVERY admin, not one. The previous `.limit(1).single()` also errored
+  // outright when more than one admin existed (single() rejects >1 row), which
+  // silently produced zero recipients — so alerts reached nobody.
+  const { data, error } = await supabase
     .from('user_profiles')
     .select('email, phone')
     .eq('role', 'admin')
-    .limit(1)
-    .single()
-  return data as AdminProfile | null
+  if (error) {
+    console.error('[alert-engine] failed to load admin profiles', error)
+    return []
+  }
+  return ((data ?? []) as AdminProfile[]).filter((a) => !!a.email)
+}
+
+async function resolveOpenEvent(
+  supabase: AnySupabaseClient,
+  ruleId: string,
+  systemId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('monitoring_alert_events')
+    .update({ resolved_at: new Date().toISOString() })
+    .eq('rule_id', ruleId)
+    .eq('system_id', systemId)
+    .is('resolved_at', null)
+  if (error) {
+    // If the resolve silently fails the event stays "open", and evaluateRule
+    // gates all notifications on !hasOpenEvent — so the NEXT genuine incident of
+    // this type would fire no alert at all (permanent suppression). Surface it.
+    console.error('[alert-engine] failed to auto-resolve event (future alerts may be suppressed)', error)
+  }
 }
 
 async function fireNotifications(
@@ -48,29 +72,31 @@ async function fireNotifications(
   message: string,
   severity: string,
   channels: string[],
-  admin: AdminProfile | null
+  admins: AdminProfile[]
 ): Promise<void> {
   const notifLog: Array<{ channel: string; sent_at: string; status: string }> = []
+  const adminEmails = admins.map((a) => a.email).filter(Boolean)
+  const adminPhones = admins.map((a) => a.phone).filter((p): p is string => !!p)
 
   for (const channel of channels) {
     const sentAt = new Date().toISOString()
     try {
-      if (channel === 'email' && admin?.email) {
+      if (channel === 'email' && adminEmails.length) {
         await sendAlertEmail({
-          to: [admin.email],
+          to: adminEmails,
           subject: `[${severity.toUpperCase()}] Solar monitoring alert`,
           body: message,
         })
         notifLog.push({ channel: 'email', sent_at: sentAt, status: 'sent' })
       }
 
-      if (channel === 'whatsapp' && admin?.phone) {
-        await sendWhatsApp(admin.phone, `⚡ Haberl Solar Alert\n${message}`)
+      if (channel === 'whatsapp' && adminPhones.length) {
+        for (const phone of adminPhones) await sendWhatsApp(phone, `⚡ Haberl Solar Alert\n${message}`)
         notifLog.push({ channel: 'whatsapp', sent_at: sentAt, status: 'sent' })
       }
 
-      if (channel === 'sms' && admin?.phone) {
-        await sendSms(admin.phone, `Haberl Solar: ${message}`)
+      if (channel === 'sms' && adminPhones.length) {
+        for (const phone of adminPhones) await sendSms(phone, `Haberl Solar: ${message}`)
         notifLog.push({ channel: 'sms', sent_at: sentAt, status: 'sent' })
       }
 
@@ -82,13 +108,19 @@ async function fireNotifications(
     }
   }
 
-  await supabase.from('monitoring_alert_events').insert({
+  const { error: logError } = await supabase.from('monitoring_alert_events').insert({
     rule_id:          ruleId,
     system_id:        systemId,
     message,
     severity,
     notification_log: notifLog,
   })
+  if (logError) {
+    // If the open event isn't recorded, the next poll won't see it and will
+    // re-fire the same alert — a notification storm every 5 minutes. Nothing
+    // above can retry the row, so at least make the failure loud.
+    console.error('[alert-engine] failed to record alert event (risk of repeat notifications)', logError)
+  }
 }
 
 export async function runAlertEngine(
@@ -105,10 +137,10 @@ export async function runAlertEngine(
 
   if (!rules?.length) return
 
-  const admin = await getAdminProfile(supabase)
+  const admins = await getAdminProfiles(supabase)
 
   for (const rule of rules as AlertRule[]) {
-    await evaluateRule(supabase, rule, systemId, reading, admin)
+    await evaluateRule(supabase, rule, systemId, reading, admins)
   }
 }
 
@@ -117,7 +149,7 @@ async function evaluateRule(
   rule: AlertRule,
   systemId: string,
   reading: NormalisedReading,
-  admin: AdminProfile | null
+  admins: AdminProfile[]
 ): Promise<void> {
   // Check if this rule already has an unresolved event for this system
   const { data: existing } = await supabase
@@ -137,16 +169,11 @@ async function evaluateRule(
         await fireNotifications(
           supabase, rule.id, systemId,
           `System went offline. Last device state: ${reading.device_state}.`,
-          rule.severity, rule.notify_channels, admin
+          rule.severity, rule.notify_channels, admins
         )
       } else if (!isOffline && hasOpenEvent) {
         // Auto-resolve
-        await supabase
-          .from('monitoring_alert_events')
-          .update({ resolved_at: new Date().toISOString() })
-          .eq('rule_id', rule.id)
-          .eq('system_id', systemId)
-          .is('resolved_at', null)
+        await resolveOpenEvent(supabase, rule.id, systemId)
       }
       break
     }
@@ -156,15 +183,10 @@ async function evaluateRule(
         await fireNotifications(
           supabase, rule.id, systemId,
           `Inverter fault detected: ${reading.fault_codes.join(', ')}.`,
-          rule.severity, rule.notify_channels, admin
+          rule.severity, rule.notify_channels, admins
         )
       } else if (reading.fault_codes.length === 0 && hasOpenEvent) {
-        await supabase
-          .from('monitoring_alert_events')
-          .update({ resolved_at: new Date().toISOString() })
-          .eq('rule_id', rule.id)
-          .eq('system_id', systemId)
-          .is('resolved_at', null)
+        await resolveOpenEvent(supabase, rule.id, systemId)
       }
       break
     }
@@ -176,16 +198,11 @@ async function evaluateRule(
         await fireNotifications(
           supabase, rule.id, systemId,
           `Battery SOC is low: ${soc}% (threshold: ${threshold}%).`,
-          rule.severity, rule.notify_channels, admin
+          rule.severity, rule.notify_channels, admins
         )
       } else if (soc != null && soc >= threshold + 5 && hasOpenEvent) {
         // 5% hysteresis before auto-resolving
-        await supabase
-          .from('monitoring_alert_events')
-          .update({ resolved_at: new Date().toISOString() })
-          .eq('rule_id', rule.id)
-          .eq('system_id', systemId)
-          .is('resolved_at', null)
+        await resolveOpenEvent(supabase, rule.id, systemId)
       }
       break
     }
@@ -193,7 +210,10 @@ async function evaluateRule(
     case 'string_drop': {
       // Phase 2: requires baseline data — skip if no baselines stored yet
       if (!reading.pv_strings?.length) break
-      const hour = new Date().getHours()
+      // Baselines are keyed by SAST hour_of_day. The collector runs in UTC
+      // (Vercel), so use the SA hour (UTC+2, no DST) rather than the server hour,
+      // which was two hours off and compared against the wrong baseline bucket.
+      const hour = (new Date().getUTCHours() + 2) % 24
       const { data: baselines } = await supabase
         .from('monitoring_string_baselines')
         .select('string_index, baseline_power_w')
@@ -218,7 +238,7 @@ async function evaluateRule(
         await fireNotifications(
           supabase, rule.id, systemId,
           `String output drop detected: ${droppedStrings.join('; ')}.`,
-          rule.severity, rule.notify_channels, admin
+          rule.severity, rule.notify_channels, admins
         )
       }
       break

@@ -8,6 +8,7 @@ import type { Metadata } from 'next'
 import { UploadForm } from './UploadForm'
 import { DocsTable, type DocRowVM } from './DocsTable'
 import { FIN_DOC_TYPES, FIN_DOC_TYPE_LABEL, parseCombinedPages, type FinDocumentWithCustomer } from '@/lib/finance/types'
+import { parseZarAmount } from '@/lib/utils'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { FinanceTabs } from '@/components/finance/FinanceTabs'
 
@@ -26,10 +27,13 @@ type SP = { q?: string; amount?: string; type?: string; supplier?: string; from?
  * exact cent value. Returns nulls for blank/invalid input.
  */
 function parseAmountCents(input: string): { exact: number | null; lo: number | null; hi: number | null } {
-  const cleaned = input.replace(/[^0-9.]/g, '')
-  const val = Number(cleaned)
-  if (!cleaned || !isFinite(val) || val < 0) return { exact: null, lo: null, hi: null }
-  if (cleaned.includes('.')) return { exact: Math.round(val * 100), lo: null, hi: null }
+  // parseZarAmount handles the en-ZA comma decimal; a naive [^0-9.] strip dropped
+  // the comma and inflated a value like "1500,50" 100x.
+  const val = parseZarAmount(input)
+  if (!isFinite(val) || val < 0) return { exact: null, lo: null, hi: null }
+  // A fractional value means the user specified cents → match exactly; a whole
+  // number matches the whole-rand range (R1500 → any R1500.xx).
+  if (!Number.isInteger(val)) return { exact: Math.round(val * 100), lo: null, hi: null }
   const cents = Math.round(val) * 100
   return { exact: null, lo: cents, hi: cents + 99 }
 }

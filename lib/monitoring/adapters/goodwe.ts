@@ -77,14 +77,14 @@ export const goodweAdapter: BrandAdapter = {
       code?: number
       data?: {
         kpi?: {
-          pac?: number          // current AC power kW
-          power?: number        // alternative field
+          pac?: number          // current AC power, WATTS (SEMS reports pac in W, not kW)
+          power?: number        // today's generation kWh (energy — NOT instantaneous power)
           e_day?: number        // today kWh
           e_month?: number
           e_total?: number
-          load?: number         // load power kW
-          grid?: number         // grid power kW (+ import, - export)
-          battery?: number      // battery power kW
+          load?: number         // load power W
+          grid?: number         // grid power W (+ import, - export)
+          battery?: number      // battery power W
           soc?: number          // battery SOC %
         }
         inverter?: Array<{
@@ -127,7 +127,7 @@ export const goodweAdapter: BrandAdapter = {
             string: i,
             voltage_v: v,
             current_a: a,
-            power_w: p != null ? p * 1000 : (v != null && a != null ? Math.round(v * a) : null),
+            power_w: p ?? (v != null && a != null ? Math.round(v * a) : null),
           })
         }
       }
@@ -137,10 +137,13 @@ export const goodweAdapter: BrandAdapter = {
 
     return {
       recorded_at:       new Date().toISOString(),
-      pv_power_w:        kpi?.pac != null ? kpi.pac * 1000 : (kpi?.power != null ? kpi.power * 1000 : null),
-      battery_power_w:   kpi?.battery != null ? kpi.battery * 1000 : null,
-      grid_power_w:      kpi?.grid != null ? kpi.grid * 1000 : null,
-      load_power_w:      kpi?.load != null ? kpi.load * 1000 : null,
+      // SEMS reports these in WATTS — no kW→W scaling. (The old `* 1000` was a
+      // 1000x over-read; `kpi.power` is today's kWh energy, not power, so it is
+      // not a valid pv-power fallback.)
+      pv_power_w:        kpi?.pac ?? null,
+      battery_power_w:   kpi?.battery ?? null,
+      grid_power_w:      kpi?.grid ?? null,
+      load_power_w:      kpi?.load ?? null,
       battery_soc_pct:   kpi?.soc ?? null,
       battery_voltage_v: inverter?.bat_volt ?? null,
       grid_frequency_hz: inverter?.fac1 ?? null,

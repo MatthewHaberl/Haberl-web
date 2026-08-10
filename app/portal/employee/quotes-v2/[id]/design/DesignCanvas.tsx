@@ -198,42 +198,54 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
   })
 }
 
-function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onClose: () => void; onOpenLayout: (boardId: string, kind: 'ac' | 'dc') => void }) {
-  const { design, dispatch, setActiveStep } = useDesign()
-  const ref = nodeIdToRef(nodeId)
-  if (!ref) return null
-
-  const Header = ({ title }: { title: string }) => (
+// Inspector chrome — module-scope so React keeps the same component identity across
+// renders (declaring these inside NodeInspector remounted the subtree every render).
+function Header({ title, onClose }: { title: string; onClose: () => void }) {
+  return (
     <div className="flex items-center justify-between mb-2">
       <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
       <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
     </div>
   )
-  const DeleteBtn = ({ label }: { label: string }) => (
+}
+
+function DeleteBtn({ label, onDelete }: { label: string; onDelete: () => void }) {
+  return (
     <button
       type="button"
-      onClick={() => { dispatch({ type: 'removeNode', id: nodeId }); onClose() }}
+      onClick={onDelete}
       className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive"
     >
       <Trash2 className="h-3.5 w-3.5" /> {label}
     </button>
   )
-  const GoTo = ({ step, label }: { step: number; label: string }) => (
+}
+
+function GoTo({ step, label, onGoToStep }: { step: number; label: string; onGoToStep: (i: number) => void }) {
+  return (
     <button
       type="button"
-      onClick={() => setActiveStep(step)}
+      onClick={() => onGoToStep(step)}
       className="mt-3 flex items-center gap-1.5 text-xs text-primary hover:underline"
     >
       <PencilLine className="h-3.5 w-3.5" /> {label}
     </button>
   )
+}
+
+function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onClose: () => void; onOpenLayout: (boardId: string, kind: 'ac' | 'dc') => void }) {
+  const { design, dispatch, setActiveStep } = useDesign()
+  const ref = nodeIdToRef(nodeId)
+  if (!ref) return null
+
+  const removeThisNode = () => { dispatch({ type: 'removeNode', id: nodeId }); onClose() }
 
   if (ref.kind === 'panel') {
     const g = design.panels[ref.index]
     if (!g) return null
     return (
       <div>
-        <Header title={`String ${ref.index + 1}`} />
+        <Header title={`String ${ref.index + 1}`} onClose={onClose} />
         <div className="flex flex-col gap-2">
           <label className="flex flex-col gap-1">
             <span className="text-xs text-muted-foreground">Panel count</span>
@@ -255,7 +267,7 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
           </label>
           <p className="text-xs text-muted-foreground">{panelGroupKwp(g).toFixed(2)} kWp{g.panelModel ? ` · ${g.panelModel}` : ''}</p>
         </div>
-        <DeleteBtn label="Remove string" />
+        <DeleteBtn label="Remove string" onDelete={removeThisNode} />
       </div>
     )
   }
@@ -264,15 +276,15 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
     const u = design.inverters[0]
     return (
       <div>
-        <Header title="Inverter" />
+        <Header title="Inverter" onClose={onClose} />
         {u ? (
           <div className="text-sm">
             <p className="font-medium text-foreground">{u.model || 'Inverter'}</p>
             <p className="text-xs text-muted-foreground">{u.kw.toFixed(1)} kW · ×{u.qty} · {u.phases}-phase</p>
           </div>
         ) : <p className="text-xs text-muted-foreground">No inverter.</p>}
-        <GoTo step={3} label="Change in Inverter section" />
-        {u && <DeleteBtn label="Remove inverter" />}
+        <GoTo step={3} label="Change in Inverter section" onGoToStep={setActiveStep} />
+        {u && <DeleteBtn label="Remove inverter" onDelete={removeThisNode} />}
       </div>
     )
   }
@@ -281,7 +293,7 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
     const b = design.batteries[0]
     return (
       <div>
-        <Header title="Battery" />
+        <Header title="Battery" onClose={onClose} />
         {b ? (
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium text-foreground">{b.model || 'Battery'}</p>
@@ -297,8 +309,8 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
             <p className="text-xs text-muted-foreground">{(b.kwh * b.qty).toFixed(1)} kWh total</p>
           </div>
         ) : <p className="text-xs text-muted-foreground">No battery.</p>}
-        <GoTo step={4} label="Change in Batteries section" />
-        {b && <DeleteBtn label="Remove battery" />}
+        <GoTo step={4} label="Change in Batteries section" onGoToStep={setActiveStep} />
+        {b && <DeleteBtn label="Remove battery" onDelete={removeThisNode} />}
       </div>
     )
   }
@@ -306,7 +318,7 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
   if (ref.kind === 'earth') {
     return (
       <div>
-        <Header title="Earthing" />
+        <Header title="Earthing" onClose={onClose} />
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Earth spikes</span>
           <input
@@ -316,7 +328,7 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
             className="h-9 rounded-md border border-border bg-background px-2 text-sm"
           />
         </label>
-        <GoTo step={7} label="Open Earthing section" />
+        <GoTo step={7} label="Open Earthing section" onGoToStep={setActiveStep} />
       </div>
     )
   }
@@ -326,7 +338,7 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
     const board = design.acCombiners[0]
     return (
       <div>
-        <Header title="Distribution board" />
+        <Header title="Distribution board" onClose={onClose} />
         {board ? (
           <>
             <p className="mb-3 text-xs text-muted-foreground">
@@ -354,7 +366,7 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
     const n = comb?.components?.length ?? 0
     return (
       <div>
-        <Header title="DC combiner" />
+        <Header title="DC combiner" onClose={onClose} />
         {comb ? (
           <>
             <p className="mb-3 text-xs text-muted-foreground">
@@ -368,7 +380,7 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
               <LayoutGrid className="h-3.5 w-3.5" /> Open box layout
             </button>
             <p className="mt-2 text-[11px] text-muted-foreground">Lay out the breakers, fuses &amp; SPD in their physical spaces.</p>
-            <GoTo step={2} label="Edit strings &amp; outputs" />
+            <GoTo step={2} label="Edit strings &amp; outputs" onGoToStep={setActiveStep} />
           </>
         ) : (
           <p className="text-xs text-muted-foreground">Add a DC combiner in the DC combiner section first, then lay it out here.</p>
@@ -380,7 +392,7 @@ function NodeInspector({ nodeId, onClose, onOpenLayout }: { nodeId: string; onCl
   // grid — informational in Phase 1
   return (
     <div>
-      <Header title="Grid supply" />
+      <Header title="Grid supply" onClose={onClose} />
       <p className="text-xs text-muted-foreground">Derived automatically from the design. Editing arrives in a later phase.</p>
     </div>
   )
@@ -595,8 +607,11 @@ function ComponentInspector({ node, onClose }: { node: Node; onClose: () => void
 
 function CanvasInner({ height = 560, fill }: { height?: number; fill?: boolean }) {
   const { design, dispatch, gridSupply } = useDesign()
+  // Latest design, kept off the rebuild effect's dep list so structural changes alone
+  // trigger it. Synced in an effect (declared first, so it lands before the rebuild
+  // effect below reads it) rather than during render.
   const designRef = useRef(design)
-  designRef.current = design
+  useEffect(() => { designRef.current = design }, [design])
 
   // Resolved (settings-overridable) circuit colours; defaults outside a provider.
   const { theme, nodeColor } = useCircuitTheme()
@@ -620,8 +635,10 @@ function CanvasInner({ height = 560, fill }: { height?: number; fill?: boolean }
   // internals to summaries; Detailed shows every unit + disconnect + device.
   const [detail, setDetail] = useState<'simple' | 'detailed'>('simple')
   const canvasRef = useRef<HTMLDivElement>(null)
+  // Latest nodes for the drag/connect handlers (read in events only, never in render),
+  // so those callbacks stay stable while nodes churn on every drag frame.
   const nodesRef = useRef<Node[]>([])
-  nodesRef.current = nodes
+  useEffect(() => { nodesRef.current = nodes }, [nodes])
 
   // Hiding a layer's components drops its nodes; hiding its cables drops the edges.
   // A cable also disappears once either end is hidden, so nothing dangles.
@@ -703,7 +720,7 @@ function CanvasInner({ height = 560, fill }: { height?: number; fill?: boolean }
 
   // Keyboard: Delete removes the selected node; Esc leaves fullscreen.
   const selectedNodeRef = useRef<string | null>(null)
-  selectedNodeRef.current = selected?.kind === 'node' ? selected.id : null
+  useEffect(() => { selectedNodeRef.current = selected?.kind === 'node' ? selected.id : null }, [selected])
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') { setFullscreen(false); return }

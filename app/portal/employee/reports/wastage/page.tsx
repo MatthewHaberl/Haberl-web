@@ -44,6 +44,7 @@ export default async function WastageReportPage({
     .select('job_id, sku, description, qty_planned, qty_loaded, qty_used, qty_returned, unit_cost_cents, job:jobs!inner(id, title, created_at)')
     .gt('qty_loaded', 0) // only lines that were actually tracked on site
   if (period.days != null) {
+    // eslint-disable-next-line react-hooks/purity -- async Server Component: request-time clock read for the query window, no effects here
     const since = new Date(Date.now() - period.days * 86_400_000).toISOString()
     query = query.gte('jobs.created_at', since)
   }

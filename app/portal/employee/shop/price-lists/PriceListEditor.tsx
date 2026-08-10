@@ -9,7 +9,6 @@ import { FormField } from '@/components/ui/form-field'
 import { Plus, Users, Trash2, ChevronDown, ChevronUp, Check, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useConfirm } from '@/components/ui/confirm-dialog'
-import { useRouter } from 'next/navigation'
 
 interface Customer {
   id: string
@@ -47,7 +46,6 @@ function calcPrice(cost: number, markup: number, discount: number) {
 }
 
 export function PriceListEditor({ priceLists: initial, customers }: Props) {
-  const router = useRouter()
   const supabase = createClient()
   const confirm = useConfirm()
 
@@ -114,12 +112,6 @@ export function PriceListEditor({ priceLists: initial, customers }: Props) {
         }))
       }
     }
-  }
-
-  function getCustomer(assignment: CustomerAssignment): Customer | null {
-    if (!assignment.customer) return null
-    if (Array.isArray(assignment.customer)) return assignment.customer[0] ?? null
-    return assignment.customer
   }
 
   return (

@@ -204,7 +204,7 @@ export function DocAllocations({
                   {lines.map((l) => (
                     <label key={l.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-muted">
                       <input type="checkbox" checked={selectedLines.has(l.id)}
-                        onChange={() => setSelectedLines((p) => { const n = new Set(p); n.has(l.id) ? n.delete(l.id) : n.add(l.id); return n })} />
+                        onChange={() => setSelectedLines((p) => { const n = new Set(p); if (n.has(l.id)) n.delete(l.id); else n.add(l.id); return n })} />
                       <span className="flex-1 truncate" title={l.description}>{l.description || '—'}</span>
                       <span className="tabular-nums text-muted-foreground">{formatCurrency(l.line_total_cents ?? 0)}</span>
                     </label>

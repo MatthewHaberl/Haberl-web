@@ -4,7 +4,7 @@ import React from 'react'
 import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react'
 import { Sun, Battery, Zap, Grid2x2, CircuitBoard, PlugZap, Combine, Box, Activity } from 'lucide-react'
 import { getLugSpecsCached } from '@/lib/solar/lug-calculator'
-import { CIRCUIT_THEME, NODE_THEME, useCircuitTheme, type CircuitStyle, type CircuitLayer } from '@/lib/solar/canvas-theme'
+import { CIRCUIT_THEME, useCircuitTheme, type CircuitStyle, type CircuitLayer } from '@/lib/solar/canvas-theme'
 
 // ── Brand / circuit colours ───────────────────────────────────────────────────
 // Single source of truth: lib/solar/canvas-theme.ts. CLR is kept as a thin alias

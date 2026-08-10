@@ -113,10 +113,13 @@ export const solarmanAdapter: BrandAdapter = {
 
     return {
       recorded_at: new Date().toISOString(),
-      pv_power_w: station.generationPower != null ? station.generationPower * 1000 : null,
-      battery_power_w: station.batteryPower != null ? station.batteryPower * 1000 : null,
-      grid_power_w: station.purchasePower != null ? station.purchasePower * 1000 : null,
-      load_power_w: station.usePower != null ? station.usePower * 1000 : null,
+      // Solarman's station/realTime power fields are already in WATTS. The
+      // previous `* 1000` "kW→W" scaling over-read every Solarman reading by
+      // 1000x (dashboards, charts, and alert thresholds all saw megawatts).
+      pv_power_w: station.generationPower ?? null,
+      battery_power_w: station.batteryPower ?? null,
+      grid_power_w: station.purchasePower ?? null,
+      load_power_w: station.usePower ?? null,
       battery_soc_pct: station.batterySoc ?? station.batteryCapacitySoc ?? null,
       battery_voltage_v: findDataValue(datalist, 'Battery_Voltage'),
       grid_frequency_hz: findDataValue(datalist, 'Grid_Frequency'),

@@ -1,4 +1,5 @@
 import { emailButton, emailLayout, formatCents, sendEmail, type SendResult } from './send'
+import { escapeHtml } from '@/lib/utils'
 
 /** The slice of a quote_requests row the emails need. */
 export interface QuoteEmailFields {
@@ -60,7 +61,7 @@ export async function sendQuoteEmail(quote: QuoteEmailFields, baseUrl: string): 
   const ref = quote.quote_number ?? 'your quote'
   const html = emailLayout(
     `Your solar quote ${quote.quote_number ?? ''}`.trim(),
-    `<p style="font-size:15px;line-height:1.6;">Hi ${quote.customer_name},</p>
+    `<p style="font-size:15px;line-height:1.6;">Hi ${escapeHtml(quote.customer_name)},</p>
      <p style="font-size:15px;line-height:1.6;">Your solar installation quote is ready. The total comes to <strong>${formatCents(quote.total_amount)}</strong>${quote.deposit_amount != null ? ` with a deposit of <strong>${formatCents(quote.deposit_amount)}</strong>` : ''}.</p>
      <p style="font-size:15px;line-height:1.6;">View the full quote online — you can accept it there in one step, no login needed:</p>
      ${emailButton(link, 'View your quote')}
@@ -79,7 +80,7 @@ export async function sendFollowUpEmail(quote: QuoteEmailFields, baseUrl: string
     : 'Your solar quote is still open — we wanted to check in before it expires.'
   const html = emailLayout(
     'Your solar quote is waiting',
-    `<p style="font-size:15px;line-height:1.6;">Hi ${quote.customer_name},</p>
+    `<p style="font-size:15px;line-height:1.6;">Hi ${escapeHtml(quote.customer_name)},</p>
      <p style="font-size:15px;line-height:1.6;">${intro}</p>
      ${emailButton(link, 'View your quote')}
      ${expiryLine(quote.expiry_date)}
@@ -93,7 +94,7 @@ export async function sendDepositReceiptEmail(quote: QuoteEmailFields): Promise<
   if (!quote.customer_email) return { sent: false, error: 'No customer email' }
   const html = emailLayout(
     'Deposit received — thank you!',
-    `<p style="font-size:15px;line-height:1.6;">Hi ${quote.customer_name},</p>
+    `<p style="font-size:15px;line-height:1.6;">Hi ${escapeHtml(quote.customer_name)},</p>
      <p style="font-size:15px;line-height:1.6;">We've received your deposit of <strong>${formatCents(quote.deposit_amount)}</strong> for quote <strong>${quote.quote_number ?? ''}</strong>. Your installation is now moving into procurement — we're ordering your equipment.</p>
      <p style="font-size:15px;line-height:1.6;">We'll be in touch shortly to confirm your installation date.</p>`,
   )
@@ -105,11 +106,11 @@ export async function sendProofRejectedEmail(quote: QuoteEmailFields, reason: st
   if (!quote.customer_email) return { sent: false, error: 'No customer email' }
   const link = quoteLink(baseUrl, quote.share_token)
   const reasonHtml = reason
-    ? `<p style="font-size:14px;line-height:1.6;background:#fef3c7;border-radius:6px;padding:10px 12px;color:#b45309;"><strong>Reason:</strong> ${reason}</p>`
+    ? `<p style="font-size:14px;line-height:1.6;background:#fef3c7;border-radius:6px;padding:10px 12px;color:#b45309;"><strong>Reason:</strong> ${escapeHtml(reason)}</p>`
     : ''
   const html = emailLayout(
     "We couldn't confirm your payment yet",
-    `<p style="font-size:15px;line-height:1.6;">Hi ${quote.customer_name},</p>
+    `<p style="font-size:15px;line-height:1.6;">Hi ${escapeHtml(quote.customer_name)},</p>
      <p style="font-size:15px;line-height:1.6;">Thanks for sending your proof of payment for quote <strong>${quote.quote_number ?? ''}</strong>. Unfortunately we weren't able to confirm it.</p>
      ${reasonHtml}
      <p style="font-size:15px;line-height:1.6;">Please double-check the details and upload your proof of payment again — it only takes a moment:</p>
@@ -143,7 +144,7 @@ export async function sendCustomerPortalOnboardingEmail({
 
   const html = emailLayout(
     title,
-    `<p style="font-size:15px;line-height:1.6;">Hi ${customerName},</p>
+    `<p style="font-size:15px;line-height:1.6;">Hi ${escapeHtml(customerName)},</p>
      <p style="font-size:15px;line-height:1.6;">${intro}</p>
      ${quoteNumber ? `<p style="font-size:15px;line-height:1.6;">Quote reference: <strong>${quoteNumber}</strong></p>` : ''}
      ${emailButton(actionUrl, cta)}

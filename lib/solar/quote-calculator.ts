@@ -1201,6 +1201,12 @@ function buildMonthlyGenTable(monthlyKwh: number, solarGenMonthly: number, tarif
 function buildTwentyYearTable(annualConsumptionKwh: number, annualSolarGenKwh: number, tariffRate: number) {
   let cumulativeImpact = 0
   const rows: TwentyYearRow[] = []
+  // Keep the raw numeric savings alongside the formatted display rows. Downstream
+  // financial maths (lifetime savings, NPV, ROI) must use these numbers directly
+  // and never re-parse the formatted strings: formatRands renders en-ZA
+  // ("R 12 345,67" — comma decimal, space thousands), and stripping the comma as
+  // if it were a thousands separator inflates every cents-bearing value 100x.
+  const annualSavingsRands: number[] = []
 
   for (let year = 1; year <= 20; year += 1) {
     const degradedSolar = annualSolarGenKwh * Math.pow(0.995, year - 1)
@@ -1211,6 +1217,7 @@ function buildTwentyYearTable(annualConsumptionKwh: number, annualSolarGenKwh: n
     const annualSaving = billBefore - billAfter
 
     cumulativeImpact += annualSaving
+    annualSavingsRands.push(annualSaving)
 
     rows.push({
       year: `Year ${year}`,
@@ -1223,7 +1230,7 @@ function buildTwentyYearTable(annualConsumptionKwh: number, annualSolarGenKwh: n
     })
   }
 
-  return rows
+  return { rows, annualSavingsRands, cumulativeImpact20Y: cumulativeImpact }
 }
 
 function getPaybackMonthsEscalated(total: number, annualConsumptionKwh: number, annualSolarGenKwh: number, tariffRate: number) {
@@ -1510,15 +1517,16 @@ function buildBreakdown(input: CalculatorInput): Breakdown {
   const quoteTotalRands = materialsLabourSubtotal
   const paybackMonths = quoteTotalRands / Math.max(monthlySavingRands, 1)
   const paybackMonthsEscalated = getPaybackMonthsEscalated(quoteTotalRands, annualConsumptionKwh, annualSolarGenerationKwh, tariffRate)
-  const twentyYearTable = buildTwentyYearTable(annualConsumptionKwh, annualSolarGenerationKwh, tariffRate)
-  const lifetimeBillSavings = twentyYearTable.reduce((sum, row) => sum + Number(row.annualSaving.replace(/[^0-9.-]/g, '')), 0)
-  const cumulativeImpact20Y = Number(twentyYearTable[twentyYearTable.length - 1]?.cumulativeImpact.replace(/[^0-9.-]/g, '') ?? 0)
+  const { rows: twentyYearTable, annualSavingsRands, cumulativeImpact20Y: cumulativeImpactRaw } =
+    buildTwentyYearTable(annualConsumptionKwh, annualSolarGenerationKwh, tariffRate)
+  const lifetimeBillSavings = roundCurrency(annualSavingsRands.reduce((sum, saving) => sum + saving, 0))
+  const cumulativeImpact20Y = roundCurrency(cumulativeImpactRaw)
   const estimatedNetSavings = roundCurrency(cumulativeImpact20Y - quoteTotalRands)
   const npv = roundCurrency(
-    twentyYearTable.reduce((sum, row, index) => {
-      const annualSaving = Number(row.annualSaving.replace(/[^0-9.-]/g, ''))
-      return sum + annualSaving / Math.pow(1.1, index + 1)
-    }, -quoteTotalRands),
+    annualSavingsRands.reduce(
+      (sum, saving, index) => sum + saving / Math.pow(1.1, index + 1),
+      -quoteTotalRands,
+    ),
   )
   const roiPct = roundCurrency((estimatedNetSavings / Math.max(quoteTotalRands, 1)) * 100)
 

@@ -429,7 +429,7 @@ function StringVoltageTable({ profile, strings = 1 }: { profile: StringVoltagePr
         <span className="font-semibold text-foreground">Vmp {profile.stringVmpStc ?? '—'} V</span> ·{' '}
         <span className="text-foreground">Isc {profile.panelIscStc ?? '—'} A</span> ·{' '}
         <span className="text-foreground">Imp {profile.panelImpStc ?? '—'} A</span>
-        <span className="block text-[10px]">Series adds voltage; current stays a single panel's.</span>
+        <span className="block text-[10px]">Series adds voltage; current stays a single panel&apos;s.</span>
       </p>
       <table className="w-full tabular-nums">
         <thead className="text-muted-foreground">

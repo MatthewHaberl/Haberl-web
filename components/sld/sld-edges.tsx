@@ -62,7 +62,7 @@ export function CableEdge({
   const { theme } = useCircuitTheme()
 
   // Layer visibility check
-  const circuitLayer = (d as any)?.circuitLayer as string | undefined
+  const circuitLayer = d?.circuitLayer as string | undefined
   if (circuitLayer && !isLayerVisible(layerVisibility, circuitLayer)) {
     return null
   }
@@ -75,10 +75,10 @@ export function CableEdge({
   const isEarth = style?.striped === true
   const stripeColor = style?.stripe
   const strokeDash = STROKE_DASH[circuitLayer ?? d?.circuitType ?? '']
-  const routing = (d as any)?.routingType as EdgeRoutingType ?? 'smoothstep'
-  const waypoints = (d as any)?.waypoints as Array<{ x: number; y: number }> ?? []
-  const isCommunication = circuitLayer === 'communication' || d?.circuitType === ('communication' as any)
-  const isDirect = !!(d as any)?.isDirect
+  const routing: EdgeRoutingType = d?.routingType ?? 'smoothstep'
+  const waypoints = d?.waypoints ?? []
+  const isCommunication = circuitLayer === 'communication' || d?.circuitType === 'communication'
+  const isDirect = !!d?.isDirect
 
   let path: string
   let labelX: number
@@ -136,21 +136,21 @@ export function CableEdge({
     onWaypointChange(id, waypoints.filter((_, i) => i !== idx))
   }
 
-  const lugSpec = (d as any)?.lugs as { count: number; size: string } | undefined
+  const lugSpec = d?.lugs
   const lugSuffix = lugSpec ? ` (${lugSpec.count}×${lugSpec.size})` : ''
   const dispLabel = (label as string | undefined) ?? ''
 
   // Item 21: per-end termination labels. When showTerminations is on, render a
   // small two-cell block (from | to) directly above the cable label.
-  const showTerminations = !!(d as any)?.showTerminations
-  const termFrom = (d as any)?.terminationFrom as { type: string; size?: string } | undefined
-  const termTo = (d as any)?.terminationTo as { type: string; size?: string } | undefined
+  const showTerminations = !!d?.showTerminations
+  const termFrom = d?.terminationFrom
+  const termTo = d?.terminationTo
   const termText = (t?: { type: string; size?: string }): string =>
     t ? `${t.type}${t.size ? ` ${t.size}` : ''}` : '—'
 
   // Label drag offset (persisted in edge data)
-  const labelOffsetX = ((d as any)?.labelOffsetX as number) ?? 0
-  const labelOffsetY = ((d as any)?.labelOffsetY as number) ?? 0
+  const labelOffsetX = d?.labelOffsetX ?? 0
+  const labelOffsetY = d?.labelOffsetY ?? 0
 
   const startLabelDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation()
@@ -283,19 +283,19 @@ export function CableEdge({
               position: 'absolute',
               transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)`,
               pointerEvents: 'none',
-              background: (d as any)?.overrideProtocolMismatch
+              background: d?.overrideProtocolMismatch
                 ? '#fef3c7'
-                : (d as any)?.compatible === false ? '#fef2f2' : '#f0fdf4',
-              border: `1px solid ${(d as any)?.compatible === false ? '#fca5a5' : '#86efac'}`,
+                : d?.compatible === false ? '#fef2f2' : '#f0fdf4',
+              border: `1px solid ${d?.compatible === false ? '#fca5a5' : '#86efac'}`,
               borderRadius: 4, padding: '2px 6px',
               fontSize: 9, fontWeight: 700, whiteSpace: 'nowrap',
-              color: (d as any)?.compatible === false ? '#dc2626' : '#16a34a',
+              color: d?.compatible === false ? '#dc2626' : '#16a34a',
             }}
           >
-            {(d as any)?.overrideProtocolMismatch ? '🔓 ' : (d as any)?.compatible === false ? '⚠ ' : '✓ '}
-            {((d as any)?.sourceProtocol as string[] | undefined)?.join('/') ?? ''}
-            {((d as any)?.targetProtocol as string[] | undefined)?.length
-              ? ` → ${((d as any)?.targetProtocol as string[]).join('/')}`
+            {d?.overrideProtocolMismatch ? '🔓 ' : d?.compatible === false ? '⚠ ' : '✓ '}
+            {d?.sourceProtocol?.join('/') ?? ''}
+            {d?.targetProtocol?.length
+              ? ` → ${d.targetProtocol.join('/')}`
               : ''}
           </div>
         )}

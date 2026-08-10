@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { parseZarAmount } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -49,7 +50,9 @@ export async function POST(req: Request) {
   let total_cents: number | null = null
   const totalRaw = str('total')
   if (totalRaw) {
-    const n = Number(totalRaw.replace(/[^0-9.]/g, ''))
+    // en-ZA amounts use a comma decimal ("1 500,50"); parseZarAmount handles it,
+    // where a naive [^0-9.] strip would drop the comma and inflate the value 100x.
+    const n = parseZarAmount(totalRaw)
     if (Number.isFinite(n)) total_cents = Math.round(n * 100)
   }
 

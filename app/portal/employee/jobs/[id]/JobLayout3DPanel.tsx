@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { ChevronDown, ChevronUp, Box } from 'lucide-react'
 import { buildLayoutModel, type DesignSegment, type CableRouteRow } from '@/lib/solar/job-layout-3d'
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { Sun, Check, Loader2, AlertCircle, RotateCcw } from 'lucide-react'
+import { Sun, Check, Loader2, AlertCircle } from 'lucide-react'
 import { GenerationChart } from './GenerationChart'
 
 const WATT_OPTIONS = [360, 415, 460, 530, 560] as const

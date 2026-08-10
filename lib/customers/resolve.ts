@@ -75,10 +75,13 @@ async function reviveIfArchived(
   match: { id: string; archived_at: string | null },
 ): Promise<{ id: string; created: boolean }> {
   if (match.archived_at) {
-    await supabase
+    const { error } = await supabase
       .from('customers')
       .update({ archived_at: null, archived_by: null })
       .eq('id', match.id)
+    // If the un-archive silently fails we'd attach new quotes/sites to a record
+    // that stays hidden from the active list — surface it rather than swallow it.
+    if (error) console.error('[resolve] failed to un-archive customer', match.id, error)
   }
   return { id: match.id, created: false }
 }

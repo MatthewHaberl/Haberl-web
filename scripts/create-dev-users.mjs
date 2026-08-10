@@ -47,7 +47,18 @@ if (!url || !serviceKey) {
   process.exit(1)
 }
 
-const PASSWORD = env.DEV_PORTAL_PASSWORD || 'HaberlDev!2026'
+// No hardcoded fallback: a committed default password would be a live credential
+// on any shared or production Supabase project (these seed real admin/manager
+// logins with email pre-confirmed). Require it to be supplied explicitly.
+const PASSWORD = env.DEV_PORTAL_PASSWORD || process.env.DEV_PORTAL_PASSWORD
+if (!PASSWORD) {
+  console.error(
+    'Refusing to run without DEV_PORTAL_PASSWORD.\n' +
+    'Set a strong DEV_PORTAL_PASSWORD in .env.local (or the environment) first — ' +
+    'there is no default. These accounts must only ever exist on a dev project.',
+  )
+  process.exit(1)
+}
 
 const USERS = [
   { key: 'CUSTOMER', email: 'dev.customer@haberl.co.za', full_name: 'Dev Customer',     role: 'customer' },

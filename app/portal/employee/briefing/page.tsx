@@ -93,8 +93,15 @@ export default async function BriefingPage() {
             )
           })}
 
-          {b.totalAttention === 0 && (
+          {b.totalAttention === 0 && !b.incomplete && (
             <p className="text-sm text-success">All clear — nothing needs you right now. 🎉</p>
+          )}
+          {b.incomplete && (
+            <p className="text-sm text-destructive">
+              ⚠️ This briefing is incomplete — {b.errors.length} data source
+              {b.errors.length === 1 ? '' : 's'} failed to load ({b.errors.map((e) => e.split(':')[0]).join(', ')}),
+              so the counts above may be missing items. Refresh in a moment.
+            </p>
           )}
         </CardContent>
       </Card>

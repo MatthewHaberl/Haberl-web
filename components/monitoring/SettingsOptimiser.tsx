@@ -58,7 +58,7 @@ const SEVERITY_BADGE: Record<RecRow['severity'], 'destructive' | 'warning' | 'ou
 }
 
 export function SettingsOptimiser({
-  systemId, brand, brandLabel, capability, batteryKwh, capacityKw,
+  systemId, capability, batteryKwh,
   initialSnapshot, initialRecommendations,
 }: {
   systemId: string

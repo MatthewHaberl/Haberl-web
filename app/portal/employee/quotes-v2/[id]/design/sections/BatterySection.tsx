@@ -70,7 +70,9 @@ export function BatterySection() {
 
   const unit = design.batteries[0]
   const balance = useMemo(() => computeBalance(design, record), [design, record])
-  const batteryKwh = designBatteryKwh(design)
+  // Memoised on `design` so it reads as a stable dependency of the independence memo
+  // below (otherwise the compiler can't prove the manual memoization still holds).
+  const batteryKwh = useMemo(() => designBatteryKwh(design), [design])
   const inverterKw = designInverterKw(design)
   const bank = design.bank
   const cr = batteryCRate(inverterKw, batteryKwh)

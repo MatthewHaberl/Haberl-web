@@ -29,7 +29,15 @@ function escapeXml(value: string) {
 
 function parseRands(value: string | undefined) {
   if (!value) return value ?? ''
-  const normalized = value.replace(/[^0-9.-]/g, '')
+  // Money arrives pre-formatted in en-ZA locale, e.g. "R 12 345,67" — space (or
+  // NBSP) thousands separators and a COMMA decimal. Strip the symbol and spaces,
+  // then turn the decimal comma into a dot before parsing. Never strip the comma
+  // as a thousands separator: that would multiply every cents-bearing value 100x.
+  const normalized = value
+    .replace(/\s/g, '') // spaces — JS \s also matches NBSP / narrow NBSP
+    .replace(/r/gi, '')               // currency symbol
+    .replace(/,/g, '.')               // en-ZA decimal comma → dot
+    .replace(/[^0-9.-]/g, '')         // anything else
   const parsed = Number(normalized)
   return Number.isFinite(parsed) ? parsed : value
 }
