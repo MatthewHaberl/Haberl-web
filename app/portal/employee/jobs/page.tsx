@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Briefcase, ChevronRight, Calendar, Landmark, Plus, User } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { PIPELINE_STAGES, STAGE_META, stageIndex } from '@/lib/jobs/stages'
+import { PIPELINE_STAGES, STAGE_META, stageIndex, stageMetaFor, pipelineKindFor } from '@/lib/jobs/stages'
 import type { JobStage, JobPriority } from '@/types/database'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { CollapsibleSection } from '@/components/ui/collapsible-section'
@@ -74,7 +74,8 @@ export default async function JobsPage() {
                 )}
                 <Badge variant={priorityVariant[job.priority as JobPriority]}>{job.priority}</Badge>
                 <Badge variant={stageVariant(job.stage as JobStage)}>
-                  {STAGE_META[job.stage as JobStage]?.label ?? job.stage}
+                  {/* Lite jobs relabel e.g. installation → "Work in progress" (W97) */}
+                  {stageMetaFor(pipelineKindFor(job.work_type as string | null), job.stage as JobStage)?.label ?? job.stage}
                 </Badge>
               </div>
             </div>

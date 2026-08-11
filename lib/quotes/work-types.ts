@@ -80,19 +80,26 @@ export function workTypeFor(code: string | null | undefined, rows?: WorkType[]):
 }
 
 /**
- * Which engine drives this quote. Unknown/missing codes resolve to 'solar' —
- * every pre-W97 quote has no work_type and must keep behaving exactly as today.
+ * Which engine drives this quote. A missing code resolves to 'solar' — every
+ * pre-W97 quote defaults to 'solar' and must keep behaving exactly as today.
+ * An UNKNOWN code resolves to 'scope': the solar codes are seeded and static,
+ * so an unrecognised code can only be a data-added (or deactivated) scope
+ * work type, and solar wording/UI for it would be wrong.
  */
 export function engineFor(code: string | null | undefined, rows?: WorkType[]): WorkEngine {
-  return workTypeFor(code, rows)?.engine ?? 'solar'
+  if (!code) return 'solar'
+  return workTypeFor(code, rows)?.engine ?? 'scope'
 }
 
 export function pipelineFor(code: string | null | undefined, rows?: WorkType[]): WorkPipeline {
-  return workTypeFor(code, rows)?.job_pipeline ?? 'full'
+  if (!code) return 'full'
+  return workTypeFor(code, rows)?.job_pipeline ?? 'lite'
 }
 
+/** Display label; an unknown code shows itself rather than claiming solar. */
 export function workTypeLabel(code: string | null | undefined, rows?: WorkType[]): string {
-  return workTypeFor(code, rows)?.label ?? 'Solar PV / hybrid system'
+  if (!code) return 'Solar PV / hybrid system'
+  return workTypeFor(code, rows)?.label ?? code
 }
 
 /** Active work types, display order. Falls back to the static seed on error. */

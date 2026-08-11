@@ -42,6 +42,12 @@ export interface BomLine {
    * section and grand totals. The solar path never sets this.
    */
   optional?: boolean
+  /**
+   * Line kind (scope engine only) — drives the deposit rule: material lines
+   * bill a deposit, labour/fee lines are payable on completion. The solar path
+   * never sets this.
+   */
+  kind?: 'material' | 'labour' | 'fee'
   /** False when no product is chosen, the product is gone, or it has no cost yet. */
   priced: boolean
   status: BomLineStatus

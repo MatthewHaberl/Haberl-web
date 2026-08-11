@@ -17,7 +17,7 @@ import {
   emptyScope, newScopeLine, parseScope, scopeTotals, labourAmountR,
   scopeDepositSections, type QuoteScope, type ScopeLine,
 } from '../scope'
-import { scopeToBom, stripOptionalLines } from '../scope-bom'
+import { scopeToBom, stripOptionalLines, computeScopeDeposit } from '../scope-bom'
 
 const MARKUP = 1.15
 
@@ -180,20 +180,23 @@ test('fixed labour bills the typed amount only', () => {
   assert.equal(labour.lines[0].description, 'Day rate')
 })
 
-test('CoC included adds a Compliance line at the scope fee, falling back to pricing.cocRands', () => {
+test('CoC included bills exactly the scope fee — an explicit R0 stays R0, never the settings default', () => {
   const bom = scopeToBom(fixtureScope(), fixtureCatalog(), MARKUP)
   const compliance = bom.sections.find((s) => s.name === 'Compliance')!
   assert.equal(compliance.sellR, 1500)
 
+  // Staff cleared the fee ("included at no charge") — the builder preview shows
+  // no fee, so generate must not silently re-bill the company default.
   const scope = fixtureScope()
   scope.coc = { included: true, feeR: 0 }
-  const withFallback = scopeToBom(scope, fixtureCatalog(), MARKUP, {
+  const zeroed = scopeToBom(scope, fixtureCatalog(), MARKUP, {
     pricing: {
       markup: MARKUP, cocRands: 1800, labourInverterPerW: 0.25, labourPanelPerW: 0.75,
       storeyPremium2: 2000, storeyPremium3: 5000, tariffs: {},
     },
   })
-  assert.equal(withFallback.sections.find((s) => s.name === 'Compliance')!.sellR, 1800)
+  assert.equal(zeroed.sections.find((s) => s.name === 'Compliance'), undefined)
+  assert.equal(zeroed.totalSellR, bom.totalSellR - 1500)
 })
 
 // ── Optional extras ───────────────────────────────────────────────────────────
@@ -224,12 +227,10 @@ test('stripOptionalLines removes optional lines (and empty sections) for bom_sna
 
 // ── Deposit ───────────────────────────────────────────────────────────────────
 
-test('scope deposit = every section holding material lines; labour and compliance on completion', () => {
+test('scope deposit = material LINES only; labour and compliance on completion', () => {
   const scope = fixtureScope()
   const bom = scopeToBom(scope, fixtureCatalog(), MARKUP)
-  const sections = scopeDepositSections(scope)
-  assert.deepEqual(sections, ['Distribution board', 'Wiring & containment'])
-  const deposit = computeDeposit(bom, sections)
+  const deposit = computeScopeDeposit(bom)
   assert.deepEqual(deposit.items.map((i) => i.name), ['Distribution board', 'Wiring & containment'])
   assert.equal(deposit.totalR, 2300 + 575 + 150)
   // Labour + CoC are the balance
@@ -239,10 +240,56 @@ test('scope deposit = every section holding material lines; labour and complianc
   )
 })
 
-test('optional material lines do not create deposit sections', () => {
+test('a material line sharing the Labour/Compliance section never drags the generated labour or CoC into the deposit', () => {
+  // Work type defaults seed a 'Labour' section and the editor can add material
+  // lines to it — the deposit must still be the material line alone, not the
+  // whole section including the generated R5650 labour line.
+  const scope = fixtureScope()
+  scope.lines.push(line('Labour', { catalogId: 'db1', qty: 1 })) // R2300 material in 'Labour'
+  const bom = scopeToBom(scope, fixtureCatalog(), MARKUP)
+  const deposit = computeScopeDeposit(bom)
+  const labourItem = deposit.items.find((i) => i.name === 'Labour')!
+  assert.equal(labourItem.amountRands, 2300, 'material only — not the R5650 generated labour')
+  assert.equal(deposit.totalR, 2300 + 575 + 150 + 2300)
+})
+
+test('a fee line inside a materials section stays out of the deposit', () => {
+  const scope = fixtureScope()
+  scope.lines.push(line('Distribution board', { kind: 'fee', description: 'Disposal fee', qty: 1, unitSellR: 300 }))
+  const bom = scopeToBom(scope, fixtureCatalog(), MARKUP)
+  const deposit = computeScopeDeposit(bom)
+  assert.equal(deposit.items.find((i) => i.name === 'Distribution board')!.amountRands, 2300)
+})
+
+test('optional material lines never bill a deposit', () => {
   const scope = emptyScope({ sections: ['Materials'] })
   scope.lines = [line('Materials', { catalogId: 'db1', qty: 1, optional: true })]
   assert.deepEqual(scopeDepositSections(scope), [])
+  const bom = scopeToBom(scope, fixtureCatalog(), MARKUP)
+  assert.equal(computeScopeDeposit(bom).totalR, 0)
+})
+
+test('duplicate section names in scope.sections do not double the section, total or deposit', () => {
+  const scope = fixtureScope()
+  scope.sections = ['Distribution board', 'Distribution board', 'Wiring & containment', 'Labour', 'Compliance']
+  const bom = scopeToBom(scope, fixtureCatalog(), MARKUP)
+  assert.equal(bom.sections.filter((s) => s.name === 'Distribution board').length, 1)
+  const clean = scopeToBom(fixtureScope(), fixtureCatalog(), MARKUP)
+  assert.equal(bom.totalSellR, clean.totalSellR)
+  assert.equal(computeScopeDeposit(bom).totalR, computeScopeDeposit(clean).totalR)
+  // parseScope also dedupes at the persistence boundary
+  const parsed = parseScope(JSON.stringify({ ...scope, sections: ['A', 'A', 'B'] }))!
+  assert.deepEqual(parsed.sections, ['A', 'B'])
+})
+
+test('lines with a blank section land in "Scope of work" at parse time (visible + deposited)', () => {
+  const parsed = parseScope(JSON.stringify({
+    sections: [],
+    lines: [{ id: 'x', section: '', kind: 'material', qty: 1, unitSellR: 100, unit: 'ea' }],
+  }))!
+  assert.equal(parsed.lines[0].section, 'Scope of work')
+  const bom = scopeToBom(parsed, new Map(), MARKUP)
+  assert.equal(computeScopeDeposit(bom).items[0]?.name, 'Scope of work')
 })
 
 test('solar deposit parity: computeDeposit with no section argument matches the historical starred list', () => {

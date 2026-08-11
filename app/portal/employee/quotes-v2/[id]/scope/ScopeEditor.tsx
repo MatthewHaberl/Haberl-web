@@ -157,6 +157,17 @@ export function ScopeEditor({ scope, onChange, pricing }: {
                         unitSellR: Math.max(0, Number(e.target.value) || 0),
                         sellOverridden: line.catalogId !== null,
                       })}
+                      onBlur={() => {
+                        // A catalog line left with no price reverts to auto
+                        // (cost × markup) — a stored 0 would show as "Quote"
+                        // here while generate re-priced it anyway.
+                        if (line.catalogId && line.unitSellR <= 0) {
+                          updateLine(line.id, {
+                            unitSellR: round2(line.unitCostR * pricing.markup),
+                            sellOverridden: false,
+                          })
+                        }
+                      }}
                       className="h-9 w-32" placeholder="Unit price"
                     />
                     {line.sellOverridden && line.catalogId && (

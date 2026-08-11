@@ -31,7 +31,7 @@ const LABOUR_SECTION = 'Labour'
 const COMPLIANCE_SECTION = 'Compliance'
 
 function unpricedLine(
-  line: Pick<BomLine, 'section' | 'catalogId' | 'sku' | 'description' | 'qty' | 'optional'>,
+  line: Pick<BomLine, 'section' | 'catalogId' | 'sku' | 'description' | 'qty' | 'optional' | 'kind'>,
   status: BomLine['status'],
 ): BomLine {
   return {
@@ -63,6 +63,7 @@ function priceScopeLine(
     description: line.description,
     qty: line.qty,
     optional,
+    kind: line.kind,
   }
 
   // Labour/fee lines are sell-only: cost == sell, no markup (the solar Labour
@@ -194,43 +195,51 @@ export function scopeToBom(
       lineSellR: labourR,
       priced: true,
       status: 'ok',
+      kind: 'labour',
     })
   }
 
-  // Certificate of Compliance — the scope's fee, falling back to the company
-  // CoC rate (mapSettingsToPricing default 1500).
-  if (scope.coc.included) {
-    const feeR = round2(scope.coc.feeR > 0 ? scope.coc.feeR : opts.pricing?.cocRands ?? 1500)
-    if (feeR > 0) {
-      push({
-        section: COMPLIANCE_SECTION,
-        catalogId: 'labour:Certificate of Compliance (CoC)',
-        sku: '',
-        description: 'Certificate of Compliance (CoC)',
-        qty: 1,
-        unitCostR: feeR,
-        unitSellR: feeR,
-        lineCostR: feeR,
-        lineSellR: feeR,
-        priced: true,
-        status: 'ok',
-      })
-    }
+  // Certificate of Compliance — bills exactly the scope's fee. An explicit R0
+  // stays R0 (the builder preview treats it that way, and "included at no
+  // charge" must not silently re-bill the company default — the default is
+  // seeded into coc.feeR by emptyScope/the workspace instead).
+  if (scope.coc.included && scope.coc.feeR > 0) {
+    const feeR = round2(scope.coc.feeR)
+    push({
+      section: COMPLIANCE_SECTION,
+      catalogId: 'labour:Certificate of Compliance (CoC)',
+      sku: '',
+      description: 'Certificate of Compliance (CoC)',
+      qty: 1,
+      unitCostR: feeR,
+      unitSellR: feeR,
+      lineCostR: feeR,
+      lineSellR: feeR,
+      priced: true,
+      status: 'ok',
+      kind: 'fee',
+    })
   }
 
   const sections: BomSection[] = []
+  const emitted = new Set<string>()
   for (const name of sectionOrder) {
+    // Duplicate names in scope.sections (bad jsonb) must not emit the same
+    // lines twice — that would double the total and the deposit.
+    if (emitted.has(name)) continue
+    emitted.add(name)
     const lines = linesBySection.get(name)
     if (!lines?.length) continue
     // Optional extras ride along in the section but contribute R0 to the sums —
-    // same posture as unpriced lines on the solar path.
+    // same posture as unpriced lines on the solar path. needsPricing also skips
+    // them: an unpriced optional extra is not blocking the quote.
     const counted = lines.filter((l) => !l.optional)
     sections.push({
       name,
       lines,
       costR: round2(counted.reduce((t, l) => t + l.lineCostR, 0)),
       sellR: round2(counted.reduce((t, l) => t + l.lineSellR, 0)),
-      needsPricing: lines.filter((l) => !l.priced).length,
+      needsPricing: counted.filter((l) => !l.priced).length,
     })
   }
 
@@ -241,6 +250,27 @@ export function scopeToBom(
     missing,
     needsPricing: sections.reduce((t, s) => t + s.needsPricing, 0),
   }
+}
+
+/**
+ * Deposit for a scope quote, at LINE granularity: material lines bill a
+ * deposit; labour and fee lines (typed or generated) are payable on
+ * completion, even when they share a section with materials. This is the
+ * locked deposit-by-line-items rule — a section-level sum would drag the
+ * generated Labour/CoC lines into the deposit whenever a material line lands
+ * in the default 'Labour'/'Compliance' sections.
+ */
+export function computeScopeDeposit(bom: DesignBom): { items: { name: string; amountRands: number }[]; totalR: number } {
+  const items: { name: string; amountRands: number }[] = []
+  for (const s of bom.sections) {
+    const depositR = round2(
+      s.lines
+        .filter((l) => l.kind === 'material' && !l.optional && l.priced)
+        .reduce((t, l) => t + l.lineSellR, 0),
+    )
+    if (depositR > 0) items.push({ name: s.name, amountRands: depositR })
+  }
+  return { items, totalR: round2(items.reduce((t, i) => t + i.amountRands, 0)) }
 }
 
 /**

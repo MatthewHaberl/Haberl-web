@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { pipelineKindFor, stagesFor } from '@/lib/jobs/stages'
 import { checklistRowsFor } from '@/lib/jobs/checklist'
-import { DEFAULT_WORK_TYPES } from '@/lib/quotes/work-types'
+import { fetchWorkTypes } from '@/lib/quotes/work-types'
 import type { JobPriority, JobStage } from '@/types/database'
 
 export const runtime = 'nodejs'
@@ -33,10 +33,13 @@ export async function POST(req: Request) {
   const siteIdInput = String(body.siteId ?? '').trim()
   const scheduledDate = String(body.scheduledDate ?? '').trim()
   const priority = PRIORITIES.has(body.priority) ? body.priority as JobPriority : 'medium'
-  // Work type picks the stage pipeline + checklist (W97) — unknown codes fall
-  // back to solar so the route can never write a work_type the UI can't render.
-  const workType = DEFAULT_WORK_TYPES.some((w) => w.code === body.workType) ? String(body.workType) : 'solar'
-  const pipelineStages = stagesFor(pipelineKindFor(workType))
+  // Work type picks the stage pipeline + checklist (W97). Validated against the
+  // work_types TABLE (static-seed fallback inside fetchWorkTypes) so a
+  // data-added type is accepted rather than coerced to solar; codes outside the
+  // table fall back to 'solar'.
+  const workTypes = await fetchWorkTypes(supabase)
+  const workType = workTypes.some((w) => w.code === body.workType) ? String(body.workType) : 'solar'
+  const pipelineStages = stagesFor(pipelineKindFor(workType, workTypes))
   const stage = pipelineStages.includes(body.stage) ? body.stage as JobStage : 'scheduled'
 
   if (!title) return new Response('Job title is required', { status: 400 })

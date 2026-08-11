@@ -120,7 +120,7 @@ export async function sendDepositReceiptEmail(quote: QuoteEmailFields): Promise<
      <p style="font-size:15px;line-height:1.6;">We've received your deposit of <strong>${formatCents(quote.deposit_amount)}</strong> for quote <strong>${quote.quote_number ?? ''}</strong>. ${nextStep}</p>
      <p style="font-size:15px;line-height:1.6;">${dateLine}</p>`,
   )
-  const text = `Hi ${quote.customer_name},\n\nWe've received your deposit of ${formatCents(quote.deposit_amount)} for quote ${quote.quote_number ?? ''}. ${nextStep}\n\nHaberl Electrical & Solar`
+  const text = `Hi ${quote.customer_name},\n\nWe've received your deposit of ${formatCents(quote.deposit_amount)} for quote ${quote.quote_number ?? ''}. ${nextStep} ${dateLine}\n\nHaberl Electrical & Solar`
   return sendEmail({ to: [quote.customer_email], subject: `Deposit received — ${quote.quote_number ?? (solar ? 'your solar installation' : 'your job')}`, html, text, replyTo: 'info@haberl.co.za' })
 }
 

@@ -65,7 +65,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     try {
       const { data: quote } = await supabase
         .from('quote_requests')
-        .select('customer_name, customer_email, quote_number, total_amount, deposit_amount, share_token, expiry_date')
+        .select('customer_name, customer_email, quote_number, total_amount, deposit_amount, share_token, expiry_date, work_type')
         .eq('id', job.quote_request_id)
         .maybeSingle()
       if (quote) {

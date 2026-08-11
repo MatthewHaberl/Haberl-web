@@ -130,7 +130,9 @@ function parseLine(raw: unknown): ScopeLine | null {
   const kind = KINDS.includes(r.kind as ScopeLineKind) ? (r.kind as ScopeLineKind) : 'material'
   return {
     id: str(r.id) || newScopeLineId(),
-    section: str(r.section),
+    // A blank section would be invisible in the editor yet still billed —
+    // give it the same fallback home scopeToBom uses.
+    section: str(r.section) || 'Scope of work',
     kind,
     catalogId: typeof r.catalogId === 'string' && r.catalogId ? r.catalogId : null,
     sku: str(r.sku),
@@ -166,7 +168,10 @@ export function parseScope(raw: unknown): QuoteScope | null {
     version: 1,
     summary: str(r.summary),
     exclusions: Array.isArray(r.exclusions) ? r.exclusions.filter((e): e is string => typeof e === 'string') : [],
-    sections: Array.isArray(r.sections) ? r.sections.filter((s): s is string => typeof s === 'string' && s.length > 0) : [],
+    // Deduped: a repeated name would render (and bill) the same lines twice.
+    sections: Array.isArray(r.sections)
+      ? [...new Set(r.sections.filter((s): s is string => typeof s === 'string' && s.length > 0))]
+      : [],
     lines: Array.isArray(r.lines) ? r.lines.map(parseLine).filter((l): l is ScopeLine => l !== null) : [],
     labour: {
       mode: labourRaw.mode === 'fixed' ? 'fixed' : 'hourly',
@@ -221,13 +226,15 @@ export function scopeTotals(scope: QuoteScope): ScopeTotals {
 
   for (const line of scope.lines) {
     if (line.qty <= 0) continue
-    if (!lineIsPriced(line)) {
-      needsPricing += 1
-      continue
-    }
     const amount = round2(line.unitSellR * line.qty)
     if (line.optional) {
-      optionalR += amount
+      // Unpriced optional extras don't count as needing pricing — they are
+      // not in the total, so nothing is blocked on them (matches scopeToBom).
+      if (lineIsPriced(line)) optionalR += amount
+      continue
+    }
+    if (!lineIsPriced(line)) {
+      needsPricing += 1
       continue
     }
     if (line.kind === 'material') materialsR += amount

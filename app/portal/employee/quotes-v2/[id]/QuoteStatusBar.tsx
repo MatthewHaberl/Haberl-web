@@ -52,9 +52,11 @@ interface Props {
   customerName: string
   quoteNumber: string | null
   viewedAt: string | null
+  /** Solar-engine quote — drives the WhatsApp message wording (W97). */
+  isSolar?: boolean
 }
 
-export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt }: Props) {
+export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt, isSolar = true }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState<QuoteRequestStatus>(initialStatus)
   const [saving, setSaving] = useState(false)
@@ -153,7 +155,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
     const url = `${window.location.origin}/q/${shareToken}`
     const greeting = customerName ? `Hi ${customerName.trim().split(' ')[0]}` : 'Hi'
     const ref = quoteNumber ? ` (${quoteNumber})` : ''
-    const message = `${greeting}, here's your Haberl Solar quote${ref}. You can view it, accept it, or ask me anything here: ${url}`
+    const message = `${greeting}, here's your ${isSolar ? 'Haberl Solar quote' : 'quote from Haberl Electrical & Solar'}${ref}. You can view it, accept it, or ask me anything here: ${url}`
     // Open synchronously inside the click so the browser doesn't block the tab.
     window.open(waLink(customerPhone, message), '_blank', 'noopener')
     if (markSent) await sendToCustomer(true)

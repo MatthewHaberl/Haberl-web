@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { MapPin, Calendar, ChevronLeft, FileText, Briefcase } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { pipelineKindFor, stageMetaFor } from '@/lib/jobs/stages'
+import { fetchWorkTypes } from '@/lib/quotes/work-types'
 import type { Job, JobTask, JobMaterial, JobStatusHistory } from '@/types/database'
 import type { Supplier } from '@/types/database'
 import { JobActions } from './JobActions'
@@ -52,8 +53,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const canAdvance = isManager || job.assigned_to === user.id
 
   // Which pipeline this job runs — lite (non-solar) skips procurement,
-  // commissioning and handover, and relabels installation (W97).
-  const pipeline = pipelineKindFor(job.work_type)
+  // commissioning and handover, and relabels installation (W97). Resolved via
+  // the work_types table so data-added types honour their job_pipeline.
+  const workTypes = await fetchWorkTypes(supabase)
+  const pipeline = pipelineKindFor(job.work_type, workTypes)
   const stageMeta = stageMetaFor(pipeline, job.stage)
 
   // 3D layout: design segments + cable routes from the linked quote

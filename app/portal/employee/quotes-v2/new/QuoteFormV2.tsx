@@ -313,7 +313,9 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
         submitted_by:    user.id,
         customer_id:     customerId,
         site_number:     prefill?.site_number ?? 1,
-        work_type:       workType,
+        // The RESOLVED code, not raw state — a stale prefilled code would
+        // drive the solar-fallback UI while storing a different discriminator.
+        work_type:       selectedType.code,
         // Customer
         customer_name:    customerName,
         customer_phone:   customerPhone || null,

@@ -1,4 +1,5 @@
 import type { JobStage } from '@/types/database'
+import { DEFAULT_WORK_TYPES, type WorkType } from '@/lib/quotes/work-types'
 
 // The pipeline every installation moves through, in order. on_hold / cancelled
 // sit outside the linear flow.
@@ -118,9 +119,18 @@ export function stagesFor(pipeline: JobPipelineKind): JobStage[] {
   return pipeline === 'lite' ? LITE_STAGES : PIPELINE_STAGES
 }
 
-/** Which pipeline a job runs, from its work_type ('solar' → full). */
-export function pipelineKindFor(workType: string | null | undefined): JobPipelineKind {
-  if (!workType || workType === 'solar' || workType === 'backup_inverter') return 'full'
+/**
+ * Which pipeline a job runs, from its work_type. Resolves via work_types data
+ * (pass fetched rows on the server; falls back to the static seed), so a
+ * data-added type's job_pipeline column is honoured. Missing/unknown codes:
+ * missing → full (pre-W97 jobs), unknown → lite (only data-added scope types
+ * produce codes outside the seed).
+ */
+export function pipelineKindFor(workType: string | null | undefined, rows?: WorkType[]): JobPipelineKind {
+  if (!workType) return 'full'
+  const row = (rows ?? []).find((w) => w.code === workType)
+    ?? DEFAULT_WORK_TYPES.find((w) => w.code === workType)
+  if (row) return row.job_pipeline === 'full' ? 'full' : 'lite'
   return 'lite'
 }
 

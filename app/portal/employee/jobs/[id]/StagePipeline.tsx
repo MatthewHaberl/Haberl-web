@@ -44,7 +44,14 @@ export function StagePipeline({ job, pipeline = 'full', history, tasks, canAdvan
   const [ticked, setTicked] = useState<Record<string, boolean>>({})
 
   const stage = job.stage
-  const stages = stagesFor(pipeline)
+  // A lite job stranded on a full-only stage (pre-W97 data, manual SQL) would
+  // render as not-started with no way to advance — fall back to the full
+  // pipeline so the job stays driveable. on_hold/cancelled sit outside both.
+  const declaredStages = stagesFor(pipeline)
+  const stages =
+    declaredStages.includes(stage) || stage === 'on_hold' || stage === 'cancelled'
+      ? declaredStages
+      : stagesFor('full')
   const isOnHold = stage === 'on_hold'
   const isCancelled = stage === 'cancelled'
   const currentIndex = stageIndexIn(stages, stage)

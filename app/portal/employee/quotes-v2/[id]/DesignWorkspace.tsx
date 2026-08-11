@@ -133,6 +133,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
                 customerName={req.customer_name}
                 quoteNumber={req.quote_number ?? null}
                 viewedAt={req.viewed_at ?? null}
+                isSolar={engine !== 'scope'}
               />
             </div>
           </div>

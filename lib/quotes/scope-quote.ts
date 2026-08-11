@@ -10,12 +10,12 @@
 // Pure module — no Supabase, no React; safe on server and client.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { computeDeposit, bomToSupplierBom } from '@/lib/solar/design-quote'
+import { bomToSupplierBom } from '@/lib/solar/design-quote'
 import type { DesignBom } from '@/lib/solar/design-bom'
 import type { EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import type { EquipmentPhoto } from '@/lib/solar/render-quote'
-import { scopeDepositSections, type QuoteScope } from './scope'
-import { stripOptionalLines } from './scope-bom'
+import type { QuoteScope } from './scope'
+import { computeScopeDeposit, stripOptionalLines } from './scope-bom'
 import type { ScopeQuoteData, ScopeQuoteSectionView, ScopeOptionalExtraView } from './render-scope-quote'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -87,8 +87,10 @@ export interface ScopeQuoteArgs {
 export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
   const { scope, bom, req } = args
 
-  const depositSections = scopeDepositSections(scope)
-  const deposit = computeDeposit(bom, depositSections)
+  // Line-level deposit: material lines only — labour/fees on completion, even
+  // when they share a section with materials.
+  const deposit = computeScopeDeposit(bom)
+  const depositSections = deposit.items.map((i) => i.name)
   const totalR = bom.totalSellR
   const balanceR = round2(totalR - deposit.totalR)
 

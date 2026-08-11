@@ -80,13 +80,21 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // Paged: PostgREST caps a bare select at ~1000 rows and the catalog is ~15k
   // since the Key Electric import — an unpaged fetch silently priced anything
   // beyond the cap as "product not in catalog".
-  const [{ data: catalogRows }, { data: settings }] = await Promise.all([
+  const [{ data: catalogRows, error: catalogError }, { data: settings }] = await Promise.all([
     fetchAllRows<EquipmentCatalogItem>((from, to) =>
       supabase.from('equipment_catalog').select('*').order('id').range(from, to)),
     supabase.from('company_settings').select('*').eq('id', true).maybeSingle(),
   ])
+  if (catalogError) {
+    // A partial catalog would silently price the missing items as "product not
+    // in catalog" R0 lines — refuse rather than under-quote.
+    return NextResponse.json(
+      { error: `Could not load the equipment catalog: ${catalogError.message}` },
+      { status: 500 },
+    )
+  }
   const catalog = new Map<string, EquipmentCatalogItem>()
-  for (const item of (catalogRows ?? []) as EquipmentCatalogItem[]) catalog.set(item.id, item)
+  for (const item of catalogRows) catalog.set(item.id, item)
 
   const pricing = mapSettingsToPricing(settings ?? {})
   const expiryDays = (settings?.quote_expiry_days as number | null) ?? 30
