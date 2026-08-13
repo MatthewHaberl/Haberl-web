@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   parseEnclosureSpec, ENCLOSURE_MATERIALS, ENCLOSURE_MOUNTS, ENCLOSURE_WAYS,
   DB_COMPONENT_KINDS, dbComponentKind, defaultDbComponent, DB_SUPPLY_ID, DB_SUPPLY_LABEL,
-  DB_CONNECTIONS, DB_TEMPLATES, buildDbTemplate, reidDbComponents,
+  DB_CONNECTIONS, DB_TEMPLATES, buildDbTemplate, reidDbComponents, dbBoardSanity,
   type AcCombiner, type DbComponent, type DbComponentKind, type DbTemplateKey,
 } from '@/lib/solar/system-design'
 import { useDesign } from '../DesignProvider'
@@ -15,18 +15,6 @@ import { ProductPicker } from '../ProductPicker'
 import { SectionCard } from '../section-ui'
 
 type SavedAssembly = { id: string; name: string; payload: AcCombiner }
-
-/** Lightweight board sanity checks surfaced under the component list (W83). */
-function dbSanity(c: AcCombiner): string[] {
-  const w: string[] = []
-  if (c.components.length > 0 && !c.components.some((x) => x.fedFrom.includes(DB_SUPPLY_ID)))
-    w.push('Nothing is fed from the incoming supply.')
-  if (c.components.length > 0 && !c.components.some((x) => x.kind === 'spd'))
-    w.push('No SPD on this board.')
-  for (const x of c.components.filter((x) => x.kind === 'changeover'))
-    if (x.fedFrom.filter(Boolean).length < 2) w.push(`Changeover “${x.label}” needs two sources.`)
-  return w
-}
 
 export function AcCombinerSection() {
   const { design, dispatch, gridSupply } = useDesign()
@@ -328,7 +316,7 @@ export function AcCombinerSection() {
                 )}
 
                 {(() => {
-                  const warns = dbSanity(c)
+                  const warns = dbBoardSanity(c)
                   return warns.length > 0 ? (
                     <div className="mt-2 rounded-md border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 p-2">
                       {warns.map((wn, i) => (

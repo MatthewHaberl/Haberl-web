@@ -6,7 +6,7 @@
 // show the same amber "Quote" treatment as the solar BOM panel.
 
 import { useState, type Dispatch, type SetStateAction } from 'react'
-import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CircuitBoard, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import {
   newScopeLine, type QuoteScope, type ScopeLine, type ScopeLineUnit,
 } from '@/lib/quotes/scope'
 import { CatalogSearch, type CatalogPick } from './CatalogSearch'
+import { ScopeDbBuilder } from './ScopeDbBuilder'
 import type { ScopePricing } from './ScopeWorkspace'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -24,12 +25,19 @@ const rand = (n: number) =>
 
 const UNITS: ScopeLineUnit[] = ['ea', 'm', 'hr', 'job']
 
+// Sections that plausibly hold a distribution board get the DB-builder
+// shortcut (default work-type sections: "Distribution board", "Generator &
+// changeover", "Supply & protection" — plus anything the user names DB-ish).
+const DB_SECTION_RE = /\b(db|board|distribution|changeover|supply|protection)\b/i
+
 export function ScopeEditor({ scope, onChange, pricing }: {
   scope: QuoteScope
   onChange: Dispatch<SetStateAction<QuoteScope>>
   pricing: ScopePricing
 }) {
   const [newSection, setNewSection] = useState('')
+  // Section the DB builder is currently building into (null = closed).
+  const [dbSection, setDbSection] = useState<string | null>(null)
 
   // Display order: declared sections first, then any stragglers lines reference.
   const sectionNames = [...scope.sections]
@@ -215,6 +223,11 @@ export function ScopeEditor({ scope, onChange, pricing }: {
                 <Button type="button" variant="outline" size="sm" onClick={() => addFreeLine(name, 'fee')}>
                   <Plus className="h-3.5 w-3.5" /> Fee
                 </Button>
+                {DB_SECTION_RE.test(name) && (
+                  <Button type="button" variant="outline" size="sm" onClick={() => setDbSection(name)}>
+                    <CircuitBoard className="h-3.5 w-3.5" /> DB builder
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -233,6 +246,18 @@ export function ScopeEditor({ scope, onChange, pricing }: {
           <Plus className="h-3.5 w-3.5" /> Add section
         </Button>
       </div>
+
+      {dbSection !== null && (
+        <ScopeDbBuilder
+          section={dbSection}
+          pricing={pricing}
+          onClose={() => setDbSection(null)}
+          onAdd={(built) => {
+            onChange((s) => ({ ...s, lines: [...s.lines, ...built] }))
+            setDbSection(null)
+          }}
+        />
+      )}
     </div>
   )
 }

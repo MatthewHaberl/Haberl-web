@@ -969,6 +969,19 @@ export function normalizeAcCombiner(c: AcCombiner): AcCombiner {
   }
 }
 
+/** Lightweight board sanity checks surfaced under the component list (W83).
+ *  Shared by the studio's AC-board section and the scope engine's DB builder. */
+export function dbBoardSanity(c: Pick<AcCombiner, 'components'>): string[] {
+  const w: string[] = []
+  if (c.components.length > 0 && !c.components.some((x) => x.fedFrom.includes(DB_SUPPLY_ID)))
+    w.push('Nothing is fed from the incoming supply.')
+  if (c.components.length > 0 && !c.components.some((x) => x.kind === 'spd'))
+    w.push('No SPD on this board.')
+  for (const x of c.components.filter((x) => x.kind === 'changeover'))
+    if (x.fedFrom.filter(Boolean).length < 2) w.push(`Changeover “${x.label}” needs two sources.`)
+  return w
+}
+
 export type EarthKind = 'earthing' | 'bonding'
 export type EarthArrangement = 'single' | 'line' | 'loop' | 'mat'
 
