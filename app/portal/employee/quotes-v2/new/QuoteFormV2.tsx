@@ -223,7 +223,8 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
 
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState('')
-  const [submitted, setSubmitted] = useState(false)
+  // Holds the created quote's id so the success screen can link straight to it.
+  const [submittedId, setSubmittedId] = useState<string | null>(null)
 
   const inverterBrands = brands.filter((b) => b.category === 'inverter').map((b) => b.brand)
   const batteryBrands  = brands.filter((b) => b.category === 'battery').map((b) => b.brand)
@@ -369,27 +370,30 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
           .update({ status: 'converted', quote_request_id: inserted.id, customer_id: customerId })
           .eq('id', leadId)
       }
-      setSubmitted(true)
+      setSubmittedId(inserted?.id ?? null)
     } finally {
       setLoading(false)
     }
   }
 
-  if (submitted) {
+  if (submittedId) {
     return (
-      <Card className="max-w-lg">
-        <CardContent className="pt-8 pb-8 flex flex-col items-center text-center gap-4">
-          <CheckCircle2 className="h-12 w-12 text-success" />
-          <div>
-            <h2 className="text-xl font-bold text-primary">Request submitted</h2>
-            <p className="text-muted-foreground mt-1">It now shows under the customer in Quotes.</p>
-          </div>
-          <div className="flex gap-3 mt-2">
-            <Button variant="outline" onClick={() => router.push('/portal/employee/quotes-v2')}>View all quotes</Button>
-            <Button variant="accent" onClick={() => router.push('/portal/employee/quotes-v2/new')}>New request</Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex min-h-[70vh] items-center justify-center">
+        <Card className="w-full max-w-lg">
+          <CardContent className="pt-8 pb-8 flex flex-col items-center text-center gap-4">
+            <CheckCircle2 className="h-12 w-12 text-success" />
+            <div>
+              <h2 className="text-xl font-bold text-primary">Request submitted</h2>
+              <p className="text-muted-foreground mt-1">It now shows under the customer in Quotes.</p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-3 mt-2">
+              <Button variant="accent" onClick={() => router.push(`/portal/employee/quotes-v2/${submittedId}`)}>Open this quote</Button>
+              <Button variant="outline" onClick={() => router.push('/portal/employee/quotes-v2')}>View all quotes</Button>
+              <Button variant="outline" onClick={() => router.push('/portal/employee/quotes-v2/new')}>New request</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
