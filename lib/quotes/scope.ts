@@ -35,12 +35,16 @@ export interface ScopeLine {
 }
 
 export interface ScopeLabour {
-  mode: 'hourly' | 'fixed'
-  /** Call-out fee (hourly mode only). */
+  mode: 'hourly' | 'daily' | 'fixed'
+  /** Call-out fee (hourly mode only). Doubles as the one-hour minimum. */
   calloutR: number
   hours: number
   /** R/hr — seeded from company_settings.labour_hourly_rate_rands. */
   rateR: number
+  /** Days on site (daily mode only). Half-days allowed. */
+  days: number
+  /** R/day for the standard team — seeded from company_settings.labour_day_rate_rands. */
+  dayRateR: number
   /** Fixed-price amount (fixed mode only). */
   fixedR: number
   description: string
@@ -80,6 +84,7 @@ export function newScopeLineId(): string {
 export interface EmptyScopeOpts {
   sections?: string[]
   labourRateR?: number
+  dayRateR?: number
   calloutR?: number
   cocFeeR?: number
 }
@@ -93,9 +98,11 @@ export function emptyScope(opts: EmptyScopeOpts = {}): QuoteScope {
     lines: [],
     labour: {
       mode: 'hourly',
-      calloutR: num(opts.calloutR, 450),
+      calloutR: num(opts.calloutR, 750),
       hours: 0,
-      rateR: num(opts.labourRateR, 650),
+      rateR: num(opts.labourRateR, 750),
+      days: 0,
+      dayRateR: num(opts.dayRateR, 5500),
       fixedR: 0,
       description: '',
     },
@@ -174,10 +181,12 @@ export function parseScope(raw: unknown): QuoteScope | null {
       : [],
     lines: Array.isArray(r.lines) ? r.lines.map(parseLine).filter((l): l is ScopeLine => l !== null) : [],
     labour: {
-      mode: labourRaw.mode === 'fixed' ? 'fixed' : 'hourly',
+      mode: labourRaw.mode === 'fixed' || labourRaw.mode === 'daily' ? labourRaw.mode : 'hourly',
       calloutR: num(labourRaw.calloutR, base.labour.calloutR),
       hours: num(labourRaw.hours, 0),
       rateR: num(labourRaw.rateR, base.labour.rateR),
+      days: num(labourRaw.days, 0),
+      dayRateR: num(labourRaw.dayRateR, base.labour.dayRateR),
       fixedR: num(labourRaw.fixedR, 0),
       description: str(labourRaw.description),
     },
@@ -188,10 +197,18 @@ export function parseScope(raw: unknown): QuoteScope | null {
   }
 }
 
-/** Labour amount for the quote: hourly → call-out + hours × rate; fixed → the typed amount. */
+/**
+ * Labour amount for the quote:
+ *   hourly → call-out + hours × rate (the call-out IS the one-hour minimum, so
+ *            the first hour is not billed twice)
+ *   daily  → days × day rate (team rate; no call-out — a full day absorbs it)
+ *   fixed  → the typed amount
+ */
 export function labourAmountR(labour: ScopeLabour): number {
   if (labour.mode === 'fixed') return round2(labour.fixedR)
-  return round2(labour.calloutR + labour.hours * labour.rateR)
+  if (labour.mode === 'daily') return round2(labour.days * labour.dayRateR)
+  const billableHours = Math.max(0, labour.hours - (labour.calloutR > 0 ? 1 : 0))
+  return round2(labour.calloutR + billableHours * labour.rateR)
 }
 
 /** Is this line priced, judged from the values stored on the scope itself? */

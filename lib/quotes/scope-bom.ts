@@ -145,9 +145,16 @@ function labourDescription(scope: QuoteScope): string {
   const typed = scope.labour.description.trim()
   if (typed) return typed
   if (scope.labour.mode === 'fixed') return 'Labour — fixed price'
+  if (scope.labour.mode === 'daily') {
+    const d = scope.labour.days
+    if (d <= 0) return 'Labour'
+    return `Labour — ${d} ${d === 1 ? 'day' : 'days'} on site (team)`
+  }
   const parts: string[] = []
-  if (scope.labour.calloutR > 0) parts.push('call-out')
-  if (scope.labour.hours > 0) parts.push(`${scope.labour.hours} hr @ R${scope.labour.rateR}/hr`)
+  // The call-out carries the first hour, so quote the remainder at the hourly rate.
+  const billable = Math.max(0, scope.labour.hours - (scope.labour.calloutR > 0 ? 1 : 0))
+  if (scope.labour.calloutR > 0) parts.push('call-out (first hour incl.)')
+  if (billable > 0) parts.push(`${billable} hr @ R${scope.labour.rateR}/hr`)
   return parts.length ? `Labour — ${parts.join(' + ')}` : 'Labour'
 }
 

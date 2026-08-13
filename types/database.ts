@@ -742,9 +742,12 @@ export interface CompanySettings {
   // defaults in lib/solar/canvas-theme.ts (CIRCUIT_THEME). Shape mirrors
   // CanvasColorOverrides there — Partial<Record<CircuitLayer, Partial<CircuitStyle>>>.
   canvas_colors?: Record<string, { label?: string; stroke?: string; fill?: string; striped?: boolean; stripe?: string }> | null
-  // Scope-engine labour defaults (W97, migration 105). Placeholders until real
-  // rates are captured — every scope quote's labour is wrong until then.
+  // Scope-engine labour defaults (W97, migration 105; real rates set in 107).
+  // callout_fee_rands doubles as the one-hour minimum — labourAmountR does not
+  // bill the first hour on top of it.
   labour_hourly_rate_rands?: number
+  /** R/day for the standard team of 4 (migration 107). */
+  labour_day_rate_rands?: number
   callout_fee_rands?: number
   updated_at: string
 }

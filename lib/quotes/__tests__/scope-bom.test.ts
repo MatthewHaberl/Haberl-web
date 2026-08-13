@@ -54,7 +54,7 @@ function fixtureScope(): QuoteScope {
     line('Wiring & containment', { catalogId: 'cable1', qty: 25, unit: 'm' }),
     line('Wiring & containment', { description: 'Misc gland kit', qty: 1, unitSellR: 150, unitCostR: 100 }),
   ]
-  scope.labour = { mode: 'hourly', calloutR: 450, hours: 8, rateR: 650, fixedR: 0, description: '' }
+  scope.labour = { mode: 'hourly', calloutR: 750, hours: 8, rateR: 750, days: 0, dayRateR: 5500, fixedR: 0, description: '' }
   scope.coc = { included: true, feeR: 1500 }
   return scope
 }
@@ -167,17 +167,26 @@ test('hourly labour = call-out + hours × rate, sell-only (cost == sell, solar L
   const bom = scopeToBom(fixtureScope(), fixtureCatalog(), MARKUP)
   const labour = bom.sections.find((s) => s.name === 'Labour')!
   assert.equal(labour.lines.length, 1)
-  assert.equal(labour.sellR, 450 + 8 * 650) // 5650
+  assert.equal(labour.sellR, 750 + 7 * 750) // 6000 — call-out covers hour 1
   assert.equal(labour.costR, labour.sellR)
+})
+
+test('daily labour bills days × the team day rate, with no call-out', () => {
+  const scope = fixtureScope()
+  scope.labour = { ...scope.labour, mode: 'daily', days: 2.5, dayRateR: 5500 }
+  const bom = scopeToBom(scope, fixtureCatalog(), MARKUP)
+  const labour = bom.sections.find((s) => s.name === 'Labour')!
+  assert.equal(labour.sellR, 2.5 * 5500) // 13750 — calloutR is ignored in daily mode
+  assert.equal(labour.lines[0].description, 'Labour — 2.5 days on site (team)')
 })
 
 test('fixed labour bills the typed amount only', () => {
   const scope = fixtureScope()
-  scope.labour = { mode: 'fixed', calloutR: 450, hours: 8, rateR: 650, fixedR: 4200, description: 'Day rate' }
+  scope.labour = { mode: 'fixed', calloutR: 750, hours: 8, rateR: 750, days: 0, dayRateR: 5500, fixedR: 4200, description: 'Fixed price' }
   const bom = scopeToBom(scope, fixtureCatalog(), MARKUP)
   const labour = bom.sections.find((s) => s.name === 'Labour')!
   assert.equal(labour.sellR, 4200)
-  assert.equal(labour.lines[0].description, 'Day rate')
+  assert.equal(labour.lines[0].description, 'Fixed price')
 })
 
 test('CoC included bills exactly the scope fee — an explicit R0 stays R0, never the settings default', () => {
@@ -236,20 +245,20 @@ test('scope deposit = material LINES only; labour and compliance on completion',
   // Labour + CoC are the balance
   assert.equal(
     Math.round((bom.totalSellR - deposit.totalR) * 100) / 100,
-    5650 + 1500,
+    6000 + 1500,
   )
 })
 
 test('a material line sharing the Labour/Compliance section never drags the generated labour or CoC into the deposit', () => {
   // Work type defaults seed a 'Labour' section and the editor can add material
   // lines to it — the deposit must still be the material line alone, not the
-  // whole section including the generated R5650 labour line.
+  // whole section including the generated R6000 labour line.
   const scope = fixtureScope()
   scope.lines.push(line('Labour', { catalogId: 'db1', qty: 1 })) // R2300 material in 'Labour'
   const bom = scopeToBom(scope, fixtureCatalog(), MARKUP)
   const deposit = computeScopeDeposit(bom)
   const labourItem = deposit.items.find((i) => i.name === 'Labour')!
-  assert.equal(labourItem.amountRands, 2300, 'material only — not the R5650 generated labour')
+  assert.equal(labourItem.amountRands, 2300, 'material only — not the R6000 generated labour')
   assert.equal(deposit.totalR, 2300 + 575 + 150 + 2300)
 })
 

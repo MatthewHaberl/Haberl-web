@@ -25,11 +25,12 @@ import { ScopeSummaryPanel } from './ScopeSummaryPanel'
 export interface ScopePricing {
   markup: number
   labourRateR: number
+  dayRateR: number
   calloutR: number
   cocFeeR: number
 }
 
-const DEFAULT_PRICING: ScopePricing = { markup: 1.15, labourRateR: 650, calloutR: 450, cocFeeR: 1500 }
+const DEFAULT_PRICING: ScopePricing = { markup: 1.15, labourRateR: 750, dayRateR: 5500, calloutR: 750, cocFeeR: 1500 }
 
 export function ScopeWorkspace({ requestId, rawScope, workType }: {
   requestId: string
@@ -50,7 +51,7 @@ export function ScopeWorkspace({ requestId, rawScope, workType }: {
     let cancelled = false
     supabase
       .from('company_settings')
-      .select('markup_pct, labour_hourly_rate_rands, callout_fee_rands, coc_fee_rands')
+      .select('markup_pct, labour_hourly_rate_rands, labour_day_rate_rands, callout_fee_rands, coc_fee_rands')
       .eq('id', true)
       .maybeSingle()
       .then(({ data }) => {
@@ -59,21 +60,25 @@ export function ScopeWorkspace({ requestId, rawScope, workType }: {
           typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fb
         const next: ScopePricing = {
           markup: 1 + num(data.markup_pct, 15) / 100,
-          labourRateR: num(data.labour_hourly_rate_rands, 650),
-          calloutR: num(data.callout_fee_rands, 450),
+          labourRateR: num(data.labour_hourly_rate_rands, 750),
+          dayRateR: num(data.labour_day_rate_rands, 5500),
+          calloutR: num(data.callout_fee_rands, 750),
           cocFeeR: num(data.coc_fee_rands, 1500),
         }
         setPricing(next)
         setScope((s) => {
           const untouchedLabour =
-            s.labour.hours === 0 && s.labour.fixedR === 0 && !s.labour.description &&
-            s.labour.rateR === 650 && s.labour.calloutR === 450
+            s.labour.hours === 0 && s.labour.days === 0 && s.labour.fixedR === 0 &&
+            !s.labour.description &&
+            // Either placeholder generation counts as "never edited".
+            ((s.labour.rateR === 650 && s.labour.calloutR === 450) ||
+             (s.labour.rateR === 750 && s.labour.calloutR === 750))
           const untouchedCoc = !s.coc.included && s.coc.feeR === 1500
           if (!untouchedLabour && !untouchedCoc) return s
           return {
             ...s,
             labour: untouchedLabour
-              ? { ...s.labour, rateR: next.labourRateR, calloutR: next.calloutR }
+              ? { ...s.labour, rateR: next.labourRateR, dayRateR: next.dayRateR, calloutR: next.calloutR }
               : s.labour,
             coc: untouchedCoc ? { ...s.coc, feeR: next.cocFeeR } : s.coc,
           }

@@ -1,7 +1,8 @@
 'use client'
 
-// Labour + CoC panel for the scope builder (W97). Labour is hourly (call-out +
-// hours × rate) or a fixed amount, chosen per quote — rates seed from Settings.
+// Labour + CoC panel for the scope builder (W97). Labour is hourly (call-out,
+// which carries the first hour, + further hours × rate), daily (days × team day
+// rate) or a fixed amount, chosen per quote — rates seed from Settings.
 
 import type { Dispatch, SetStateAction } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -22,7 +23,7 @@ export function LabourPanel({ scope, onChange, pricing }: {
     onChange((s) => ({ ...s, labour: { ...s.labour, ...patch } }))
   const num = (v: string) => Math.max(0, Number(v) || 0)
 
-  const modeBtn = (mode: 'hourly' | 'fixed', label: string) => (
+  const modeBtn = (mode: QuoteScope['labour']['mode'], label: string) => (
     <button
       type="button"
       onClick={() => setLabour({ mode })}
@@ -42,10 +43,11 @@ export function LabourPanel({ scope, onChange, pricing }: {
         <div className="text-sm font-semibold">Labour</div>
         <div className="flex gap-2">
           {modeBtn('hourly', 'Call-out + hourly')}
+          {modeBtn('daily', 'Day rate')}
           {modeBtn('fixed', 'Fixed price')}
         </div>
 
-        {labour.mode === 'hourly' ? (
+        {labour.mode === 'hourly' && (
           <div className="grid grid-cols-3 gap-2">
             <label className="space-y-1 text-[11px] text-muted-foreground">
               Call-out
@@ -65,8 +67,35 @@ export function LabourPanel({ scope, onChange, pricing }: {
                 value={labour.rateR === 0 ? '' : String(labour.rateR)}
                 onChange={(e) => setLabour({ rateR: num(e.target.value) })} />
             </label>
+            <p className="col-span-3 text-[11px] text-muted-foreground">
+              The call-out covers the first hour — enter total hours on site and only
+              the hours beyond the first are charged at the hourly rate.
+            </p>
           </div>
-        ) : (
+        )}
+
+        {labour.mode === 'daily' && (
+          <div className="grid grid-cols-2 gap-2">
+            <label className="space-y-1 text-[11px] text-muted-foreground">
+              Days on site
+              <Input type="number" min={0} step="0.5" className="h-9"
+                value={labour.days === 0 ? '' : String(labour.days)}
+                onChange={(e) => setLabour({ days: num(e.target.value) })} />
+            </label>
+            <label className="space-y-1 text-[11px] text-muted-foreground">
+              Rate /day (team)
+              <Input leadingText="R" type="number" min={0} step="any" className="h-9"
+                value={labour.dayRateR === 0 ? '' : String(labour.dayRateR)}
+                onChange={(e) => setLabour({ dayRateR: num(e.target.value) })} />
+            </label>
+            <p className="col-span-2 text-[11px] text-muted-foreground">
+              Standard team of 4. Settings default: {rand(pricing.dayRateR)}/day — no
+              call-out is added on day-rate work.
+            </p>
+          </div>
+        )}
+
+        {labour.mode === 'fixed' && (
           <label className="block space-y-1 text-[11px] text-muted-foreground">
             Fixed labour amount
             <Input leadingText="R" type="number" min={0} step="any" className="h-9"
