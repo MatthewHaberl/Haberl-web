@@ -217,6 +217,31 @@ export function designToBom(
     }
   }
 
+  // Supplier-quoted line items (W98) — pulled from an uploaded supplier quote.
+  // unitCostR is already the landed cost (ex-VAT × 1.15); sell = landed × markup,
+  // the same rule as any catalog material. A R0 line surfaces as "Quote".
+  for (const q of design.quotedItems ?? []) {
+    const qty = Math.max(0, q.qty)
+    if (qty <= 0) continue
+    if (q.unitCostR > 0) {
+      const unitSellR = round2(q.unitCostR * markup)
+      lines.push({
+        section: 'Quoted line items', catalogId: `supplier:${q.id}`, sku: q.sku || '—',
+        description: q.description || 'Supplier-quoted item', qty,
+        unitCostR: q.unitCostR, unitSellR,
+        lineCostR: round2(q.unitCostR * qty), lineSellR: round2(unitSellR * qty),
+        priced: true, status: 'ok',
+      })
+    } else {
+      lines.push({
+        section: 'Quoted line items', catalogId: `supplier:${q.id}`, sku: q.sku || '—',
+        description: q.description || 'Supplier-quoted item', qty,
+        unitCostR: 0, unitSellR: 0, lineCostR: 0, lineSellR: 0,
+        priced: false, status: 'no-cost',
+      })
+    }
+  }
+
   // Monitoring / comms hardware (item 26) — dongles, meters, gateways per inverter.
   for (const m of design.monitoring ?? []) {
     const label = `${m.label || 'Monitoring'}${m.commsType ? ` (${m.commsType})` : ''}${m.role === 'bundled' ? ' — bundled' : ''}`

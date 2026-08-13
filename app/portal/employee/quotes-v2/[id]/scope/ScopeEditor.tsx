@@ -17,6 +17,10 @@ import {
 } from '@/lib/quotes/scope'
 import { CatalogSearch, type CatalogPick } from './CatalogSearch'
 import { ScopeDbBuilder } from './ScopeDbBuilder'
+import {
+  SupplierQuoteLinePicker, useSupplierQuoteLines, type PickableSupplierLine,
+} from '../SupplierQuoteLinePicker'
+import { landedCostR, quotedSellR } from '@/lib/quotes/supplier-quotes'
 import type { ScopePricing } from './ScopeWorkspace'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -30,14 +34,17 @@ const UNITS: ScopeLineUnit[] = ['ea', 'm', 'hr', 'job']
 // changeover", "Supply & protection" — plus anything the user names DB-ish).
 const DB_SECTION_RE = /\b(db|board|distribution|changeover|supply|protection)\b/i
 
-export function ScopeEditor({ scope, onChange, pricing }: {
+export function ScopeEditor({ scope, onChange, pricing, requestId }: {
   scope: QuoteScope
   onChange: Dispatch<SetStateAction<QuoteScope>>
   pricing: ScopePricing
+  requestId: string
 }) {
   const [newSection, setNewSection] = useState('')
   // Section the DB builder is currently building into (null = closed).
   const [dbSection, setDbSection] = useState<string | null>(null)
+  // Lines on uploaded supplier quotes (W98) — pickable into any section.
+  const supplierLines = useSupplierQuoteLines(requestId)
 
   // Display order: declared sections first, then any stragglers lines reference.
   const sectionNames = [...scope.sections]
@@ -69,6 +76,28 @@ export function ScopeEditor({ scope, onChange, pricing }: {
           description: item.description,
           unitCostR: round2(item.cost_rands),
           unitSellR: round2(item.cost_rands * pricing.markup),
+        },
+      ],
+    }))
+
+  // A supplier-quoted line lands as a free-text line: the QUOTED price is
+  // authoritative for this quote (a catalogId would be re-priced from the
+  // catalog at generate). Cost = landed (ex-VAT × 1.15); sell = landed × markup.
+  const addSupplierLine = (section: string, l: PickableSupplierLine) =>
+    onChange((s) => ({
+      ...s,
+      lines: [
+        ...s.lines,
+        {
+          ...newScopeLine(section, 'material'),
+          catalogId: null,
+          sku: l.sku,
+          description: l.description,
+          qty: l.qty > 0 ? l.qty : 1,
+          unit: (UNITS as string[]).includes(l.unit) ? (l.unit as ScopeLineUnit) : 'ea',
+          unitCostR: landedCostR(l.unitPriceExVatR),
+          unitSellR: quotedSellR(l.unitPriceExVatR, pricing.markup),
+          note: l.supplierLabel ? `From ${l.supplierLabel}` : null,
         },
       ],
     }))
@@ -217,6 +246,10 @@ export function ScopeEditor({ scope, onChange, pricing }: {
                 <div className="min-w-[240px] flex-1">
                   <CatalogSearch onPick={(item) => addCatalogLine(name, item)} />
                 </div>
+                <SupplierQuoteLinePicker
+                  lines={supplierLines}
+                  onPick={(l) => addSupplierLine(name, l)}
+                />
                 <Button type="button" variant="outline" size="sm" onClick={() => addFreeLine(name, 'material')}>
                   <Plus className="h-3.5 w-3.5" /> Free-text item
                 </Button>

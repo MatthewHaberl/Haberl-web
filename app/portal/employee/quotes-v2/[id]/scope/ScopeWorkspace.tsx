@@ -133,7 +133,7 @@ export function ScopeWorkspace({ requestId, rawScope, workType }: {
             </CardContent>
           </Card>
 
-          <ScopeEditor scope={scope} onChange={setScope} pricing={pricing} />
+          <ScopeEditor scope={scope} onChange={setScope} pricing={pricing} requestId={requestId} />
         </div>
 
         <div className="space-y-6">

@@ -879,3 +879,39 @@ export interface SansRule {
   source: string | null
   created_at: string
 }
+
+// ── Supplier quotes attached to a customer quote — see migration 109 (W98) ──
+// Canonical runtime types live in lib/quotes/supplier-quotes.ts (SupplierQuoteRow /
+// SupplierQuoteLineRow); keep the two in sync.
+
+/** One uploaded (or manual) supplier quote against a quote_request. */
+export interface SupplierQuote {
+  id: string
+  quote_request_id: string
+  supplier: string
+  reference: string | null
+  quote_date: string | null
+  source_filename: string | null
+  storage_path: string | null
+  mime_type: string | null
+  status: 'uploaded' | 'parsing' | 'parsed' | 'failed' | 'manual'
+  parse_error: string | null
+  line_count: number
+  notes: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** One line on a supplier quote. unit_price_r is the supplier's EX-VAT price. */
+export interface SupplierQuoteLine {
+  id: string
+  supplier_quote_id: string
+  line_no: number
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  unit_price_r: number
+  catalog_id: string | null
+  created_at: string
+}

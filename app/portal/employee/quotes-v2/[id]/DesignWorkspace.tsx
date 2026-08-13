@@ -22,6 +22,7 @@ import { DesignBomPanel } from './design/DesignBomPanel'
 import { DesignCanvasPanel } from './design/DesignCanvasPanel'
 import { DesignStudio } from './design/DesignStudio'
 import { ScopeWorkspace } from './scope/ScopeWorkspace'
+import { SupplierQuotesPanel } from './SupplierQuotesPanel'
 import type { WorkType } from '@/lib/quotes/work-types'
 
 interface Props {
@@ -143,10 +144,11 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
       </div>
 
       {isAdmin ? (
-        // Engine branch (W97): 'scope' work types get the line-item scope builder;
-        // everything else keeps the solar design canvas. Header + status bar above
-        // and the non-admin iframe below are shared by both engines.
-        engine === 'scope' ? (
+        <>
+        {/* Engine branch (W97): 'scope' work types get the line-item scope builder;
+            everything else keeps the solar design canvas. Header + status bar above
+            and the non-admin iframe below are shared by both engines. */}
+        {engine === 'scope' ? (
           <ScopeWorkspace requestId={req.id} rawScope={req.scope} workType={workType} />
         ) : (
           <CanvasThemeProvider value={canvasColors}>
@@ -178,7 +180,10 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
               )}
             </DesignProvider>
           </CanvasThemeProvider>
-        )
+        )}
+        {/* Quoted line items (W98) — supplier-quote uploads shared by both engines. */}
+        <SupplierQuotesPanel requestId={req.id} />
+        </>
       ) : (
         <div className="rounded-xl border border-border bg-card p-4">
           {req.quote_html ? (

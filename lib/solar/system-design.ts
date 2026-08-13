@@ -1204,6 +1204,20 @@ export function recommendedInverterKw(s: SupplyConfig): number {
   return Math.round(supplyKva(s) * 0.9)
 }
 
+// ── Supplier-quoted line items (W98) ─────────────────────────────────────────
+/** A line pulled from an uploaded supplier quote (supplier_quote_lines). */
+export interface QuotedItem {
+  id: string
+  /** supplier_quote_lines.id it came from (null for a hand-typed row). */
+  lineId: string | null
+  supplier: string
+  sku: string
+  description: string
+  qty: number
+  /** Landed unit cost (rands) — supplier ex-VAT price × 1.15 unrecoverable VAT. */
+  unitCostR: number
+}
+
 export interface SystemDesign {
   version: number
   energy: EnergyProfile
@@ -1219,6 +1233,8 @@ export interface SystemDesign {
   acCombiners: AcCombiner[]
   earthing: EarthingConfig
   extras: ExtraComponent[]
+  /** Lines pulled from uploaded supplier quotes (W98) — priced at the quoted rate. */
+  quotedItems?: QuotedItem[]
   /** Inverter monitoring/comms hardware (item 26). */
   monitoring?: MonitoringDevice[]
   /** Comms/data cabling links (item 30). */
@@ -1265,6 +1281,7 @@ export function emptyDesign(): SystemDesign {
     acCombiners: [],
     earthing: { spikeCount: null, spec: 'CU GY 10mm²', electrodes: [], bars: [], conductors: [] },
     extras: [],
+    quotedItems: [],
     monitoring: [],
     data: defaultDataConfig(),
     layout: { nodes: {} },
@@ -1422,6 +1439,17 @@ export function parseDesign(raw: unknown): SystemDesign | null {
         panelWidthMm: r.panelWidthMm ?? null,
         panelHeightMm: r.panelHeightMm ?? null,
       })) as MountingRow[],
+    })),
+    // Supplier-quoted line items (W98) — optional, sanitised so a hand-edited or
+    // partial save can't produce NaN quantities/costs in the BOM.
+    quotedItems: (src.quotedItems ?? []).map((q) => ({
+      id: q.id || mkId('sqitem'),
+      lineId: q.lineId ?? null,
+      supplier: typeof q.supplier === 'string' ? q.supplier : '',
+      sku: typeof q.sku === 'string' ? q.sku : '',
+      description: typeof q.description === 'string' ? q.description : '',
+      qty: Math.max(0, num(q.qty)),
+      unitCostR: Math.max(0, num(q.unitCostR)),
     })),
     // Backfill combiners saved before the product-driven protection model. The new
     // internals list (item 44) defaults EMPTY; legacy stringConnections stay parseable.

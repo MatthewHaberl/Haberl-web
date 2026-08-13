@@ -32,7 +32,7 @@ import {
 import type {
   BatteryBank, AcCombiner, ExtraComponent, ExtraSubComponent,
   BankCable, MonitoringDevice, DataLink, DcComponent, UserEdge,
-  EnergyProfileField,
+  EnergyProfileField, QuotedItem,
 } from '@/lib/solar/system-design'
 import {
   defaultAcCombiner, defaultExtra, defaultExtraSubComponent,
@@ -81,6 +81,10 @@ export type DesignAction =
   | { type: 'addExtra'; extraType: string; label: string }
   | { type: 'updateExtra'; id: string; patch: Partial<ExtraComponent> }
   | { type: 'removeExtra'; id: string }
+  // Supplier-quoted line items (W98)
+  | { type: 'addQuotedItem'; item: QuotedItem }
+  | { type: 'updateQuotedItem'; id: string; patch: Partial<QuotedItem> }
+  | { type: 'removeQuotedItem'; id: string }
   // Extra sub-components (item 31)
   | { type: 'addExtraComponent'; extraId: string; kind?: string; label?: string }
   | { type: 'updateExtraComponent'; extraId: string; componentId: string; patch: Partial<ExtraSubComponent> }
@@ -438,6 +442,16 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
     case 'removeExtra':
       return { ...d, extras: d.extras.filter((x) => x.id !== action.id) }
 
+    // ── Supplier-quoted line items (W98) ────────────────────────────────────────
+    case 'addQuotedItem':
+      return { ...d, quotedItems: [...(d.quotedItems ?? []), action.item] }
+
+    case 'updateQuotedItem':
+      return { ...d, quotedItems: (d.quotedItems ?? []).map((q) => q.id === action.id ? { ...q, ...action.patch } : q) }
+
+    case 'removeQuotedItem':
+      return { ...d, quotedItems: (d.quotedItems ?? []).filter((q) => q.id !== action.id) }
+
     // ── Extra sub-components (item 31) ──────────────────────────────────────────
     case 'addExtraComponent':
       return {
@@ -606,6 +620,8 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
 interface DesignContextValue {
   design: SystemDesign
   dispatch: React.Dispatch<DesignAction>
+  /** quote_requests.id this design belongs to (W98: supplier-quote pickers). */
+  requestId: string
   gridSupply: string | undefined
   record: { monthly_kwh?: string | number | null; municipality?: string | null } | null
   activeStep: number
@@ -662,7 +678,7 @@ export function DesignProvider({
 
   return (
     <DesignContext.Provider
-      value={{ design, dispatch, gridSupply, record, activeStep, setActiveStep: setStep, saveState }}
+      value={{ design, dispatch, requestId, gridSupply, record, activeStep, setActiveStep: setStep, saveState }}
     >
       {children}
     </DesignContext.Provider>
