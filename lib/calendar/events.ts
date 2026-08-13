@@ -8,7 +8,10 @@ import type {
 /**
  * The calendar overlays two sources:
  *   1. calendar_events — the new appointments layer (migration 085)
- *   2. jobs.scheduled_date — installations, read-only (no double entry)
+ *   2. job_schedule_slots — installation working days, read-only (migration 106).
+ *      A job booked across three days shows as three timed blocks.
+ *   3. jobs.scheduled_date — the fallback for jobs booked before slots existed
+ *      (or created straight from the manual-job form); shown as an all-day block.
  *
  * Both are flattened into one CalendarItem the UI can render uniformly.
  */
@@ -127,6 +130,39 @@ function jobToItem(j: JobRow): CalendarItem {
   }
 }
 
+interface SlotRow {
+  id: string
+  job_id: string
+  starts_at: string
+  ends_at: string
+  assigned_to: string | null
+  job?: {
+    title: string
+    stage: string
+    assigned_to: string | null
+    site?: { name: string | null; address: string | null } | null
+  } | null
+}
+
+/** One booked working day on a job — a timed block, not an all-day one. */
+function slotToItem(s: SlotRow, dayNumber: number, dayCount: number, assigneeName: string | null): CalendarItem {
+  const suffix = dayCount > 1 ? ` (day ${dayNumber}/${dayCount})` : ''
+  return {
+    id: `slot:${s.id}`,
+    source: 'job',
+    kind: 'installation',
+    title: `${s.job?.title ?? 'Installation'}${suffix}`,
+    start: s.starts_at,
+    end: s.ends_at,
+    allDay: false,
+    status: s.job?.stage ?? 'scheduled',
+    assignedTo: s.assigned_to ?? s.job?.assigned_to ?? null,
+    assigneeName,
+    location: s.job?.site?.address ?? s.job?.site?.name ?? null,
+    href: `/portal/employee/jobs/${s.job_id}`,
+  }
+}
+
 /**
  * Load every calendar item between two instants. RLS already scopes rows to the
  * caller (field workers see only their own events/jobs), so this just reads what
@@ -154,6 +190,46 @@ export async function loadCalendarItems(
     .lt('starts_at', rangeEnd)
     .order('starts_at', { ascending: true })
 
+  // Installation working days. Jobs with slots are rendered from these; the
+  // bare scheduled_date query below skips them so nothing shows twice.
+  const { data: slotRows } = await supabase
+    .from('job_schedule_slots')
+    .select('id, job_id, starts_at, ends_at, assigned_to, job:jobs(title, stage, assigned_to, site:sites(name, address))')
+    .gte('starts_at', rangeStart)
+    .lt('starts_at', rangeEnd)
+    .order('starts_at', { ascending: true })
+
+  const slots = ((slotRows ?? []) as unknown as SlotRow[])
+    .filter((s) => s.job && s.job.stage !== 'cancelled')
+  const slottedJobIds = new Set(slots.map((s) => s.job_id))
+
+  // Day numbering is per job, so "day 2/3" reads right on a multi-day install.
+  // Counted over ALL the job's slots, not just the loaded window — otherwise a
+  // booking straddling a month boundary renumbers itself as you page around.
+  const dayNumberBySlot = new Map<string, { n: number; of: number }>()
+  if (slottedJobIds.size > 0) {
+    const { data: allRows } = await supabase
+      .from('job_schedule_slots')
+      .select('id, job_id, starts_at')
+      .in('job_id', [...slottedJobIds])
+      .order('starts_at', { ascending: true })
+    const counts = new Map<string, number>()
+    for (const r of allRows ?? []) counts.set(r.job_id as string, (counts.get(r.job_id as string) ?? 0) + 1)
+    const seen = new Map<string, number>()
+    for (const r of allRows ?? []) {
+      const jobId = r.job_id as string
+      const n = (seen.get(jobId) ?? 0) + 1
+      seen.set(jobId, n)
+      dayNumberBySlot.set(r.id as string, { n, of: counts.get(jobId) ?? 1 })
+    }
+  }
+
+  const slotItems = slots.map((s) => {
+    const pos = dayNumberBySlot.get(s.id) ?? { n: 1, of: 1 }
+    const assignee = s.assigned_to ?? s.job?.assigned_to ?? null
+    return slotToItem(s, pos.n, pos.of, assignee ? nameById.get(assignee) ?? null : null)
+  })
+
   const startDate = rangeStart.slice(0, 10)
   const endDate = rangeEnd.slice(0, 10)
   const { data: jobRows } = await supabase
@@ -167,7 +243,9 @@ export async function loadCalendarItems(
   const events = (eventRows ?? []).map((e) =>
     eventToItem(e as CalendarEvent, e.assigned_to ? nameById.get(e.assigned_to as string) ?? null : null),
   )
-  const jobs = (jobRows ?? []).map((j) => jobToItem(j as unknown as JobRow))
+  const jobs = (jobRows ?? [])
+    .filter((j) => !slottedJobIds.has(j.id as string))
+    .map((j) => jobToItem(j as unknown as JobRow))
 
-  return [...events, ...jobs].sort((a, b) => a.start.localeCompare(b.start))
+  return [...events, ...slotItems, ...jobs].sort((a, b) => a.start.localeCompare(b.start))
 }

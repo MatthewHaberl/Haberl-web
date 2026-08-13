@@ -831,6 +831,22 @@ export interface CalendarEvent {
   updated_at: string
 }
 
+/**
+ * One booked working day on a job — see migration 106. A job that runs across
+ * several days has one slot per day, each with its own hours and assignee.
+ */
+export interface JobScheduleSlot {
+  id: string
+  job_id: string
+  starts_at: string
+  ends_at: string
+  assigned_to: string | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 /** One edition of a SANS standard held in the library — see migration 088. */
 export interface SansDocument {
   id: string

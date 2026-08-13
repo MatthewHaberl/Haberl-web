@@ -5,11 +5,10 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { MapPin, Calendar, ChevronLeft, FileText, Briefcase } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { MapPin, ChevronLeft, FileText, Briefcase } from 'lucide-react'
 import { pipelineKindFor, stageMetaFor } from '@/lib/jobs/stages'
 import { fetchWorkTypes } from '@/lib/quotes/work-types'
-import type { Job, JobTask, JobMaterial, JobStatusHistory } from '@/types/database'
+import type { Job, JobTask, JobMaterial, JobStatusHistory, JobScheduleSlot } from '@/types/database'
 import type { Supplier } from '@/types/database'
 import { JobActions } from './JobActions'
 import { StagePipeline } from './StagePipeline'
@@ -19,6 +18,7 @@ import { CreatePoDialog } from './CreatePoDialog'
 import { TestimonialPanel, type TestimonialSummary } from './TestimonialPanel'
 import { getBaseUrl } from '@/lib/quotes/server'
 import { JobLayout3DPanel } from './JobLayout3DPanel'
+import { SchedulePanel } from './SchedulePanel'
 import type { CableRouteRow } from '@/lib/solar/job-layout-3d'
 import { PageShell, PageHeader } from '@/components/layout/page'
 
@@ -29,12 +29,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const supabase = await createClient()
 
-  const [{ data: jobData, error: jobError }, { data: taskData }, { data: materialData }, { data: historyData }, { data: profile }] = await Promise.all([
+  const [{ data: jobData, error: jobError }, { data: taskData }, { data: materialData }, { data: historyData }, { data: profile }, { data: slotData }, { data: staffData }] = await Promise.all([
     supabase.from('jobs').select('*, site:sites(name, address), assignee:user_profiles!jobs_assigned_to_fkey(full_name)').eq('id', id).single(),
     supabase.from('job_tasks').select('*').eq('job_id', id).order('sort_order').order('id'),
     supabase.from('job_materials').select('*').eq('job_id', id).order('sort_order'),
     supabase.from('job_status_history').select('*, changer:user_profiles!changed_by(full_name)').eq('job_id', id).order('created_at'),
     supabase.from('user_profiles').select('role').eq('id', user.id).single(),
+    // Booked working days (migration 106) — a job can run across several.
+    supabase.from('job_schedule_slots').select('*').eq('job_id', id).order('starts_at'),
+    supabase.from('user_profiles').select('id, full_name').in('role', ['field_worker', 'manager', 'admin']).order('full_name'),
   ])
 
   if (jobError) {
@@ -46,6 +49,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const tasks = (taskData as JobTask[]) ?? []
   const materials = (materialData as JobMaterial[]) ?? []
   const history = (historyData as JobStatusHistory[]) ?? []
+  const scheduleSlots = (slotData as JobScheduleSlot[]) ?? []
+  const staff = ((staffData ?? []) as { id: string; full_name: string | null }[])
+    .map((p) => ({ id: p.id, full_name: p.full_name || 'Unnamed' }))
   const site = job.site as { name: string; address: string } | null
 
   const role = profile?.role ?? 'field_worker'
@@ -233,18 +239,15 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         />
       )}
 
+      <SchedulePanel
+        jobId={job.id}
+        initialSlots={scheduleSlots}
+        staff={staff}
+        defaultAssignee={job.assigned_to}
+        canEdit={canAdvance}
+      />
+
       <div className="grid sm:grid-cols-2 gap-4">
-        {job.scheduled_date && (
-          <Card>
-            <CardContent className="pt-4 pb-4 flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-accent" />
-              <div>
-                <p className="text-xs text-muted-foreground">Scheduled</p>
-                <p className="text-sm font-medium">{formatDate(job.scheduled_date)}</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
         {job.description && (
           <Card className="sm:col-span-2">
             <CardContent className="pt-4 pb-4">
