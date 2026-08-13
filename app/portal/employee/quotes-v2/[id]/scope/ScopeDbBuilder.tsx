@@ -16,11 +16,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   parseEnclosureSpec, enclosureCode, ENCLOSURE_MATERIALS, ENCLOSURE_MOUNTS, ENCLOSURE_WAYS,
-  DB_COMPONENT_KINDS, dbComponentKind, defaultDbComponent, defaultAcCombiner,
+  DB_COMPONENT_KINDS, dbComponentKind, defaultDbComponent,
   DB_SUPPLY_ID, DB_SUPPLY_LABEL, DB_TEMPLATES, buildDbTemplate, reidDbComponents, dbBoardSanity,
   type AcCombiner, type DbComponent, type DbComponentKind, type DbTemplateKey,
 } from '@/lib/solar/system-design'
-import { dbBoardToScopeLines } from '@/lib/quotes/scope-db'
+import { dbBoardToScopeLines, scopeLinesToDbBoard } from '@/lib/quotes/scope-db'
 import type { ScopeLine } from '@/lib/quotes/scope'
 import { useCatalog, byCategory } from '../design/useCatalog'
 import { ProductPicker } from '../design/ProductPicker'
@@ -31,26 +31,43 @@ type SavedAssembly = { id: string; name: string; payload: AcCombiner }
 const rand = (n: number) =>
   `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-export function ScopeDbBuilder({ section, pricing, onAdd, onClose }: {
+export function ScopeDbBuilder({ section, pricing, existingLines, onAdd, onClose }: {
   /** Scope section the built lines land in. */
   section: string
   pricing: ScopePricing
-  onAdd: (lines: ScopeLine[]) => void
+  /** Lines already in that section — the board opens on these, so a second run
+   *  edits the board you built rather than adding a second set of parts. */
+  existingLines: ScopeLine[]
+  /** `replacedIds` are the section lines the board now owns: rewrite those in
+   *  place, drop any the user deleted here, and append the genuinely new ones. */
+  onAdd: (lines: ScopeLine[], replacedIds: string[]) => void
   onClose: () => void
 }) {
   const { items, loading } = useCatalog()
   const enclosures = byCategory(items, 'enclosure')
-  const [board, setBoard] = useState<AcCombiner>(() => defaultAcCombiner())
+  const catalogMap = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
+
+  // The board isn't persisted — it's read back out of the section's lines every
+  // time (see scopeLinesToDbBoard), so it can never go stale against a line
+  // edited by hand. Derived, not stored in state, so it settles onto the real
+  // catalog the moment that finishes loading; `edited` takes over from the first
+  // change the user makes. The body stays behind a loading note until then, so
+  // nothing can be edited on top of a half-hydrated board.
+  const hydrated = useMemo(
+    () => scopeLinesToDbBoard(existingLines, catalogMap),
+    [existingLines, catalogMap],
+  )
+  const [edited, setEdited] = useState<AcCombiner | null>(null)
+  const board = edited ?? hydrated.board
+  const editing = hydrated.sources.size > 0
 
   function patch(p: Partial<AcCombiner>) {
-    setBoard((c) => {
-      const next = { ...c, ...p }
-      // Same rule as the studio reducer: an untouched product code tracks the
-      // enclosure config.
-      const enclosureTouched = 'material' in p || 'mount' in p || 'ways' in p || 'rows' in p
-      if (!next.productCodeLocked && enclosureTouched) next.productCode = enclosureCode(next)
-      return next
-    })
+    const next = { ...board, ...p }
+    // Same rule as the studio reducer: an untouched product code tracks the
+    // enclosure config.
+    const enclosureTouched = 'material' in p || 'mount' in p || 'ways' in p || 'rows' in p
+    if (!next.productCodeLocked && enclosureTouched) next.productCode = enclosureCode(next)
+    setEdited(next)
   }
   const locked = !!board.enclosureCatalogId
 
@@ -129,9 +146,10 @@ export function ScopeDbBuilder({ section, pricing, onAdd, onClose }: {
     })
   }
 
-  // ── Preview of what "Add to quote" will append. ──
-  const catalogMap = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
-  const built = dbBoardToScopeLines(board, catalogMap, pricing.markup, section)
+  // ── Preview of what the button will write back. ──
+  const built = dbBoardToScopeLines(board, catalogMap, pricing.markup, section, { preserve: hydrated.sources })
+  // Lines the board owns: rewritten in place, or dropped if their part is gone.
+  const replacedIds = [...hydrated.sources.values()].map((l) => l.id)
   const totalR = built.reduce((t, l) => t + (l.unitSellR > 0 ? l.unitSellR * l.qty : 0), 0)
   const toQuote = built.filter((l) => l.unitSellR <= 0).length
   const warns = dbBoardSanity(board)
@@ -153,7 +171,9 @@ export function ScopeDbBuilder({ section, pricing, onAdd, onClose }: {
               className="min-w-0 bg-transparent border-b border-transparent hover:border-border focus:border-primary text-sm font-bold focus:outline-none"
               aria-label="Board name"
             />
-            <span className="shrink-0 text-xs text-muted-foreground">→ {section}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {editing ? 'editing' : '→'} {section}
+            </span>
           </div>
           <button
             type="button" onClick={onClose} aria-label="Close" title="Close"
@@ -164,6 +184,12 @@ export function ScopeDbBuilder({ section, pricing, onAdd, onClose }: {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+              Loading the catalog{editing ? ' and reading this board off the quote' : ''}…
+            </p>
+          ) : (
+          <>
           {/* Templates + save/load a reusable board (shared with the solar studio). */}
           <div className="mb-3 flex flex-wrap items-center gap-1.5">
             <LayoutTemplate className="h-3 w-3 text-muted-foreground" />
@@ -304,6 +330,8 @@ export function ScopeDbBuilder({ section, pricing, onAdd, onClose }: {
               ))}
             </div>
           )}
+          </>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-3">
@@ -317,8 +345,8 @@ export function ScopeDbBuilder({ section, pricing, onAdd, onClose }: {
           </div>
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button type="button" size="sm" disabled={loading || built.length === 0} onClick={() => onAdd(built)}>
-              <Plus className="h-3.5 w-3.5" /> Add to quote
+            <Button type="button" size="sm" disabled={loading || built.length === 0} onClick={() => onAdd(built, replacedIds)}>
+              <Plus className="h-3.5 w-3.5" /> {editing ? 'Update quote' : 'Add to quote'}
             </Button>
           </div>
         </div>

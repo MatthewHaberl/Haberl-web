@@ -94,13 +94,14 @@ export function ReorderButtons({
 // native <select>). Drop-in for the tiny native selects in sections / ProductPicker:
 // styled to match (h-7, text-xs, border-border, bg-background). Keyboard-navigable
 // (↑/↓/Enter/Escape), click-outside closes, shows the selected label when closed,
-// filters case-insensitively on the visible label.
+// filters case-insensitively on the visible label — plus anything the caller puts
+// in `search` (e.g. a product's SKU and brand, so "NXB-63G" finds the breaker).
 export function SearchableSelect({
   value, onChange, options, placeholder = 'Select…', noneLabel = 'None', className = '',
 }: {
   value: string | null
   onChange: (v: string | null) => void
-  options: Array<{ value: string; label: string; disabled?: boolean; hint?: string }>
+  options: Array<{ value: string; label: string; disabled?: boolean; hint?: string; search?: string }>
   placeholder?: string
   noneLabel?: string
   className?: string
@@ -114,9 +115,16 @@ export function SearchableSelect({
   const inputRef = useRef<HTMLInputElement>(null)
 
   // The "None" choice is always first; below it, options filtered by the typed query.
-  const all = [{ value: '', label: noneLabel } as { value: string; label: string; disabled?: boolean; hint?: string }, ...options]
-  const filtered = query.trim()
-    ? all.filter((o) => o.label.toLowerCase().includes(query.trim().toLowerCase()))
+  const all = [{ value: '', label: noneLabel } as { value: string; label: string; disabled?: boolean; hint?: string; search?: string }, ...options]
+  const needle = query.trim().toLowerCase()
+  const filtered = needle
+    // Every whitespace-separated word must match somewhere in the label, the
+    // hint or the caller's extra search text, so "chint 63" and "63 chint"
+    // both land on the same breaker.
+    ? all.filter((o) => {
+        const haystack = `${o.label} ${o.hint ?? ''} ${o.search ?? ''}`.toLowerCase()
+        return needle.split(/\s+/).every((word) => haystack.includes(word))
+      })
     : all
   const selected = value == null ? null : options.find((o) => o.value === value) ?? null
 

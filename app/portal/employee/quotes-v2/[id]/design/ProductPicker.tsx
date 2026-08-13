@@ -47,7 +47,15 @@ export function ProductPicker({
   // Pending rows this picker just created (migration 049) so a freshly quick-added
   // placeholder shows in the list immediately, before the parent catalog refetches.
   const [created, setCreated] = useState<EquipmentCatalogItem[]>([])
-  const options = [...byCategory(items, category), ...created.filter((c) => !items.some((i) => i.id === c.id))]
+  const inCategory = [...byCategory(items, category), ...created.filter((c) => !items.some((i) => i.id === c.id))]
+  // A product already chosen always stays visible, even when it sits outside this
+  // picker's category (a board device labelled one way holding a part filed under
+  // another). Without this the control reads "Select…" over a product that IS set
+  // — it looks like the pick was lost when it wasn't.
+  const chosenOutside = value && !isCustomValue(value) && !inCategory.some((o) => o.id === value)
+    ? items.find((i) => i.id === value)
+    : undefined
+  const options = chosenOutside ? [...inCategory, chosenOutside] : inCategory
   // When the current value is a custom placeholder, show the label entry inline so
   // the designer can edit it; also opened by picking the "+ Custom…" option.
   const [editingCustom, setEditingCustom] = useState(false)
@@ -86,8 +94,15 @@ export function ProductPicker({
   // CUSTOM_PREFIX sentinel so its onChange branch mirrors the old native-select flow.
   // When a custom label is already selected, the affordance row reads " (pending)" so the
   // closed control shows the placeholder name rather than a bare "+ Custom…".
+  // The SKU rides along as `hint` (shown beside each row) and in `search`, with the
+  // brand, so a part number typed off a supplier quote finds the product.
   const selectOptions = [
-    ...options.map((o) => ({ value: o.id, label: `${o.description}${o.pending ? ' (to add)' : ''}` })),
+    ...options.map((o) => ({
+      value: o.id,
+      label: `${o.description}${o.pending ? ' (to add)' : ''}`,
+      hint: o.sku || undefined,
+      search: [o.sku, o.brand].filter(Boolean).join(' '),
+    })),
     { value: CUSTOM_PREFIX, label: custom ? `${customLabel(value)} (pending)` : '+ Custom…' },
   ]
 

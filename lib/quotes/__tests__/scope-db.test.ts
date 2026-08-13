@@ -13,7 +13,10 @@ import type { EquipmentCatalogItem } from '../../solar/quote-calculator'
 import {
   defaultAcCombiner, defaultDbComponent, DB_SUPPLY_ID, type AcCombiner, type DbComponent,
 } from '../../solar/system-design'
-import { dbBoardToScopeLines, dbEnclosureDescription } from '../scope-db'
+import {
+  dbBoardToScopeLines, dbEnclosureDescription, scopeLinesToDbBoard, DB_ENCLOSURE_KEY,
+} from '../scope-db'
+import { newScopeLine, type ScopeLine } from '../scope'
 
 const MARKUP = 1.15
 const SECTION = 'Distribution board'
@@ -130,4 +133,121 @@ test('device qty is normalised to at least 1 and blank labels fall back to the k
   const [, device] = dbBoardToScopeLines(b, new Map(), MARKUP, SECTION)
   assert.equal(device.qty, 1)
   assert.equal(device.description, 'Circuit breaker (MCB)')
+})
+
+// ── Reopening the builder on a section that already holds a board ─────────────
+
+function line(extra: Partial<ScopeLine>): ScopeLine {
+  return { ...newScopeLine(SECTION, 'material'), ...extra }
+}
+
+test('reopening reads the parts already on the quote — enclosure, products, qty, kinds', () => {
+  const catalog = new Map([
+    ['enc1', catItem('enc1', { category: 'enclosure', cost_rands: 800, description: 'DB SU3 15-way', sku: 'SUS3D', notes: 'plastic surface 15-way 1-row IP4X' })],
+    ['mcb1', catItem('mcb1', { cost_rands: 160, description: 'CHINT 63A 2P breaker' })],
+  ])
+  const existing = [
+    line({ catalogId: 'enc1', sku: 'SUS3D', description: 'DB SU3 15-way', qty: 1 }),
+    line({ catalogId: 'mcb1', description: 'CHINT 63A 2P breaker', qty: 1 }),
+    line({ catalogId: null, description: 'Earth leakage (RCCB)', qty: 1 }),
+    line({ catalogId: null, description: 'AC SPD', qty: 2 }),
+  ]
+
+  const { board: b, sources } = scopeLinesToDbBoard(existing, catalog)
+
+  // The enclosure comes back as the chosen catalog product, not a blank board.
+  assert.equal(b.enclosureCatalogId, 'enc1')
+  assert.equal(b.productCode, 'SUS3D')
+  assert.equal(b.components.length, 3)
+  // Products already picked stay picked; kinds are read off the wording.
+  assert.equal(b.components[0].productId, 'mcb1')
+  assert.equal(b.components[0].kind, 'breaker')
+  assert.equal(b.components[1].kind, 'rccb')
+  assert.equal(b.components[2].kind, 'spd')
+  assert.equal(b.components[2].qty, 2)
+  // The main device takes the incoming feed; the rest hang off it.
+  assert.deepEqual(b.components[0].fedFrom, [DB_SUPPLY_ID])
+  assert.deepEqual(b.components[1].fedFrom, [b.components[0].id])
+  assert.equal(sources.get(DB_ENCLOSURE_KEY)?.id, existing[0].id)
+  assert.equal(sources.size, 4)
+})
+
+test('a second run edits the same lines in place instead of adding a second board', () => {
+  const catalog = new Map([['mcb1', catItem('mcb1', { cost_rands: 160, description: 'CHINT 63A 2P breaker' })]])
+  const existing = [
+    line({ catalogId: null, description: dbEnclosureDescription(board({})), qty: 1 }),
+    line({ catalogId: 'mcb1', description: 'CHINT 63A 2P breaker', qty: 1 }),
+  ]
+
+  const { board: b, sources } = scopeLinesToDbBoard(existing, catalog)
+  const rebuilt = dbBoardToScopeLines(b, catalog, MARKUP, SECTION, { preserve: sources })
+
+  assert.equal(rebuilt.length, 2)
+  // Same line ids → the editor rewrites those rows rather than appending copies.
+  assert.equal(rebuilt[0].id, existing[0].id)
+  assert.equal(rebuilt[1].id, existing[1].id)
+  assert.equal(rebuilt[1].catalogId, 'mcb1')
+  assert.equal(rebuilt[1].unitSellR, 184)
+  // The manual enclosure's config survived the round trip through its wording.
+  assert.equal(rebuilt[0].description, existing[0].description)
+})
+
+test('a typed price and the optional flag survive a rebuild; changing the product re-prices', () => {
+  const catalog = new Map([
+    ['mcb1', catItem('mcb1', { cost_rands: 160, description: 'CHINT 63A 2P breaker' })],
+    ['mcb2', catItem('mcb2', { cost_rands: 200, description: 'CHINT 80A 2P breaker' })],
+  ])
+  const existing = [
+    line({ catalogId: 'mcb1', description: 'CHINT 63A 2P breaker', qty: 1, unitSellR: 250, sellOverridden: true, optional: true, note: 'client asked for it' }),
+  ]
+  const { board: b, sources } = scopeLinesToDbBoard(existing, catalog)
+
+  const same = dbBoardToScopeLines(b, catalog, MARKUP, SECTION, { preserve: sources })
+  assert.equal(same[1].unitSellR, 250)
+  assert.equal(same[1].sellOverridden, true)
+  assert.equal(same[1].optional, true)
+  assert.equal(same[1].note, 'client asked for it')
+
+  // Swap the product and the hand-typed price no longer applies — it re-derives.
+  b.components[0].productId = 'mcb2'
+  const swapped = dbBoardToScopeLines(b, catalog, MARKUP, SECTION, { preserve: sources })
+  assert.equal(swapped[1].catalogId, 'mcb2')
+  assert.equal(swapped[1].unitSellR, 230)
+  assert.equal(swapped[1].sellOverridden, false)
+})
+
+test('a price typed on a free-text line survives the rebuild', () => {
+  // The editor leaves sellOverridden false on free-text lines, so this price is
+  // only recoverable from the line itself — the board can't re-derive it.
+  const existing = [
+    line({ catalogId: null, description: 'Terminal bar', qty: 3, unitCostR: 90, unitSellR: 120 }),
+  ]
+  const { board: b, sources } = scopeLinesToDbBoard(existing, new Map())
+  const [, bar] = dbBoardToScopeLines(b, new Map(), MARKUP, SECTION, { preserve: sources })
+
+  assert.equal(bar.description, 'Terminal bar')
+  assert.equal(bar.qty, 3)
+  assert.equal(bar.unitCostR, 90)
+  assert.equal(bar.unitSellR, 120)
+})
+
+test('labour, fees and per-metre lines are left out of the board entirely', () => {
+  const existing = [
+    line({ catalogId: null, description: 'Surfix cable', qty: 20, unit: 'm' }),
+    line({ kind: 'labour', description: 'Wiring', qty: 4, unit: 'hr' }),
+    line({ kind: 'fee', description: 'Inspection fee', qty: 1 }),
+    line({ catalogId: null, description: 'Main breaker', qty: 1 }),
+  ]
+  const { board: b, sources } = scopeLinesToDbBoard(existing, new Map())
+
+  assert.equal(b.components.length, 1)
+  assert.equal(b.components[0].label, 'Main breaker')
+  // Only the one device is owned by the board — the rest stay put in the section.
+  assert.equal(sources.size, 1)
+})
+
+test('an empty section still opens on the default starter board', () => {
+  const { board: b, sources } = scopeLinesToDbBoard([], new Map())
+  assert.equal(sources.size, 0)
+  assert.equal(b.components.length, 3)
 })

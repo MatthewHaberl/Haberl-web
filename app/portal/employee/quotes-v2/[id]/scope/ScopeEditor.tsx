@@ -284,9 +284,25 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
         <ScopeDbBuilder
           section={dbSection}
           pricing={pricing}
+          existingLines={scope.lines.filter((l) => l.section === dbSection)}
           onClose={() => setDbSection(null)}
-          onAdd={(built) => {
-            onChange((s) => ({ ...s, lines: [...s.lines, ...built] }))
+          onAdd={(built, replacedIds) => {
+            onChange((s) => {
+              // The board rewrites the lines it owns in place (same ids, so
+              // order and any hand-set price/optional flag survive), drops the
+              // ones whose part was deleted in the builder, and appends what's
+              // genuinely new — never a second copy of the same board.
+              const rebuilt = new Map(built.map((l) => [l.id, l]))
+              const owned = new Set(replacedIds)
+              const kept: ScopeLine[] = []
+              for (const line of s.lines) {
+                const next = rebuilt.get(line.id)
+                if (next) { kept.push(next); rebuilt.delete(line.id); continue }
+                if (owned.has(line.id)) continue
+                kept.push(line)
+              }
+              return { ...s, lines: [...kept, ...rebuilt.values()] }
+            })
             setDbSection(null)
           }}
         />
