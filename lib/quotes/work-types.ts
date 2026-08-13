@@ -7,9 +7,9 @@
 // downstream of the BOM is shared.
 //
 // The `work_types` table is the source of truth (new types are data, not a
-// deploy). DEFAULT_WORK_TYPES mirrors the migration-105 seed so pure code and
-// error paths never dead-end on a missing fetch — resolution helpers take an
-// optional `rows` argument and fall back to the static seed.
+// deploy). DEFAULT_WORK_TYPES mirrors the seeded rows (migrations 105 + 108)
+// so pure code and error paths never dead-end on a missing fetch — resolution
+// helpers take an optional `rows` argument and fall back to the static seed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -28,7 +28,7 @@ export interface WorkType {
   active: boolean
 }
 
-/** Mirror of the migration 105 seed — fallback when the table can't be read. */
+/** Mirror of the seeded work types (105 + 108) — fallback when the table can't be read. */
 export const DEFAULT_WORK_TYPES: WorkType[] = [
   {
     code: 'solar', label: 'Solar PV / hybrid system', engine: 'solar', job_pipeline: 'full',
@@ -43,34 +43,40 @@ export const DEFAULT_WORK_TYPES: WorkType[] = [
     sort_order: 1, active: true,
   },
   {
+    code: 'solar_repair', label: 'Solar repair / service', engine: 'scope', job_pipeline: 'lite',
+    default_sections: ['Fault finding', 'Materials', 'Labour', 'Compliance'],
+    description: 'Fault-finding and repairs on existing solar installs — inverters, batteries, panels, monitoring.',
+    sort_order: 2, active: true,
+  },
+  {
     code: 'electrical', label: 'General electrical & repairs', engine: 'scope', job_pipeline: 'lite',
     default_sections: ['Materials', 'Labour', 'Compliance'],
     description: 'Repairs, new circuits, lights, plugs — scoped as line items.',
-    sort_order: 2, active: true,
+    sort_order: 3, active: true,
   },
   {
     code: 'db_rewire', label: 'DB board / rewire', engine: 'scope', job_pipeline: 'lite',
     default_sections: ['Distribution board', 'Wiring & containment', 'Accessories', 'Labour', 'Compliance'],
     description: 'Distribution board replacements, upgrades and rewires.',
-    sort_order: 3, active: true,
+    sort_order: 4, active: true,
   },
   {
     code: 'coc', label: 'COC & inspection', engine: 'scope', job_pipeline: 'lite',
     default_sections: ['Inspection', 'Remedial work', 'Certificate'],
     description: 'Certificate of Compliance inspections and remedial work.',
-    sort_order: 4, active: true,
+    sort_order: 5, active: true,
   },
   {
     code: 'generator', label: 'Generator & changeover', engine: 'scope', job_pipeline: 'lite',
     default_sections: ['Generator & changeover', 'Wiring & containment', 'Labour', 'Compliance'],
     description: 'Generator supply, changeover switches and wiring.',
-    sort_order: 5, active: true,
+    sort_order: 6, active: true,
   },
   {
     code: 'ev_charger', label: 'EV charger install', engine: 'scope', job_pipeline: 'lite',
     default_sections: ['Charger', 'Supply & protection', 'Labour', 'Compliance'],
     description: 'EV charge point supply and installation.',
-    sort_order: 6, active: true,
+    sort_order: 7, active: true,
   },
 ]
 

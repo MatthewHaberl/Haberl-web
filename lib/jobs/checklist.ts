@@ -56,6 +56,16 @@ const DB_REWIRE_CHECKLIST: ChecklistItem[] = [
   { description: 'Handover pack sent (quote, COC, circuit chart)', stage: 'follow_up' },
 ]
 
+const SOLAR_REPAIR_CHECKLIST: ChecklistItem[] = [
+  { description: 'Deposit received & reconciled', stage: 'deposit_pending' },
+  { description: 'Fault diagnosed — repair scope confirmed with customer', stage: 'scheduled' },
+  { description: 'Parts on hand (warranty claim lodged if applicable)', stage: 'scheduled' },
+  { description: 'Repair completed — system tested under load', stage: 'installation' },
+  { description: 'Monitoring checked — generation & battery behaviour normal', stage: 'installation' },
+  { description: 'COC issued and filed (if wiring altered)', stage: 'coc' },
+  { description: 'Follow-up call — system performing as expected', stage: 'follow_up' },
+]
+
 const COC_CHECKLIST: ChecklistItem[] = [
   { description: 'Inspection booked', stage: 'scheduled' },
   { description: 'Inspection completed', stage: 'installation' },
@@ -78,6 +88,7 @@ const INSTALL_UNIT_CHECKLIST: ChecklistItem[] = [
 const CHECKLISTS: Record<string, ChecklistItem[]> = {
   solar: INSTALL_CHECKLIST,
   backup_inverter: INSTALL_CHECKLIST,
+  solar_repair: SOLAR_REPAIR_CHECKLIST,
   electrical: ELECTRICAL_CHECKLIST,
   db_rewire: DB_REWIRE_CHECKLIST,
   coc: COC_CHECKLIST,
