@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { SystemStatusBadge } from '@/components/monitoring/SystemStatusBadge'
 import { PollAllButton } from '@/components/monitoring/PollAllButton'
+import { FleetTotals } from '@/components/monitoring/FleetTotals'
 import type { DeviceState } from '@/lib/monitoring/types'
 import { PageShell, PageHeader } from '@/components/layout/page'
 
@@ -40,6 +41,9 @@ type SystemRow = {
   label: string | null
   capacity_kw: number | null
   battery_kwh: number | null
+  inverter_kw: number | null
+  inverter_count: number | null
+  mppt_kw: number | null
   enabled: boolean
   last_polled_at: string | null
   poll_error: string | null
@@ -60,6 +64,7 @@ export default async function MonitoringFleetPage() {
     .from('monitoring_systems')
     .select(`
       id, brand, label, capacity_kw, battery_kwh, enabled,
+      inverter_kw, inverter_count, mppt_kw,
       last_polled_at, poll_error, site_id,
       sites (
         name,
@@ -104,6 +109,9 @@ export default async function MonitoringFleetPage() {
       label: s.label,
       capacity_kw: s.capacity_kw,
       battery_kwh: s.battery_kwh,
+      inverter_kw: s.inverter_kw,
+      inverter_count: s.inverter_count,
+      mppt_kw: s.mppt_kw,
       enabled: s.enabled,
       last_polled_at: s.last_polled_at,
       poll_error: s.poll_error,
@@ -119,7 +127,12 @@ export default async function MonitoringFleetPage() {
   const totalSystems = rows.length
   const onlineSystems = rows.filter((r) => r.latest_state === 'online').length
   const faultSystems  = rows.filter((r) => r.latest_state === 'fault' || r.poll_error).length
-  const totalKw = rows.reduce((sum, r) => sum + (r.capacity_kw ?? 0), 0)
+  // Inverter capacity read from the brand clouds — the whole bank per site, so a
+  // site running three Quattros in parallel counts 36 kW, not 12. `capacity_kw`
+  // is the hand-typed PV array size (kWp) and is reported separately.
+  const totalInverterKw = rows.reduce((sum, r) => sum + (r.inverter_kw ?? 0), 0)
+  const totalInverterUnits = rows.reduce((sum, r) => sum + (r.inverter_count ?? 0), 0)
+  const totalBatteryKwh = rows.reduce((sum, r) => sum + (r.battery_kwh ?? 0), 0)
   const currentPvKw = rows.reduce((sum, r) => sum + ((r.latest_pv_w ?? 0) / 1000), 0)
 
   return (
@@ -198,13 +211,16 @@ export default async function MonitoringFleetPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-sm font-medium text-muted-foreground">
-              Total capacity
+              Inverter capacity
               <Zap className="h-4 w-4" />
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{totalKw.toFixed(1)} kW</p>
-            <p className="mt-1 text-xs text-muted-foreground">installed across all sites</p>
+            <p className="text-3xl font-bold">{totalInverterKw.toFixed(1)} kW</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {totalInverterUnits > 0 ? `${totalInverterUnits} inverters · ` : ''}
+              {totalBatteryKwh.toFixed(0)} kWh of battery
+            </p>
           </CardContent>
         </Card>
 
@@ -221,6 +237,9 @@ export default async function MonitoringFleetPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Fleet-wide energy totals over a chosen date range */}
+      {totalSystems > 0 && <FleetTotals />}
 
       {/* Empty state */}
       {totalSystems === 0 && (

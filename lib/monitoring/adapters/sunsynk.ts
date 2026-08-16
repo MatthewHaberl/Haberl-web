@@ -18,6 +18,7 @@ import { createHash, publicEncrypt, constants } from 'crypto'
 import type { BrandAdapter, BrandCredentials, NormalisedReading, PvString, DeviceState, SettingsReadResult } from '../types'
 import { AdapterError } from '../types'
 import { emptySettings, type InverterSettings, type TouWindow } from '../settings/types'
+import { summariseInventory, batteryKwhFromAh, mergeIdenticalDevices, type InventoryDevice, type SystemInventory } from '../devices'
 
 const BASE_URL = 'https://api.sunsynk.net'
 const SOURCE = 'sunsynk'
@@ -441,5 +442,61 @@ export const sunsynkAdapter: BrandAdapter = {
     if (windows.length) settings.touWindows = windows
 
     return { settings, raw: d }
+  },
+
+  /**
+   * Installed hardware. Sunsynk Connect lists the plant's inverters with their
+   * `ratePower` (VA), and the battery block reports its capacity in Ah at the
+   * pack voltage — which is how a 50 kW site with a 490 V HV bank and a 16 kW
+   * site with a 51.2 V LV bank both come out right. A plant with two inverters
+   * totals both; `plant.totalPower` is NOT used, it is a hand-entered field and
+   * contradicts the measured peaks on our own sites.
+   */
+  async fetchDevices(
+    credentials: BrandCredentials,
+    plantId: string | null,
+    deviceSn: string | null,
+  ): Promise<SystemInventory> {
+    const { username, password } = credentials
+    if (!username || !password) {
+      throw new AdapterError('Sunsynk Connect credentials incomplete (need username + password)', 'sunsynk', false)
+    }
+    const token = await login(username, password)
+    const inverters = await resolveInverters(token, plantId, deviceSn)
+
+    const devices: InventoryDevice[] = []
+    for (const { sn } of inverters) {
+      const [info, battery] = await Promise.all([
+        getJson<{ brand?: string; model?: string; ratePower?: unknown; sn?: string }>(`${BASE_URL}/api/v1/inverter/${sn}?lan=en`, token),
+        getJson<{ capacity?: unknown; voltage?: unknown; type?: unknown }>(`${BASE_URL}/api/v1/inverter/battery/${sn}/realtime?sn=${sn}&lan=en`, token),
+      ])
+      const d = info.data ?? {}
+      const va = num(d.ratePower)
+      const brand = [d.brand, d.model].filter(Boolean).join(' ').trim()
+      devices.push({
+        role: 'inverter',
+        model: brand || 'Inverter',
+        count: 1,
+        kva: va == null ? null : Math.round(va / 10) / 100,
+        // Hybrids are rated in W: Sunsynk's ratePower is the continuous output.
+        kw: va == null ? null : Math.round(va / 10) / 100,
+        detail: sn,
+      })
+
+      const b = battery.data ?? {}
+      const ah = num(b.capacity)
+      const volts = num(b.voltage)
+      if (ah != null) {
+        devices.push({
+          role: 'battery',
+          model: 'Battery bank',
+          count: 1,
+          kwh: batteryKwhFromAh(ah, volts),
+          detail: [`${ah} Ah`, volts != null ? `${volts} V` : null].filter(Boolean).join(' @ ') || null,
+        })
+      }
+    }
+
+    return summariseInventory(mergeIdenticalDevices(devices))
   },
 }

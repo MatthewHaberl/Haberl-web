@@ -11,6 +11,11 @@
  * it returns HTTP 400 — so we must use a sub-resource like /diagnostics.
  */
 import type { BrandAdapter, BrandCredentials, NormalisedReading, PvString, DeviceState, SettingsReadResult } from '../types'
+import {
+  parseVebusModel, parseMpptModel, vebusUnitCount, vebusLayout, summariseInventory,
+  batteryKwhFromAh, mergeIdenticalDevices,
+  type InventoryDevice, type SystemInventory,
+} from '../devices'
 import { AdapterError } from '../types'
 import { emptySettings, type InverterSettings, type WorkMode } from '../settings/types'
 
@@ -33,6 +38,56 @@ interface VrmDiagRecord {
   description: string
   rawValue: number | string | null
   formattedValue: string | null
+  dbusPath?: string | null
+}
+
+/**
+ * One device from VRM /system-overview. `vid` is the interesting bit on a
+ * VE.Bus entry: it carries the parallel/three-phase layout that the product
+ * name alone can't tell you.
+ */
+interface VrmOverviewDevice {
+  name?: string
+  customName?: string | null
+  productName?: string | null
+  vid?: { enumValue?: string; devicesPerPhase?: Record<string, number | null> } | null
+  machineSerialNumbers?: Array<{ serial: unknown } | null> | null
+}
+
+/**
+ * dbus paths carrying PV power on the System-overview device: the DC-coupled
+ * total (`/Dc/Pv/Power`, MPPTs) plus every AC-coupled phase — an AC PV inverter
+ * sitting on the Multi's output, on the grid input, or on the genset input
+ * (`/Ac/PvOnOutput|PvOnGrid|PvOnGenset|PvOnInput/L{1,2,3}/Power`).
+ * Matching on the path rather than the VRM short code keeps this correct for
+ * three-phase and for whichever side the AC PV is wired to.
+ */
+const PV_POWER_PATH = /^\/(?:Dc\/Pv|Ac\/PvOn[A-Za-z]+\/L\d)\/Power$/
+
+/** Codes on this installation that report PV power (see PV_POWER_PATH). */
+function pvCodes(records: VrmDiagRecord[]): string[] {
+  const codes = new Set<string>()
+  for (const r of records) {
+    if (r.Device === 'System overview' && r.dbusPath && PV_POWER_PATH.test(r.dbusPath)) codes.add(r.code)
+  }
+  return [...codes]
+}
+
+/**
+ * Total PV watts = DC-coupled + every AC-coupled phase. Returns null only when
+ * the site reports no PV attribute at all (so "no PV data" stays distinct from
+ * "PV producing 0 W" — a genuinely dark array reports 0, not nothing).
+ */
+function pvTotalW(records: VrmDiagRecord[]): number | null {
+  let total: number | null = null
+  for (const r of records) {
+    if (r.Device !== 'System overview' || !r.dbusPath) continue
+    if (!PV_POWER_PATH.test(r.dbusPath)) continue
+    const v = numOrNull(r.rawValue)
+    if (v == null) continue
+    total = (total ?? 0) + v
+  }
+  return total
 }
 
 /** Coerce a VRM rawValue (number | numeric-string | other) to a number or null. */
@@ -52,9 +107,8 @@ function numOrNull(v: number | string | null | undefined): number | null {
 // we request the same consolidated codes the realtime adapter already reads.
 const HISTORY_CODES: Record<string, keyof Pick<
   NormalisedReading,
-  'pv_power_w' | 'battery_power_w' | 'grid_power_w' | 'load_power_w' | 'battery_soc_pct' | 'battery_voltage_v'
+  'battery_power_w' | 'grid_power_w' | 'load_power_w' | 'battery_soc_pct' | 'battery_voltage_v'
 >> = {
-  Pdc: 'pv_power_w',
   bp:  'battery_power_w',
   g1:  'grid_power_w',
   a1:  'load_power_w',
@@ -62,8 +116,35 @@ const HISTORY_CODES: Record<string, keyof Pick<
   bv:  'battery_voltage_v',
 }
 
+/**
+ * PV codes vary by installation — DC-coupled sites report `Pdc`, AC-coupled
+ * ones report a per-phase code instead — so we discover them from the site's
+ * own /diagnostics rather than hard-coding, then sum the series. Cached briefly
+ * because backfill calls fetchHistory once per day in a loop.
+ */
+const PV_CODE_TTL_MS = 5 * 60 * 1000
+const pvCodeCache = new Map<string, { codes: string[]; at: number }>()
+
+async function historyPvCodes(installId: string, headers: HeadersInit): Promise<string[]> {
+  const hit = pvCodeCache.get(installId)
+  if (hit && Date.now() - hit.at < PV_CODE_TTL_MS) return hit.codes
+  const res = await fetch(`${BASE_URL}/installations/${installId}/diagnostics?count=1000`, { headers })
+  if (!res.ok) return hit?.codes ?? ['Pdc']   // fall back to the DC-coupled default
+  const json = (await res.json()) as { records?: VrmDiagRecord[] }
+  const codes = pvCodes(json.records ?? [])
+  const resolved = codes.length > 0 ? codes : ['Pdc']
+  pvCodeCache.set(installId, { codes: resolved, at: Date.now() })
+  return resolved
+}
+
 /** VRM stats records: { code: [[ts, value], ...] }. ts is epoch sec or ms. */
 type VrmStatsRecords = Record<string, Array<[number, number | null]> | undefined>
+
+/** Numeric reading fields the stats pivot writes into. */
+type HistoryField = keyof Pick<
+  NormalisedReading,
+  'pv_power_w' | 'battery_power_w' | 'grid_power_w' | 'load_power_w' | 'battery_soc_pct' | 'battery_voltage_v'
+>
 
 export const victronAdapter: BrandAdapter = {
   async fetchReading(credentials: BrandCredentials, plantId: string | null): Promise<NormalisedReading> {
@@ -98,7 +179,7 @@ export const victronAdapter: BrandAdapter = {
     }
 
     // Consolidated flow values (System overview device, instance 0).
-    const pvPower   = sysVal('Pdc')  // PV - DC-coupled (total PV watts)
+    const pvPower   = pvTotalW(records)  // DC-coupled MPPTs + AC-coupled PV inverters
     const batPower  = sysVal('bp')   // Battery Power: + charging, − discharging
     const gridPower = sysVal('g1')   // Grid L1
     const loadPower = sysVal('a1')   // AC Consumption L1
@@ -167,22 +248,27 @@ export const victronAdapter: BrandAdapter = {
       throw new AdapterError('Victron credentials incomplete (need access_token + installation id)', 'victron', false)
     }
 
+    const headers: HeadersInit = { 'X-Authorization': `Token ${access_token}`, 'Content-Type': 'application/json' }
     const startSec = Math.floor(dayStartUtc.getTime() / 1000)
     const endSec = startSec + 24 * 60 * 60
-    const codeParams = Object.keys(HISTORY_CODES).map((c) => `attributeCodes[]=${c}`).join('&')
+    const pv = await historyPvCodes(installId, headers)
+    const codeParams = [...Object.keys(HISTORY_CODES), ...pv].map((c) => `attributeCodes[]=${c}`).join('&')
     const url = `${BASE_URL}/installations/${installId}/stats?type=custom&interval=15mins&start=${startSec}&end=${endSec}&${codeParams}`
 
-    const res = await fetch(url, {
-      headers: { 'X-Authorization': `Token ${access_token}`, 'Content-Type': 'application/json' },
-    })
+    const res = await fetch(url, { headers })
     if (!res.ok) throw new AdapterError(`Victron stats fetch failed: ${res.status}`, 'victron')
 
     const json = (await res.json()) as { success?: boolean; records?: VrmStatsRecords }
     const records = json.records ?? {}
 
-    // Pivot per-attribute series into one reading per 15-min timestamp.
+    // Pivot per-attribute series into one reading per 15-min timestamp. PV codes
+    // accumulate (DC-coupled + each AC-coupled phase); the rest assign directly.
     const byTime = new Map<number, NormalisedReading>()
-    for (const [code, field] of Object.entries(HISTORY_CODES)) {
+    const wanted: Array<{ code: string; field: HistoryField; accumulate: boolean }> = [
+      ...Object.entries(HISTORY_CODES).map(([code, field]) => ({ code, field: field as HistoryField, accumulate: false })),
+      ...pv.map((code) => ({ code, field: 'pv_power_w' as HistoryField, accumulate: true })),
+    ]
+    for (const { code, field, accumulate } of wanted) {
       const series = records[code]
       if (!Array.isArray(series)) continue
       for (const point of series) {
@@ -201,7 +287,8 @@ export const victronAdapter: BrandAdapter = {
           }
           byTime.set(ms, reading)
         }
-        reading[field] = typeof value === 'number' ? value : null
+        if (typeof value !== 'number') continue
+        reading[field] = accumulate ? (reading[field] ?? 0) + value : value
       }
     }
 
@@ -280,5 +367,91 @@ export const victronAdapter: BrandAdapter = {
           /soc|ess|feed-?in|charge|discharge|battery ?life|grid setpoint/i.test(r.description ?? '')),
       },
     }
+  },
+
+  /**
+   * Installed hardware, from VRM's own device list. The key part is the VE.Bus
+   * entry: VRM reports the whole bank as ONE device ("Quattro 48/15000") and
+   * hides the unit count in `vid` ("Three units configured in parallel", plus a
+   * per-phase breakdown). Reading only the product name understates a parallel
+   * site by 2/3 — Hotel Nieu is 3 x 15 kVA, not 15 kVA.
+   */
+  async fetchDevices(credentials: BrandCredentials, plantId: string | null): Promise<SystemInventory> {
+    const { access_token, vrm_installation_id } = credentials
+    const installId = vrm_installation_id ?? plantId
+    if (!access_token || !installId) {
+      throw new AdapterError('Victron credentials incomplete (need access_token and installation id)', 'victron', false)
+    }
+    const headers: HeadersInit = { 'X-Authorization': `Token ${access_token}`, 'Content-Type': 'application/json' }
+
+    const [ovRes, diagRes] = await Promise.all([
+      fetch(`${BASE_URL}/installations/${installId}/system-overview`, { headers }),
+      fetch(`${BASE_URL}/installations/${installId}/diagnostics?count=1000`, { headers }),
+    ])
+    if (!ovRes.ok) throw new AdapterError(`Victron system-overview fetch failed: ${ovRes.status}`, 'victron')
+
+    const overview = (await ovRes.json()) as {
+      records?: { devices?: VrmOverviewDevice[] }
+    }
+    const diag = diagRes.ok
+      ? ((await diagRes.json()) as { records?: VrmDiagRecord[] }).records ?? []
+      : []
+
+    // Battery energy comes off the BMS (capacity in Ah at the pack voltage) —
+    // the device list only names the battery, it doesn't size it.
+    const batteryFind = (re: RegExp) =>
+      diag.find((r) => r.Device === 'Battery Monitor' && re.test(r.description ?? ''))
+    const batteryAh = numOrNull(batteryFind(/^capacity$/i)?.rawValue ?? null)
+    const batteryV = numOrNull(batteryFind(/^voltage$/i)?.rawValue ?? null)
+    const modules = numOrNull(batteryFind(/number of modules online/i)?.rawValue ?? null)
+
+    const devices: InventoryDevice[] = []
+    for (const dev of overview.records?.devices ?? []) {
+      const model = dev.customName?.trim() || dev.productName || dev.name || 'Unknown device'
+      const name = dev.name ?? ''
+
+      if (name === 'VE.Bus System' || /^(Inverter|Multi|Quattro)$/i.test(name)) {
+        const serials = (dev.machineSerialNumbers ?? []).filter((s) => s?.serial != null).length
+        const count = vebusUnitCount(dev.vid, serials)
+        const { kva, kw } = parseVebusModel(dev.productName ?? model)
+        devices.push({
+          role: 'inverter',
+          model: dev.productName ?? model,
+          count,
+          kva, kw,
+          detail: vebusLayout(dev.vid) ?? dev.vid?.enumValue ?? null,
+        })
+      } else if (name === 'Solar Charger') {
+        const { pv_kw } = parseMpptModel(dev.productName ?? model)
+        devices.push({
+          role: 'mppt',
+          model: dev.productName ?? model,
+          count: 1,
+          pv_kw,
+          detail: dev.customName?.trim() || null,   // installers label these "MPPT 1 EAST"
+        })
+      } else if (name === 'PV Inverter') {
+        devices.push({ role: 'pv_inverter', model: dev.productName ?? model, count: 1 })
+      } else if (name === 'Battery Monitor' || name === 'BMS') {
+        devices.push({
+          role: 'battery',
+          model: dev.productName ?? model,
+          count: 1,
+          kwh: batteryKwhFromAh(batteryAh, batteryV),
+          detail: [
+            modules != null ? `${modules} module${modules === 1 ? '' : 's'}` : null,
+            batteryAh != null ? `${batteryAh} Ah` : null,
+          ].filter(Boolean).join(', ') || null,
+        })
+      } else if (name === 'Gateway') {
+        devices.push({ role: 'gateway', model: dev.productName ?? model, count: 1 })
+      } else if (name === 'AC Meter' || name === 'Energy Meter') {
+        devices.push({ role: 'meter', model, count: 1 })
+      } else {
+        devices.push({ role: 'other', model, count: 1 })
+      }
+    }
+
+    return summariseInventory(mergeIdenticalDevices(devices))
   },
 }

@@ -115,6 +115,18 @@ export interface BrandAdapter {
     deviceSn: string | null,
     changes: Partial<import('./settings/types').InverterSettings>,
   ): Promise<SettingsWriteResult>
+  /**
+   * Optional read of the installed HARDWARE — which inverters, MPPTs, PV
+   * inverters and batteries are on site, and how many. Capacity is a property of
+   * the whole bank (three Quattros in parallel is 45 kVA, not 15), so this is
+   * the only honest way to get a site's real inverter rating. Brands whose API
+   * doesn't enumerate devices simply omit it.
+   */
+  fetchDevices?(
+    credentials: BrandCredentials,
+    plantId: string | null,
+    deviceSn: string | null,
+  ): Promise<import('./devices').SystemInventory>
 }
 
 export class AdapterError extends Error {

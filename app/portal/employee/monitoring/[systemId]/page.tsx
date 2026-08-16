@@ -12,6 +12,8 @@ import { PowerGauges } from '@/components/monitoring/PowerGauges'
 import { EnergyChart } from '@/components/monitoring/EnergyChart'
 import { SystemActions } from '@/components/monitoring/SystemActions'
 import { PollNowButton } from '@/components/monitoring/PollNowButton'
+import { DevicesCard } from '@/components/monitoring/DevicesCard'
+import type { InventoryDevice } from '@/lib/monitoring/devices'
 import { HistoryPanel } from '@/components/monitoring/HistoryPanel'
 import type { DeviceState } from '@/lib/monitoring/types'
 
@@ -30,7 +32,7 @@ function fmt(n: number | null, decimals = 1) {
 
 export default async function SystemDetailPage({ params }: { params: Promise<{ systemId: string }> }) {
   const { systemId } = await params
-  await requireSection('monitoring')
+  const { role } = await requireSection('monitoring')
   const supabase = await createClient()
 
   // Fetch the monitoring system
@@ -39,6 +41,8 @@ export default async function SystemDetailPage({ params }: { params: Promise<{ s
     .select(`
       id, brand, label, plant_id, device_sn,
       capacity_kw, battery_kwh, enabled,
+      inverter_kva, inverter_kw, inverter_count, mppt_kw, pv_inverter_count,
+      device_inventory, devices_synced_at,
       last_polled_at, poll_error,
       sites ( id, name, address, customer:customers ( full_name, email, phone ) )
     `)
@@ -181,6 +185,20 @@ export default async function SystemDetailPage({ params }: { params: Promise<{ s
         />
       </div>
 
+      {/* Installed equipment */}
+      <DevicesCard
+        systemId={system.id}
+        canRefresh={role === 'admin' || role === 'manager'}
+        devices={(system.device_inventory as InventoryDevice[] | null) ?? null}
+        inverterKva={system.inverter_kva}
+        inverterKw={system.inverter_kw}
+        inverterCount={system.inverter_count}
+        mpptKw={system.mppt_kw}
+        pvInverterCount={system.pv_inverter_count}
+        batteryKwh={system.battery_kwh}
+        syncedAt={system.devices_synced_at}
+      />
+
       {/* Energy chart */}
       <Card>
         <CardHeader>
@@ -236,8 +254,11 @@ export default async function SystemDetailPage({ params }: { params: Promise<{ s
           <CardContent className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg border border-border p-3">
-                <p className="text-xs text-muted-foreground">Inverter capacity</p>
-                <p className="mt-1 font-semibold">{system.capacity_kw ? `${system.capacity_kw} kW` : '—'}</p>
+                {/* capacity_kw is the PV array size the add-system form asks for
+                    (kWp) — the inverter rating lives in the equipment card above,
+                    where it is read from the brand cloud across the whole bank. */}
+                <p className="text-xs text-muted-foreground">PV array size</p>
+                <p className="mt-1 font-semibold">{system.capacity_kw ? `${system.capacity_kw} kWp` : '—'}</p>
               </div>
               <div className="rounded-lg border border-border p-3">
                 <p className="text-xs text-muted-foreground">Battery capacity</p>
