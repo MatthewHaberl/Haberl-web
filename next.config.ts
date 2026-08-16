@@ -3,10 +3,16 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   // pdf.js ships its own worker/font plumbing — Next must not bundle it.
   serverExternalPackages: ['pdfjs-dist'],
-  // …and must be traced into the serverless bundle for the supplier-quote routes.
+  // …and its worker must be traced in by hand: pdf.js reaches for
+  // pdf.worker.mjs through new URL(…, import.meta.url), which the tracer can't
+  // follow, so without this the supplier-quote routes deploy without the file
+  // that does all the actual parsing.
   outputFileTracingIncludes: {
-    '/api/quotes/[id]/supplier-quotes/**': ['./node_modules/pdfjs-dist/legacy/build/**'],
+    '/api/quotes/**': ['./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'],
   },
+
+  // A second build can't share .next while a dev server (or OneDrive) holds it.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
 
   compress: true,
   poweredByHeader: false,
