@@ -2,7 +2,6 @@
 
 import { useSyncExternalStore } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 
 // Open/closed choices live in localStorage, read via useSyncExternalStore so
 // there's no setState-in-effect and no SSR/client mismatch (the server snapshot
@@ -30,7 +29,13 @@ type Props = {
   storageKey: string
   title: string
   count?: number
-  icon?: LucideIcon
+  /**
+   * A RENDERED icon element (`icon={<MapPin />}`), not a component reference.
+   * This section is a client component, so a server page cannot hand it a
+   * function — React can't serialise one across the RSC boundary and the whole
+   * render throws. Sizing is applied here so callers just pass the bare icon.
+   */
+  icon?: React.ReactNode
   /** Open state used on first visit, before any saved preference exists. */
   defaultOpen?: boolean
   /** Buttons shown on the heading row — they sit outside the toggle. */
@@ -45,7 +50,7 @@ export function CollapsibleSection({
   storageKey,
   title,
   count,
-  icon: Icon,
+  icon,
   defaultOpen = true,
   actions,
   alwaysVisible,
@@ -68,7 +73,9 @@ export function CollapsibleSection({
           className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
         >
           {open ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
-          {Icon && <Icon className="h-4 w-4 shrink-0" />}
+          {icon && (
+            <span className="shrink-0 inline-flex [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
+          )}
           <span>
             {title}
             {count !== undefined && ` (${count})`}

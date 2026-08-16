@@ -87,7 +87,7 @@ export function LeadsInbox({
       {newLeads.length > 0 && (
         <CollapsibleSection
           storageKey="leads:new"
-          icon={PhoneIncoming}
+          icon={<PhoneIncoming />}
           title="New — call these"
           count={newLeads.length}
         >
@@ -102,7 +102,7 @@ export function LeadsInbox({
       {contacted.length > 0 && (
         <CollapsibleSection
           storageKey="leads:contacted"
-          icon={PhoneCall}
+          icon={<PhoneCall />}
           title="Contacted — follow up"
           count={contacted.length}
         >

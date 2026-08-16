@@ -183,7 +183,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       <AddSiteProvider>
       <CollapsibleSection
         storageKey="customer:sites"
-        icon={MapPin}
+        icon={<MapPin />}
         title="Sites"
         count={sites?.length ?? 0}
         actions={<AddSiteTrigger />}
@@ -205,7 +205,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       </AddSiteProvider>
 
       {/* Quotes */}
-      <CollapsibleSection storageKey="customer:quotes" icon={FileText} title="Quotes" count={quotes?.length ?? 0}>
+      <CollapsibleSection storageKey="customer:quotes" icon={<FileText />} title="Quotes" count={quotes?.length ?? 0}>
         {!quotes?.length ? (
           <p className="text-sm text-muted-foreground">No quotes yet.</p>
         ) : (
@@ -234,7 +234,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       </CollapsibleSection>
 
       {/* Jobs */}
-      <CollapsibleSection storageKey="customer:jobs" icon={Wrench} title="Jobs" count={jobs?.length ?? 0}>
+      <CollapsibleSection storageKey="customer:jobs" icon={<Wrench />} title="Jobs" count={jobs?.length ?? 0}>
         {!jobs?.length ? (
           <p className="text-sm text-muted-foreground">No installation jobs yet.</p>
         ) : (
@@ -257,7 +257,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       </CollapsibleSection>
 
       {/* Activity */}
-      <CollapsibleSection storageKey="customer:activity" icon={Clock} title="Activity" defaultOpen={false}>
+      <CollapsibleSection storageKey="customer:activity" icon={<Clock />} title="Activity" defaultOpen={false}>
         <Card>
           <CardContent className="py-4">
             <ol className="flex flex-col gap-3">
