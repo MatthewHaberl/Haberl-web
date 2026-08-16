@@ -3,6 +3,10 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   // pdf.js ships its own worker/font plumbing — Next must not bundle it.
   serverExternalPackages: ['pdfjs-dist'],
+  // …and must be traced into the serverless bundle for the supplier-quote routes.
+  outputFileTracingIncludes: {
+    '/api/quotes/[id]/supplier-quotes/**': ['./node_modules/pdfjs-dist/legacy/build/**'],
+  },
 
   compress: true,
   poweredByHeader: false,

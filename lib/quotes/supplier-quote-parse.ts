@@ -185,12 +185,9 @@ export async function matchSkusToCatalog(
  */
 export async function tableParsePdf(bytes: Buffer): Promise<ParsedSupplierQuote | null> {
   if (!looksLikePdf(bytes)) return null
-  let pages
-  try {
-    pages = await extractPdfTextPages(bytes)
-  } catch {
-    return null
-  }
+  // A reader crash is NOT "this must be a scan" — let it out so the caller can
+  // report the real reason instead of sending everyone to manual entry.
+  const pages = await extractPdfTextPages(bytes)
   const textRuns = pages.reduce((n, p) => n + p.items.length, 0)
   if (textRuns === 0) return null // image-only PDF (a scan)
   const parsed = parseSupplierQuotePages(pages)
@@ -276,8 +273,18 @@ export async function parseAndStoreLines(
   if (dlErr || !blob) return fail('Could not read the stored document')
   const bytes = Buffer.from(await blob.arrayBuffer())
 
-  let parsed = await tableParsePdf(bytes)
+  let parsed: ParsedSupplierQuote | null = null
   let method: 'table' | 'ai' = 'table'
+  try {
+    parsed = await tableParsePdf(bytes)
+  } catch (err) {
+    // The PDF reader itself broke (a runtime that can't load pdf.js, a corrupt
+    // file). Say so — "add them by hand" without a reason is how a fixable
+    // deployment problem goes unnoticed for weeks.
+    console.error('[supplier-quotes] PDF reader failed', err)
+    const detail = err instanceof Error ? err.message : String(err)
+    return fail(`The PDF reader failed on this document (${detail.slice(0, 160)}). Add the lines below in the meantime.`)
+  }
 
   if (!parsed) {
     // A scan, a photo, or a layout the table reader couldn't recognise.

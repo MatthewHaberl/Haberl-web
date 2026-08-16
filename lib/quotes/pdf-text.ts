@@ -32,9 +32,57 @@ export function looksLikePdf(bytes: Buffer): boolean {
   return bytes.subarray(0, 5).toString('latin1') === '%PDF-'
 }
 
+type Pdfjs = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
+
+/**
+ * pdf.js 4.x calls Promise.withResolvers in ~30 places, which only exists from
+ * Node 22. Runtimes still on Node 20 (Vercel's older default) would throw on
+ * the very first page otherwise, so fill it in before the module loads.
+ */
+function ensurePromiseWithResolvers(): void {
+  const P = Promise as unknown as { withResolvers?: unknown }
+  if (typeof P.withResolvers === 'function') return
+  P.withResolvers = function withResolvers<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void
+    let reject!: (reason?: unknown) => void
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+  }
+}
+
+/**
+ * Point pdf.js at its worker explicitly. Everything pdf.js does happens in the
+ * worker — in Node it runs one in-process, loaded from pdf.worker.mjs sitting
+ * next to pdf.mjs. That reference is `new URL(…, import.meta.url)` inside the
+ * library, which a bundler's tracer can't see, so on a deployment the worker
+ * can go missing while the main build is present. Resolving it ourselves makes
+ * the dependency explicit (and next.config.ts traces the folder in).
+ */
+async function pinWorker(pdfjs: Pdfjs): Promise<void> {
+  try {
+    const [{ createRequire }, { pathToFileURL }, path] = await Promise.all([
+      import('node:module'),
+      import('node:url'),
+      import('node:path'),
+    ])
+    const resolver = createRequire(path.join(process.cwd(), 'package.json'))
+    const worker = resolver.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
+    pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(worker).href
+  } catch {
+    // Leave pdf.js to find its own worker — the normal path when it's there.
+  }
+}
+
+async function loadPdfjs(): Promise<Pdfjs> {
+  ensurePromiseWithResolvers()
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  await pinWorker(pdfjs)
+  return pdfjs
+}
+
 /** Extract positioned text runs from every page. Throws when the PDF can't be read. */
 export async function extractPdfTextPages(bytes: Buffer): Promise<PdfTextPage[]> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const pdfjs = await loadPdfjs()
   // A copy: pdf.js transfers/detaches the buffer it is handed.
   const data = new Uint8Array(bytes)
   const doc = await pdfjs.getDocument({
