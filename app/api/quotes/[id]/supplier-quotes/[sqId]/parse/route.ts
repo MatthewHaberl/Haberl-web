@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { aiParseAvailable, parseAndStoreLines } from '@/lib/quotes/supplier-quote-parse'
+import { parseAndStoreLines } from '@/lib/quotes/supplier-quote-parse'
 
 export const runtime = 'nodejs'
 export const maxDuration = 180
 
-/** Re-run AI extraction on a stored supplier quote (replaces its lines). */
+/** Re-read a stored supplier quote's document (replaces its lines). */
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string; sqId: string }> },
@@ -18,9 +18,6 @@ export async function POST(
     .from('user_profiles').select('role').eq('id', user.id).single()
   if (!profile || !['manager', 'admin'].includes(profile.role)) {
     return new Response('Forbidden', { status: 403 })
-  }
-  if (!aiParseAvailable()) {
-    return new Response('AI parsing is not configured on this deployment', { status: 400 })
   }
 
   const { id: quoteId, sqId } = await params
@@ -40,5 +37,11 @@ export async function POST(
     admin.from('supplier_quotes').select('*').eq('id', row.id).single(),
     admin.from('supplier_quote_lines').select('*').eq('supplier_quote_id', row.id).order('line_no'),
   ])
-  return NextResponse.json({ ok: true, quote: fresh, lines: lines ?? [] })
+  return NextResponse.json({
+    ok: true,
+    quote: fresh,
+    lines: lines ?? [],
+    warning: result.warning,
+    method: result.method,
+  })
 }

@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  // pdf.js ships its own worker/font plumbing — Next must not bundle it.
+  serverExternalPackages: ['pdfjs-dist'],
+
   compress: true,
   poweredByHeader: false,
 

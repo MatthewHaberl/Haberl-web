@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Quoted Line Items (W98) — the supplier-quote section on a quote.
 //
-// Upload a supplier's quote (the "key quote" PDF or a photo), AI-parse it into
+// Upload a supplier's quote (the "key quote" PDF), have its table read into
 // supplier_quote_lines, review/correct the lines here, then pull them into the
 // builder sections via SupplierQuoteLinePicker. Prices are the supplier's
 // EX-VAT rates; the landed column shows × 1.15 (unrecoverable VAT) — the cost
@@ -183,8 +183,9 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
         <div>
           <div className="text-sm font-semibold">Quoted line items</div>
           <p className="text-xs text-muted-foreground">
-            Upload a supplier&rsquo;s quote (PDF or photo) and its lines land here — then pull them
-            into sections as you build. Prices are ex&nbsp;VAT; landed cost = ×&nbsp;1.15.
+            Upload a supplier&rsquo;s quote PDF and its lines are read straight off the document —
+            then pull them into sections as you build. Prices are ex&nbsp;VAT; landed cost =
+            ×&nbsp;1.15. A photo or a scanned quote has to be typed in below.
           </p>
         </div>
 
@@ -216,6 +217,8 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
 
         {quotes.map((sq) => {
           const lines = linesBy[sq.id] ?? []
+          const exVatTotal = lines.reduce((sum, l) => sum + l.qty * l.unit_price_r, 0)
+          const landedTotal = lines.reduce((sum, l) => sum + l.qty * landedCostR(l.unit_price_r), 0)
           const isCollapsed = collapsed[sq.id] ?? false
           const badge = STATUS_BADGE[sq.status]
           const title = [sq.supplier, sq.reference].filter(Boolean).join(' · ') || sq.source_filename || 'Supplier quote'
@@ -248,7 +251,7 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
                   {sq.storage_path && (
                     <Button
                       type="button" variant="ghost" size="icon" className="h-7 w-7"
-                      title="Re-run AI extraction (replaces the lines below)"
+                      title="Re-read the document (replaces the lines below)"
                       disabled={busy === sq.id}
                       onClick={() => reparse(sq)}
                     >
@@ -269,6 +272,12 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
               {sq.status === 'failed' && sq.parse_error && (
                 <p className="border-t border-border px-3 py-2 text-xs text-destructive">
                   {sq.parse_error} — you can still add lines manually below.
+                </p>
+              )}
+              {/* Parsed, but the lines didn't add up to the document's own subtotal. */}
+              {sq.status === 'parsed' && sq.parse_error && (
+                <p className="border-t border-border px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                  {sq.parse_error}
                 </p>
               )}
 
@@ -336,10 +345,17 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
                       </div>
                     ))}
                   </div>
-                  <div className="pt-2">
+                  <div className="flex flex-wrap items-center gap-3 pt-2">
                     <Button type="button" variant="outline" size="sm" onClick={() => addLine(sq)}>
                       <Plus className="h-3.5 w-3.5" /> Add line
                     </Button>
+                    {/* Totals to eyeball against the document before pulling lines in. */}
+                    {lines.length > 0 && (
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        Ex VAT <span className="font-medium text-foreground">{rand(exVatTotal)}</span>
+                        {' · '}landed {rand(landedTotal)}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}

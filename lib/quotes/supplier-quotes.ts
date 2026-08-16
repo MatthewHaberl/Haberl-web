@@ -57,3 +57,24 @@ export function landedCostR(unitPriceExVatR: number): number {
 export function quotedSellR(unitPriceExVatR: number, markup: number): number {
   return round2(landedCostR(unitPriceExVatR) * markup)
 }
+
+// ── Extraction result shape (shared by the table reader and the AI fallback) ──
+
+export interface ParsedSupplierQuoteLine {
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  /** Supplier EX-VAT unit price (rands). */
+  unit_price_ex_vat: number
+}
+
+export interface ParsedSupplierQuote {
+  supplier: string | null
+  reference: string | null
+  /** ISO date (YYYY-MM-DD) or null. */
+  quote_date: string | null
+  lines: ParsedSupplierQuoteLine[]
+  /** The document's own ex-VAT subtotal, when it prints one (table reader only). */
+  subtotal_ex_vat?: number | null
+}

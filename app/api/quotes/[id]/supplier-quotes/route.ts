@@ -3,12 +3,11 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   SUPPLIER_QUOTES_BUCKET,
-  aiParseAvailable,
   parseAndStoreLines,
 } from '@/lib/quotes/supplier-quote-parse'
 
 export const runtime = 'nodejs'
-// Extraction reads the whole document through Claude — same ceiling as research.
+// The table reader is fast; the AI fallback (scans only) needs the headroom.
 export const maxDuration = 180
 
 const MAX_BYTES = 25 * 1024 * 1024
@@ -103,15 +102,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return new Response('Could not save the supplier quote record', { status: 500 })
   }
 
-  // Parse inline when AI is configured; otherwise leave it for manual entry.
-  if (aiParseAvailable()) {
-    await parseAndStoreLines(admin, row)
-  } else {
-    await admin
-      .from('supplier_quotes')
-      .update({ status: 'manual', parse_error: 'AI parsing not configured — add the lines manually' })
-      .eq('id', row.id)
-  }
+  // Read the document inline: PDFs go through the table reader (no API key
+  // needed); scans/photos fall back to AI when it's configured.
+  await parseAndStoreLines(admin, row)
 
   const [{ data: fresh }, { data: lines }] = await Promise.all([
     admin.from('supplier_quotes').select('*').eq('id', row.id).single(),

@@ -1,10 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Supplier-quote document extraction (W98) — server only.
+// Supplier-quote document extraction (W98, reworked W99) — server only.
 //
-// Sends the uploaded quote (PDF or photo) to Claude as a document/image content
-// block and extracts structured line items. Same house pattern as the equipment
-// research route: dynamic SDK import (module load survives a missing key) and a
-// JSON-in-a-```json-fence output contract.
+// Two readers, tried in this order:
+//   1. the TABLE READER (lib/quotes/supplier-quote-table.ts) — deterministic,
+//      free, offline: it rebuilds the quote's table from the PDF's own text
+//      layout. This is the normal path and needs no API key.
+//   2. Claude — only as a fallback, for PDFs with no text layer (a scan) or a
+//      photographed quote, and only when ANTHROPIC_API_KEY happens to be set.
 //
 // Callers: app/api/quotes/[id]/supplier-quotes (upload) and .../[sqId]/parse
 // (re-parse). Both go through parseAndStoreLines so the replace-lines +
@@ -12,26 +14,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { extractPdfTextPages, looksLikePdf } from './pdf-text'
+import { linesSubtotal, parseSupplierQuotePages } from './supplier-quote-table'
+import type { ParsedSupplierQuote, ParsedSupplierQuoteLine } from './supplier-quotes'
+
+export type { ParsedSupplierQuote, ParsedSupplierQuoteLine }
 
 export const SUPPLIER_QUOTES_BUCKET = 'supplier-quotes'
 
-export interface ParsedSupplierQuoteLine {
-  sku: string
-  description: string
-  qty: number
-  unit: string
-  /** Supplier EX-VAT unit price (rands). */
-  unit_price_ex_vat: number
-}
-
-export interface ParsedSupplierQuote {
-  supplier: string | null
-  reference: string | null
-  /** ISO date (YYYY-MM-DD) or null. */
-  quote_date: string | null
-  lines: ParsedSupplierQuoteLine[]
-}
-
+/** The AI fallback is configured (scans/photos only — PDFs never need it). */
 export function aiParseAvailable(): boolean {
   return !!process.env.ANTHROPIC_API_KEY
 }
@@ -96,7 +87,10 @@ function sanitize(raw: unknown): ParsedSupplierQuote | null {
   }
 }
 
-/** Extract structured lines from a supplier quote document via Claude. Throws on failure. */
+/**
+ * AI fallback: extract lines from a scanned or photographed quote via Claude.
+ * Only reached when the PDF table reader found nothing. Throws on failure.
+ */
 export async function parseSupplierQuoteDocument(
   bytes: Buffer,
   mimeType: string,
@@ -185,15 +179,83 @@ export async function matchSkusToCatalog(
 }
 
 /**
+ * Read a PDF's line items off its own text layout — no API key, no network.
+ * Returns null when the file has no usable text layer (a scanned/photographed
+ * quote) or when no table could be recognised on it.
+ */
+export async function tableParsePdf(bytes: Buffer): Promise<ParsedSupplierQuote | null> {
+  if (!looksLikePdf(bytes)) return null
+  let pages
+  try {
+    pages = await extractPdfTextPages(bytes)
+  } catch {
+    return null
+  }
+  const textRuns = pages.reduce((n, p) => n + p.items.length, 0)
+  if (textRuns === 0) return null // image-only PDF (a scan)
+  const parsed = parseSupplierQuotePages(pages)
+  return parsed.lines.length > 0 ? parsed : null
+}
+
+/**
+ * The extraction's own arithmetic check: our line total against the subtotal
+ * the supplier printed. A mismatch means a line was misread — worth saying so
+ * rather than letting a wrong cost travel into the BOM.
+ */
+function subtotalWarning(parsed: ParsedSupplierQuote): string | null {
+  const stated = parsed.subtotal_ex_vat
+  if (stated == null || stated <= 0) return null
+  const ours = linesSubtotal(parsed.lines)
+  if (Math.abs(ours - stated) <= Math.max(1, stated * 0.005)) return null
+  const r = (n: number) => `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `Check the lines: they add up to ${r(ours)} but the quote's subtotal is ${r(stated)} (ex VAT).`
+}
+
+/** Replace this supplier quote's lines with the extracted ones. */
+async function storeLines(
+  admin: SupabaseClient,
+  supplierQuoteId: string,
+  lines: ParsedSupplierQuoteLine[],
+): Promise<boolean> {
+  const skuMatches = await matchSkusToCatalog(admin, lines.map((l) => l.sku))
+  // Replace-all: a re-parse must not duplicate lines from the previous run.
+  await admin.from('supplier_quote_lines').delete().eq('supplier_quote_id', supplierQuoteId)
+  const { error } = await admin.from('supplier_quote_lines').insert(
+    lines.map((l, i) => ({
+      supplier_quote_id: supplierQuoteId,
+      line_no: i + 1,
+      sku: l.sku,
+      description: l.description,
+      qty: l.qty,
+      unit: l.unit,
+      unit_price_r: l.unit_price_ex_vat,
+      catalog_id: l.sku ? (skuMatches.get(l.sku) ?? null) : null,
+    })),
+  )
+  return !error
+}
+
+export interface ParseOutcome {
+  ok: boolean
+  error?: string
+  /** Non-fatal note stored against the header (e.g. a subtotal mismatch). */
+  warning?: string
+  lineCount?: number
+  method?: 'table' | 'ai'
+}
+
+/**
  * Download the stored document, extract lines, REPLACE any existing lines and
- * update the header. On failure the header goes to 'failed' with the error
- * recorded and existing lines are left untouched (manual entry still works).
+ * update the header. The PDF table reader runs first; Claude is only consulted
+ * for scans/photos and only when a key is configured. On failure the header
+ * goes to 'failed' with the reason recorded and existing lines are left
+ * untouched (manual entry still works).
  */
 export async function parseAndStoreLines(
   admin: SupabaseClient,
   supplierQuote: { id: string; storage_path: string | null; mime_type: string | null },
-): Promise<{ ok: boolean; error?: string; lineCount?: number }> {
-  const fail = async (error: string) => {
+): Promise<ParseOutcome> {
+  const fail = async (error: string): Promise<ParseOutcome> => {
     await admin
       .from('supplier_quotes')
       .update({ status: 'failed', parse_error: error })
@@ -212,42 +274,39 @@ export async function parseAndStoreLines(
     .from(SUPPLIER_QUOTES_BUCKET)
     .download(supplierQuote.storage_path)
   if (dlErr || !blob) return fail('Could not read the stored document')
+  const bytes = Buffer.from(await blob.arrayBuffer())
 
-  let parsed: ParsedSupplierQuote
-  try {
-    parsed = await parseSupplierQuoteDocument(
-      Buffer.from(await blob.arrayBuffer()),
-      supplierQuote.mime_type || 'application/pdf',
-    )
-  } catch (err) {
-    return fail(err instanceof Error ? err.message : 'Extraction failed')
+  let parsed = await tableParsePdf(bytes)
+  let method: 'table' | 'ai' = 'table'
+
+  if (!parsed) {
+    // A scan, a photo, or a layout the table reader couldn't recognise.
+    if (!aiParseAvailable()) {
+      return fail(
+        looksLikePdf(bytes)
+          ? "Couldn't read a line-item table on this PDF — it may be a scan. Add the lines below, or upload the supplier's emailed PDF."
+          : 'Photos of quotes have to be typed in — upload the PDF version to read it automatically, or add the lines below.',
+      )
+    }
+    try {
+      parsed = await parseSupplierQuoteDocument(bytes, supplierQuote.mime_type || 'application/pdf')
+      method = 'ai'
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : 'Extraction failed')
+    }
   }
   if (parsed.lines.length === 0) return fail('No line items found on the document')
 
-  const skuMatches = await matchSkusToCatalog(admin, parsed.lines.map((l) => l.sku))
+  if (!(await storeLines(admin, supplierQuote.id, parsed.lines))) {
+    return fail('Could not save the extracted lines')
+  }
 
-  // Replace-all: a re-parse must not duplicate lines from the previous run.
-  await admin.from('supplier_quote_lines').delete().eq('supplier_quote_id', supplierQuote.id)
-  const { error: insErr } = await admin.from('supplier_quote_lines').insert(
-    parsed.lines.map((l, i) => ({
-      supplier_quote_id: supplierQuote.id,
-      line_no: i + 1,
-      sku: l.sku,
-      description: l.description,
-      qty: l.qty,
-      unit: l.unit,
-      unit_price_r: l.unit_price_ex_vat,
-      catalog_id: l.sku ? (skuMatches.get(l.sku) ?? null) : null,
-    })),
-  )
-  if (insErr) return fail('Could not save the extracted lines')
-
+  const warning = subtotalWarning(parsed)
   const header: Record<string, unknown> = {
     status: 'parsed',
-    parse_error: null,
+    parse_error: warning,
     line_count: parsed.lines.length,
   }
-  if (parsed.supplier) header.supplier = parsed.supplier
   if (parsed.reference) header.reference = parsed.reference
   if (parsed.quote_date) header.quote_date = parsed.quote_date
   // Only fill supplier when the upload form left it blank — the typed name wins.
@@ -256,8 +315,8 @@ export async function parseAndStoreLines(
     .select('supplier')
     .eq('id', supplierQuote.id)
     .single()
-  if (current?.supplier && parsed.supplier) delete header.supplier
+  if (parsed.supplier && !current?.supplier) header.supplier = parsed.supplier
 
   await admin.from('supplier_quotes').update(header).eq('id', supplierQuote.id)
-  return { ok: true, lineCount: parsed.lines.length }
+  return { ok: true, lineCount: parsed.lines.length, method, warning: warning ?? undefined }
 }
