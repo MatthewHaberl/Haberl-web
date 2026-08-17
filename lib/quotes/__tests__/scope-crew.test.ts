@@ -1,10 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  convertCrewUnit,
   crewCostR,
+  crewLineCostR,
   crewLineSellR,
   crewSellR,
   crewUnitSellR,
+  CREW_HOURS_PER_DAY,
   emptyScope,
   labourAmountR,
   labourCostR,
@@ -52,6 +55,46 @@ test('crewLineSellR multiplies by the quantity of hours', () => {
 test('a markup of 1 sells labour at cost rather than at zero', () => {
   const line = newCrewLine({ costR: 150, markup: 1, qty: 8 })
   assert.equal(crewLineSellR(line), 1200)
+})
+
+// ── Changing the unit ────────────────────────────────────────────────────────
+// The rate seeded from the staff directory is R/hr. Switching to days without
+// converting it reads that hourly figure as a day rate — a nine-fold
+// under-bill that the margin readout still calls healthy.
+
+test('switching hours to days re-rates the line instead of reusing the hourly figure', () => {
+  const line = newCrewLine({ costR: 250, markup: 1.6, qty: 8, unit: 'hr' })
+  const day = convertCrewUnit(line, 'day')
+  assert.equal(day.unit, 'day')
+  assert.equal(day.costR, 250 * CREW_HOURS_PER_DAY)
+  assert.equal(crewLineCostR({ ...day, qty: 2 }), 250 * CREW_HOURS_PER_DAY * 2)
+})
+
+test('switching days back to hours restores the hourly rate', () => {
+  const day = newCrewLine({ costR: 2250, markup: 1.6, qty: 2, unit: 'day' })
+  assert.equal(convertCrewUnit(day, 'hr').costR, 250)
+})
+
+test('a manual sell override is converted with the cost, not left behind', () => {
+  const line = newCrewLine({ costR: 250, markup: 1.6, sellR: 400, unit: 'hr' })
+  assert.equal(convertCrewUnit(line, 'day').sellR, 400 * CREW_HOURS_PER_DAY)
+})
+
+test('a line with no override keeps null rather than inventing a sell price', () => {
+  const line = newCrewLine({ costR: 250, markup: 1.6, unit: 'hr' })
+  assert.equal(convertCrewUnit(line, 'day').sellR, null)
+})
+
+test('a job lump has no hour basis, so its rate is left for the user to type', () => {
+  const line = newCrewLine({ costR: 250, markup: 1.6, unit: 'hr' })
+  const job = convertCrewUnit(line, 'job')
+  assert.equal(job.unit, 'job')
+  assert.equal(job.costR, 250, 'converting an hourly rate to a lump would be a guess')
+})
+
+test('re-selecting the unit already set changes nothing', () => {
+  const line = newCrewLine({ costR: 250, markup: 1.6, unit: 'hr' })
+  assert.deepEqual(convertCrewUnit(line, 'hr'), line)
 })
 
 // ── Crew totals ──────────────────────────────────────────────────────────────

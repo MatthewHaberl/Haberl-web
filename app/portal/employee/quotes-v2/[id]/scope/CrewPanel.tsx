@@ -21,10 +21,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import {
+  convertCrewUnit,
   crewCostR,
   crewLineSellR,
   crewSellR,
   crewUnitSellR,
+  CREW_HOURS_PER_DAY,
   newCrewLine,
   type QuoteScope,
   type ScopeCrewLine,
@@ -45,6 +47,13 @@ const UNITS: { value: ScopeCrewLine['unit']; label: string }[] = [
   { value: 'day', label: 'days' },
   { value: 'job', label: 'job' },
 ]
+
+/** Rates are meaningless without their unit — every money label carries this. */
+const PER_UNIT: Record<ScopeCrewLine['unit'], string> = {
+  hr: '/hr',
+  day: '/day',
+  job: ' per job',
+}
 
 export function CrewPanel({
   scope,
@@ -93,7 +102,7 @@ export function CrewPanel({
         name: person.full_name,
         costR: person.cost_rate_r,
         markup: defaultMarkup,
-        qty: 8,
+        qty: CREW_HOURS_PER_DAY,
         unit: 'hr',
       }),
     ])
@@ -101,7 +110,7 @@ export function CrewPanel({
   }
 
   function addBlank() {
-    setCrew([...crew, newCrewLine({ name: '', markup: defaultMarkup, qty: 8, unit: 'hr' })])
+    setCrew([...crew, newCrewLine({ name: '', markup: defaultMarkup, qty: CREW_HOURS_PER_DAY, unit: 'hr' })])
   }
 
   const cost = crewCostR(scope.labour)
@@ -158,7 +167,12 @@ export function CrewPanel({
                   <Select
                     className="h-8 text-xs"
                     value={c.unit}
-                    onChange={(e) => patch(c.id, { unit: e.target.value as ScopeCrewLine['unit'] })}
+                    onChange={(e) => {
+                      // Convert, don't just relabel: the rate came from the
+                      // staff directory in R/hr.
+                      const next = convertCrewUnit(c, e.target.value as ScopeCrewLine['unit'])
+                      patch(c.id, { unit: next.unit, costR: next.costR, sellR: next.sellR })
+                    }}
                   >
                     {UNITS.map((u) => (
                       <option key={u.value} value={u.value}>
@@ -168,7 +182,7 @@ export function CrewPanel({
                   </Select>
                 </label>
                 <label className="space-y-0.5 text-[10px] text-muted-foreground">
-                  Costs me
+                  Costs me {PER_UNIT[c.unit]}
                   <Input
                     leadingText="R"
                     type="number"
@@ -192,7 +206,7 @@ export function CrewPanel({
                   />
                 </label>
                 <label className="col-span-2 space-y-0.5 text-[10px] text-muted-foreground">
-                  Bill at (leave blank to follow the markup)
+                  Bill at {PER_UNIT[c.unit]} (leave blank to follow the markup)
                   <Input
                     leadingText="R"
                     type="number"

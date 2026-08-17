@@ -271,6 +271,44 @@ export function newCrewLine(over: Partial<ScopeCrewLine> = {}): ScopeCrewLine {
   }
 }
 
+/**
+ * Hours in a normal working day.
+ *
+ * Payroll already fixes this number: splitOvertime() starts paying overtime
+ * after 9 hours (lib/staff/pay.ts), so a day booked onto a quote has to carry
+ * nine hours of wages or the quote under-recovers what the payslip pays out.
+ * One constant, so the quote and the wage bill cannot drift apart.
+ */
+export const CREW_HOURS_PER_DAY = 9
+
+/**
+ * Re-express a crew line's rates when its unit changes.
+ *
+ * The rate seeded from the staff directory is R/HOUR. Switching the unit to
+ * days without touching that number silently reads an hourly rate as a day
+ * rate — a nine-fold under-bill, and one the margin readout still reports as
+ * perfectly healthy because cost and sell are understated together. Hours and
+ * days are both time, so convert between them; a 'job' lump has no time basis,
+ * so its rate is left alone for the user to type.
+ */
+export function convertCrewUnit(
+  line: ScopeCrewLine,
+  unit: ScopeCrewLine['unit'],
+): ScopeCrewLine {
+  if (unit === line.unit) return line
+  const factor =
+    line.unit === 'hr' && unit === 'day' ? CREW_HOURS_PER_DAY
+    : line.unit === 'day' && unit === 'hr' ? 1 / CREW_HOURS_PER_DAY
+    : 1
+  if (factor === 1) return { ...line, unit }
+  return {
+    ...line,
+    unit,
+    costR: round2(line.costR * factor),
+    sellR: line.sellR === null ? null : round2(line.sellR * factor),
+  }
+}
+
 /** What one crew line is billed at per unit — the manual override wins. */
 export function crewUnitSellR(line: ScopeCrewLine): number {
   if (line.sellR !== null && line.sellR > 0) return round2(line.sellR)
