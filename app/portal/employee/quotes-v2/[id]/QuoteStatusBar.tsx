@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Check, Copy, Send, X, Loader2, Briefcase, ArrowRight, Eye, MessageCircle, FileText, RefreshCw } from 'lucide-react'
+import { Check, Copy, Send, X, Loader2, Briefcase, ArrowRight, Eye, MessageCircle, FileText, RefreshCw, ScanEye } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
 
 /**
@@ -249,6 +249,19 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
         )}
 
         {saving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+
+        {/* See it the customer's way, at any status. Draft quotes render live
+            from the current design; sent ones show the document they hold. */}
+        <Button asChild variant="outline" size="sm">
+          <Link
+            href={`/q/preview/${requestId}`}
+            target="_blank"
+            rel="noopener"
+            title="Open this quote in the customer's view — nothing is sent or saved"
+          >
+            <ScanEye className="h-3.5 w-3.5" /> Preview as customer
+          </Link>
+        </Button>
 
         {!saving && status === 'pending' && (
           <Button

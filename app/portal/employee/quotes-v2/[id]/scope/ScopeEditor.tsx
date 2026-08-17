@@ -36,8 +36,13 @@ const UNITS: ScopeLineUnit[] = ['ea', 'm', 'hr', 'job']
 
 // One row per line, same column rhythm as the supplier-quote panel:
 // sku · description · qty · unit · landed cost · sell · markup · total · opt · bin
+//
+// Container query, not a viewport breakpoint: this editor shares the page with
+// the summary panel, so the panel is ~550px at 1280px wide and ~900px on a big
+// monitor. Below 52rem of ITS OWN width the columns would squeeze the
+// description to nothing, so the fields stack instead.
 const ROW_COLS =
-  'sm:grid-cols-[6.5rem_minmax(0,1fr)_4rem_5rem_6.75rem_6.75rem_4rem_7rem_2rem_1.75rem]'
+  '@[52rem]:grid-cols-[5rem_minmax(0,1fr)_3.25rem_4rem_6rem_6rem_3.25rem_5.75rem_1.5rem_1.75rem]'
 
 /** Effective markup on a line (sell ÷ landed cost), or null with no cost. */
 const markupOf = (line: ScopeLine) =>
@@ -163,7 +168,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
           : null
         return (
           <Card key={name}>
-            <CardContent className="space-y-3 pt-6">
+            <CardContent className="@container space-y-3 pt-6">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{name}</span>
@@ -196,7 +201,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
               </div>
 
               {lines.length > 0 && (
-                <div className={`hidden gap-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:grid ${ROW_COLS}`}>
+                <div className={`hidden gap-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground @[52rem]:grid ${ROW_COLS}`}>
                   <span>SKU</span>
                   <span>Description</span>
                   <span>Qty</span>
@@ -216,7 +221,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
                   return (
                     <div
                       key={line.id}
-                      className={`grid grid-cols-2 items-center gap-2 rounded border border-border/60 p-1 sm:border-0 sm:p-0 ${ROW_COLS}`}
+                      className={`grid grid-cols-2 items-center gap-2 rounded border border-border/60 p-1 @[52rem]:border-0 @[52rem]:p-0 ${ROW_COLS}`}
                     >
                       <Input
                         value={line.sku}
@@ -317,7 +322,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
                           checked={line.optional}
                           onChange={(e) => updateLine(line.id, { optional: e.target.checked })}
                         />
-                        <span className="ml-1 text-[11px] text-muted-foreground sm:hidden">Optional extra</span>
+                        <span className="ml-1 text-[11px] text-muted-foreground @[52rem]:hidden">Optional extra</span>
                       </label>
                       <Button type="button" variant="ghost" size="icon" className="h-7 w-7 justify-self-end"
                         onClick={() => removeLine(line.id)} title="Remove line">

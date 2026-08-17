@@ -1,4 +1,7 @@
-'use client'
+// Pure HTML-string builder — no React, no browser APIs, no 'use client'. The
+// directive used to sit here, which made it unimportable from a server
+// component (the staff quote preview renders on the server); client callers
+// like DesignWorkspace still bundle it fine without it.
 
 import type { ComplianceCheck } from './compliance'
 
