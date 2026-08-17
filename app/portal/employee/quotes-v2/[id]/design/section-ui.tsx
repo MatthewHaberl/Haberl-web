@@ -96,12 +96,30 @@ export function ReorderButtons({
 // (↑/↓/Enter/Escape), click-outside closes, shows the selected label when closed,
 // filters case-insensitively on the visible label — plus anything the caller puts
 // in `search` (e.g. a product's SKU and brand, so "NXB-63G" finds the breaker).
+//
+// Only the first `VISIBLE_LIMIT` matches are put in the DOM. Protection alone is
+// ~2,200 catalog rows, and building that many buttons made opening a breaker picker
+// the slowest thing on the design page — while nobody scrolls past the first screen
+// anyway. Narrowing is what the search box is for, so the list says how many more
+// there are instead of rendering them.
+const VISIBLE_LIMIT = 50
+
+/** `pinned` keeps an option out of the trim — for a trailing affordance like "+ Custom…". */
+type SelectOption = {
+  value: string
+  label: string
+  disabled?: boolean
+  hint?: string
+  search?: string
+  pinned?: boolean
+}
+
 export function SearchableSelect({
   value, onChange, options, placeholder = 'Select…', noneLabel = 'None', className = '',
 }: {
   value: string | null
   onChange: (v: string | null) => void
-  options: Array<{ value: string; label: string; disabled?: boolean; hint?: string; search?: string }>
+  options: SelectOption[]
   placeholder?: string
   noneLabel?: string
   className?: string
@@ -115,7 +133,7 @@ export function SearchableSelect({
   const inputRef = useRef<HTMLInputElement>(null)
 
   // The "None" choice is always first; below it, options filtered by the typed query.
-  const all = [{ value: '', label: noneLabel } as { value: string; label: string; disabled?: boolean; hint?: string; search?: string }, ...options]
+  const all: SelectOption[] = [{ value: '', label: noneLabel }, ...options]
   const needle = query.trim().toLowerCase()
   const filtered = needle
     // Every whitespace-separated word must match somewhere in the label, the
@@ -126,6 +144,13 @@ export function SearchableSelect({
         return needle.split(/\s+/).every((word) => haystack.includes(word))
       })
     : all
+  // What actually gets built: the first VISIBLE_LIMIT matches, plus any pinned option
+  // that fell past the cap. Arrowing and Enter run off this same list, so the highlight
+  // can never land on a row that isn't on screen.
+  const shown = filtered.length > VISIBLE_LIMIT
+    ? [...filtered.slice(0, VISIBLE_LIMIT), ...filtered.slice(VISIBLE_LIMIT).filter((o) => o.pinned)]
+    : filtered
+  const hidden = filtered.length - shown.length
   const selected = value == null ? null : options.find((o) => o.value === value) ?? null
 
   // Close on outside click.
@@ -169,12 +194,12 @@ export function SearchableSelect({
     setOpen(false)
   }
   function move(delta: number) {
-    if (!filtered.length) return
+    if (!shown.length) return
     // Skip disabled rows when arrowing.
     let i = active
-    for (let n = 0; n < filtered.length; n++) {
-      i = (i + delta + filtered.length) % filtered.length
-      if (!filtered[i].disabled) break
+    for (let n = 0; n < shown.length; n++) {
+      i = (i + delta + shown.length) % shown.length
+      if (!shown[i].disabled) break
     }
     setActive(i)
   }
@@ -184,7 +209,7 @@ export function SearchableSelect({
     else if (e.key === 'Enter') {
       e.preventDefault()
       if (!open) { openMenu(); return }
-      const opt = filtered[active]
+      const opt = shown[active]
       if (opt && !opt.disabled) commit(opt.value)
     } else if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
   }
@@ -214,10 +239,10 @@ export function SearchableSelect({
             className="h-8 w-full rounded-t-md border-b border-border bg-background px-2 text-xs focus:outline-none"
           />
           <ul className="overflow-auto py-0.5" style={{ maxHeight: listMax }}>
-            {filtered.length === 0 ? (
+            {shown.length === 0 ? (
               <li className="px-2 py-1.5 text-xs text-muted-foreground">No matches</li>
             ) : (
-              filtered.map((o, i) => {
+              shown.map((o, i) => {
                 const isSel = (o.value === '' && value == null) || o.value === value
                 return (
                   <li key={o.value || '__none__'}>
@@ -234,6 +259,11 @@ export function SearchableSelect({
                   </li>
                 )
               })
+            )}
+            {hidden > 0 && (
+              <li className="border-t border-border px-2 py-1.5 text-[10px] text-muted-foreground">
+                {hidden.toLocaleString('en-ZA')} more — keep typing to narrow
+              </li>
             )}
           </ul>
         </div>

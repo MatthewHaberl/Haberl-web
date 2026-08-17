@@ -103,7 +103,9 @@ export function ProductPicker({
       hint: o.sku || undefined,
       search: [o.sku, o.brand].filter(Boolean).join(' '),
     })),
-    { value: CUSTOM_PREFIX, label: custom ? `${customLabel(value)} (pending)` : '+ Custom…' },
+    // Pinned: this row sits last, and the picker only builds the first ~50 matches —
+    // without it a big category (protection is ~2,200 rows) would lose the quick-add.
+    { value: CUSTOM_PREFIX, label: custom ? `${customLabel(value)} (pending)` : '+ Custom…', pinned: true },
   ]
 
   return (

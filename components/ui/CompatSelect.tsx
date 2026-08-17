@@ -18,7 +18,14 @@ export interface CompatOption {
  *   warn  → selectable, flagged with a ⚠ danger mark + reason
  *   ok    → normal
  * A native <select> can't render any of that, so this is a small custom popover.
+ *
+ * Like the design canvas's SearchableSelect, only the first `VISIBLE_LIMIT` matches
+ * are put in the DOM — the battery category alone is ~430 rows, and a list that long
+ * is both slow to build and unscrollable in practice. The filter box is how you reach
+ * the rest, including the blocked ones the caller sorts to the bottom.
  */
+const VISIBLE_LIMIT = 50
+
 export function CompatSelect({
   value,
   onChange,
@@ -32,6 +39,7 @@ export function CompatSelect({
 }) {
   const [open, setOpen] = useState(false)
   const [dropUp, setDropUp] = useState(false)
+  const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -45,6 +53,18 @@ export function CompatSelect({
 
   const selected = options.find((o) => o.id === value)
 
+  // Every typed word must appear in the label or the compat reason, so "pylon 5"
+  // and "5 pylon" both land on the same battery.
+  const needle = query.trim().toLowerCase()
+  const matches = needle
+    ? options.filter((o) => {
+        const haystack = `${o.label} ${o.reason ?? ''}`.toLowerCase()
+        return needle.split(/\s+/).every((word) => haystack.includes(word))
+      })
+    : options
+  const shown = matches.slice(0, VISIBLE_LIMIT)
+  const hidden = matches.length - shown.length
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -54,6 +74,7 @@ export function CompatSelect({
           // Flip the list upward when there's little room below, so its lower options
           // stay reachable inside the scrollable design canvas.
           if (next) {
+            setQuery('')
             const rect = ref.current?.getBoundingClientRect()
             if (rect) {
               const below = window.innerHeight - rect.bottom
@@ -73,40 +94,58 @@ export function CompatSelect({
 
       {open && (
         <div className={cn(
-          'absolute z-50 max-h-72 w-full overflow-auto rounded-md border border-border bg-card py-1 shadow-md',
+          'absolute z-50 w-full rounded-md border border-border bg-card shadow-md',
           dropUp ? 'bottom-full mb-1' : 'top-full mt-1',
         )}>
-          {options.map((o) => {
-            const blocked = o.level === 'block'
-            const warn = o.level === 'warn'
-            return (
-              <button
-                key={o.id}
-                type="button"
-                disabled={blocked}
-                onClick={() => { if (!blocked) { onChange(o.id); setOpen(false) } }}
-                title={o.reason || undefined}
-                className={cn(
-                  'flex w-full items-start gap-2 px-3 py-2 text-left text-sm',
-                  blocked ? 'cursor-not-allowed bg-muted/60' : 'hover:bg-muted',
-                  o.id === value && !blocked && 'bg-accent/10',
-                )}
-              >
-                {blocked && <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />}
-                {warn && <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />}
-                <span className="min-w-0 flex-1">
-                  <span className={cn('block', blocked ? 'text-muted-foreground line-through' : 'text-foreground')}>
-                    {o.label}
-                  </span>
-                  {o.reason && (
-                    <span className={cn('block text-xs', blocked ? 'text-muted-foreground' : 'text-amber-600')}>
-                      {o.reason}
-                    </span>
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setOpen(false) } }}
+            placeholder="Search…"
+            className="h-9 w-full rounded-t-md border-b border-border bg-background px-2.5 text-sm focus:outline-none"
+          />
+          <div className="max-h-72 overflow-auto py-1">
+            {shown.length === 0 && (
+              <p className="px-3 py-2 text-sm text-muted-foreground">No matches</p>
+            )}
+            {shown.map((o) => {
+              const blocked = o.level === 'block'
+              const warn = o.level === 'warn'
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  disabled={blocked}
+                  onClick={() => { if (!blocked) { onChange(o.id); setOpen(false) } }}
+                  title={o.reason || undefined}
+                  className={cn(
+                    'flex w-full items-start gap-2 px-3 py-2 text-left text-sm',
+                    blocked ? 'cursor-not-allowed bg-muted/60' : 'hover:bg-muted',
+                    o.id === value && !blocked && 'bg-accent/10',
                   )}
-                </span>
-              </button>
-            )
-          })}
+                >
+                  {blocked && <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />}
+                  {warn && <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />}
+                  <span className="min-w-0 flex-1">
+                    <span className={cn('block', blocked ? 'text-muted-foreground line-through' : 'text-foreground')}>
+                      {o.label}
+                    </span>
+                    {o.reason && (
+                      <span className={cn('block text-xs', blocked ? 'text-muted-foreground' : 'text-amber-600')}>
+                        {o.reason}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              )
+            })}
+            {hidden > 0 && (
+              <p className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
+                {hidden.toLocaleString('en-ZA')} more — keep typing to narrow
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>
