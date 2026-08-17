@@ -1,42 +1,48 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { fetchAllRows } from '@/lib/supabase/fetch-all'
 import type { EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
+import {
+  catalogByCategory,
+  ensureCatalog,
+  getCatalogServerSnapshot,
+  getCatalogSnapshot,
+  invalidateCatalog as invalidateCatalogStore,
+  subscribeCatalog,
+} from '@/lib/catalog/catalog-store'
 
-/** Loads the active equipment catalog once (same source as the legacy selector). */
+/**
+ * The active equipment catalog, shared by every caller.
+ *
+ * The design page mounts ~15 components that each want the catalog (every section,
+ * the BOM panel, the overview, the faceplate). They all read one copy, held in
+ * lib/catalog/catalog-store.ts, which also remembers it in IndexedDB between visits —
+ * so moving between sections costs nothing and a reload paints the products you
+ * already chose immediately, instead of a "Loading…" placeholder.
+ */
 export function useCatalog() {
-  const [items, setItems] = useState<EquipmentCatalogItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let active = true
-    const supabase = createClient()
-    // Page through — the active catalog exceeds the ~1000-row PostgREST cap, which
-    // would otherwise silently drop selectable equipment from the designer.
-    fetchAllRows<EquipmentCatalogItem>((from, to) =>
-      supabase
-        .from('equipment_catalog')
-        .select('*')
-        .eq('active', true)
-        .order('sort_order').order('brand').order('description')
-        .range(from, to),
-    ).then(({ data, error }) => {
-      if (!active) return
-      if (error) setError(error.message)
-      else setItems(data)
-      setLoading(false)
-    })
-    return () => { active = false }
-  }, [])
-
-  return { items, loading, error }
+  const snapshot = useSyncExternalStore(
+    (listener) => {
+      // Kick the load on subscribe rather than in an effect, so the first render after
+      // hydration already has the cached catalog where one exists.
+      ensureCatalog()
+      return subscribeCatalog(listener)
+    },
+    getCatalogSnapshot,
+    getCatalogServerSnapshot,
+  )
+  return snapshot
 }
 
+/** Drops the shared catalog so the next read refetches it. */
+export function invalidateCatalog() {
+  invalidateCatalogStore()
+}
+
+/** Products of one category. Bucketed once per catalog copy, not filtered per render. */
 export function byCategory(items: EquipmentCatalogItem[], category: EquipmentCatalogItem['category']) {
-  return items.filter((i) => i.category === category)
+  return catalogByCategory(items, category)
 }
 
 /**
@@ -72,5 +78,6 @@ export async function addPendingCatalogItem(
     .select('id')
     .single()
   if (error || !data) return null
+  invalidateCatalog()
   return data.id as string
 }
