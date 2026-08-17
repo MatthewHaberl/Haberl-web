@@ -8,6 +8,7 @@ import {
   hoursFromClock,
   isoDate,
   payPeriod,
+  outstandingOn,
   payslipReference,
   splitOvertime,
   totalPay,
@@ -19,8 +20,9 @@ import {
 /**
  * Wages are the one number in this app a person notices when it's wrong. These
  * tests pin the two rules the module is built on: rates come off the ENTRY
- * (never the current staff record), and pay is gross with net == gross until
- * the statutory pass lands.
+ * (never the current staff record), and advances come off the pay — oldest
+ * first, never below zero, with whatever the period could not cover carried to
+ * the next slip.
  */
 
 const entry = (over: Partial<PayableEntry> = {}): PayableEntry => ({
@@ -31,6 +33,15 @@ const entry = (over: Partial<PayableEntry> = {}): PayableEntry => ({
   cost_rate_r: 150,
   overtime_multiplier: 1.5,
   category: 'work',
+  ...over,
+})
+
+const advance = (over: Partial<PayableAmount> = {}): PayableAmount => ({
+  id: 'p1',
+  pay_date: '2026-08-18',
+  kind: 'advance',
+  description: 'Cash advance',
+  amount_r: 500,
   ...over,
 })
 
@@ -111,14 +122,93 @@ test('totalPay sums hours, piece work and bonuses into gross', () => {
   assert.equal(t.grossPayR, 2775 + 2300)
 })
 
-test('advances and deductions are recorded but NOT subtracted yet', () => {
-  const payments: PayableAmount[] = [
-    { id: 'p1', pay_date: '2026-08-18', kind: 'advance', description: 'Cash advance', amount_r: 500 },
-  ]
-  const t = totalPay([entry()], payments)
-  assert.equal(t.pendingDeductionsR, 500)
-  assert.equal(t.deductionsR, 0, 'deductions stay zero until the statutory pass')
-  assert.equal(t.netPayR, t.grossPayR, 'net must equal gross while nothing is deducted')
+// ── Advances and deductions ────────────────────────────────────────────
+
+test('an advance comes off the pay it was an advance on', () => {
+  const t = totalPay([entry()], [advance({ amount_r: 500 })])
+  assert.equal(t.grossPayR, 1200)
+  assert.equal(t.deductionsR, 500)
+  assert.equal(t.netPayR, 700)
+  assert.equal(t.carryForwardR, 0)
+})
+
+test('a deduction is subtracted the same way an advance is', () => {
+  const t = totalPay([entry()], [advance({ kind: 'deduction', amount_r: 200, description: 'Tool' })])
+  assert.equal(t.netPayR, 1000)
+  assert.equal(t.deductions[0].kind, 'deduction')
+})
+
+test('an advance bigger than the week takes what it can and carries the rest', () => {
+  // R2 000 handed over, R1 200 earned. The slip cannot ask for R800 back, so he
+  // takes nothing home this week and the R800 follows him to the next run.
+  const t = totalPay([entry()], [advance({ amount_r: 2000 })])
+  assert.equal(t.grossPayR, 1200)
+  assert.equal(t.deductionsR, 1200)
+  assert.equal(t.netPayR, 0, 'a payslip can never pay a negative amount')
+  assert.equal(t.carryForwardR, 800)
+  assert.deepEqual(t.deductions, [
+    {
+      paymentId: 'p1',
+      kind: 'advance',
+      date: '2026-08-18',
+      description: 'Cash advance',
+      outstandingBeforeR: 2000,
+      appliedR: 1200,
+      carriedR: 800,
+    },
+  ])
+})
+
+test('the carried balance is what comes back next week, not the whole advance', () => {
+  // The same R2 000 advance a week later: R1 200 of it is already recovered.
+  const t = totalPay([entry()], [advance({ amount_r: 2000, recovered_r: 1200 })])
+  assert.equal(t.outstandingR, 800)
+  assert.equal(t.deductionsR, 800)
+  assert.equal(t.netPayR, 400)
+  assert.equal(t.carryForwardR, 0)
+})
+
+test('a fully recovered advance stops taking money', () => {
+  const t = totalPay([entry()], [advance({ amount_r: 500, recovered_r: 500 })])
+  assert.equal(t.deductionsR, 0)
+  assert.equal(t.netPayR, 1200)
+  assert.deepEqual(t.deductions, [])
+})
+
+test('advances clear oldest first when the week cannot cover both', () => {
+  const t = totalPay(
+    [entry({ hours: 4 })], // R600
+    [
+      advance({ id: 'new', pay_date: '2026-08-19', amount_r: 400 }),
+      advance({ id: 'old', pay_date: '2026-08-10', amount_r: 500 }),
+    ],
+  )
+  assert.deepEqual(
+    t.deductions.map((d) => [d.paymentId, d.appliedR, d.carriedR]),
+    [
+      ['old', 500, 0],
+      ['new', 100, 300],
+    ],
+  )
+  assert.equal(t.netPayR, 0)
+  assert.equal(t.carryForwardR, 300)
+})
+
+test('a week with no pay recovers nothing and carries everything', () => {
+  const t = totalPay([], [advance({ amount_r: 500 })])
+  assert.equal(t.grossPayR, 0)
+  assert.equal(t.deductionsR, 0)
+  assert.equal(t.netPayR, 0)
+  assert.equal(t.carryForwardR, 500)
+})
+
+test('an advance is recovered out of piece work when there are no hours', () => {
+  const t = totalPay([], [
+    { id: 'p0', pay_date: '2026-08-18', kind: 'piece', description: 'Geyser', amount_r: 900 },
+    advance({ amount_r: 400 }),
+  ])
+  assert.equal(t.grossPayR, 900)
+  assert.equal(t.netPayR, 500)
 })
 
 test('totalPay on an empty period is all zeroes, not NaN', () => {
@@ -126,6 +216,17 @@ test('totalPay on an empty period is all zeroes, not NaN', () => {
   assert.equal(t.grossPayR, 0)
   assert.equal(t.netPayR, 0)
   assert.equal(t.normalHours, 0)
+  assert.equal(t.deductionsR, 0)
+  assert.equal(t.carryForwardR, 0)
+})
+
+test('outstandingOn ignores earnings and never goes negative', () => {
+  const earned: PayableAmount = {
+    id: 'x', pay_date: '2026-08-18', kind: 'piece', description: '', amount_r: 900,
+  }
+  assert.equal(outstandingOn(earned), 0)
+  assert.equal(outstandingOn(advance({ amount_r: 500, recovered_r: 800 })), 0)
+  assert.equal(outstandingOn(advance({ amount_r: 500, recovered_r: 125.5 })), 374.5)
 })
 
 test('totalPay ignores junk rates instead of producing NaN pay', () => {
@@ -158,13 +259,50 @@ test('buildPayslipDraft orders lines by date', () => {
   assert.deepEqual(draft.lines.map((l) => l.date), ['2026-08-17', '2026-08-19'])
 })
 
-test('buildPayslipDraft keeps advances OFF the slip it does not subtract', () => {
+test('buildPayslipDraft prints earnings, then what came off them', () => {
   const draft = buildPayslipDraft([entry()], [
-    { id: 'p1', pay_date: '2026-08-18', kind: 'advance', description: 'Advance', amount_r: 500 },
+    advance({ amount_r: 500 }),
     { id: 'p2', pay_date: '2026-08-18', kind: 'piece', description: 'Geyser swap', amount_r: 800 },
   ])
-  assert.deepEqual(draft.lines.map((l) => l.kind), ['hours', 'piece'])
+  assert.deepEqual(draft.lines.map((l) => l.kind), ['hours', 'piece', 'advance'])
   assert.equal(draft.grossPayR, 1200 + 800)
+  assert.equal(draft.netPayR, 1500)
+
+  const deduction = draft.lines[2]
+  assert.equal(deduction.amountR, 500, 'deduction amounts are positive; the kind says which way')
+  assert.equal(deduction.paymentId, 'p1', 'the line names its advance so a reversal can undo it')
+  assert.equal(deduction.carriedForwardR, 0)
+})
+
+test('a partly recovered advance prints what it took and what it left', () => {
+  const draft = buildPayslipDraft([entry()], [advance({ amount_r: 2000 })])
+  const deduction = draft.lines[draft.lines.length - 1]
+  assert.equal(deduction.amountR, 1200)
+  assert.equal(deduction.carriedForwardR, 800)
+  assert.equal(draft.netPayR, 0)
+})
+
+test('buildPayslipDraft claims earnings but NOT an advance it could not settle', () => {
+  // paymentIds is what create_payslip stamps as paid. An advance still owing a
+  // balance must stay unclaimed, or the next run will never see it again.
+  const draft = buildPayslipDraft([entry()], [
+    advance({ amount_r: 2000 }),
+    { id: 'p2', pay_date: '2026-08-18', kind: 'bonus', description: 'Callout', amount_r: 300 },
+  ])
+  assert.deepEqual(draft.paymentIds, ['p2'])
+  // The bonus is gross too, so the advance takes R1 500 of its R2 000 — R1 200
+  // of hours plus the R300 callout — and R500 carries.
+  assert.deepEqual(
+    draft.deductions.map((d) => [d.paymentId, d.appliedR, d.carriedR]),
+    [['p1', 1500, 500]],
+  )
+  assert.equal(draft.netPayR, 0)
+})
+
+test('an advance the period cannot touch gets no line, only a carry', () => {
+  const draft = buildPayslipDraft([], [advance({ amount_r: 500 })])
+  assert.deepEqual(draft.lines, [], 'a R0 deduction line would just be noise')
+  assert.equal(draft.carryForwardR, 500)
 })
 
 test('buildPayslipDraft skips zero-hour entries but keeps their payments', () => {
@@ -181,6 +319,15 @@ test('buildPayslipDraft records which rows it consumed', () => {
   ])
   assert.deepEqual(draft.entryIds, ['a', 'b'])
   assert.deepEqual(draft.paymentIds, ['p1'])
+})
+
+test('a slip already handed over is not rewritten by a later advance', () => {
+  // Freezing is what protects this: the slip keeps the lines it was built with,
+  // so settling the balance afterwards changes the NEXT slip, not this one.
+  const frozen = buildPayslipDraft([entry()], [advance({ amount_r: 2000 })]).lines
+  const settled = buildPayslipDraft([entry()], [advance({ amount_r: 2000, recovered_r: 2000 })])
+  assert.equal(frozen[frozen.length - 1].amountR, 1200)
+  assert.equal(settled.deductionsR, 0)
 })
 
 // ── References and periods ───────────────────────────────────────────────────

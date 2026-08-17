@@ -38,6 +38,8 @@ interface RecentSlip {
   periodStart: string
   periodEnd: string
   grossPayR: number
+  deductionsR: number
+  netPayR: number
   status: string
 }
 
@@ -67,7 +69,10 @@ export function PayrollRun({
   const [done, setDone] = useState<string | null>(null)
 
   const chosen = candidates.filter((c) => selected.has(c.staffId))
-  const runTotal = chosen.reduce((sum, c) => sum + c.draft.grossPayR, 0)
+  // What actually leaves the bank account: gross less the advances these slips
+  // recover. The gross is still on every row for anyone reconciling wages.
+  const runTotal = chosen.reduce((sum, c) => sum + c.draft.netPayR, 0)
+  const runDeductions = chosen.reduce((sum, c) => sum + c.draft.deductionsR, 0)
 
   function toggle(staffId: string) {
     setSelected((prev) => {
@@ -104,6 +109,12 @@ export function PayrollRun({
         p_lines: draft.lines,
         p_entry_ids: draft.entryIds,
         p_payment_ids: draft.paymentIds,
+        p_deductions_r: draft.deductionsR,
+        // Only what this slip could afford off each advance — the rest stays
+        // unclaimed and turns up on the next run.
+        p_recoveries: draft.deductions
+          .filter((d) => d.appliedR > 0)
+          .map((d) => ({ paymentId: d.paymentId, amountR: d.appliedR })),
       })
 
       if (rpcError) {
@@ -172,6 +183,9 @@ export function PayrollRun({
               <span className="text-muted-foreground">
                 Run total{' '}
                 <span className="font-semibold text-foreground tabular-nums">{rand(runTotal)}</span>
+                {runDeductions > 0 && (
+                  <span className="ml-1 text-xs">after {rand(runDeductions)} recovered</span>
+                )}
               </span>
               <Button type="button" onClick={issue} disabled={busy || chosen.length === 0}>
                 <Receipt className="mr-2 h-4 w-4" />
@@ -206,7 +220,7 @@ export function PayrollRun({
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-sm">
+              <table className="w-full min-w-[1000px] text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="pb-2 pr-3 font-medium">Pay</th>
@@ -217,6 +231,8 @@ export function PayrollRun({
                     <th className="pb-2 pr-3 text-right font-medium">Job work</th>
                     <th className="pb-2 pr-3 text-right font-medium">Other</th>
                     <th className="pb-2 pr-3 text-right font-medium">Gross</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Advances</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Net</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -242,9 +258,10 @@ export function PayrollRun({
                         {c.jobTitle && (
                           <div className="text-xs text-muted-foreground">{c.jobTitle}</div>
                         )}
-                        {c.draft.pendingDeductionsR > 0 && (
+                        {c.draft.carryForwardR > 0 && (
                           <div className="text-xs text-warning">
-                            {rand(c.draft.pendingDeductionsR)} in advances recorded — not deducted
+                            {rand(c.draft.carryForwardR)} still owing after this slip — carried to
+                            the next run
                           </div>
                         )}
                       </td>
@@ -261,7 +278,7 @@ export function PayrollRun({
                       <td className="py-2.5 pr-3 text-right tabular-nums">
                         {c.draft.otherPayR > 0 ? rand(c.draft.otherPayR) : '—'}
                       </td>
-                      <td className="py-2.5 pr-3 text-right font-semibold tabular-nums">
+                      <td className="py-2.5 pr-3 text-right tabular-nums">
                         {c.draft.grossPayR > 0 ? (
                           rand(c.draft.grossPayR)
                         ) : (
@@ -270,12 +287,24 @@ export function PayrollRun({
                           </span>
                         )}
                       </td>
+                      <td className="py-2.5 pr-3 text-right tabular-nums">
+                        {c.draft.deductionsR > 0 ? (
+                          <span className="text-destructive">−{rand(c.draft.deductionsR)}</span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-3 text-right font-semibold tabular-nums">
+                        {rand(c.draft.netPayR)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <p className="mt-3 text-xs text-muted-foreground">
-                Gross pay. PAYE, UIF and SDL are not calculated yet — these slips show earnings only.
+                Net is what you pay out: gross earnings less any advances and deductions still
+                owing, oldest first. Never below zero — a balance too big for the period carries to
+                the next run. PAYE, UIF and SDL are not calculated.
               </p>
             </div>
           )}
@@ -289,13 +318,14 @@ export function PayrollRun({
             <p className="py-6 text-center text-sm text-muted-foreground">No payslips yet.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="pb-2 pr-3 font-medium">Reference</th>
                     <th className="pb-2 pr-3 font-medium">Person</th>
                     <th className="pb-2 pr-3 font-medium">Period</th>
                     <th className="pb-2 pr-3 text-right font-medium">Gross</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Net</th>
                     <th className="pb-2 pr-3 font-medium">Status</th>
                     <th className="pb-2" />
                   </tr>
@@ -308,8 +338,14 @@ export function PayrollRun({
                       <td className="py-2 pr-3 tabular-nums text-muted-foreground">
                         {p.periodStart} → {p.periodEnd}
                       </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{rand(p.grossPayR)}</td>
                       <td className="py-2 pr-3 text-right font-medium tabular-nums">
-                        {rand(p.grossPayR)}
+                        {rand(p.netPayR)}
+                        {p.deductionsR > 0 && (
+                          <span className="block text-xs text-muted-foreground">
+                            after −{rand(p.deductionsR)}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 pr-3">
                         <Badge variant={p.status === 'paid' ? 'success' : 'default'}>

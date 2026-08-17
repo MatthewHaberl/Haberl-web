@@ -12,10 +12,15 @@
 //      rate off the staff record when pricing an entry — giving someone a
 //      raise must not silently reprice work already done.
 //
-//   2. PAY IS GROSS. gross = hours pay + piece work + other earnings.
-//      Deductions (PAYE/UIF/SDL) are modelled but always zero today, so
-//      net == gross. When the statutory pass lands, only `deductionsR` needs
-//      to start returning a number.
+//   2. EARNINGS FIRST, THEN WHAT WAS ALREADY HANDED OVER. Gross is hours pay
+//      plus piece work plus bonuses and allowances. Advances and deductions
+//      are then recovered out of that gross — oldest first, and never past
+//      zero, because a payslip cannot ask someone for money. An advance
+//      bigger than the period leaves a balance, and that balance carries to
+//      the next run rather than being written off.
+//
+//      PAYE/UIF/SDL remain out of scope by Matthew's decision, so `netPayR`
+//      is "gross less what you were already given", not a statutory net.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type StaffPayType = 'hourly' | 'piece'
@@ -47,9 +52,28 @@ export interface PayableAmount {
   description: string
   amount_r: number
   job_id?: string | null
+  /**
+   * Advances and deductions only: how much of this row earlier payslips have
+   * already recovered. A R2 000 advance against a R1 200 week comes back next
+   * week as amount_r 2000, recovered_r 1200 — R800 still to find.
+   */
+  recovered_r?: number
+}
+
+/** Money that adds to gross pay, as opposed to money recovered out of it. */
+export function isEarningKind(kind: StaffPaymentKind): boolean {
+  return kind === 'piece' || kind === 'bonus' || kind === 'allowance'
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
+
+const KIND_LABEL: Record<StaffPaymentKind, string> = {
+  piece: 'Job work',
+  bonus: 'Bonus',
+  allowance: 'Allowance',
+  deduction: 'Deduction',
+  advance: 'Advance',
+}
 
 /** Finite, non-negative number or the fallback — same guard style as scope.ts. */
 function num(v: unknown, fallback = 0): number {
@@ -121,6 +145,26 @@ export function entryHours(entry: PayableEntry): number {
 
 // ── Period totals ────────────────────────────────────────────────────────────
 
+/**
+ * What one advance or deduction gave up to this period, and what it still owes.
+ *
+ * One of these per outstanding row, whether or not the period could afford it:
+ * an allocation with appliedR 0 and the whole balance carried is exactly what a
+ * week with no hours looks like against a standing advance.
+ */
+export interface DeductionAllocation {
+  paymentId: string
+  kind: 'advance' | 'deduction'
+  date: string
+  description: string
+  /** Balance owing before this period touched it. */
+  outstandingBeforeR: number
+  /** Recovered on this payslip. */
+  appliedR: number
+  /** Still owing afterwards — carried to the next run. */
+  carriedR: number
+}
+
 export interface PayTotals {
   normalHours: number
   overtimeHours: number
@@ -132,14 +176,18 @@ export interface PayTotals {
   otherPayR: number
   grossPayR: number
   /**
-   * Always 0 today. Advances and deductions are recorded (so the history is
-   * there) but not subtracted until the statutory pass — subtracting them now
-   * would produce a "net pay" that isn't a legal net.
+   * Advances and deductions actually recovered on this payslip. Never more
+   * than gross — see the header note. PAYE/UIF/SDL are not in this number and
+   * are not calculated anywhere yet.
    */
   deductionsR: number
   netPayR: number
-  /** Recorded-but-not-yet-applied advances/deductions, surfaced as a note. */
-  pendingDeductionsR: number
+  /** Total advance/deduction balance brought into this period. */
+  outstandingR: number
+  /** The part of that balance this period could not cover. */
+  carryForwardR: number
+  /** Row-by-row working behind deductionsR, oldest advance first. */
+  deductions: DeductionAllocation[]
 }
 
 export function emptyTotals(): PayTotals {
@@ -152,13 +200,22 @@ export function emptyTotals(): PayTotals {
     grossPayR: 0,
     deductionsR: 0,
     netPayR: 0,
-    pendingDeductionsR: 0,
+    outstandingR: 0,
+    carryForwardR: 0,
+    deductions: [],
   }
+}
+
+/** What is still owing on an advance or deduction row. */
+export function outstandingOn(p: PayableAmount): number {
+  if (isEarningKind(p.kind)) return 0
+  return round2(Math.max(0, num(p.amount_r) - num(p.recovered_r)))
 }
 
 /** Roll a set of entries and payments into one period's pay. */
 export function totalPay(entries: PayableEntry[], payments: PayableAmount[] = []): PayTotals {
   const t = emptyTotals()
+  const owed: PayableAmount[] = []
 
   for (const e of entries) {
     t.normalHours += num(e.hours)
@@ -170,7 +227,7 @@ export function totalPay(entries: PayableEntry[], payments: PayableAmount[] = []
     const amount = num(p.amount_r)
     if (p.kind === 'piece') t.piecePayR += amount
     else if (p.kind === 'bonus' || p.kind === 'allowance') t.otherPayR += amount
-    else t.pendingDeductionsR += amount // 'deduction' | 'advance' — recorded, not applied
+    else owed.push(p) // 'deduction' | 'advance' — recovered below, out of gross
   }
 
   t.normalHours = round2(t.normalHours)
@@ -178,9 +235,35 @@ export function totalPay(entries: PayableEntry[], payments: PayableAmount[] = []
   t.hoursPayR = round2(t.hoursPayR)
   t.piecePayR = round2(t.piecePayR)
   t.otherPayR = round2(t.otherPayR)
-  t.pendingDeductionsR = round2(t.pendingDeductionsR)
   t.grossPayR = round2(t.hoursPayR + t.piecePayR + t.otherPayR)
-  t.deductionsR = 0
+
+  // Oldest first, so the advance somebody has been carrying longest clears
+  // before one taken this morning. Ties break on id purely so two rows dated
+  // the same day always allocate in the same order twice running.
+  owed.sort((a, b) => a.pay_date.localeCompare(b.pay_date) || a.id.localeCompare(b.id))
+
+  let left = t.grossPayR
+  for (const p of owed) {
+    const before = outstandingOn(p)
+    if (before <= 0) continue
+    const applied = round2(Math.min(before, Math.max(0, left)))
+    left = round2(left - applied)
+    t.outstandingR += before
+    t.deductionsR += applied
+    t.deductions.push({
+      paymentId: p.id,
+      kind: p.kind === 'deduction' ? 'deduction' : 'advance',
+      date: p.pay_date,
+      description: p.description || KIND_LABEL[p.kind],
+      outstandingBeforeR: before,
+      appliedR: applied,
+      carriedR: round2(before - applied),
+    })
+  }
+
+  t.outstandingR = round2(t.outstandingR)
+  t.deductionsR = round2(t.deductionsR)
+  t.carryForwardR = round2(t.outstandingR - t.deductionsR)
   t.netPayR = round2(t.grossPayR - t.deductionsR)
 
   return t
@@ -193,29 +276,30 @@ export function totalPay(entries: PayableEntry[], payments: PayableAmount[] = []
  * document never changes, even if the underlying timesheet is later corrected.
  */
 export interface PayslipLine {
-  kind: 'hours' | 'overtime' | 'piece' | 'bonus' | 'allowance'
+  kind: 'hours' | 'overtime' | 'piece' | 'bonus' | 'allowance' | 'advance' | 'deduction'
   date: string
   description: string
   /** Hours for time lines, 1 for money lines. */
   qty: number
   unit: 'hr' | 'ea'
   rateR: number
+  /** Always positive. 'advance' and 'deduction' lines are subtracted, not added. */
   amountR: number
   jobRef?: string | null
+  /**
+   * Deduction lines only: the staff_payments row this came off, so reversing
+   * the slip can hand the balance back to exactly the right advance.
+   */
+  paymentId?: string | null
+  /** Deduction lines only: what is still owing after this slip took its bite. */
+  carriedForwardR?: number
 }
 
 export interface PayslipDraft extends PayTotals {
   lines: PayslipLine[]
   entryIds: string[]
+  /** Earnings claimed outright by this slip. Advances are claimed via `deductions`. */
   paymentIds: string[]
-}
-
-const KIND_LABEL: Record<StaffPaymentKind, string> = {
-  piece: 'Job work',
-  bonus: 'Bonus',
-  allowance: 'Allowance',
-  deduction: 'Deduction',
-  advance: 'Advance',
 }
 
 const CATEGORY_LABEL: Record<TimeEntryCategory, string> = {
@@ -270,10 +354,8 @@ export function buildPayslipDraft(
     }
   }
 
-  // Advances/deductions are deliberately absent: they are not applied yet, and
-  // printing them on a slip that doesn't subtract them would misrepresent pay.
   const earnings = [...payments]
-    .filter((p) => p.kind === 'piece' || p.kind === 'bonus' || p.kind === 'allowance')
+    .filter((p) => isEarningKind(p.kind))
     .sort((a, b) => a.pay_date.localeCompare(b.pay_date))
   for (const p of earnings) {
     lines.push({
@@ -288,11 +370,28 @@ export function buildPayslipDraft(
     })
   }
 
+  // Then what comes off. Only allocations that actually recovered something
+  // print — an advance the period could not touch is carried, not a R0 line.
+  for (const d of totals.deductions) {
+    if (d.appliedR <= 0) continue
+    lines.push({
+      kind: d.kind,
+      date: d.date,
+      description: d.description || KIND_LABEL[d.kind],
+      qty: 1,
+      unit: 'ea',
+      rateR: d.appliedR,
+      amountR: d.appliedR,
+      paymentId: d.paymentId,
+      carriedForwardR: d.carriedR,
+    })
+  }
+
   return {
     ...totals,
     lines,
     entryIds: entries.map((e) => e.id),
-    paymentIds: payments.map((p) => p.id),
+    paymentIds: earnings.map((p) => p.id),
   }
 }
 

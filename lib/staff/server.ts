@@ -20,7 +20,8 @@ const ENTRY_COLUMNS =
   'id, staff_id, job_id, work_date, started_at, ended_at, break_minutes, hours, overtime_hours, ' +
   'category, notes, cost_rate_r, overtime_multiplier, source, status, approved_at, payslip_id'
 
-const PAYMENT_COLUMNS = 'id, staff_id, job_id, pay_date, kind, description, amount_r, payslip_id'
+const PAYMENT_COLUMNS =
+  'id, staff_id, job_id, pay_date, kind, description, amount_r, recovered_r, payslip_id'
 
 export async function loadStaff(
   supabase: SupabaseClient,
@@ -118,6 +119,36 @@ export function totalsByStaff(data: PeriodData, staffIds: string[]): Map<string,
     )
   }
   return out
+}
+
+/**
+ * Advances and deductions that still owe something, whenever they were given.
+ *
+ * A pay run cannot just take the advances dated inside its own period: an
+ * advance bigger than the week it landed in leaves a balance, and that balance
+ * has to follow the person into the next run. So this is scoped by "given on
+ * or before the period ends and not yet settled", not by the period window.
+ */
+export async function loadOutstandingDeductions(
+  supabase: SupabaseClient,
+  asOf: string,
+  opts: { staffIds?: string[] } = {},
+): Promise<StaffPayment[]> {
+  let q = supabase
+    .from('staff_payments')
+    .select(PAYMENT_COLUMNS)
+    .in('kind', ['advance', 'deduction'])
+    .lte('pay_date', asOf)
+    .is('payslip_id', null)
+    .order('pay_date')
+  if (opts.staffIds?.length) q = q.in('staff_id', opts.staffIds)
+
+  const { data } = await q
+  // payslip_id is only stamped once a row is fully recovered, so anything left
+  // with recovered_r < amount_r is still carrying.
+  return ((data ?? []) as unknown as StaffPayment[]).filter(
+    (p) => Number(p.amount_r) - Number(p.recovered_r ?? 0) > 0,
+  )
 }
 
 /** job_id → a human label, for timesheet pickers and payslip line references. */

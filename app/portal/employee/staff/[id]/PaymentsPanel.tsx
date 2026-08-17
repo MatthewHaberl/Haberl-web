@@ -1,8 +1,10 @@
 'use client'
 
-// Money that isn't hours: piece work agreed per job, bonuses, allowances — and
-// advances, which are RECORDED here but not deducted from any payslip yet. The
-// row is honest about that rather than implying a net-pay effect it doesn't have.
+// Money that isn't hours: piece work agreed per job, bonuses and allowances,
+// which add to gross — and advances and deductions, which come back off the
+// next payslip until they are paid off. A row that has been partly recovered
+// shows what is still owing and can no longer be deleted: a payslip already
+// took money against it.
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
@@ -14,7 +16,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import type { StaffPaymentKind } from '@/lib/staff/pay'
+import { isEarningKind, type StaffPaymentKind } from '@/lib/staff/pay'
 import { rand } from '../shared'
 
 interface PaymentRow {
@@ -25,7 +27,9 @@ interface PaymentRow {
   amount_r: number
   job_id: string | null
   jobRef: string | null
-  /** Already claimed by a payslip — locked against edits. */
+  /** Advances/deductions: what a payslip has still to recover. */
+  outstandingR: number
+  /** On a payslip, or already partly recovered by one — locked against edits. */
   locked: boolean
 }
 
@@ -33,8 +37,8 @@ const KINDS: { value: StaffPaymentKind; label: string; hint: string }[] = [
   { value: 'piece', label: 'Job work', hint: 'An agreed amount for finishing a job.' },
   { value: 'bonus', label: 'Bonus', hint: 'Added to gross pay.' },
   { value: 'allowance', label: 'Allowance', hint: 'Travel, tools, phone — added to gross pay.' },
-  { value: 'advance', label: 'Advance', hint: 'Recorded only. Not deducted from a payslip yet.' },
-  { value: 'deduction', label: 'Deduction', hint: 'Recorded only. Not subtracted from a payslip yet.' },
+  { value: 'advance', label: 'Advance', hint: 'Cash paid early — comes off the next payslip.' },
+  { value: 'deduction', label: 'Deduction', hint: 'Subtracted from the next payslip.' },
 ]
 
 const today = () => {
@@ -67,7 +71,7 @@ export function PaymentsPanel({
     job_id: '',
   })
 
-  const isEarning = form.kind === 'piece' || form.kind === 'bonus' || form.kind === 'allowance'
+  const isEarning = isEarningKind(form.kind)
 
   async function add() {
     const amount = Math.max(0, Number(form.amount_r) || 0)
@@ -115,7 +119,8 @@ export function PaymentsPanel({
           <div>
             <h2 className="text-sm font-semibold">Job work &amp; other pay</h2>
             <p className="text-xs text-muted-foreground">
-              Amounts agreed per job, plus bonuses and allowances — added to {staffName}&apos;s gross pay.
+              Amounts agreed per job, plus bonuses and allowances, added to {staffName}&apos;s gross
+              pay — and advances and deductions, which come back off it.
             </p>
           </div>
           <Button type="button" size="sm" variant={open ? 'outline' : 'default'} onClick={() => setOpen(!open)}>
@@ -191,9 +196,9 @@ export function PaymentsPanel({
             </div>
             {error && <p className="text-xs text-destructive lg:col-span-6">{error}</p>}
             {!isEarning && (
-              <p className="text-xs text-warning lg:col-span-6">
-                Advances and deductions are stored for your records only — payslips currently show
-                gross pay and will not subtract this.
+              <p className="text-xs text-muted-foreground lg:col-span-6">
+                This comes off {staffName}&apos;s next payslip. If the pay run cannot cover it, only
+                what the period affords is taken and the balance carries to the run after.
               </p>
             )}
           </div>
@@ -218,7 +223,7 @@ export function PaymentsPanel({
               </thead>
               <tbody>
                 {payments.map((p) => {
-                  const counts = p.kind === 'piece' || p.kind === 'bonus' || p.kind === 'allowance'
+                  const counts = isEarningKind(p.kind)
                   return (
                     <tr key={p.id} className="border-b border-border/60 last:border-0">
                       <td className="py-2 pr-3 tabular-nums">{p.pay_date}</td>
@@ -229,16 +234,22 @@ export function PaymentsPanel({
                       </td>
                       <td className="py-2 pr-3">{p.description || '—'}</td>
                       <td className="py-2 pr-3 text-muted-foreground">{p.jobRef ?? '—'}</td>
-                      <td
-                        className={`py-2 pr-3 text-right font-medium tabular-nums ${
-                          counts ? '' : 'text-muted-foreground'
-                        }`}
-                      >
-                        {rand(p.amount_r)}
+                      <td className="py-2 pr-3 text-right font-medium tabular-nums">
+                        {counts ? rand(p.amount_r) : `−${rand(p.amount_r)}`}
+                        {!counts && p.outstandingR > 0 && p.outstandingR < p.amount_r && (
+                          <span className="block text-xs font-normal text-warning">
+                            {rand(p.outstandingR)} still owing
+                          </span>
+                        )}
+                        {!counts && p.outstandingR <= 0 && (
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            Recovered
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 text-right">
                         {p.locked ? (
-                          <span title="On a payslip">
+                          <span title="A payslip has already taken money against this">
                             <Lock className="ml-auto h-4 w-4 text-muted-foreground" />
                           </span>
                         ) : (

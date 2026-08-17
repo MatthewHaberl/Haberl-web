@@ -49,17 +49,25 @@ const shortDate = (iso: string) => {
     : iso
 }
 
+/** Advance and deduction lines come off the pay; everything else adds to it. */
+const isDeductionLine = (l: PayslipLine) => l.kind === 'advance' || l.kind === 'deduction'
+
 function lineRow(line: PayslipLine): string {
   const qty = line.unit === 'hr' ? `${line.qty.toFixed(2)} hr` : '—'
   const rate = line.unit === 'hr' ? `${rand(line.rateR)}/hr` : '—'
-  const ref = line.jobRef ? `<div class="ref">${escapeHtml(line.jobRef)}</div>` : ''
+  const carried = Number(line.carriedForwardR ?? 0)
+  const ref = line.jobRef
+    ? `<div class="ref">${escapeHtml(line.jobRef)}</div>`
+    : carried > 0
+      ? `<div class="ref">${rand(carried)} still owing — carried to your next payslip</div>`
+      : ''
   return `
     <tr>
       <td>${escapeHtml(shortDate(line.date))}</td>
       <td>${escapeHtml(line.description)}${ref}</td>
       <td class="num">${qty}</td>
       <td class="num">${rate}</td>
-      <td class="num strong">${rand(line.amountR)}</td>
+      <td class="num strong">${isDeductionLine(line) ? '−' : ''}${rand(line.amountR)}</td>
     </tr>`
 }
 
@@ -71,16 +79,33 @@ function lineRow(line: PayslipLine): string {
  * markup is a plain preview.
  */
 export function renderPayslipHtml(doc: PayslipDocument, opts: { autoPrint?: boolean } = {}): string {
-  const rows = doc.lines.length
-    ? doc.lines.map(lineRow).join('')
+  const earned = doc.lines.filter((l) => !isDeductionLine(l))
+  const owed = doc.lines.filter(isDeductionLine)
+
+  const rows = earned.length
+    ? earned.map(lineRow).join('')
     : `<tr><td colspan="5" class="empty">No earnings recorded for this period.</td></tr>`
+
+  // Deductions get their own table rather than a sixth column: what was earned
+  // and what was taken back are different questions, and running them together
+  // is how a slip becomes unreadable.
+  const deductionTable = owed.length
+    ? `
+  <h3 class="section">Less advances &amp; deductions</h3>
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Description</th><th class="num">Quantity</th><th class="num">Rate</th><th class="num">Amount</th>
+    </tr></thead>
+    <tbody>${owed.map(lineRow).join('')}</tbody>
+  </table>`
+    : ''
 
   const summaryRow = (label: string, value: string, cls = '') =>
     `<tr class="${cls}"><td>${escapeHtml(label)}</td><td class="num">${value}</td></tr>`
 
-  // Deductions are printed as an explicit zero rather than hidden: a slip that
-  // silently omits the line reads as if deductions were applied and came to
-  // nothing. Saying so plainly is the honest version.
+  // The deductions line is printed even at zero: a slip that silently omits it
+  // reads as if nothing was checked, and the gap between gross and net has to
+  // be explainable on the page itself.
   const summary = [
     summaryRow('Hours worked', `${doc.normalHours.toFixed(2)} hr`),
     doc.overtimeHours > 0 ? summaryRow('Overtime', `${doc.overtimeHours.toFixed(2)} hr`) : '',
@@ -88,11 +113,15 @@ export function renderPayslipHtml(doc: PayslipDocument, opts: { autoPrint?: bool
     doc.piecePayR > 0 ? summaryRow('Job work', rand(doc.piecePayR)) : '',
     doc.otherPayR > 0 ? summaryRow('Bonuses & allowances', rand(doc.otherPayR)) : '',
     summaryRow('Gross pay', rand(doc.grossPayR), 'total'),
-    summaryRow('Deductions', rand(doc.deductionsR)),
+    summaryRow('Advances & deductions', `−${rand(doc.deductionsR)}`),
     summaryRow('Net pay', rand(doc.netPayR), 'net'),
   ]
     .filter(Boolean)
     .join('')
+
+  // Sum of what each recovery left behind — the slip's own lines are the only
+  // record of a partial recovery, so the balance is read back off them.
+  const carriedForwardR = owed.reduce((sum, l) => sum + Number(l.carriedForwardR ?? 0), 0)
 
   const notes = doc.notes
     ? `<div class="notes"><strong>Notes</strong><br>${escapeHtml(doc.notes)}</div>`
@@ -130,6 +159,8 @@ export function renderPayslipHtml(doc: PayslipDocument, opts: { autoPrint?: bool
   td.strong { font-weight: bold; }
   td.empty { text-align: center; color: #5b6875; padding: 20px; }
   .ref { color: #5b6875; font-size: 10px; margin-top: 2px; }
+  h3.section { font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+               color: #5b6875; margin: 18px 0 6px; }
 
   .bottom { display: flex; gap: 24px; margin-top: 18px; align-items: flex-start; }
   .notes { flex: 1; border: 1px solid #d9dfe6; border-radius: 5px; padding: 10px 12px; color: #3d4a58; }
@@ -176,7 +207,7 @@ export function renderPayslipHtml(doc: PayslipDocument, opts: { autoPrint?: bool
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>
-
+${deductionTable}
   <div class="bottom">
     ${notes}
     <div class="summary"><table>${summary}</table></div>
@@ -188,8 +219,12 @@ export function renderPayslipHtml(doc: PayslipDocument, opts: { autoPrint?: bool
   </div>
 
   <footer>
-    This payslip reflects <strong>gross earnings</strong>. Statutory deductions (PAYE, UIF and SDL)
-    are not calculated on this document. Keep it for your records.
+    Net pay is your gross earnings less the advances and deductions listed above.
+    ${carriedForwardR > 0
+      ? `<strong>${rand(carriedForwardR)}</strong> is still owing and will come off your next payslip.`
+      : ''}
+    Statutory deductions (PAYE, UIF and SDL) are not calculated on this document.
+    Keep it for your records.
   </footer>
 </div>${opts.autoPrint ? '\n<script>window.onload = function () { window.print() }</script>' : ''}
 </body></html>`

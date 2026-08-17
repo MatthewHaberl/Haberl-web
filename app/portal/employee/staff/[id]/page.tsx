@@ -8,8 +8,13 @@ import { PageShell, PageHeader } from '@/components/layout/page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { loadBookableJobs, loadJobRefs, loadPayslips } from '@/lib/staff/server'
-import { entryPayR, payPeriod, totalPay } from '@/lib/staff/pay'
+import {
+  loadBookableJobs,
+  loadJobRefs,
+  loadOutstandingDeductions,
+  loadPayslips,
+} from '@/lib/staff/server'
+import { entryPayR, isEarningKind, isoDate, outstandingOn, payPeriod, totalPay } from '@/lib/staff/pay'
 import type { Staff, StaffPayment, TimeEntry } from '@/types/database'
 import { PaymentsPanel } from './PaymentsPanel'
 
@@ -78,14 +83,20 @@ export default async function StaffMemberPage({ params }: { params: Promise<{ id
   const payments = (paymentsRes.data ?? []) as unknown as StaffPayment[]
   const jobRefs = await loadJobRefs(supabase, entries.map((e) => e.job_id).filter((j): j is string => !!j))
 
+  // Advances older than the 90-day window still owe money, so what is coming
+  // off the next slip is read by balance rather than by date.
+  const outstanding = await loadOutstandingDeductions(supabase, isoDate(new Date()), {
+    staffIds: [id],
+  })
+
   const week = payPeriod('weekly', new Date())
   const weekTotals = totalPay(
     entries.filter((e) => e.work_date >= week.start && e.work_date <= week.end && e.status !== 'running'),
-    payments.filter((p) => p.pay_date >= week.start && p.pay_date <= week.end),
+    payments.filter((p) => p.pay_date >= week.start && p.pay_date <= week.end && isEarningKind(p.kind)),
   )
   const unpaid = totalPay(
     entries.filter((e) => !e.payslip_id && e.status !== 'running'),
-    payments.filter((p) => !p.payslip_id),
+    [...payments.filter((p) => !p.payslip_id && isEarningKind(p.kind)), ...outstanding],
   )
 
   return (
@@ -133,10 +144,16 @@ export default async function StaffMemberPage({ params }: { params: Promise<{ id
         <Card>
           <CardContent className="pt-6">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Owed (unpaid)</p>
-            <p className="text-xl font-bold text-primary">{rand(unpaid.grossPayR)}</p>
+            <p className="text-xl font-bold text-primary">{rand(unpaid.netPayR)}</p>
             <p className="text-xs text-muted-foreground">
               {(unpaid.normalHours + unpaid.overtimeHours).toFixed(1)} hr not yet on a payslip
+              {unpaid.outstandingR > 0 && `, after ${rand(unpaid.deductionsR)} recovered`}
             </p>
+            {unpaid.carryForwardR > 0 && (
+              <p className="text-xs text-warning">
+                {rand(unpaid.carryForwardR)} of advances carries past this run
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -162,7 +179,10 @@ export default async function StaffMemberPage({ params }: { params: Promise<{ id
           amount_r: Number(p.amount_r),
           job_id: p.job_id,
           jobRef: p.job_id ? (jobRefs.get(p.job_id) ?? null) : null,
-          locked: !!p.payslip_id,
+          outstandingR: outstandingOn(p),
+          // Settled outright, or a payslip has already recovered part of it —
+          // either way deleting it now would rewrite a slip already handed over.
+          locked: !!p.payslip_id || Number(p.recovered_r ?? 0) > 0,
         }))}
         kindLabels={KIND_LABEL}
       />

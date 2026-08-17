@@ -7,12 +7,13 @@ import { PageShell, PageHeader } from '@/components/layout/page'
 import { Button } from '@/components/ui/button'
 import {
   loadJobRefs,
+  loadOutstandingDeductions,
   loadPayslips,
   loadPeriod,
   loadStaff,
   nextPayslipSequence,
 } from '@/lib/staff/server'
-import { buildPayslipDraft, payPeriod, type PayPeriodType } from '@/lib/staff/pay'
+import { buildPayslipDraft, isEarningKind, payPeriod, type PayPeriodType } from '@/lib/staff/pay'
 import { PayrollRun, type PayrollCandidate } from './PayrollRun'
 
 export const metadata: Metadata = { title: 'Run pay' }
@@ -26,6 +27,10 @@ const PERIOD_TYPES: PayPeriodType[] = ['weekly', 'fortnightly', 'monthly']
  * Only UNPAID rows are candidates (loadPeriod(unpaidOnly)), so re-opening a
  * period that's already been paid shows nothing left to pay rather than
  * offering to pay it twice.
+ *
+ * Earnings come from the period window; advances and deductions do NOT. They
+ * are pulled by outstanding balance instead, so an advance too big for the
+ * week it was given in keeps coming back until it is paid off.
  */
 export default async function PayrollPage({
   searchParams,
@@ -44,21 +49,26 @@ export default async function PayrollPage({
   const { start, end } = payPeriod(periodType, anchor)
 
   const staff = await loadStaff(supabase)
-  const period = await loadPeriod(supabase, start, end, {
-    staffIds: staff.map((s) => s.id),
-    unpaidOnly: true,
-  })
+  const staffIds = staff.map((s) => s.id)
+  const [period, outstanding] = await Promise.all([
+    loadPeriod(supabase, start, end, { staffIds, unpaidOnly: true }),
+    loadOutstandingDeductions(supabase, end, { staffIds }),
+  ])
+  const earnings = period.payments.filter((p) => isEarningKind(p.kind))
 
   const jobRefs = await loadJobRefs(supabase, [
     ...period.entries.map((e) => e.job_id).filter((id): id is string => !!id),
-    ...period.payments.map((p) => p.job_id).filter((id): id is string => !!id),
+    ...earnings.map((p) => p.job_id).filter((id): id is string => !!id),
   ])
 
   const candidates: PayrollCandidate[] = staff
     .map((person) => {
       const draft = buildPayslipDraft(
         period.entries.filter((e) => e.staff_id === person.id),
-        period.payments.filter((p) => p.staff_id === person.id),
+        [
+          ...earnings.filter((p) => p.staff_id === person.id),
+          ...outstanding.filter((p) => p.staff_id === person.id),
+        ],
         jobRefs,
       )
       return {
@@ -69,8 +79,10 @@ export default async function PayrollPage({
         draft,
       }
     })
-    // Somebody with no unpaid hours and no unpaid money is not part of this run.
-    .filter((c) => c.draft.grossPayR > 0 || c.draft.entryIds.length > 0)
+    // Somebody with no unpaid hours and no unpaid money is not part of this
+    // run — but a standing advance keeps them on it, so the balance stays
+    // visible even in a week they did not work.
+    .filter((c) => c.draft.grossPayR > 0 || c.draft.entryIds.length > 0 || c.draft.outstandingR > 0)
 
   const [sequence, recent] = await Promise.all([
     nextPayslipSequence(supabase, end),
@@ -104,6 +116,8 @@ export default async function PayrollPage({
           periodStart: p.period_start,
           periodEnd: p.period_end,
           grossPayR: Number(p.gross_pay_r),
+          deductionsR: Number(p.deductions_r),
+          netPayR: Number(p.net_pay_r),
           status: p.status,
         }))}
       />

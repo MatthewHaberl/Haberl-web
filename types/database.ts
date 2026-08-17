@@ -1000,6 +1000,9 @@ export interface StaffPayment {
   kind: 'piece' | 'bonus' | 'allowance' | 'deduction' | 'advance'
   description: string
   amount_r: number
+  /** Advances/deductions: how much earlier payslips already took back. */
+  recovered_r: number
+  /** Earnings: the slip that paid it. Advances: the slip that finally settled it. */
   payslip_id: string | null
   created_by: string | null
   created_at: string
@@ -1023,7 +1026,10 @@ export interface Payslip {
   piece_pay_r: number
   other_pay_r: number
   gross_pay_r: number
-  /** Reserved for PAYE/UIF/SDL — zero today, so net_pay_r == gross_pay_r. */
+  /**
+   * Advances and deductions recovered on this slip. PAYE/UIF/SDL are not in
+   * here and are not calculated anywhere yet — this is not a statutory net.
+   */
   deductions_r: number
   net_pay_r: number
   status: 'draft' | 'finalised' | 'paid'
