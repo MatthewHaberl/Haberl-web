@@ -2065,6 +2065,11 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
   }
   const combinerStringCount = (c: DcCombiner | undefined): number =>
     !c ? designStringCount(d) : (c.inputStringIds.length || designStringCount(d))
+  /** Cable run for an array's DC feed — the group's own "distance from combiner". */
+  const panelRunM = (pi: number, fallback: number): number => {
+    const m = d.panels[pi]?.distanceFromCombinerM
+    return typeof m === 'number' && m > 0 ? m : fallback
+  }
   // The list of combiners to render: explicit entries, or one implicit when needed.
   const renderCombiners: Array<DcCombiner | undefined> =
     d.dcCombiners.length > 0 ? d.dcCombiners : (useCombiner && groupCount > 0 ? [undefined] : [])
@@ -2090,8 +2095,10 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
           outputCount: outCount,
         },
       })
-      // One input edge per feeding array.
+      // One input edge per feeding array. The run length is the array's own
+      // "distance from combiner" (12 m only as a fallback when it isn't set).
       grpIdx.forEach((pi, k) => {
+        const run = panelRunM(pi, 12)
         edges.push({
           id: ci === 0 ? `e-panel${pi}-comb` : `e-panel${pi}-comb${ci}`,
           source: NODE.panel(pi),
@@ -2099,8 +2106,8 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
           sourceHandle: 'dc-out',
           targetHandle: `str-${k}`,
           type: 'cable',
-          data: cableData('dc', 'H1Z2Z2 6mm²', 12),
-          label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', 12)),
+          data: cableData('dc', 'H1Z2Z2 6mm²', run),
+          label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', run)),
         })
       })
     })
@@ -2143,11 +2150,14 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
           })
         })
       } else if (groupCount > 0) {
+        // No combiner: the string runs straight to the inverter, so its own
+        // distance is the run length (15 m fallback).
+        const run = panelRunM(0, 15)
         edges.push({
           id: 'e-panel0-inv', source: NODE.panel(0), target: id,
           sourceHandle: 'dc-out', targetHandle: 'pv-in', type: 'cable',
-          data: cableData('dc', 'H1Z2Z2 6mm²', 15),
-          label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', 15)),
+          data: cableData('dc', 'H1Z2Z2 6mm²', run),
+          label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', run)),
         })
       }
     }
