@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { ArrowLeft, Check, Eye } from 'lucide-react'
 import { createClient, getUser } from '@/lib/supabase/server'
-import { fetchAllRows } from '@/lib/supabase/fetch-all'
+import { fetchAllRowsParallel } from '@/lib/supabase/fetch-all'
 import { mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { engineFor, fetchWorkTypes } from '@/lib/quotes/work-types'
 import { priceQuoteRequest, renderQuoteDocument } from '@/lib/quotes/build-quote-document'
@@ -69,7 +69,7 @@ export default async function QuotePreviewPage({ params }: { params: Promise<{ i
     // Same inputs as a real generate: full catalog (paged — a partial map
     // silently prices missing items at R0) and live company settings.
     const [{ data: catalogRows, error: catalogError }, { data: settings }] = await Promise.all([
-      fetchAllRows<EquipmentCatalogItem>((from, to) =>
+      fetchAllRowsParallel<EquipmentCatalogItem>((from, to) =>
         supabase.from('equipment_catalog').select('*').order('id').range(from, to)),
       supabase.from('company_settings').select('*').eq('id', true).maybeSingle(),
     ])

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { fetchAllRows } from '@/lib/supabase/fetch-all'
+import { fetchAllRowsParallel } from '@/lib/supabase/fetch-all'
 import { mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { fetchWorkTypes } from '@/lib/quotes/work-types'
 import { priceQuoteRequest, renderQuoteDocument } from '@/lib/quotes/build-quote-document'
@@ -58,7 +58,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // since the Key Electric import — an unpaged fetch silently priced anything
   // beyond the cap as "product not in catalog".
   const [{ data: catalogRows, error: catalogError }, { data: settings }] = await Promise.all([
-    fetchAllRows<EquipmentCatalogItem>((from, to) =>
+    fetchAllRowsParallel<EquipmentCatalogItem>((from, to) =>
       supabase.from('equipment_catalog').select('*').order('id').range(from, to)),
     supabase.from('company_settings').select('*').eq('id', true).maybeSingle(),
   ])

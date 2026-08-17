@@ -19,7 +19,7 @@ import { Loader2, Pencil, Plus, Search, X } from 'lucide-react'
 import OffersPanel from './OffersPanel'
 import { ProductImageStrip } from '@/components/catalog/ProductImages'
 import { PageShell, PageHeader } from '@/components/layout/page'
-import { fetchAllRows } from '@/lib/supabase/fetch-all'
+import { fetchAllRowsParallel } from '@/lib/supabase/fetch-all'
 
 type CategoryTab =
   | 'inverter' | 'battery' | 'panel' | 'enclosure'
@@ -178,7 +178,7 @@ function coerceNumber(value: string) {
 async function fetchAllCatalog(
   supabase: ReturnType<typeof createClient>,
 ): Promise<{ data: EquipmentCatalogItem[]; error: string | null }> {
-  const { data, error } = await fetchAllRows<EquipmentCatalogItem>((from, to) =>
+  const { data, error } = await fetchAllRowsParallel<EquipmentCatalogItem>((from, to) =>
     supabase
       .from('equipment_catalog')
       .select('*')
