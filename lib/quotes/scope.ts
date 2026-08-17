@@ -34,8 +34,39 @@ export interface ScopeLine {
   note: string | null
 }
 
+/**
+ * One person (or generic role) priced onto the quote's labour.
+ *
+ * INTERNAL ONLY. The crew list is how Matthew works out what the job's labour
+ * costs him and what it should sell for; the customer never sees a name, an
+ * hour or a rate — scopeToBom collapses the whole list into a single "Labour"
+ * line carrying only the total. That collapse is the feature, not a detail:
+ * showing a customer that a R900 labour line is one person at R150/hr invites
+ * a negotiation about wages instead of about the job.
+ */
+export interface ScopeCrewLine {
+  id: string
+  /** staff.id, or null for a generic role priced by hand. */
+  staffId: string | null
+  /** Snapshot of the person/role name at the time they were added. */
+  name: string
+  /** Hours, days or units — read against `unit`. */
+  qty: number
+  unit: 'hr' | 'day' | 'job'
+  /** What this person costs the business per unit. */
+  costR: number
+  /** Sell = cost × markup, unless sellR overrides it. */
+  markup: number
+  /** Manual sell price per unit; null follows cost × markup. */
+  sellR: number | null
+}
+
 export interface ScopeLabour {
-  mode: 'hourly' | 'daily' | 'fixed'
+  /**
+   * 'crew' prices labour from the `crew` list (per person); the other three
+   * price it as one lump. All four render to the customer identically.
+   */
+  mode: 'hourly' | 'daily' | 'fixed' | 'crew'
   /** Call-out fee (hourly mode only). Doubles as the one-hour minimum. */
   calloutR: number
   hours: number
@@ -47,6 +78,8 @@ export interface ScopeLabour {
   dayRateR: number
   /** Fixed-price amount (fixed mode only). */
   fixedR: number
+  /** Priced crew (crew mode only) — internal; never rendered to a customer. */
+  crew: ScopeCrewLine[]
   description: string
 }
 
@@ -104,6 +137,7 @@ export function emptyScope(opts: EmptyScopeOpts = {}): QuoteScope {
       days: 0,
       dayRateR: num(opts.dayRateR, 5500),
       fixedR: 0,
+      crew: [],
       description: '',
     },
     coc: { included: false, feeR: num(opts.cocFeeR, 1500) },
@@ -181,13 +215,19 @@ export function parseScope(raw: unknown): QuoteScope | null {
       : [],
     lines: Array.isArray(r.lines) ? r.lines.map(parseLine).filter((l): l is ScopeLine => l !== null) : [],
     labour: {
-      mode: labourRaw.mode === 'fixed' || labourRaw.mode === 'daily' ? labourRaw.mode : 'hourly',
+      mode:
+        labourRaw.mode === 'fixed' || labourRaw.mode === 'daily' || labourRaw.mode === 'crew'
+          ? labourRaw.mode
+          : 'hourly',
       calloutR: num(labourRaw.calloutR, base.labour.calloutR),
       hours: num(labourRaw.hours, 0),
       rateR: num(labourRaw.rateR, base.labour.rateR),
       days: num(labourRaw.days, 0),
       dayRateR: num(labourRaw.dayRateR, base.labour.dayRateR),
       fixedR: num(labourRaw.fixedR, 0),
+      crew: Array.isArray(labourRaw.crew)
+        ? labourRaw.crew.map(parseCrewLine).filter((c): c is ScopeCrewLine => c !== null)
+        : [],
       description: str(labourRaw.description),
     },
     coc: {
@@ -197,18 +237,92 @@ export function parseScope(raw: unknown): QuoteScope | null {
   }
 }
 
+const CREW_UNITS: ScopeCrewLine['unit'][] = ['hr', 'day', 'job']
+
+function parseCrewLine(raw: unknown): ScopeCrewLine | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const sell = r.sellR
+  return {
+    id: str(r.id) || newScopeLineId(),
+    staffId: typeof r.staffId === 'string' && r.staffId ? r.staffId : null,
+    name: str(r.name),
+    qty: num(r.qty, 0),
+    unit: CREW_UNITS.includes(r.unit as ScopeCrewLine['unit']) ? (r.unit as ScopeCrewLine['unit']) : 'hr',
+    costR: num(r.costR, 0),
+    // A zero markup would sell labour at cost. Treated as "unset" → 1 (at cost,
+    // deliberately) only when it parses as a real number; junk falls back to 1.
+    markup: num(r.markup, 1),
+    sellR: typeof sell === 'number' && Number.isFinite(sell) && sell >= 0 ? sell : null,
+  }
+}
+
+export function newCrewLine(over: Partial<ScopeCrewLine> = {}): ScopeCrewLine {
+  return {
+    id: newScopeLineId(),
+    staffId: null,
+    name: '',
+    qty: 0,
+    unit: 'hr',
+    costR: 0,
+    markup: 1.6,
+    sellR: null,
+    ...over,
+  }
+}
+
+/** What one crew line is billed at per unit — the manual override wins. */
+export function crewUnitSellR(line: ScopeCrewLine): number {
+  if (line.sellR !== null && line.sellR > 0) return round2(line.sellR)
+  return round2(line.costR * line.markup)
+}
+
+/** What one crew line adds to the quote. */
+export function crewLineSellR(line: ScopeCrewLine): number {
+  return round2(crewUnitSellR(line) * line.qty)
+}
+
+/** What one crew line costs the business (wages, no markup). */
+export function crewLineCostR(line: ScopeCrewLine): number {
+  return round2(line.costR * line.qty)
+}
+
+/** Total crew sell — the only crew figure that ever reaches a customer. */
+export function crewSellR(labour: ScopeLabour): number {
+  return round2(labour.crew.reduce((sum, c) => sum + crewLineSellR(c), 0))
+}
+
+/** Total crew cost — internal margin reporting only. */
+export function crewCostR(labour: ScopeLabour): number {
+  return round2(labour.crew.reduce((sum, c) => sum + crewLineCostR(c), 0))
+}
+
 /**
  * Labour amount for the quote:
  *   hourly → call-out + hours × rate (the call-out IS the one-hour minimum, so
  *            the first hour is not billed twice)
  *   daily  → days × day rate (team rate; no call-out — a full day absorbs it)
  *   fixed  → the typed amount
+ *   crew   → the sum of the priced crew (cost × markup, per person)
  */
 export function labourAmountR(labour: ScopeLabour): number {
+  if (labour.mode === 'crew') return crewSellR(labour)
   if (labour.mode === 'fixed') return round2(labour.fixedR)
   if (labour.mode === 'daily') return round2(labour.days * labour.dayRateR)
   const billableHours = Math.max(0, labour.hours - (labour.calloutR > 0 ? 1 : 0))
   return round2(labour.calloutR + billableHours * labour.rateR)
+}
+
+/**
+ * What the quote's labour COSTS the business.
+ *
+ * Only crew mode knows a real cost — the other three modes are quoted as a
+ * lump with no wage breakdown behind them, so cost == sell there (the
+ * long-standing convention for generated labour lines).
+ */
+export function labourCostR(labour: ScopeLabour): number {
+  if (labour.mode === 'crew') return crewCostR(labour)
+  return labourAmountR(labour)
 }
 
 /** Is this line priced, judged from the values stored on the scope itself? */

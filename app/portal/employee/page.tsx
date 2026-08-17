@@ -25,6 +25,7 @@ import { buildDailyBriefing } from '@/lib/quotes/daily-briefing'
 import { formatCurrency } from '@/lib/utils'
 import type { JobPriority, JobStatus, Role } from '@/types/database'
 import { PlanList, type PlanListItem } from './PlanList'
+import { ClockCard } from './ClockCard'
 import { PageShell } from '@/components/layout/page'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -344,6 +345,9 @@ export default async function EmployeePortalRoot() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Clock in/out — everybody with a staff record captures their own hours here. */}
+      <ClockCard />
 
       {/* Compact KPIs */}
       <div className={`grid gap-3 ${isManager ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2 lg:grid-cols-3'}`}>

@@ -1,7 +1,7 @@
 import {
   Home, Briefcase, Sparkles, Sunrise, PhoneIncoming, ClipboardList,
   Users, Activity, BarChart2, Search, PackageX, Receipt, ShoppingBag,
-  Settings, UserCog, Ticket, CalendarDays, BookOpenCheck,
+  Settings, UserCog, Ticket, CalendarDays, BookOpenCheck, HardHat,
 } from 'lucide-react'
 import type { Role } from '@/types/database'
 
@@ -49,6 +49,7 @@ export const PORTAL_SECTIONS = [
   { key: 'lead_finder', label: 'Lead Finder', description: 'Area scan and solar-coverage prospecting tools.',                href: '/portal/employee/lead-finder',     match: '/portal/employee/lead-finder',    icon: Search,        defaultRoles: MANAGER_UP },
   { key: 'wastage',     label: 'Wastage',     description: 'Material wastage reporting.',                                    href: '/portal/employee/reports/wastage', match: '/portal/employee/reports/wastage', icon: PackageX,     defaultRoles: MANAGER_UP },
   { key: 'finance',     label: 'Finance',     description: 'Receipts, invoices and bank reconciliation.',                    href: '/portal/employee/finance',         match: '/portal/employee/finance',        icon: Receipt,       defaultRoles: MANAGER_UP },
+  { key: 'staff',       label: 'Staff',       description: 'The team, their hours, what each job costs in labour, and payslips.', href: '/portal/employee/staff',      match: '/portal/employee/staff',          icon: HardHat,       defaultRoles: MANAGER_UP },
   { key: 'sans',        label: 'SANS 10142-1', description: 'The wiring code: clause library, plain-language guide, calculators and compliance checklists.', href: '/portal/employee/sans', match: '/portal/employee/sans', icon: BookOpenCheck, defaultRoles: ADMIN_ONLY },
   { key: 'shop',        label: 'Shop Mgmt',   description: 'Web-store products, orders, discounts and shipping.',            href: '/portal/employee/shop',            match: '/portal/employee/shop',           icon: ShoppingBag,   defaultRoles: ADMIN_ONLY },
   { key: 'tickets',     label: 'Tickets',     description: 'In-portal “Report an issue” submissions from staff and customers.', href: '/portal/employee/tickets',      match: '/portal/employee/tickets',        icon: Ticket,        defaultRoles: ADMIN_ONLY },

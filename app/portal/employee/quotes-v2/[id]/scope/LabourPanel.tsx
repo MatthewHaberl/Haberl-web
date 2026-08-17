@@ -2,12 +2,18 @@
 
 // Labour + CoC panel for the scope builder (W97). Labour is hourly (call-out,
 // which carries the first hour, + further hours × rate), daily (days × team day
-// rate) or a fixed amount, chosen per quote — rates seed from Settings.
+// rate), a fixed amount, or priced per person from the staff list ("My crew") —
+// chosen per quote; rates seed from Settings.
+//
+// Whichever mode is used, the customer sees ONE line. Crew mode is the only one
+// that knows the real wage cost behind that line, which is what lets it show a
+// margin (see CrewPanel).
 
 import type { Dispatch, SetStateAction } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { labourAmountR, type QuoteScope } from '@/lib/quotes/scope'
+import { CrewPanel } from './CrewPanel'
 import type { ScopePricing } from './ScopeWorkspace'
 
 const rand = (n: number) =>
@@ -44,7 +50,10 @@ export function LabourPanel({ scope, onChange, pricing }: {
         <div className="flex gap-2">
           {modeBtn('hourly', 'Call-out + hourly')}
           {modeBtn('daily', 'Day rate')}
+        </div>
+        <div className="flex gap-2">
           {modeBtn('fixed', 'Fixed price')}
+          {modeBtn('crew', 'My crew')}
         </div>
 
         {labour.mode === 'hourly' && (
@@ -104,10 +113,14 @@ export function LabourPanel({ scope, onChange, pricing }: {
           </label>
         )}
 
+        {labour.mode === 'crew' && (
+          <CrewPanel scope={scope} onChange={onChange} defaultMarkup={pricing.markup} />
+        )}
+
         <Input
           value={labour.description}
           onChange={(e) => setLabour({ description: e.target.value })}
-          placeholder="Labour line description (optional)"
+          placeholder={labour.mode === 'crew' ? 'Customer sees: "Labour" (optional override)' : 'Labour line description (optional)'}
           className="h-9"
         />
         <div className="flex items-center justify-between text-sm">

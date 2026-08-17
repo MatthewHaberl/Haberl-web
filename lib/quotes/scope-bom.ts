@@ -23,7 +23,7 @@
 
 import type { BomLine, BomSection, DesignBom } from '@/lib/solar/design-bom'
 import type { EquipmentCatalogItem, PricingSettings } from '@/lib/solar/quote-calculator'
-import { labourAmountR, type QuoteScope, type ScopeLine } from './scope'
+import { labourAmountR, labourCostR, type QuoteScope, type ScopeLine } from './scope'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -144,6 +144,10 @@ function priceScopeLine(
 function labourDescription(scope: QuoteScope): string {
   const typed = scope.labour.description.trim()
   if (typed) return typed
+  // Crew mode deliberately describes nothing. The whole point of pricing labour
+  // per person internally is that the customer sees one word and one number —
+  // no names, no head-count, no rates. Matthew can still type his own wording.
+  if (scope.labour.mode === 'crew') return 'Labour'
   if (scope.labour.mode === 'fixed') return 'Labour — fixed price'
   if (scope.labour.mode === 'daily') {
     const d = scope.labour.days
@@ -186,19 +190,23 @@ export function scopeToBom(
     push(priced)
   }
 
-  // Labour — one generated line (hourly: call-out + hours × rate; fixed: the
-  // typed amount).
+  // Labour — ALWAYS one generated line, whichever mode priced it (hourly:
+  // call-out + hours × rate; daily: days × team rate; fixed: the typed amount;
+  // crew: the sum of the priced crew). Crew mode is the only one that knows a
+  // real cost, so cost and sell diverge there and the margin becomes visible
+  // internally — the customer-facing line is identical either way.
   const labourR = labourAmountR(scope.labour)
   if (labourR > 0) {
+    const labourCost = labourCostR(scope.labour)
     push({
       section: LABOUR_SECTION,
       catalogId: `labour:${labourDescription(scope)}`,
       sku: '',
       description: labourDescription(scope),
       qty: 1,
-      unitCostR: labourR,
+      unitCostR: labourCost,
       unitSellR: labourR,
-      lineCostR: labourR,
+      lineCostR: labourCost,
       lineSellR: labourR,
       priced: true,
       status: 'ok',

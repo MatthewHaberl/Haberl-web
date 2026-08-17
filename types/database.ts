@@ -931,3 +931,106 @@ export interface SupplierQuoteLine {
   catalog_id: string | null
   created_at: string
 }
+
+// ── Staff, hours and pay (migration 112) ─────────────────────────────────────
+// The pay ARITHMETIC lives in lib/staff/pay.ts, which re-exports the union
+// types below so a pure module can be tested without importing this file.
+
+/**
+ * An employment record. Deliberately NOT user_profiles: a labourer earns money
+ * whether or not he ever signs into the portal, so `user_id` is optional.
+ */
+export interface Staff {
+  id: string
+  /** The portal login for this person, when they have one. */
+  user_id: string | null
+  full_name: string
+  employee_no: string | null
+  job_title: string | null
+  phone: string | null
+  email: string | null
+  /** 'hourly' pays hours × rate; 'piece' pays agreed per-job amounts. */
+  pay_type: 'hourly' | 'piece'
+  /** R/hr this person costs the business — never what a customer is billed. */
+  cost_rate_r: number
+  overtime_multiplier: number
+  employed_from: string | null
+  employed_to: string | null
+  active: boolean
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Hours worked on one day, optionally against a job. */
+export interface TimeEntry {
+  id: string
+  staff_id: string
+  job_id: string | null
+  work_date: string
+  /** Set only when the hours came off the clock. */
+  started_at: string | null
+  ended_at: string | null
+  break_minutes: number
+  hours: number
+  overtime_hours: number
+  category: 'work' | 'travel' | 'workshop' | 'standby' | 'other'
+  notes: string | null
+  /** Snapshot of the pay basis at capture — a later raise must not reprice this. */
+  cost_rate_r: number
+  overtime_multiplier: number
+  source: 'manual' | 'clock'
+  status: 'running' | 'submitted' | 'approved' | 'paid'
+  approved_by: string | null
+  approved_at: string | null
+  /** Set when a pay run claims this entry; cleared if that run is deleted. */
+  payslip_id: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Money that isn't hours: piece work, bonuses, and (later) advances. */
+export interface StaffPayment {
+  id: string
+  staff_id: string
+  job_id: string | null
+  pay_date: string
+  kind: 'piece' | 'bonus' | 'allowance' | 'deduction' | 'advance'
+  description: string
+  amount_r: number
+  payslip_id: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * A frozen pay run for one person over one period. `lines` is the snapshot
+ * (PayslipLine[] from lib/staff/pay.ts) taken at finalise, so a timesheet
+ * corrected later can never rewrite a slip already handed over.
+ */
+export interface Payslip {
+  id: string
+  staff_id: string
+  reference: string
+  period_start: string
+  period_end: string
+  normal_hours: number
+  overtime_hours: number
+  hours_pay_r: number
+  piece_pay_r: number
+  other_pay_r: number
+  gross_pay_r: number
+  /** Reserved for PAYE/UIF/SDL — zero today, so net_pay_r == gross_pay_r. */
+  deductions_r: number
+  net_pay_r: number
+  status: 'draft' | 'finalised' | 'paid'
+  lines: unknown[]
+  notes: string | null
+  paid_at: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
