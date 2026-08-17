@@ -466,6 +466,9 @@ export interface DcCombiner {
   // Inputs (strings) and outputs (to inverter MPPTs)
   inputStringIds: string[]
   outputs: CombinerOutput[]
+  /** Run length from this combiner to the inverter (m) — the counterpart of a
+   *  panel group's `distanceFromCombinerM`. Blank falls back to 8 m. */
+  distanceToInverterM?: number
   /** Per-string connection products, keyed by panel-group id.
    *  @deprecated legacy — the new UI uses `components`. Kept parseable so old
    *  designs don't crash; design-bom still itemises it when components are empty. */
@@ -1456,6 +1459,7 @@ export function parseDesign(raw: unknown): SystemDesign | null {
     dcCombiners: (src.dcCombiners ?? []).map((c) => ({
       ...c,
       enclosureCatalogId: c.enclosureCatalogId ?? null,
+      distanceToInverterM: typeof c.distanceToInverterM === 'number' && c.distanceToInverterM > 0 ? c.distanceToInverterM : undefined,
       stringConnections: c.stringConnections ?? {},
       inputStringIds: expandStringIds(c.inputStringIds),
       outputs: (c.outputs ?? []).map((o) => ({ ...o, stringIds: expandStringIds(o.stringIds), spdId: o.spdId ?? null, mainBreakerId: o.mainBreakerId ?? null })),
@@ -2070,6 +2074,12 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
     const m = d.panels[pi]?.distanceFromCombinerM
     return typeof m === 'number' && m > 0 ? m : fallback
   }
+  /** Cable run from a combiner to the inverter — that combiner's own
+   *  "distance to inverter" (8 m only as a fallback when it isn't set). */
+  const combinerRunM = (c: DcCombiner | undefined, fallback: number): number => {
+    const m = c?.distanceToInverterM
+    return typeof m === 'number' && m > 0 ? m : fallback
+  }
   // The list of combiners to render: explicit entries, or one implicit when needed.
   const renderCombiners: Array<DcCombiner | undefined> =
     d.dcCombiners.length > 0 ? d.dcCombiners : (useCombiner && groupCount > 0 ? [undefined] : [])
@@ -2141,12 +2151,13 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
     // combiner's output feeds the inverter; without a combiner the first string does.
     if (acceptsPv) {
       if (renderCombiners.length > 0 && groupCount > 0) {
-        renderCombiners.forEach((_, ci) => {
+        renderCombiners.forEach((comb, ci) => {
+          const run = combinerRunM(comb, 8)
           edges.push({
             id: ci === 0 ? 'e-comb-inv' : `e-comb${ci}-inv`, source: NODE.combinerN(ci), target: id,
             sourceHandle: 'dc-out', targetHandle: 'pv-in', type: 'cable',
-            data: cableData('dc', 'H1Z2Z2 6mm²', 8),
-            label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', 8)),
+            data: cableData('dc', 'H1Z2Z2 6mm²', run),
+            label: buildEdgeLabel(cableData('dc', 'H1Z2Z2 6mm²', run)),
           })
         })
       } else if (groupCount > 0) {
@@ -2445,7 +2456,19 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
   for (const edge of edges) {
     const ov = edgeOv[edge.id]
     if (!ov) continue
-    const merged = { ...(edge.data as CableEdgeData), ...ov }
+    const auto = edge.data as CableEdgeData
+    // Which fields the hand-edit actually replaces. An override that already
+    // matches the computed value isn't masking anything, so it isn't flagged.
+    const changed = Object.keys(ov).filter(
+      (k) => JSON.stringify((ov as Record<string, unknown>)[k]) !== JSON.stringify((auto as Record<string, unknown>)[k]),
+    )
+    const merged: CableEdgeData = { ...auto, ...ov }
+    // Carry the computed values alongside so the inspector can show what the
+    // design would draw here, rather than the override hiding it.
+    if (changed.length > 0) {
+      merged.computed = { ...auto }
+      merged.overriddenKeys = changed
+    }
     edge.data = merged
     const runs = Math.max(1, Math.round(Number((merged as { runs?: number }).runs) || 1))
     const base = buildEdgeLabel(merged)

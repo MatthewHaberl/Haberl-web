@@ -36,6 +36,12 @@ const SEGMENT_ROUTE_TYPES = [
   'Overhead (open)', 'Underground (direct burial)', 'Open trunking', 'Under floor', 'Custom',
 ]
 const TERMINATION_TYPES = ['Direct', 'Lug', 'Pin lug', 'Bootlace', 'MC4', 'Anderson', 'Screw terminal']
+/** Field names as the cable inspector shows them, for naming a hand edit. */
+const OVERRIDE_LABELS: Record<string, string> = {
+  lengthM: 'Length', segments: 'Measured route', spec: 'Cable', cableType: 'Conductor material',
+  crossSection: 'Cross-section', runs: 'Parallel runs', conductors: 'Phase', heatShrink: 'Heat shrink',
+  terminationFrom: 'From termination', terminationTo: 'To termination',
+}
 const termNeedsSize = (type: string) => /lug|bootlace/i.test(type)
 
 // A segment can also declare the physical wireway it shares with other cables,
@@ -175,8 +181,9 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
     p: d.panels.map((p) => [p.id, p.panelCount, p.panelWatts, p.panelModel, p.distanceFromCombinerM, p.jumpers]),
     // Energy shaping profiles (items 37–40) — harmless to key on; only matters if they drive flow.
     ep: JSON.stringify([d.energy.weekly ?? null, d.energy.monthlyProfile ?? null, d.energy.annualProfile ?? null]),
-    // DC combiners (items 34/44): per-combiner string assignment + output count + internals.
-    dc: JSON.stringify(d.dcCombiners.map((c) => [c.id, c.inputStringIds, c.outputs.length, (c.components ?? []).map((k) => [k.id, k.productId, k.qty, k.fedFrom])])),
+    // DC combiners (items 34/44): per-combiner string assignment + output count +
+    // internals, plus the run to the inverter so a new distance redraws the label.
+    dc: JSON.stringify(d.dcCombiners.map((c) => [c.id, c.inputStringIds, c.outputs.length, c.distanceToInverterM, (c.components ?? []).map((k) => [k.id, k.productId, k.qty, k.fedFrom])])),
     // Inverter phaseConfig + PV/battery capability toggles (items 50/51) reshape the AC + DC topology.
     i: d.inverters.map((u) => [u.catalogId, u.kw, u.model, u.qty, u.phases, u.phaseConfig, u.acceptsPv, u.acceptsBattery]),
     b: d.batteries.map((b) => [b.catalogId, b.kwh, b.qty, b.model]),
@@ -422,6 +429,15 @@ function CableInspector({ edge, fromLabel, toLabel, onClose }: { edge: Edge; fro
   const set = (patch: Record<string, unknown>) => dispatch({ type: 'setEdgeOverride', id: edge.id, patch })
   const setSpec = (mat: string, sz: string) => set({ cableType: mat, crossSection: sz, spec: `${mat} ${sz}` })
 
+  // A hand edit wins over the computed design (right), but silently (wrong) — a
+  // 40 m string would keep labelling whatever was typed here. designToFlow parks
+  // the computed values on the edge so the override can be named and undone.
+  // User-drawn cables have no design behind them, so nothing to flag.
+  const overridden = isUserEdge ? [] : ((data.overriddenKeys as string[] | undefined) ?? [])
+  const computed = (data.computed as CableEdgeData | undefined)
+  const computedLength = Number(computed?.lengthM) || 0
+  const clearField = (field: string) => dispatch({ type: 'clearEdgeOverrideField', id: edge.id, field })
+
   const segments = (data.segments as RouteSeg[] | undefined) ?? []
   const routeTotal = segments.reduce((s, x) => s + (Number(x.lengthM) || 0), 0)
   const setSegs = (next: RouteSeg[]) => set({ segments: next })
@@ -440,6 +456,27 @@ function CableInspector({ edge, fromLabel, toLabel, onClose }: { edge: Edge; fro
       <p className="mb-3 text-xs text-muted-foreground">
         <span className="font-medium uppercase text-foreground">{ct}</span> · {conductorSummary(ct, threePhase)}
       </p>
+
+      {overridden.length > 0 && (
+        <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-2">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+            <PencilLine className="h-3 w-3" /> Edited by hand
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            This cable keeps what was typed here, so it no longer follows the design:{' '}
+            <span className="font-medium text-foreground">{overridden.map((k) => OVERRIDE_LABELS[k] ?? k).join(', ')}</span>.
+          </p>
+          {overridden.includes('lengthM') && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              The design computes <span className="font-semibold text-foreground">{computedLength} m</span> for this run.
+            </p>
+          )}
+          <button type="button" onClick={() => dispatch({ type: 'clearEdgeOverride', id: edge.id })}
+            className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-amber-700 hover:underline dark:text-amber-400">
+            <RotateCcw className="h-3 w-3" /> Use the computed values
+          </button>
+        </div>
+      )}
 
       {isComms ? (
         <p className="text-xs text-muted-foreground">Communication link — protocol editing arrives with the data layer.</p>
@@ -482,7 +519,14 @@ function CableInspector({ edge, fromLabel, toLabel, onClose }: { edge: Edge; fro
               <>
                 <input type="number" min={0} step={0.5} value={lengthM || ''} placeholder="0" className={field}
                   onChange={(e) => set({ lengthM: Math.max(0, Number(e.target.value) || 0) })} />
-                <span className="text-[11px] text-muted-foreground">Estimated run length (m). Add segments to measure the real route so no cable goes unaccounted.</span>
+                {overridden.includes('lengthM') ? (
+                  <span className="text-[11px] text-amber-700 dark:text-amber-400">
+                    Typed by hand — the design computes {computedLength} m.{' '}
+                    <button type="button" onClick={() => clearField('lengthM')} className="font-medium underline">Use {computedLength} m</button>
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-muted-foreground">Estimated run length (m). Add segments to measure the real route so no cable goes unaccounted.</span>
+                )}
               </>
             ) : (
               <div className="flex flex-col gap-1.5">

@@ -120,6 +120,7 @@ export type DesignAction =
   // Per-cable / per-component overrides from the diagram inspector.
   | { type: 'setEdgeOverride'; id: string; patch: Record<string, unknown> }
   | { type: 'clearEdgeOverride'; id: string }
+  | { type: 'clearEdgeOverrideField'; id: string; field: string }
   | { type: 'setNodeOverride'; id: string; patch: Record<string, unknown> }
   | { type: 'clearNodeOverride'; id: string }
 
@@ -582,6 +583,17 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
     case 'clearEdgeOverride': {
       const cur = { ...(d.layout.edgeOverrides ?? {}) }
       delete cur[action.id]
+      return { ...d, layout: { ...d.layout, edgeOverrides: cur } }
+    }
+
+    // Drop one hand-edited field back to what the design computes, leaving the
+    // rest of the cable's overrides alone. The whole entry goes when it empties.
+    case 'clearEdgeOverrideField': {
+      const cur = { ...(d.layout.edgeOverrides ?? {}) }
+      const entry = { ...(cur[action.id] ?? {}) } as Record<string, unknown>
+      delete entry[action.field]
+      if (Object.keys(entry).length === 0) delete cur[action.id]
+      else cur[action.id] = entry as (typeof cur)[string]
       return { ...d, layout: { ...d.layout, edgeOverrides: cur } }
     }
 

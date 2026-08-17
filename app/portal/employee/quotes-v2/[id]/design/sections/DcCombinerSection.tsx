@@ -259,13 +259,23 @@ export function DcCombinerSection() {
               )}
 
               {/* Outputs — each output carries its strings to the inverter MPPT(s) */}
-              <div className="flex items-center gap-2 mt-4 mb-2">
+              <div className="flex flex-wrap items-center gap-2 mt-4 mb-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Outputs</p>
                 <input type="number" min={1} max={maxOut} value={c.outputs.length}
                   onChange={(e) => setOutputCount(c, Number(e.target.value) || 1)}
                   className="h-7 w-14 rounded-md border border-border bg-background px-2 text-xs" />
                 <span className="text-[11px] text-muted-foreground">to the inverter MPPT(s)</span>
               </div>
+              {/* The run this box to the inverter — the counterpart of a panel
+                  group's "distance from combiner", and what the diagram labels. */}
+              <label className="mb-1 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">Distance to inverter (m)</span>
+                <input type="number" min={0} step={0.5} placeholder="e.g. 8"
+                  value={c.distanceToInverterM ?? ''}
+                  onChange={(e) => patch(c, { distanceToInverterM: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+                  className="h-7 w-20 rounded-md border border-border bg-background px-2 text-xs" />
+                <span className="text-[10px] text-muted-foreground">Sizes the combiner’s output cable. Blank draws 8 m.</span>
+              </label>
 
               {c.outputs.length > 1 && (
                 <div className="flex flex-col gap-2.5">

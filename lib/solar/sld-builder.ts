@@ -55,6 +55,12 @@ export interface CableEdgeData extends Record<string, unknown> {
   /** Manual label nudge (px, flow space) persisted after a label drag. */
   labelOffsetX?: number
   labelOffsetY?: number
+  /** Diagram-inspector override bookkeeping, set by designToFlow and never
+   *  persisted: what the design computed for this cable, and which fields the
+   *  hand-edit replaced. Without it a manual length silently masks a changed
+   *  design — the inspector reads these to say so and offer the computed value. */
+  computed?: Record<string, unknown>
+  overriddenKeys?: string[]
   // Communication-specific
   sourceProtocol?: string[]
   targetProtocol?: string[]
