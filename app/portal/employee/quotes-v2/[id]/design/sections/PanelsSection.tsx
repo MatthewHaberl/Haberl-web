@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Sun, Zap, Copy, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Sun, Zap, Copy, ChevronRight, AlertTriangle } from 'lucide-react'
 import { PSH_GAUTENG, SYSTEM_EFFICIENCY, parseInverterSizingSpec } from '@/lib/solar/quote-calculator'
 import { stringVoltageProfile, computeStringLayout, hotCellTempC, type StringVoltageProfile } from '@/lib/solar/compliance'
 import { panelGroupKwp, panelGroupStrings, panelGroupPanels, DIRECTIONS, ROOF_TYPES, DEFAULT_SITE_CONDITIONS, type SiteConditions, type PanelGroup } from '@/lib/solar/system-design'
@@ -275,9 +275,21 @@ export function PanelsSection() {
                   </details>
                 )}
                 {!profile && g.catalogId && series > 0 && (
-                  <p className="mt-2 text-xs italic text-muted-foreground">
-                    String voltages — add a datasheet Voc to this panel in the catalog to enable the check.
-                  </p>
+                  // No Voc on record anywhere (column or specs.voc_v) — the string-voltage
+                  // check cannot run at all. State that plainly: the silent version of this
+                  // message let designs ship with the edge-of-cloud margin unverified.
+                  <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-2 text-xs">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <div className="text-amber-800 dark:text-amber-300">
+                      <span className="font-semibold">String voltage not checked — this panel has no Voc on record.</span>{' '}
+                      The {conditions.edgeOfCloudPct}% edge-of-cloud margin and the MPPT voltage window are
+                      <span className="font-semibold"> unverified</span> for this design
+                      {inverterSpec?.maxDcVoltage != null && <> against the inverter&apos;s {inverterSpec.maxDcVoltage} V max DC input</>}.
+                      Add the datasheet Voc to{' '}
+                      <span className="font-medium">{selectedPanel?.description ?? 'this panel'}</span>{' '}
+                      in the catalog, or pick a panel that has one, before sending this quote.
+                    </div>
+                  </div>
                 )}
 
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">

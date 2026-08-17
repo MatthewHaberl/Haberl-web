@@ -72,17 +72,41 @@ export function voltageAtTempC(vStc: number, betaPctPerC: number, cellTempC: num
 }
 
 // Pull the thermal/electrical specs we need off a catalog panel, with fallbacks.
+//
+// Voc resolution order — the column first, then specs.voc_v. Most of the catalog was
+// imported with Voc only in the specs JSON and the column left empty; when that
+// happened the whole string-voltage check silently disappeared from the Panels step
+// instead of degrading. Reading the JSON as a second source means a future import gap
+// costs precision, not the check itself. `vocSource` reports which one answered so the
+// UI can distinguish "no Voc on record" from "Voc present".
+//
+// The column wins on conflict: it is hand-entered from datasheets, whereas specs.voc_v
+// comes from supplier free-text and is demonstrably less reliable (it has held Vmp, and
+// the wrong wattage column of the right datasheet). See migration 116.
 export function panelThermal(panel: Pick<EquipmentCatalogItem, 'voc_volts' | 'isc_amps' | 'specs'>) {
   const specs = (panel.specs ?? {}) as Record<string, unknown>
   const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-  const voc = panel.voc_volts != null ? Number(panel.voc_volts) : null
+  // specs values arrive as numbers or numeric strings depending on the import path.
+  const num = (v: unknown) => {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null
+    if (typeof v === 'string') { const p = Number.parseFloat(v.replace(',', '.')); return Number.isFinite(p) ? p : null }
+    return null
+  }
+  // Plausible crystalline module open-circuit range; keeps feed junk out of the physics.
+  const plausibleVoc = (v: number | null) => (v != null && v >= 10 && v <= 200 ? v : null)
+  const vocColumn = plausibleVoc(panel.voc_volts != null ? Number(panel.voc_volts) : null)
+  // Only specs.voc_v is trusted. specs.marketed_voc_v is distributor marketing copy that
+  // some rows carry precisely BECAUSE the real Voc is unpublished — never promote it.
+  const vocSpecs = vocColumn == null ? plausibleVoc(num(specs.voc_v)) : null
+  const voc = vocColumn ?? vocSpecs
+  const vocSource: 'column' | 'specs' | null = vocColumn != null ? 'column' : vocSpecs != null ? 'specs' : null
   const vmp = n(specs.vmp_volts) ?? (voc != null ? voc * VMP_FROM_VOC : null)
   const isc = panel.isc_amps != null ? Number(panel.isc_amps) : null
   // Imp isn't stored on the catalog — estimated from Isc (crystalline modules).
   const imp = n(specs.imp_amps) ?? (isc != null ? isc * IMP_FROM_ISC : null)
   const betaVocPct = n(specs.voc_temp_coeff_pct) ?? DEFAULT_BETA_VOC_PCT
   const noctC = n(specs.noct) ?? DEFAULT_NOCT_C
-  return { voc, vmp, isc, imp, betaVocPct, noctC }
+  return { voc, vmp, isc, imp, betaVocPct, noctC, vocSource }
 }
 
 /** Temperature-corner Voc/Vmp for one series string + its inverter-window checks. */
@@ -410,18 +434,26 @@ export function runComplianceChecks(ctx: ComplianceContext): ComplianceCheck[] {
   }
 
   // ── String voltage physics ──────────────────────────────────────────────────
+  // Resolved Voc, not panel.voc_volts — the column is empty on most of the catalog and
+  // the real value lives in specs.voc_v (migration 116). Reading the column directly
+  // here would print a blank voltage in the detail line for those panels.
+  const { voc: panelVoc } = panelThermal(panel)
   if (layout.stringVocDesignV != null && layout.stringVocColdV != null && spec?.maxDcVoltage) {
     if (layout.stringVocDesignV > spec.maxDcVoltage) {
       add('string-voc', 'String voltage vs inverter max DC input', 'Physics / RULE-STR-02', 'blocker',
-        `Cold-weather string Voc ≈ ${layout.stringVocColdV}V (${layout.panelsPerString} × ${panel.voc_volts}V at ${layout.conditions.minAmbientC}°C) rises to ≈ ${layout.stringVocDesignV}V with the +${layout.conditions.edgeOfCloudPct}% edge-of-cloud margin — over the inverter's ${spec.maxDcVoltage}V max input. Shorten the string.`)
+        `Cold-weather string Voc ≈ ${layout.stringVocColdV}V (${layout.panelsPerString} × ${panelVoc}V at ${layout.conditions.minAmbientC}°C) rises to ≈ ${layout.stringVocDesignV}V with the +${layout.conditions.edgeOfCloudPct}% edge-of-cloud margin — over the inverter's ${spec.maxDcVoltage}V max input. Shorten the string.`)
     } else {
       add('string-voc', 'String voltage vs inverter max DC input', 'Physics / RULE-STR-02', 'pass',
         `Cold-weather string Voc ≈ ${layout.stringVocColdV}V (≈ ${layout.stringVocDesignV}V with the edge-of-cloud margin) is within the inverter's ${spec.maxDcVoltage}V limit.`)
     }
   } else {
-    add('string-voc', 'String voltage vs inverter max DC input', 'RULE-STR-02', 'info',
+    // A missing Voc means this check DID NOT RUN. That is a warning, not an 'info'
+    // footnote — the edge-of-cloud margin is unverified and the design could exceed
+    // the inverter's max DC input without anything on the report saying so.
+    add('string-voc', 'String voltage vs inverter max DC input', 'RULE-STR-02',
+      layout.stringVocColdV == null ? 'warning' : 'info',
       layout.stringVocColdV == null
-        ? `Panel Voc missing from the catalog — add voc_volts to ${panel.description} to enable string voltage validation.`
+        ? `NOT CHECKED — no Voc on record for ${panel.description} (neither the voc_volts column nor specs.voc_v). The +${layout.conditions.edgeOfCloudPct}% edge-of-cloud margin and the inverter max-DC-input limit are unverified for this design. Add the datasheet Voc to the catalog item.`
         : `Inverter max DC voltage not in catalog notes — add "max_dc_voltage: 500" style spec to ${ctx.inverter.description} to enable string voltage validation. Assumed max ${DEFAULT_MAX_SERIES_PANELS} panels per string.`)
   }
 
@@ -437,18 +469,18 @@ export function runComplianceChecks(ctx: ComplianceContext): ComplianceCheck[] {
   }
 
   // ── Voltage drop (§5.3.2) ───────────────────────────────────────────────────
-  if (panel.isc_amps && panel.voc_volts) {
+  if (panel.isc_amps && panelVoc) {
     const dropPct = estimateDcVoltageDropPct({
       routeMetres,
       iscAmps: panel.isc_amps,
       panelsPerString: layout.panelsPerString,
-      vocVolts: panel.voc_volts,
+      vocVolts: panelVoc,
     })
     if (dropPct != null) {
       if (dropPct > MAX_DC_VOLTAGE_DROP_PCT) {
         const dropAt6 = estimateDcVoltageDropPct({
           routeMetres, iscAmps: panel.isc_amps, panelsPerString: layout.panelsPerString,
-          vocVolts: panel.voc_volts, cableSizeMm2: 6,
+          vocVolts: panelVoc, cableSizeMm2: 6,
         })
         add('dc-voltage-drop', 'DC cable voltage drop', 'SANS 10142-1 §5.3.2', 'warning',
           `≈ ${dropPct}% drop on 4mm² over ${routeMetres}m (limit ${MAX_DC_VOLTAGE_DROP_PCT}%). Upgrade the run to 6mm² (≈ ${dropAt6}%).`)
