@@ -97,7 +97,7 @@ export function CatalogSearch({ onPick, placeholder = 'Search the catalog…' }:
               }}
             >
               <span className="min-w-0">
-                <span className="block truncate text-sm">{r.description}</span>
+                <span className="block text-sm leading-snug line-clamp-2">{r.description}</span>
                 <span className="block truncate text-xs text-muted-foreground">
                   {[r.brand, r.sku, r.supplier].filter(Boolean).join(' · ')}
                 </span>

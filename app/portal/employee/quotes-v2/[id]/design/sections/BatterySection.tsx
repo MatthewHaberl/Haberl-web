@@ -260,8 +260,8 @@ export function BatterySection() {
       title="Batteries"
       subtitle="Incompatible batteries are shown greyed-out with the reason. Storage hours update live."
     >
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="md:col-span-2 flex flex-col gap-1">
+      <div className="grid grid-cols-1 @xl:grid-cols-3 gap-3">
+        <div className="@xl:col-span-2 flex flex-col gap-1">
           <span className="text-xs font-medium text-muted-foreground">Battery</span>
           {loading ? (
             <div className="h-9 rounded-md border border-border bg-muted/30" />
@@ -303,7 +303,7 @@ export function BatterySection() {
           </label>
           {isStack && (
             <>
-              <div className="mt-2.5 grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              <div className="mt-2.5 grid grid-cols-2 @xl:grid-cols-4 gap-2.5">
                 <label className="flex flex-col gap-0.5">
                   <span className="text-[11px] text-muted-foreground">Stack size (series)</span>
                   <input
@@ -458,14 +458,14 @@ export function BatterySection() {
             <span className="text-muted-foreground"><strong className="text-foreground">{inverterFeeds}</strong> inverter feed{inverterFeeds === 1 ? '' : 's'}</span>
             {!override && <span className="text-[11px] text-muted-foreground opacity-70">— derived from the selected battery{isStack ? ' + stack size' : ''}</span>}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 @xl:grid-cols-3 gap-2.5">
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-muted-foreground">Cable size</span>
               <select value={bank.cableSizeMm2} onChange={(e) => setBank({ cableSizeMm2: Number(e.target.value) })} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
                 {cableSizes.map((s) => <option key={s} value={s}>{s}mm² (≈{DC_CABLE_AMPACITY[s]}A)</option>)}
               </select>
             </label>
-            <ProductPicker items={items} category="cable" label="Default cable product" value={bank.cableProductId} onChange={(v) => setBank({ cableProductId: v })} />
+            <ProductPicker items={items} category="cable" label="Default cable product" value={bank.cableProductId} onChange={(v) => setBank({ cableProductId: v })} className="col-span-2 @xl:col-span-1" />
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-muted-foreground">Worst-case cutoff V</span>
               <input type="number" min={0} step={0.1} value={bank.cutoffVoltage} disabled={!override} onChange={(e) => setBank({ cutoffVoltage: Number(e.target.value) || 0 })} className={`h-8 rounded-md border border-border bg-background px-2 text-xs ${LOCKED_FIELD}`} />
@@ -490,7 +490,7 @@ export function BatterySection() {
                       {DISCONNECT_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
                     </select>
                   </label>
-                  <ProductPicker items={items} category="disconnect" label="Product" value={mainChoice.product} onChange={(v) => setMainChoice({ product: v })} />
+                  <ProductPicker items={items} category="disconnect" label="Product" value={mainChoice.product} onChange={(v) => setMainChoice({ product: v })} className="col-span-2 @xl:col-span-1" />
                 </div>
               )}
             </div>
@@ -550,7 +550,7 @@ export function BatterySection() {
                       {DISCONNECT_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
                     </select>
                   </label>
-                  <ProductPicker items={items} category="disconnect" label="Product" value={perBatChoice.product} onChange={(v) => setPerBatChoice({ product: v })} />
+                  <ProductPicker items={items} category="disconnect" label="Product" value={perBatChoice.product} onChange={(v) => setPerBatChoice({ product: v })} className="col-span-2 @xl:col-span-1" />
                 </div>
               )}
             </div>

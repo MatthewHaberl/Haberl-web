@@ -188,7 +188,7 @@ export function DcCombinerSection() {
               </label>
               {encOpen && (<>
               {locked && <div className="mb-2"><LockNote>Material, mount, ways and rows come from the chosen DB</LockNote></div>}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-2 @xl:grid-cols-3 gap-2.5">
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] text-muted-foreground">Material</span>
                   <select value={c.material} disabled={locked} onChange={(e) => patch(c, { material: e.target.value as DcCombiner['material'] })} className={`h-8 rounded-md border border-border bg-background px-2 text-xs ${LOCKED_FIELD}`}>
@@ -337,7 +337,7 @@ export function DcCombinerSection() {
                           </label>
                           <button type="button" onClick={() => removeComponent(c, comp.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
-                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="mt-2 grid grid-cols-1 @lg:grid-cols-2 gap-2">
                           <ProductPicker items={items} category={def.category} label="Product" value={comp.productId} onChange={(v) => updateComponent(c, comp.id, { productId: v })} />
                           <div className="flex flex-col gap-1">
                             {Array.from({ length: def.inputs }).map((_, i) => (

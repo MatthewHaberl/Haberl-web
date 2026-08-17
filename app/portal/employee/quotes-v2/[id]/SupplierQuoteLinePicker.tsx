@@ -139,7 +139,7 @@ export function SupplierQuoteLinePicker({ lines, onPick, label = 'From supplier 
                 onClick={() => { onPick(l); setOpen(false); setFilter('') }}
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-sm">{l.description}</span>
+                  <span className="block text-sm leading-snug line-clamp-2">{l.description}</span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {[l.supplierLabel, l.sku, `${l.qty} ${l.unit}`].filter(Boolean).join(' · ')}
                   </span>

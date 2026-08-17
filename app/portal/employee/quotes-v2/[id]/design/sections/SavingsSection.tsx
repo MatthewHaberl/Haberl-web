@@ -94,7 +94,7 @@ export function SavingsSection() {
   return (
     <div className="flex flex-col gap-4">
       <SectionCard title="Savings & Performance" subtitle="Read live off the energy balance + BOM — never a parallel calc">
-        <div className="grid sm:grid-cols-3 gap-3">
+        <div className="grid @lg:grid-cols-3 gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted-foreground">Electricity tariff (R/kWh)</span>
             <input
@@ -119,7 +119,7 @@ export function SavingsSection() {
           )}
         </div>
 
-        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="mt-3 grid grid-cols-2 @xl:grid-cols-4 gap-3">
           <Stat label="System price" value={rand(systemCostR)} />
           <Stat
             label="Payback" accent
@@ -134,7 +134,7 @@ export function SavingsSection() {
         </p>
       </SectionCard>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid @2xl:grid-cols-2 gap-4">
         <SectionCard title="Bill impact">
           <div className="flex items-end gap-6">
             <div>

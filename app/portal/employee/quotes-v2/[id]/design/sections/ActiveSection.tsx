@@ -31,5 +31,12 @@ const SECTIONS = [
 export function ActiveSection() {
   const { activeStep } = useDesign()
   const Section = SECTIONS[activeStep] ?? EnergySection
-  return <Section />
+  // Query container: the sections live in a 380px console on desktop, where
+  // viewport breakpoints (md:) lie about the space available. Section layouts
+  // use @-variants so they read off this box instead.
+  return (
+    <div className="@container">
+      <Section />
+    </div>
+  )
 }

@@ -94,8 +94,8 @@ export function InverterSection() {
     >
       <SupplySizer />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <label className="flex flex-col gap-1 md:col-span-2">
+      <div className="grid grid-cols-1 @xl:grid-cols-3 gap-3">
+        <label className="flex flex-col gap-1 @xl:col-span-2">
           <span className="text-xs font-medium text-muted-foreground">Inverter</span>
           <SearchableSelect
             value={unit?.catalogId ?? null}
@@ -123,8 +123,8 @@ export function InverterSection() {
       {/* Phase configuration (item 50) — THE phase control (the reducer derives `phases`
           from it). The catalog prefills a sensible default but this stays editable so you
           can pick split-phase / American where the product doesn't say. */}
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <label className="flex flex-col gap-1 md:col-span-2">
+      <div className="mt-3 grid grid-cols-1 @xl:grid-cols-3 gap-3">
+        <label className="flex flex-col gap-1 @xl:col-span-2">
           <span className="text-xs font-medium text-muted-foreground">Phase configuration</span>
           <select
             value={unit?.phaseConfig ?? (unit?.phases === 3 ? 'three_phase' : 'single_230')}
@@ -147,8 +147,8 @@ export function InverterSection() {
         </summary>
         <div className="mt-2">
           {/* Model / kW — locked to the catalog spec when an inverter is chosen (item 24). */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label className="flex flex-col gap-1 md:col-span-2">
+          <div className="grid grid-cols-1 @xl:grid-cols-3 gap-3">
+            <label className="flex flex-col gap-1 @xl:col-span-2">
               <span className="text-xs font-medium text-muted-foreground">Model</span>
               <input
                 value={unit?.model ?? ''}
@@ -338,7 +338,7 @@ function MpptAssignment({ unit, specMpptCount }: { unit: InverterUnit; specMpptC
         {perMppt.map((count, m) => `MPPT ${m + 1}: ${count}`).join(' · ')}
       </p>
 
-      <div className="mt-2 grid grid-cols-1 gap-1 sm:grid-cols-2">
+      <div className="mt-2 grid grid-cols-1 gap-1 @md:grid-cols-2">
         {strings.map((s) => (
           <div key={s.id} className="flex items-center gap-2 rounded border border-border bg-background px-2 py-1">
             <span className="text-foreground">
@@ -505,7 +505,7 @@ function SupplySizer() {
           : <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
       </button>
       {sizerOpen && (<>
-      <div className="mt-2.5 grid grid-cols-2 md:grid-cols-4 gap-2.5">
+      <div className="mt-2.5 grid grid-cols-2 @xl:grid-cols-4 gap-2.5">
         <label className="flex flex-col gap-1">
           <span className="text-[11px] text-muted-foreground">Main breaker (A)</span>
           <input type="number" min={0} step={5} value={supply.mainBreakerA || ''}

@@ -163,8 +163,10 @@ export function PanelsSection() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <label className="flex flex-col gap-1 md:col-span-2">
+                <div className="grid grid-cols-2 @xl:grid-cols-4 gap-3">
+                  {/* Full row on the narrow console — panel model names are long, and a
+                      half-width picker truncated every option to the same brand prefix. */}
+                  <label className="flex flex-col gap-1 col-span-2">
                     <span className="text-xs font-medium text-muted-foreground">Panel</span>
                     <SearchableSelect
                       value={g.catalogId}
@@ -193,7 +195,7 @@ export function PanelsSection() {
                       onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { panelWatts: Number(ev.target.value) || 0 } })}
                       className={`h-9 rounded-md border border-border bg-background px-2 text-sm ${LOCKED_FIELD}`}
                     />
-                    {locked && <LockNote>Watts come from the catalog panel</LockNote>}
+                    {locked && <LockNote>From the catalog panel</LockNote>}
                   </label>
 
                   <label className="flex flex-col gap-1">
@@ -204,7 +206,7 @@ export function PanelsSection() {
                       onChange={(ev) => dispatch({ type: 'updatePanelGroup', id: g.id, patch: { panelCount: Math.max(0, Math.round(Number(ev.target.value) || 0)) } })}
                       className="h-9 rounded-md border border-border bg-background px-2 text-sm"
                     />
-                    <span className="text-[10px] text-muted-foreground">Panels in series (sets string voltage)</span>
+                    <span className="text-[10px] text-muted-foreground">In series — sets string voltage</span>
                   </label>
 
                   <label className="flex flex-col gap-1">
@@ -222,7 +224,7 @@ export function PanelsSection() {
                     </span>
                   </label>
 
-                  <label className="flex flex-col gap-1 md:col-span-2">
+                  <label className="flex flex-col gap-1 col-span-2">
                     <span className="text-xs font-medium text-muted-foreground">Direction</span>
                     <select
                       value={g.azimuth ?? ''}

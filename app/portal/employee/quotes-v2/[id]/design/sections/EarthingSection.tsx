@@ -125,7 +125,7 @@ export function EarthingSection() {
                     <input value={el.label} onChange={(ev) => up({ label: ev.target.value })} className="h-8 flex-1 rounded border border-border bg-background px-2 text-xs" />
                     <button type="button" onClick={() => setElectrodes(e.electrodes.filter((x) => x.id !== el.id))} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                   </div>
-                  <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <div className="mt-2 grid grid-cols-2 @xl:grid-cols-4 gap-2">
                     <label className="flex flex-col gap-0.5">
                       <span className="text-[10px] text-muted-foreground">Spikes</span>
                       <input type="number" min={0} value={el.spikeCount} onChange={(ev) => up({ spikeCount: Math.max(0, Math.round(Number(ev.target.value) || 0)) })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]" />

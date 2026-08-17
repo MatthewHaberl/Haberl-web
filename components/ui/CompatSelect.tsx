@@ -62,6 +62,7 @@ export function CompatSelect({
           }
           return next
         })}
+        title={selected?.label ?? undefined}
         className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 text-left text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >
         <span className={cn('truncate', selected ? 'text-foreground' : 'text-muted-foreground')}>

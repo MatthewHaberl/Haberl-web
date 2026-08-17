@@ -195,7 +195,8 @@ export function SearchableSelect({
         type="button"
         onClick={() => { if (open) setOpen(false); else openMenu() }}
         onKeyDown={onKeyDown}
-        className="flex h-7 w-full items-center justify-between gap-1 rounded border border-border bg-background px-1.5 text-left text-xs focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        title={selected ? selected.label : undefined}
+        className="flex h-8 w-full items-center justify-between gap-1 rounded border border-border bg-background px-2 text-left text-xs focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >
         <span className={`truncate ${selected ? 'text-foreground' : 'text-muted-foreground'}`}>
           {selected ? selected.label : placeholder}
@@ -203,14 +204,14 @@ export function SearchableSelect({
         <ChevronsUpDown className="h-3 w-3 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className={`absolute left-0 right-0 z-30 rounded-md border border-border bg-card shadow-md ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+        <div className={`absolute left-0 right-0 z-30 rounded-md border border-border bg-card shadow-lg ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActive(0) }}
             onKeyDown={onKeyDown}
             placeholder="Search…"
-            className="h-7 w-full rounded-t-md border-b border-border bg-background px-1.5 text-xs focus:outline-none"
+            className="h-8 w-full rounded-t-md border-b border-border bg-background px-2 text-xs focus:outline-none"
           />
           <ul className="overflow-auto py-0.5" style={{ maxHeight: listMax }}>
             {filtered.length === 0 ? (
@@ -225,10 +226,10 @@ export function SearchableSelect({
                       disabled={o.disabled}
                       onMouseEnter={() => setActive(i)}
                       onClick={() => commit(o.value)}
-                      className={`flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs disabled:opacity-40 disabled:cursor-not-allowed ${i === active ? 'bg-muted' : ''}`}
+                      className={`flex w-full items-start justify-between gap-2 px-2 py-1.5 text-left text-xs leading-snug disabled:opacity-40 disabled:cursor-not-allowed ${i === active ? 'bg-muted' : ''}`}
                     >
-                      <span className="truncate">{o.label}{o.hint ? <span className="ml-1 text-[10px] text-muted-foreground">{o.hint}</span> : null}</span>
-                      {isSel && <Check className="h-3 w-3 shrink-0 text-accent" />}
+                      <span className="min-w-0 break-words">{o.label}{o.hint ? <span className="ml-1 text-[10px] text-muted-foreground">{o.hint}</span> : null}</span>
+                      {isSel && <Check className="mt-0.5 h-3 w-3 shrink-0 text-accent" />}
                     </button>
                   </li>
                 )
