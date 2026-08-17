@@ -1,9 +1,14 @@
 'use client'
 
 // Section + line-item editor for the scope builder (W97). Sections render in
-// scope.sections order; lines live under their section. Catalog picks price at
-// cost × markup; typing a price overrides it (sellOverridden). Unpriced lines
-// show the same amber "Quote" treatment as the solar BOM panel.
+// scope.sections order; lines live under their section, one grid row each —
+// same column rhythm as the supplier-quote panel.
+//
+// Pricing columns: landed cost (supplier ex-VAT × 1.15) → sell (landed × markup)
+// → the effective markup. Typing a sell price overrides the derived one
+// (sellOverridden) and shows amber with a reset; catalog lines show their cost
+// read-only because generate re-reads it from the catalog. Unpriced lines show
+// the same amber "Quote" treatment as the solar BOM panel.
 
 import { useState, type Dispatch, type SetStateAction } from 'react'
 import { ArrowDown, ArrowUp, CircuitBoard, Plus, RotateCcw, Trash2 } from 'lucide-react'
@@ -28,6 +33,15 @@ const rand = (n: number) =>
   `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const UNITS: ScopeLineUnit[] = ['ea', 'm', 'hr', 'job']
+
+// One row per line, same column rhythm as the supplier-quote panel:
+// sku · description · qty · unit · landed cost · sell · markup · total · opt · bin
+const ROW_COLS =
+  'sm:grid-cols-[6.5rem_minmax(0,1fr)_4rem_5rem_6.75rem_6.75rem_4rem_7rem_2rem_1.75rem]'
+
+/** Effective markup on a line (sell ÷ landed cost), or null with no cost. */
+const markupOf = (line: ScopeLine) =>
+  line.unitCostR > 0 && line.unitSellR > 0 ? line.unitSellR / line.unitCostR : null
 
 // Sections that plausibly hold a distribution board get the DB-builder
 // shortcut (default work-type sections: "Distribution board", "Generator &
@@ -60,6 +74,20 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
 
   const removeLine = (id: string) =>
     onChange((s) => ({ ...s, lines: s.lines.filter((l) => l.id !== id) }))
+
+  // Landed cost drives the sell price (cost × markup) until someone types
+  // their own price — after that the typed price stands until it's reset.
+  const setCost = (line: ScopeLine, costR: number) =>
+    updateLine(line.id, {
+      unitCostR: costR,
+      ...(line.sellOverridden ? {} : { unitSellR: round2(costR * pricing.markup) }),
+    })
+
+  const resetSell = (line: ScopeLine) =>
+    updateLine(line.id, {
+      unitSellR: round2(line.unitCostR * pricing.markup),
+      sellOverridden: false,
+    })
 
   const addFreeLine = (section: string, kind: 'material' | 'fee') =>
     onChange((s) => ({ ...s, lines: [...s.lines, newScopeLine(section, kind)] }))
@@ -126,9 +154,13 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
     <div className="space-y-4">
       {sectionNames.map((name, idx) => {
         const lines = scope.lines.filter((l) => l.section === name)
-        const subtotal = lines
-          .filter((l) => !l.optional && l.unitSellR > 0 && l.qty > 0)
-          .reduce((t, l) => t + round2(l.unitSellR * l.qty), 0)
+        const counted = lines.filter((l) => !l.optional && l.unitSellR > 0 && l.qty > 0)
+        const subtotal = counted.reduce((t, l) => t + round2(l.unitSellR * l.qty), 0)
+        // Landed cost behind the counted lines — margin is what's left of the sell.
+        const costTotal = counted.reduce((t, l) => t + round2(l.unitCostR * l.qty), 0)
+        const marginPct = subtotal > 0 && costTotal > 0
+          ? ((subtotal - costTotal) / subtotal) * 100
+          : null
         return (
           <Card key={name}>
             <CardContent className="space-y-3 pt-6">
@@ -138,6 +170,10 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
                   {lines.length > 0 && (
                     <span className="text-xs text-muted-foreground">
                       {lines.length} line{lines.length === 1 ? '' : 's'} · {rand(round2(subtotal))}
+                      {costTotal > 0 && (
+                        <> · cost {rand(round2(costTotal))}
+                          {marginPct !== null && ` · margin ${marginPct.toFixed(1)}%`}</>
+                      )}
                     </span>
                   )}
                 </div>
@@ -159,88 +195,138 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
                 </div>
               </div>
 
-              {lines.map((line) => (
-                <div key={line.id} className="rounded-md border border-border p-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="min-w-[200px] flex-1">
-                      <Input
-                        value={line.description}
-                        onChange={(e) => updateLine(line.id, { description: e.target.value })}
-                        placeholder={line.kind === 'fee' ? 'Fee description (e.g. Inspection fee)' : 'Item description'}
-                        className="h-9"
-                      />
-                      {line.sku && (
-                        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{line.sku}</div>
-                      )}
-                    </div>
-                    <Input
-                      type="number" min={0} step="any"
-                      value={line.qty === 0 ? '' : String(line.qty)}
-                      onChange={(e) => updateLine(line.id, { qty: Math.max(0, Number(e.target.value) || 0) })}
-                      className="h-9 w-20" placeholder="Qty"
-                    />
-                    <Select
-                      value={line.unit}
-                      onChange={(e) => updateLine(line.id, { unit: e.target.value as ScopeLineUnit })}
-                      className="h-9 w-20"
+              {lines.length > 0 && (
+                <div className={`hidden gap-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:grid ${ROW_COLS}`}>
+                  <span>SKU</span>
+                  <span>Description</span>
+                  <span>Qty</span>
+                  <span>Unit</span>
+                  <span title="Landed cost — supplier ex-VAT x 1.15">Cost</span>
+                  <span title="Sell price per unit">Sell</span>
+                  <span title="Sell / cost">Markup</span>
+                  <span className="text-right">Total</span>
+                  <span className="text-center" title="Optional extra">Opt</span>
+                  <span />
+                </div>
+              )}
+
+              <div className="space-y-1">
+                {lines.map((line) => {
+                  const mk = markupOf(line)
+                  return (
+                    <div
+                      key={line.id}
+                      className={`grid grid-cols-2 items-center gap-2 rounded border border-border/60 p-1 sm:border-0 sm:p-0 ${ROW_COLS}`}
                     >
-                      {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                    </Select>
-                    <Input
-                      type="number" min={0} step="any"
-                      leadingText="R"
-                      value={line.unitSellR === 0 ? '' : String(line.unitSellR)}
-                      onChange={(e) => updateLine(line.id, {
-                        unitSellR: Math.max(0, Number(e.target.value) || 0),
-                        sellOverridden: line.catalogId !== null,
-                      })}
-                      onBlur={() => {
-                        // A catalog line left with no price reverts to auto
-                        // (cost × markup) — a stored 0 would show as "Quote"
-                        // here while generate re-priced it anyway.
-                        if (line.catalogId && line.unitSellR <= 0) {
-                          updateLine(line.id, {
-                            unitSellR: round2(line.unitCostR * pricing.markup),
-                            sellOverridden: false,
-                          })
-                        }
-                      }}
-                      className="h-9 w-32" placeholder="Unit price"
-                    />
-                    {line.sellOverridden && line.catalogId && (
-                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
-                        title={`Reset to cost × markup (${rand(round2(line.unitCostR * pricing.markup))})`}
-                        onClick={() => updateLine(line.id, {
-                          unitSellR: round2(line.unitCostR * pricing.markup),
-                          sellOverridden: false,
-                        })}>
-                        <RotateCcw className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    <div className="ml-auto flex items-center gap-2">
-                      {line.unitSellR <= 0
-                        ? <Badge variant="warning">Quote</Badge>
-                        : <span className="text-sm font-medium">{rand(round2(line.unitSellR * line.qty))}</span>}
-                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                      <Input
+                        value={line.sku}
+                        onChange={(e) => updateLine(line.id, { sku: e.target.value })}
+                        placeholder="SKU" className="h-8 text-xs"
+                      />
+                      <div className="min-w-0">
+                        <Input
+                          value={line.description}
+                          onChange={(e) => updateLine(line.id, { description: e.target.value })}
+                          placeholder={line.kind === 'fee' ? 'Fee description (e.g. Inspection fee)' : 'Item description'}
+                          className="h-8 text-xs"
+                        />
+                        {(line.kind === 'fee' || line.note) && (
+                          <div className="truncate px-1 text-[10px] text-muted-foreground">
+                            {[line.kind === 'fee' ? 'fee' : null, line.note].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                      <Input
+                        type="number" min={0} step="any"
+                        value={line.qty === 0 ? '' : String(line.qty)}
+                        onChange={(e) => updateLine(line.id, { qty: Math.max(0, Number(e.target.value) || 0) })}
+                        className="h-8 text-xs" placeholder="Qty"
+                      />
+                      <Select
+                        value={line.unit}
+                        onChange={(e) => updateLine(line.id, { unit: e.target.value as ScopeLineUnit })}
+                        className="h-8 pl-2 pr-6 text-xs"
+                      >
+                        {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                      </Select>
+                      {/* Catalog lines are re-costed from the catalog at generate, so their
+                          landed cost is shown, not typed. Free-text and supplier-quoted
+                          lines carry their own cost. */}
+                      {line.catalogId ? (
+                        <span
+                          className="truncate px-1 text-xs text-muted-foreground"
+                          title="Landed cost from the catalog — re-read when the quote is generated"
+                        >
+                          {line.unitCostR > 0 ? rand(line.unitCostR) : '—'}
+                        </span>
+                      ) : (
+                        <Input
+                          type="number" min={0} step="any"
+                          leadingText="R"
+                          value={line.unitCostR === 0 ? '' : String(line.unitCostR)}
+                          onChange={(e) => setCost(line, Math.max(0, Number(e.target.value) || 0))}
+                          className="h-8 text-xs" placeholder="Cost"
+                        />
+                      )}
+                      <Input
+                        type="number" min={0} step="any"
+                        leadingText="R"
+                        value={line.unitSellR === 0 ? '' : String(line.unitSellR)}
+                        onChange={(e) => updateLine(line.id, {
+                          unitSellR: Math.max(0, Number(e.target.value) || 0),
+                          sellOverridden: true,
+                        })}
+                        onBlur={() => {
+                          // A line left with no price reverts to auto (cost x markup) —
+                          // a stored 0 would show as "Quote" here while generate
+                          // re-priced it anyway.
+                          if (line.unitCostR > 0 && line.unitSellR <= 0) resetSell(line)
+                        }}
+                        className="h-8 text-xs" placeholder="Sell"
+                      />
+                      <div className="flex items-center gap-0.5">
+                        <span
+                          className={`text-[11px] ${line.sellOverridden ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}
+                          title={mk
+                            ? line.sellOverridden
+                              ? `Typed price — x${mk.toFixed(2)} on landed cost (house markup x${pricing.markup.toFixed(2)})`
+                              : `Sell = landed cost x ${pricing.markup.toFixed(2)}`
+                            : 'No landed cost on this line'}
+                        >
+                          {mk ? `x${mk.toFixed(2)}` : '—'}
+                        </span>
+                        {line.sellOverridden && line.unitCostR > 0 && (
+                          <Button type="button" variant="ghost" size="icon" className="h-6 w-6"
+                            title={`Reset to cost x markup (${rand(round2(line.unitCostR * pricing.markup))})`}
+                            onClick={() => resetSell(line)}>
+                            <RotateCcw className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        {line.unitSellR <= 0
+                          ? <Badge variant="warning">Quote</Badge>
+                          : <span className="text-xs font-medium">{rand(round2(line.unitSellR * line.qty))}</span>}
+                      </div>
+                      <label
+                        className="flex cursor-pointer items-center justify-center"
+                        title="Optional extra — listed on the quote but excluded from the total"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={line.optional}
+                          onChange={(e) => updateLine(line.id, { optional: e.target.checked })}
+                        />
+                        <span className="ml-1 text-[11px] text-muted-foreground sm:hidden">Optional extra</span>
+                      </label>
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 justify-self-end"
                         onClick={() => removeLine(line.id)} title="Remove line">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                  </div>
-                  <div className="mt-1 flex items-center gap-3 text-[11px] text-muted-foreground">
-                    {line.kind === 'fee' && <Badge variant="outline">fee</Badge>}
-                    <label className="flex cursor-pointer items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={line.optional}
-                        onChange={(e) => updateLine(line.id, { optional: e.target.checked })}
-                      />
-                      Optional extra (excluded from the total)
-                    </label>
-                    {line.catalogId && line.unitCostR > 0 && <span>cost {rand(line.unitCostR)}</span>}
-                  </div>
-                </div>
-              ))}
+                  )
+                })}
+              </div>
 
               <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-[240px] flex-1">
