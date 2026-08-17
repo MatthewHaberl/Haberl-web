@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,8 @@ import { Select as UiSelect } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
 import { resolveOrCreateCustomer } from '@/lib/customers/resolve'
-import { workTypeFor, type WorkType } from '@/lib/quotes/work-types'
+import { cleanSectionNames, workTypeFor, type WorkType } from '@/lib/quotes/work-types'
+import { SectionListEditor } from '@/components/quotes/SectionListEditor'
 import { emptyScope } from '@/lib/quotes/scope'
 import { detectMunicipality, MUNICIPALITIES } from '@/lib/solar/municipalities'
 import { getTariffRateForMunicipality } from '@/lib/solar/quote-calculator'
@@ -47,13 +48,16 @@ function SectionHead({ title, hint }: { title: string; hint?: string }) {
   )
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, required, error, children }: { label: string; required?: boolean; error?: string; children: React.ReactNode }) {
   return (
-    <label className="flex flex-col gap-1">
+    // data-invalid is what handleSubmit scrolls to — the form is long enough
+    // that an error above the fold is otherwise invisible.
+    <label className="flex flex-col gap-1" data-invalid={error ? 'true' : undefined}>
       <span className="text-sm font-medium text-foreground">
         {label}{required && <span className="text-destructive ml-0.5">*</span>}
       </span>
       {children}
+      {error && <span className="text-xs font-medium text-destructive">{error}</span>}
     </label>
   )
 }
@@ -127,6 +131,19 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
   const [workType, setWorkType] = useState(prefill?.work_type ?? 'solar')
   const selectedType = workTypeFor(workType, workTypes) ?? workTypes[0]
   const engine = selectedType.engine
+
+  // Scope sections — the work type seeds them, this quote owns them. Renamed,
+  // reordered, dropped or added here; whatever survives is what the scope
+  // builder opens with. A type with no seeded sections (Custom) starts blank.
+  const [sections, setSections] = useState<string[]>(
+    () => [...(workTypeFor(prefill?.work_type ?? 'solar', workTypes)?.default_sections ?? [])],
+  )
+
+  const pickWorkType = (t: WorkType) => {
+    setWorkType(t.code)
+    // Switching type re-seeds the list — the type IS the starting template.
+    setSections([...t.default_sections])
+  }
 
   const [isAmendment, setIsAmendment] = useState(false)
 
@@ -223,6 +240,22 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
 
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState('')
+  const formRef = useRef<HTMLFormElement>(null)
+
+  // A quote is only worth raising once we know who it is for, how to reach
+  // them, and where the work happens — the builder can fill in everything
+  // else later. Messages stay hidden until a submit is actually attempted.
+  const [showErrors, setShowErrors] = useState(false)
+  const fieldErrors: Record<string, string> = {}
+  if (!customerName.trim()) fieldErrors.customerName = 'Who is this quote for?'
+  if (!customerEmail.trim() && !customerPhone.trim()) {
+    fieldErrors.contact = 'Add an email or a phone number — the quote has to reach them.'
+  } else if (customerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())) {
+    fieldErrors.contact = "That email address doesn't look right."
+  }
+  if (!siteAddress.trim()) fieldErrors.siteAddress = 'Where is the work happening?'
+  if (isBusiness && !contactName.trim()) fieldErrors.contactName = 'Who do we deal with at the business?'
+  const isValid = Object.keys(fieldErrors).length === 0
   // Holds the created quote's id so the success screen can link straight to it.
   const [submittedId, setSubmittedId] = useState<string | null>(null)
 
@@ -278,9 +311,30 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
     }
   }
 
+  /**
+   * Enter must never submit this form. It is long, and one stray Enter in a
+   * text field used to file a near-empty quote request. Textareas keep their
+   * newlines and buttons keep their Enter-to-click; everything else is swallowed.
+   */
+  function handleKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    if (e.key !== 'Enter' || e.shiftKey) return
+    const el = e.target as HTMLElement
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON' || el.isContentEditable) return
+    e.preventDefault()
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    if (!isValid) {
+      setShowErrors(true)
+      // Put the first missing field on screen rather than failing silently.
+      requestAnimationFrame(() => {
+        formRef.current?.querySelector<HTMLElement>('[data-invalid="true"]')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+      return
+    }
     setLoading(true)
     try {
       const supabase = createClient()
@@ -354,8 +408,9 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
         existing_panels:    amendment ? existingPanels || null : null,
         existing_array:     amendment && existingArray.length ? existingArray : null,
         amendment_scope:    amendment ? amendmentScope || null : null,
-        // Scope model — seeded with the work type's default sections
-        ...(isScope && { scope: { ...emptyScope({ sections: selectedType.default_sections }), summary: scopeSummary.trim() } }),
+        // Scope model — the sections as edited on this form, not the raw
+        // work-type defaults (they were only the starting template).
+        ...(isScope && { scope: { ...emptyScope({ sections: cleanSectionNames(sections) }), summary: scopeSummary.trim() } }),
         // Photos + notes
         photo_urls: photoUrls,
         notes:      notes || null,
@@ -407,10 +462,10 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
       <PageHeader
         icon={Sparkles}
         title="New quote"
-        description="Only the customer name is required — the calculator auto-sizes from usage. Everything else refines it."
+        description="Customer name, a way to reach them and the site address are required — the calculator auto-sizes from usage. Everything else refines it."
       />
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <form ref={formRef} onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="flex flex-col gap-5">
         {/* 1 · What are we quoting? */}
         <Card>
           <CardContent className="pt-5 pb-5 flex flex-col gap-4">
@@ -420,7 +475,7 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
                 <button
                   key={t.code}
                   type="button"
-                  onClick={() => setWorkType(t.code)}
+                  onClick={() => pickWorkType(t)}
                   className={`rounded-lg border p-3 text-left transition-colors ${
                     t.code === selectedType.code
                       ? 'border-primary ring-1 ring-primary bg-primary/5'
@@ -438,7 +493,7 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
         {/* 2 · Customer */}
         <Card>
           <CardContent className="pt-5 pb-5 flex flex-col gap-4">
-            <SectionHead title={sectionTitle('Customer')} />
+            <SectionHead title={sectionTitle('Customer')} hint="Name plus at least one of email or phone — we can't send a quote we can't deliver." />
 
             {/* Existing-customer search — pick from the CRM instead of re-typing. */}
             {linkedCustomer ? (
@@ -495,10 +550,10 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
             )}
 
             <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Customer Name" required>
+              <Field label="Customer Name" required error={showErrors ? fieldErrors.customerName : undefined}>
                 <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="John Smith" />
               </Field>
-              <Field label="Email">
+              <Field label="Email" error={showErrors ? fieldErrors.contact : undefined}>
                 <Input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="john@example.com" />
               </Field>
               <Field label="Phone">
@@ -514,7 +569,7 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
             </div>
             {isBusiness && (
               <div className="grid sm:grid-cols-2 gap-4 rounded-lg border border-dashed border-border p-4">
-                <Field label="Contact Person">
+                <Field label="Contact Person" required error={showErrors ? fieldErrors.contactName : undefined}>
                   <Input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Contact name" />
                 </Field>
                 <Field label="Contact Email">
@@ -537,7 +592,7 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
                 <Select value={municipality} onChange={setMunicipality} options={MUNICIPALITIES} />
               </Field>
             </div>
-            <Field label="Site Address">
+            <Field label="Site Address" required error={showErrors ? fieldErrors.siteAddress : undefined}>
               <AddressAutocomplete value={siteAddress} onChange={setSiteAddress} onBlur={handleAddressBlur} placeholder="The site's own address" />
             </Field>
             <div className="grid sm:grid-cols-3 gap-4">
@@ -572,6 +627,23 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
                   className="resize-none"
                 />
               </Field>
+
+              {/* Sections — the headings this quote is built from. Seeded by the
+                  work type, owned by the quote: rename, reorder, drop, add. */}
+              <div className="flex flex-col gap-2">
+                <span className="text-sm font-medium text-foreground">Sections</span>
+                <p className="-mt-1 text-xs text-muted-foreground">
+                  {selectedType.default_sections.length
+                    ? `Starting point for ${selectedType.label.toLowerCase()} — rename, reorder or drop any of them. You can still add more inside the quote.`
+                    : 'Nothing preset — add the headings you want, or start blank and add them as you build the quote.'}
+                </p>
+
+                <SectionListEditor
+                  sections={sections}
+                  onChange={setSections}
+                  workTypes={workTypes}
+                />
+              </div>
             </CardContent>
           </Card>
         )}
@@ -704,9 +776,18 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
           </CardContent>
         </Card>
 
+        {showErrors && !isValid && (
+          <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <p className="font-medium">Not enough to raise a quote yet:</p>
+            <ul className="mt-1 list-disc pl-5">
+              {Object.entries(fieldErrors).map(([k, msg]) => <li key={k}>{msg}</li>)}
+            </ul>
+          </div>
+        )}
+
         {error && <p className="text-sm text-destructive bg-destructive/10 rounded-md px-4 py-2">{error}</p>}
 
-        <Button type="submit" variant="accent" size="lg" disabled={loading || !customerName} className="self-start">
+        <Button type="submit" variant="accent" size="lg" disabled={loading} className="self-start">
           {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</> : <><FileText className="h-4 w-4" />Submit</>}
         </Button>
       </form>
