@@ -17,9 +17,11 @@ import {
   parseScope, emptyScope, scopeTotals, type QuoteScope,
 } from '@/lib/quotes/scope'
 import type { WorkType } from '@/lib/quotes/work-types'
+import { validateScope } from '@/lib/quotes/scope-validate'
 import { ScopeEditor } from './ScopeEditor'
 import { LabourPanel } from './LabourPanel'
 import { ScopeSummaryPanel } from './ScopeSummaryPanel'
+import { ScopeIssuesPanel, scrollToIssue } from './ScopeIssuesPanel'
 
 /** Pricing context for the builder — markup + labour defaults from Settings. */
 export interface ScopePricing {
@@ -32,10 +34,16 @@ export interface ScopePricing {
 
 const DEFAULT_PRICING: ScopePricing = { markup: 1.15, labourRateR: 750, dayRateR: 5500, calloutR: 750, cocFeeR: 1500 }
 
-export function ScopeWorkspace({ requestId, rawScope, workType }: {
+export function ScopeWorkspace({ requestId, rawScope, workType, registerPreflight }: {
   requestId: string
   rawScope: unknown
   workType: WorkType
+  /**
+   * Hands Generate (in the status bar above this component) a way to ask
+   * "can this be a document yet?". Returns the blocking messages, and reveals
+   * the red fields + scrolls to the first one on its way out.
+   */
+  registerPreflight?: (fn: () => string[]) => void
 }) {
   const supabase = useMemo(() => createClient(), [])
   const [scope, setScope] = useState<QuoteScope>(
@@ -106,6 +114,28 @@ export function ScopeWorkspace({ requestId, rawScope, workType }: {
   }, [scope, requestId, supabase])
 
   const totals = scopeTotals(scope)
+  const issues = validateScope(scope)
+  const blockers = issues.filter((i) => i.level === 'blocker')
+
+  // Red fields stay hidden until Generate has actually been refused — same
+  // posture as the new-quote form. The panel below is always honest, though:
+  // it is a review list, not a nag under a field you are still typing into.
+  const [showIssues, setShowIssues] = useState(false)
+
+  // Kept in a ref so the registered callback always sees the current scope
+  // without re-registering (and re-rendering the status bar) on every keystroke.
+  const blockersRef = useRef(blockers)
+  useEffect(() => { blockersRef.current = blockers })
+  useEffect(() => {
+    registerPreflight?.(() => {
+      const current = blockersRef.current
+      if (current.length === 0) return []
+      setShowIssues(true)
+      // Put the first problem on screen — this editor is long enough to hide it.
+      requestAnimationFrame(() => scrollToIssue(current[0].anchor))
+      return current.map((b) => b.message)
+    })
+  }, [registerPreflight])
 
   return (
     <div className="space-y-4">
@@ -116,9 +146,11 @@ export function ScopeWorkspace({ requestId, rawScope, workType }: {
         {saveState === 'error' && <Badge variant="destructive">Save failed — retrying on next change</Badge>}
       </div>
 
+      <ScopeIssuesPanel issues={issues} />
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
-          <Card>
+          <Card data-issue-anchor="summary">
             <CardContent className="space-y-2 pt-6">
               <div className="text-sm font-semibold">Scope of works</div>
               <p className="text-xs text-muted-foreground">
@@ -133,12 +165,19 @@ export function ScopeWorkspace({ requestId, rawScope, workType }: {
             </CardContent>
           </Card>
 
-          <ScopeEditor scope={scope} onChange={setScope} pricing={pricing} requestId={requestId} />
+          <ScopeEditor
+            scope={scope}
+            onChange={setScope}
+            pricing={pricing}
+            requestId={requestId}
+            issues={issues}
+            showIssues={showIssues}
+          />
         </div>
 
         <div className="space-y-6">
           <ScopeSummaryPanel scope={scope} totals={totals} />
-          <LabourPanel scope={scope} onChange={setScope} pricing={pricing} />
+          <LabourPanel scope={scope} onChange={setScope} pricing={pricing} issues={issues} />
           <Card>
             <CardContent className="space-y-2 pt-6">
               <div className="text-sm font-semibold">What&rsquo;s not included</div>

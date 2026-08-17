@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,15 @@ interface Props {
 }
 
 export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }: Props) {
+  // Generate lives up here in the status bar while the scope it validates lives
+  // below in ScopeWorkspace. The builder registers its check on this ref rather
+  // than lifting the whole scope, which would re-render the bar on every
+  // keystroke. Solar quotes leave it null and generate as before.
+  const scopePreflight = useRef<(() => string[]) | null>(null)
+  const registerPreflight = useCallback((fn: () => string[]) => {
+    scopePreflight.current = fn
+  }, [])
+
   const siteLabel = req.site_label?.trim() || req.address?.trim() || `Site ${req.site_number ?? 1}`
   const optionLabel = req.option_label?.trim() || req.quote_number || 'Option'
 
@@ -135,6 +144,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
                 quoteNumber={req.quote_number ?? null}
                 viewedAt={req.viewed_at ?? null}
                 isSolar={engine !== 'scope'}
+                preflight={engine === 'scope' ? () => scopePreflight.current?.() ?? [] : undefined}
               />
             </div>
           </div>
@@ -149,7 +159,12 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
             everything else keeps the solar design canvas. Header + status bar above
             and the non-admin iframe below are shared by both engines. */}
         {engine === 'scope' ? (
-          <ScopeWorkspace requestId={req.id} rawScope={req.scope} workType={workType} />
+          <ScopeWorkspace
+            requestId={req.id}
+            rawScope={req.scope}
+            workType={workType}
+            registerPreflight={registerPreflight}
+          />
         ) : (
           <CanvasThemeProvider value={canvasColors}>
             <DesignProvider

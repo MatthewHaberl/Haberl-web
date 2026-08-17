@@ -27,6 +27,7 @@ import {
 } from '../SupplierQuoteLinePicker'
 import { landedCostR, quotedSellR } from '@/lib/quotes/supplier-quotes'
 import { sectionSuggestions } from '@/lib/quotes/work-types'
+import type { ScopeIssue } from '@/lib/quotes/scope-validate'
 import type { ScopePricing } from './ScopeWorkspace'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -54,11 +55,15 @@ const markupOf = (line: ScopeLine) =>
 // changeover", "Supply & protection" — plus anything the user names DB-ish).
 const DB_SECTION_RE = /\b(db|board|distribution|changeover|supply|protection)\b/i
 
-export function ScopeEditor({ scope, onChange, pricing, requestId }: {
+export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showIssues }: {
   scope: QuoteScope
   onChange: Dispatch<SetStateAction<QuoteScope>>
   pricing: ScopePricing
   requestId: string
+  /** Pre-flight findings for the whole scope — see scope-validate.ts. */
+  issues: ScopeIssue[]
+  /** Red fields appear only once Generate has actually been refused. */
+  showIssues: boolean
 }) {
   const [newSection, setNewSection] = useState('')
   // Section the DB builder is currently building into (null = closed).
@@ -71,6 +76,20 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
   for (const line of scope.lines) {
     if (line.section && !sectionNames.includes(line.section)) sectionNames.push(line.section)
   }
+
+  // Issues by line, so a row can ring the offending field and say why under
+  // itself. The row is ten columns wide at full width — there is no room for a
+  // message under a single cell, so the row carries them.
+  const lineIssues = new Map<string, ScopeIssue[]>()
+  for (const issue of issues) {
+    if (!issue.lineId) continue
+    const list = lineIssues.get(issue.lineId) ?? []
+    list.push(issue)
+    lineIssues.set(issue.lineId, list)
+  }
+  const badField = (id: string, field: 'description' | 'qty') =>
+    showIssues && (lineIssues.get(id) ?? []).some((i) => i.field === field)
+  const INVALID = 'border-destructive focus-visible:ring-destructive'
 
   const updateLine = (id: string, patch: Partial<ScopeLine>) =>
     onChange((s) => ({
@@ -165,7 +184,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-issue-anchor="sections">
       {sectionNames.map((name, idx) => {
         const lines = scope.lines.filter((l) => l.section === name)
         const counted = lines.filter((l) => !l.optional && l.unitSellR > 0 && l.qty > 0)
@@ -176,7 +195,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
           ? ((subtotal - costTotal) / subtotal) * 100
           : null
         return (
-          <Card key={name}>
+          <Card key={name} data-issue-anchor={`section:${name}`}>
             <CardContent className="@container space-y-3 pt-6">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -227,9 +246,15 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
               <div className="space-y-1">
                 {lines.map((line) => {
                   const mk = markupOf(line)
+                  const rowIssues = showIssues ? (lineIssues.get(line.id) ?? []) : []
                   return (
                     <div
                       key={line.id}
+                      data-issue-anchor={`line:${line.id}`}
+                      data-invalid={rowIssues.length > 0 ? 'true' : undefined}
+                      className={rowIssues.length > 0 ? 'rounded bg-destructive/5 py-1' : undefined}
+                    >
+                    <div
                       className={`grid grid-cols-2 items-center gap-2 rounded border border-border/60 p-1 @[52rem]:border-0 @[52rem]:p-0 ${ROW_COLS}`}
                     >
                       <Input
@@ -242,7 +267,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
                           value={line.description}
                           onChange={(e) => updateLine(line.id, { description: e.target.value })}
                           placeholder={line.kind === 'fee' ? 'Fee description (e.g. Inspection fee)' : 'Item description'}
-                          className="h-8 text-xs"
+                          className={`h-8 text-xs ${badField(line.id, 'description') ? INVALID : ''}`}
                         />
                         {(line.kind === 'fee' || line.note) && (
                           <div className="truncate px-1 text-[10px] text-muted-foreground">
@@ -254,7 +279,8 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
                         type="number" min={0} step="any"
                         value={line.qty === 0 ? '' : String(line.qty)}
                         onChange={(e) => updateLine(line.id, { qty: Math.max(0, Number(e.target.value) || 0) })}
-                        className="h-8 text-xs" placeholder="Qty"
+                        className={`h-8 text-xs ${badField(line.id, 'qty') ? INVALID : ''}`}
+                        placeholder="Qty"
                       />
                       <Select
                         value={line.unit}
@@ -337,6 +363,12 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
                         onClick={() => removeLine(line.id)} title="Remove line">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
+                    </div>
+                    {rowIssues.map((i) => (
+                      <p key={i.id} className="px-1 pt-0.5 text-[11px] font-medium text-destructive">
+                        {i.message}
+                      </p>
+                    ))}
                     </div>
                   )
                 })}

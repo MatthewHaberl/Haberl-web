@@ -29,6 +29,7 @@ import {
 import { engineFor, workTypeLabel, type WorkType } from '@/lib/quotes/work-types'
 import { parseScope, type QuoteScope } from '@/lib/quotes/scope'
 import { scopeToBom, stripOptionalLines } from '@/lib/quotes/scope-bom'
+import { scopeBlockerMessage } from '@/lib/quotes/scope-validate'
 import { buildScopeQuoteData } from '@/lib/quotes/scope-quote'
 import { renderScopeQuote } from '@/lib/quotes/render-scope-quote'
 
@@ -91,6 +92,12 @@ export function priceQuoteRequest({ quote, catalog, pricing, workTypes }: PriceA
         error: 'Nothing scoped yet — add sections and line items in the scope builder first.',
       }
     }
+    // Pre-flight (shared with the builder's live panel): a line with no
+    // description bills a blank row, and a line with no quantity is dropped by
+    // scopeToBom below without a word. Refuse here rather than render either —
+    // this is the last gate before a document exists to be sent.
+    const blocked = scopeBlockerMessage(scope)
+    if (blocked) return { ok: false, status: 400, error: blocked }
     const bom = scopeToBom(scope, catalog, pricing.markup, { pricing })
     if (bom.totalSellR <= 0 && bom.needsPricing === 0) {
       return {

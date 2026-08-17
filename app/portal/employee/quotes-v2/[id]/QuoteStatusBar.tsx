@@ -54,9 +54,16 @@ interface Props {
   viewedAt: string | null
   /** Solar-engine quote — drives the WhatsApp message wording (W97). */
   isSolar?: boolean
+  /**
+   * Asked before Generate runs. Returns the reasons the builder can't become a
+   * document yet (empty = go ahead) and reveals them in the builder itself.
+   * The server refuses the same cases; this is so nobody has to round-trip to
+   * find out, and so the answer lands next to the field that caused it.
+   */
+  preflight?: () => string[]
 }
 
-export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt, isSolar = true }: Props) {
+export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt, isSolar = true, preflight }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState<QuoteRequestStatus>(initialStatus)
   const [saving, setSaving] = useState(false)
@@ -113,9 +120,18 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
   // renders quote_html, allocates the quote number, snapshots the BOM and
   // flips pending → generated so the send buttons appear.
   async function generateQuote() {
-    setSaving(true)
     setError('')
     setMessage('')
+    // Ask the builder first. A quote that can't be rendered should say so here,
+    // with the offending field on screen — not after it has been sent.
+    const blockers = preflight?.() ?? []
+    if (blockers.length > 0) {
+      setError(blockers.length === 1
+        ? blockers[0]
+        : `${blockers.length} things need fixing first — they're marked in red below.`)
+      return
+    }
+    setSaving(true)
     try {
       const res = await fetch(`/api/quotes/${requestId}/generate`, { method: 'POST' })
       const data = await res.json().catch(() => null)

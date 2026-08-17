@@ -13,17 +13,21 @@ import type { Dispatch, SetStateAction } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { labourAmountR, type QuoteScope } from '@/lib/quotes/scope'
+import type { ScopeIssue } from '@/lib/quotes/scope-validate'
 import { CrewPanel } from './CrewPanel'
 import type { ScopePricing } from './ScopeWorkspace'
 
 const rand = (n: number) =>
   `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-export function LabourPanel({ scope, onChange, pricing }: {
+export function LabourPanel({ scope, onChange, pricing, issues }: {
   scope: QuoteScope
   onChange: Dispatch<SetStateAction<QuoteScope>>
   pricing: ScopePricing
+  /** Whole-scope pre-flight; this panel shows the ones anchored to labour. */
+  issues: ScopeIssue[]
 }) {
+  const labourIssues = issues.filter((i) => i.anchor === 'labour')
   const labour = scope.labour
   const setLabour = (patch: Partial<QuoteScope['labour']>) =>
     onChange((s) => ({ ...s, labour: { ...s.labour, ...patch } }))
@@ -44,7 +48,7 @@ export function LabourPanel({ scope, onChange, pricing }: {
   )
 
   return (
-    <Card>
+    <Card data-issue-anchor="labour">
       <CardContent className="space-y-3 pt-6">
         <div className="text-sm font-semibold">Labour</div>
         <div className="flex gap-2">
@@ -127,6 +131,11 @@ export function LabourPanel({ scope, onChange, pricing }: {
           <span className="text-muted-foreground">Labour total</span>
           <span className="font-medium">{rand(labourAmountR(labour))}</span>
         </div>
+        {/* R0 labour is legal (supply-only work), so this states the case
+            rather than blocking it — the quote just carries no labour. */}
+        {labourIssues.map((i) => (
+          <p key={i.id} className="text-[11px] font-medium text-warning">{i.message}</p>
+        ))}
 
         <div className="border-t border-border pt-3">
           <label className="flex cursor-pointer items-center gap-2 text-sm">
