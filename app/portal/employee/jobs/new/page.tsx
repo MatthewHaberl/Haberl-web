@@ -4,6 +4,7 @@ import { ChevronLeft, Plus } from 'lucide-react'
 import { createClient, getUser } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
 import { NewJobForm } from './NewJobForm'
+import { fetchWorkTypes } from '@/lib/quotes/work-types'
 import { PageShell, PageHeader } from '@/components/layout/page'
 
 type Assignee = {
@@ -32,7 +33,7 @@ export default async function NewJobPage() {
   const role = profile?.role ?? 'field_worker'
   if (!['manager', 'admin'].includes(role)) redirect('/portal/employee/jobs')
 
-  const [{ data: assignees }, { data: customers }] = await Promise.all([
+  const [{ data: assignees }, { data: customers }, workTypes] = await Promise.all([
     supabase
       .from('user_profiles')
       .select('id, full_name, role')
@@ -43,6 +44,7 @@ export default async function NewJobPage() {
       .select('id, full_name, sites(id, name, address)')
       .is('archived_at', null)
       .order('full_name'),
+    fetchWorkTypes(supabase),
   ])
 
   return (
@@ -59,6 +61,7 @@ export default async function NewJobPage() {
         assignees={(assignees ?? []) as Assignee[]}
         customers={(customers ?? []) as CustomerOption[]}
         currentUserId={user.id}
+        workTypes={workTypes}
       />
     </PageShell>
   )

@@ -26,6 +26,7 @@ import {
   SupplierQuoteLinePicker, useSupplierQuoteLines, type PickableSupplierLine,
 } from '../SupplierQuoteLinePicker'
 import { landedCostR, quotedSellR } from '@/lib/quotes/supplier-quotes'
+import { sectionSuggestions } from '@/lib/quotes/work-types'
 import type { ScopePricing } from './ScopeWorkspace'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -148,12 +149,20 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
   const removeSection = (name: string) =>
     onChange((s) => ({ ...s, sections: s.sections.filter((n) => n !== name) }))
 
-  const addSection = () => {
-    const name = newSection.trim()
+  const addNamedSection = (raw: string) => {
+    const name = raw.trim()
     if (!name) return
-    setNewSection('')
     onChange((s) => (s.sections.includes(name) ? s : { ...s, sections: [...s.sections, name] }))
   }
+
+  const addSection = () => {
+    addNamedSection(newSection)
+    setNewSection('')
+  }
+
+  const unusedSuggestions = sectionSuggestions().filter(
+    (s) => !sectionNames.some((n) => n.toLowerCase() === s.toLowerCase()),
+  )
 
   return (
     <div className="space-y-4">
@@ -358,17 +367,49 @@ export function ScopeEditor({ scope, onChange, pricing, requestId }: {
         )
       })}
 
-      <div className="flex items-center gap-2">
-        <Input
-          value={newSection}
-          onChange={(e) => setNewSection(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSection() } }}
-          placeholder="New section name (e.g. Distribution board)"
-          className="h-9 max-w-xs"
-        />
-        <Button type="button" variant="outline" size="sm" onClick={addSection} disabled={!newSection.trim()}>
-          <Plus className="h-3.5 w-3.5" /> Add section
-        </Button>
+      {sectionNames.length === 0 && (
+        <Card>
+          <CardContent className="py-6 text-center">
+            <p className="text-sm font-medium">No sections yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Sections are the headings this quote is built from. Add one below — or pick a
+              common one — then drop the items in.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <Input
+            value={newSection}
+            onChange={(e) => setNewSection(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSection() } }}
+            placeholder="New section name (e.g. Distribution board)"
+            className="h-9 max-w-xs"
+          />
+          <Button type="button" variant="outline" size="sm" onClick={addSection} disabled={!newSection.trim()}>
+            <Plus className="h-3.5 w-3.5" /> Add section
+          </Button>
+        </div>
+
+        {/* House vocabulary, one click away — a free-form quote should still
+            reach for the same section names as the seeded work types. */}
+        {unusedSuggestions.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Common:</span>
+            {unusedSuggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => addNamedSection(s)}
+                className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+              >
+                + {s}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {dbSection !== null && (

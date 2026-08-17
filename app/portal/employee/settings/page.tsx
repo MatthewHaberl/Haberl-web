@@ -5,6 +5,11 @@ import { PageShell, PageHeader } from '@/components/layout/page'
 
 const sections = [
   {
+    href: '/portal/employee/settings/work-types',
+    title: 'Work types',
+    description: 'The cards on step 1 of a new quote — their names, order, and the sections each one seeds a quote with.',
+  },
+  {
     href: '/portal/employee/settings/brands',
     title: 'Brands',
     description: 'Manage the brand preferences technicians can pick in the survey form.',

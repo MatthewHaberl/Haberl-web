@@ -78,7 +78,53 @@ export const DEFAULT_WORK_TYPES: WorkType[] = [
     description: 'EV charge point supply and installation.',
     sort_order: 7, active: true,
   },
+  {
+    code: 'custom', label: 'Custom quote — build your own', engine: 'scope', job_pipeline: 'lite',
+    default_sections: [],
+    description: 'Start blank and add sections as you go — anything that does not fit the types above.',
+    sort_order: 8, active: true,
+  },
 ]
+
+/**
+ * Section names offered as one-click suggestions when building a scope by hand:
+ * every section any work type seeds, in work-type order, deduped. The seeded
+ * lists ARE the house vocabulary — a custom quote should reach for the same
+ * words rather than invent new ones.
+ */
+export function sectionSuggestions(rows?: WorkType[]): string[] {
+  const out: string[] = []
+  for (const w of rows?.length ? rows : DEFAULT_WORK_TYPES) {
+    for (const s of w.default_sections) if (s && !out.includes(s)) out.push(s)
+  }
+  return out
+}
+
+/**
+ * Trim, drop blanks, drop case-insensitive repeats — run on any hand-edited
+ * section list before it is stored. A blank name is invisible in the builder
+ * but still bills; a repeat renders (and bills) the same lines twice.
+ */
+export function cleanSectionNames(sections: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const s of sections) {
+    const name = s.trim()
+    if (!name || seen.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    out.push(name)
+  }
+  return out
+}
+
+/** Slug a label into a work-type code: 'DB board / rewire' → 'db_board_rewire'. */
+export function workTypeCodeFrom(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40)
+}
 
 export function workTypeFor(code: string | null | undefined, rows?: WorkType[]): WorkType | undefined {
   if (!code) return undefined

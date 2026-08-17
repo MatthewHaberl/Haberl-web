@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { pipelineKindFor, stageMetaFor, stagesFor } from '@/lib/jobs/stages'
-import { DEFAULT_WORK_TYPES } from '@/lib/quotes/work-types'
+import { DEFAULT_WORK_TYPES, type WorkType } from '@/lib/quotes/work-types'
 import type { JobPriority, JobStage } from '@/types/database'
 
 type Assignee = {
@@ -37,10 +37,13 @@ export function NewJobForm({
   assignees,
   customers,
   currentUserId,
+  workTypes,
 }: {
   assignees: Assignee[]
   customers: CustomerOption[]
   currentUserId: string
+  /** Live work_types rows — a type added in Settings shows up here too. */
+  workTypes?: WorkType[]
 }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
@@ -60,12 +63,13 @@ export function NewJobForm({
 
   // The work type picks the stage pipeline (W97) — lite jobs skip procurement,
   // commissioning and handover, so the stage options follow the selection.
-  const pipeline = pipelineKindFor(workType)
+  const options = workTypes?.length ? workTypes : DEFAULT_WORK_TYPES
+  const pipeline = pipelineKindFor(workType, options)
   const stageOptions = stagesFor(pipeline)
 
   function changeWorkType(next: string) {
     setWorkType(next)
-    if (!stagesFor(pipelineKindFor(next)).includes(stage)) setStage('scheduled')
+    if (!stagesFor(pipelineKindFor(next, options)).includes(stage)) setStage('scheduled')
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -100,7 +104,7 @@ export function NewJobForm({
 
           <Field label="Work type">
             <Select value={workType} onChange={(event) => changeWorkType(event.target.value)}>
-              {DEFAULT_WORK_TYPES.map((w) => (
+              {options.map((w) => (
                 <option key={w.code} value={w.code}>
                   {w.label}
                 </option>
