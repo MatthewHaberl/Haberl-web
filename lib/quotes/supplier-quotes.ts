@@ -22,6 +22,8 @@ export interface SupplierQuoteRow {
   storage_path: string | null
   mime_type: string | null
   status: SupplierQuoteStatus
+  /** The RFQ this quote answers (W99), when it was sent from here. */
+  rfq_id?: string | null
   parse_error: string | null
   line_count: number
   notes: string | null

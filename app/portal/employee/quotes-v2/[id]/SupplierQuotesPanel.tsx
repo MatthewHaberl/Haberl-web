@@ -22,7 +22,9 @@ import { Input } from '@/components/ui/input'
 import {
   landedCostR, type SupplierQuoteLineRow, type SupplierQuoteRow,
 } from '@/lib/quotes/supplier-quotes'
+import type { SupplierRfqRow } from '@/lib/quotes/supplier-rfq'
 import { SUPPLIER_QUOTES_CHANGED } from './SupplierQuoteLinePicker'
+import { RFQS_CHANGED } from './RfqPanel'
 
 const rand = (n: number) =>
   `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -42,6 +44,7 @@ function broadcast() {
 export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
   const supabase = useMemo(() => createClient(), [])
   const [quotes, setQuotes] = useState<SupplierQuoteRow[]>([])
+  const [rfqs, setRfqs] = useState<SupplierRfqRow[]>([])
   const [linesBy, setLinesBy] = useState<Record<string, SupplierQuoteLineRow[]>>({})
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [supplier, setSupplier] = useState('')
@@ -73,6 +76,37 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- load() is async; its setStates run after the fetch resolves, not synchronously in the effect body.
   useEffect(() => { load() }, [load])
+
+  // The RFQs raised on this quote — a returned document gets pointed at the one
+  // it answers, which is what flips that RFQ to "Quote received".
+  const loadRfqs = useCallback(async () => {
+    const res = await fetch(`/api/quotes/${requestId}/rfqs`)
+    if (!res.ok) return
+    const body = await res.json() as { rfqs: SupplierRfqRow[] }
+    setRfqs(body.rfqs.filter((r) => r.status !== 'cancelled'))
+  }, [requestId])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loadRfqs is async; its setState runs after the fetch resolves, not synchronously in the effect body.
+    loadRfqs()
+    const onChange = () => { loadRfqs() }
+    window.addEventListener(RFQS_CHANGED, onChange)
+    return () => window.removeEventListener(RFQS_CHANGED, onChange)
+  }, [loadRfqs])
+
+  /**
+   * Point a returned quote at the RFQ it answers. Marking the RFQ 'quoted' is
+   * the loop closing: the list went out, the prices came back.
+   */
+  async function linkToRfq(sq: SupplierQuoteRow, rfqId: string | null) {
+    setQuotes((rows) => rows.map((r) => (r.id === sq.id ? { ...r, rfq_id: rfqId } : r)))
+    await supabase.from('supplier_quotes').update({ rfq_id: rfqId }).eq('id', sq.id)
+    if (rfqId) {
+      await supabase.from('supplier_rfqs').update({ status: 'quoted' }).eq('id', rfqId).eq('status', 'sent')
+      await loadRfqs()
+      window.dispatchEvent(new CustomEvent(RFQS_CHANGED))
+    }
+  }
 
   async function upload() {
     const file = fileRef.current?.files?.[0] ?? null
@@ -240,6 +274,21 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
                   </span>
                 )}
                 <span className="text-xs text-muted-foreground">{lines.length} line{lines.length === 1 ? '' : 's'}</span>
+                {rfqs.length > 0 && (
+                  <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                    Answers
+                    <select
+                      className="h-7 rounded-md border border-border bg-background px-1.5 text-xs"
+                      value={sq.rfq_id ?? ''}
+                      onChange={(e) => linkToRfq(sq, e.target.value || null)}
+                    >
+                      <option value="">— no RFQ —</option>
+                      {rfqs.map((r) => (
+                        <option key={r.id} value={r.id}>{r.rfq_number}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <div className="ml-auto flex items-center gap-1">
                   {sq.storage_path && (
                     <Button asChild type="button" variant="ghost" size="icon" className="h-7 w-7" title="Open the original document">

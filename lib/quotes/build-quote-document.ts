@@ -132,6 +132,33 @@ export function priceQuoteRequest({ quote, catalog, pricing, workTypes }: PriceA
   }
 }
 
+/**
+ * The quote's BOM with none of the send-gates above.
+ *
+ * An RFQ (W99) is built precisely when the design ISN'T finished — that's why
+ * it's being sent — so a scope line still missing its description, or a design
+ * with nothing priced yet, must not be a reason to refuse the list. Returns
+ * null only when there is genuinely nothing in the quote to ask about.
+ */
+export function bomForQuoteRequest(
+  { quote, catalog, pricing, workTypes }: PriceArgs,
+): { engine: 'scope' | 'solar'; bom: DesignBom } | null {
+  const engine = engineFor(quote.work_type ?? null, workTypes)
+
+  if (engine === 'scope') {
+    const scope = parseScope(quote.scope)
+    if (!scope || scope.lines.length === 0) return null
+    return { engine, bom: scopeToBom(scope, catalog, pricing.markup, { pricing }) }
+  }
+
+  const design = parseDesign(quote.system_design)
+  if (!design) return null
+  const bom = consolidateBom(
+    designToBom(design, catalog, pricing.markup, { gridSupply: quote.grid_supply ?? undefined, pricing }),
+  )
+  return bom.sections.some((s) => s.lines.length > 0) ? { engine, bom } : null
+}
+
 export interface RenderArgs extends PriceArgs {
   priced: PricedQuote
   /** Allocated number for a real generate; any placeholder for a preview. */

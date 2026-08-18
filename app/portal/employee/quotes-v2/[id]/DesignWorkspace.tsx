@@ -23,6 +23,7 @@ import { DesignCanvasPanel } from './design/DesignCanvasPanel'
 import { DesignStudio } from './design/DesignStudio'
 import { DraftTotalSync } from './design/DraftTotalSync'
 import { ScopeWorkspace } from './scope/ScopeWorkspace'
+import { RfqPanel } from './RfqPanel'
 import { SupplierQuotesPanel } from './SupplierQuotesPanel'
 import type { WorkType } from '@/lib/quotes/work-types'
 
@@ -204,7 +205,8 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
             </DesignProvider>
           </CanvasThemeProvider>
         )}
-        {/* Quoted line items (W98) — supplier-quote uploads shared by both engines. */}
+        {/* Supplier pricing loop, shared by both engines: ask (W99), then receive (W98). */}
+        <RfqPanel requestId={req.id} />
         <SupplierQuotesPanel requestId={req.id} />
         </>
       ) : (
