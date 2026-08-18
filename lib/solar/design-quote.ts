@@ -160,6 +160,8 @@ export interface DesignQuoteArgs {
   expiryDays: number
   tariffRate: number
   complianceChecks?: ComplianceCheck[]
+  /** Print the "What You're Getting" photo panel. Default on. */
+  showEquipmentPhotos?: boolean
 }
 
 /**
@@ -332,7 +334,8 @@ export function buildQuoteDataFromDesign(args: DesignQuoteArgs): QuoteData {
     // Deposit + supplier BOM + verification
     depositItems: deposit.items,
     supplierBom: bomToSupplierBom(bom),
-    equipmentPhotos: equipmentPhotosFromDesign(design, catalog),
+    equipmentPhotos: args.showEquipmentPhotos === false
+      ? [] : equipmentPhotosFromDesign(design, catalog),
     complianceChecks: args.complianceChecks ?? [],
     calculationWarnings: [],
   }

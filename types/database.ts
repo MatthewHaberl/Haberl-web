@@ -560,6 +560,11 @@ export interface QuoteRequest {
   quote_html: string | null
   quote_number: string | null
   quote_version: 'simplified' | 'detailed'
+  /**
+   * Render the "What You're Getting" product-photo panel (migration 121).
+   * Sells a solar system; embarrasses a board swap. Per-quote, default true.
+   */
+  show_equipment_photos: boolean
   generation_method: QuoteGenerationMethod
   deposit_items: string[]
   deposit_amount: number | null  // cents

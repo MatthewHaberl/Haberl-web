@@ -54,6 +54,8 @@ interface Props {
   viewedAt: string | null
   /** Solar-engine quote — drives the WhatsApp message wording (W97). */
   isSolar?: boolean
+  /** quote_requests.show_equipment_photos — the photo panel's saved state. */
+  initialShowPhotos?: boolean
   /**
    * Asked before Generate runs. Returns the reasons the builder can't become a
    * document yet (empty = go ahead) and reveals them in the builder itself.
@@ -63,13 +65,32 @@ interface Props {
   preflight?: () => string[]
 }
 
-export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt, isSolar = true, preflight }: Props) {
+export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt, isSolar = true, initialShowPhotos = true, preflight }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState<QuoteRequestStatus>(initialStatus)
   const [saving, setSaving] = useState(false)
   const [jobId, setJobId] = useState<string | null>(initialJobId ?? null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [showPhotos, setShowPhotos] = useState(initialShowPhotos)
+
+  // The photo panel is a property of the quote, not of this render — saved on
+  // the row so Preview, Generate and the eventual send all agree. It only
+  // reaches the customer's document on the next generate, which is why the
+  // label says so rather than leaving the operator to wonder.
+  async function togglePhotos(next: boolean) {
+    setShowPhotos(next)
+    setError('')
+    const supabase = createClient()
+    const { error: dbError } = await supabase
+      .from('quote_requests')
+      .update({ show_equipment_photos: next })
+      .eq('id', requestId)
+    if (dbError) {
+      setShowPhotos(!next)   // the row didn't change; neither should the box
+      setError(dbError.message)
+    }
+  }
 
   async function updateStatus(next: QuoteRequestStatus, extra: Record<string, unknown> = {}) {
     setSaving(true)
@@ -265,6 +286,23 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
         )}
 
         {saving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+
+        {/* Document options — only while the quote is still a draft; once sent,
+            regeneration is blocked and a switch here would change nothing. */}
+        {(status === 'pending' || status === 'generated') && (
+          <label
+            className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
+            title="Show the product photos of the kit being supplied. Turn off for small jobs where a strip of breaker photos says less than the scope does. Applies on the next generate."
+          >
+            <input
+              type="checkbox"
+              checked={showPhotos}
+              onChange={(e) => togglePhotos(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-border accent-primary"
+            />
+            Product photos
+          </label>
+        )}
 
         {/* See it the customer's way, at any status. Draft quotes render live
             from the current design; sent ones show the document they hold. */}

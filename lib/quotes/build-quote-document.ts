@@ -45,6 +45,12 @@ export interface QuoteRequestForDocument {
   work_type?: string | null
   scope?: unknown
   system_design?: unknown
+  /**
+   * Per-quote switch for the "What You're Getting" photo panel (migration 121).
+   * Absent/null on an older saved row reads as on — the document a quote
+   * already has never changes because a column was added under it.
+   */
+  show_equipment_photos?: boolean | null
 }
 
 /** A validated, priced quote — one engine's parsed input plus its BOM. */
@@ -142,6 +148,7 @@ export function renderQuoteDocument(
     const scopeData = buildScopeQuoteData({
       scope, bom, catalog,
       req: quote,
+      showEquipmentPhotos: quote.show_equipment_photos !== false,
       quoteNumber, expiryDays,
       workType: quote.work_type ?? '',
       workTypeLabel: workTypeLabel(quote.work_type ?? null, workTypes),
@@ -164,6 +171,7 @@ export function renderQuoteDocument(
   const quoteData = buildQuoteDataFromDesign({
     design, bom, catalog,
     req: quote,
+    showEquipmentPhotos: quote.show_equipment_photos !== false,
     quoteNumber, expiryDays,
     tariffRate: getTariffRateForMunicipality(quote.municipality ?? ''),
     complianceChecks,

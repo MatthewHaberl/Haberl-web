@@ -15,7 +15,8 @@ import type { DesignBom } from '@/lib/solar/design-bom'
 import type { EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import type { EquipmentPhoto } from '@/lib/solar/render-quote'
 import {
-  bundleSavingR, packageDisplayLabels, packageTotals, separateTotalR, type QuoteScope,
+  bundleSavingR, packageDisplayLabels, packageTotals, qualifiedSectionName, separateTotalR,
+  type QuoteScope,
 } from './scope'
 import { bomForPackage, computeScopeDeposit, stripOptionalLines } from './scope-bom'
 import type {
@@ -86,6 +87,8 @@ export interface ScopeQuoteArgs {
   expiryDays: number
   workType: string
   workTypeLabel: string
+  /** Print the "What You're Getting" photo panel. Default on. */
+  showEquipmentPhotos?: boolean
 }
 
 export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
@@ -150,6 +153,17 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
   const separateR = scope.packages.length > 0 ? separateTotalR(scope) : 0
   const savingR = scope.packages.length > 0 ? bundleSavingR(scope) : 0
 
+  // Sections the customer could actually ask us to leave out: the ones they
+  // wrote. Labour and Compliance are appended by the BOM and follow whatever
+  // work survives — they were never a choice, so a quote whose only "second
+  // section" is Labour has nothing to choose between and says nothing.
+  const authoredNames = new Set<string>([
+    ...scope.sections,
+    ...scope.packages.flatMap((pkg) =>
+      pkg.sections.map((n) => qualifiedSectionName(labels.get(pkg.id) ?? '', n))),
+  ])
+  const chooseableSections = sections.filter((s) => authoredNames.has(s.name)).length
+
   const optionalExtras: ScopeOptionalExtraView[] = bom.sections
     .flatMap((s) => s.lines)
     .filter((l) => l.optional)
@@ -176,6 +190,7 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
     siteAddress: req.address ?? '—',
     summary: scope.summary,
     sections,
+    chooseableSections,
     packages,
     sharedSections,
     separateTotal: rand(separateR),
@@ -193,7 +208,8 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
     depositItems: deposit.items,
     // Optional extras never reach procurement/job materials.
     supplierBom: bomToSupplierBom(stripOptionalLines(bom)),
-    equipmentPhotos: equipmentPhotosFromScope(args.scope, args.catalog),
+    equipmentPhotos: args.showEquipmentPhotos === false
+      ? [] : equipmentPhotosFromScope(args.scope, args.catalog),
     needsPricing: bom.needsPricing,
   }
 }

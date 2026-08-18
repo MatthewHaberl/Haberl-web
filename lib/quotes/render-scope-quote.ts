@@ -77,6 +77,12 @@ export interface ScopeQuoteData {
   summary: string
   sections: ScopeQuoteSectionView[]
   /**
+   * How many sections the customer authored — i.e. could ask us to drop.
+   * Labour and Compliance are excluded: they follow the work that remains.
+   * Absent on quotes generated before W99; treated as "no choice to offer".
+   */
+  chooseableSections?: number
+  /**
    * Work packages, when this quote combines several jobs. EMPTY on an ordinary
    * single-job quote, which renders exactly as it always has.
    */
@@ -474,6 +480,72 @@ function photosSection(data: ScopeQuoteData): string {
   </div>`
 }
 
+/**
+ * "Taking All of It, or Part of It" — the quote's own instructions for buying
+ * less than the whole thing.
+ *
+ * Customers routinely want two of the three jobs, or the board but not the
+ * lights, and with no wording for it they either ask for a whole new quote or
+ * go quiet. This says the answer out loud.
+ *
+ * Two honest shapes, because the accept page only offers what the scope really
+ * supports (see PublicQuoteActions):
+ *   packages  — everything, or ONE package on its own, both a real button.
+ *   sections  — everything is the button; a subset is a conversation, so it
+ *               says so rather than implying a checkbox that isn't there.
+ * Either way it refuses to imply that section subtotals subtract cleanly: the
+ * visit, the set-up and the certificate are charged once, so what is left costs
+ * more than the arithmetic. Nothing to choose between (one section, no
+ * packages) prints nothing.
+ */
+function takeAllOrPartSection(data: ScopeQuoteData): string {
+  const hasPackages = data.packages.length >= 2
+  if (!hasPackages && (data.chooseableSections ?? 0) < 2) return ''
+
+  const partItem = hasPackages
+    ? `<div class="terms-item">
+          <div class="t-label">Or just one part</div>
+          Take any one of the numbered items of work above on its own, at the price shown with it.
+          The accept page lets you pick it &mdash; the deposit and the balance then follow that part alone.
+        </div>`
+    : `<div class="terms-item">
+          <div class="t-label">Or only some of it</div>
+          Tell us which sections you&rsquo;d like done and we&rsquo;ll re-issue this quote with only those in it.
+          Accepting online accepts the whole quote, so let us know before you accept.
+        </div>`
+
+  const mixItem = hasPackages
+    ? `<div class="terms-item">
+          <div class="t-label">Or a different combination</div>
+          Two of them but not the third, or one with a section left out &mdash; reply to this quote or
+          call us and we&rsquo;ll send a new one priced for exactly that.
+        </div>`
+    : ''
+
+  return `
+  <div class="card no-break">
+    <div class="card-header"><h2>Taking All of It, or Part of It</h2></div>
+    <div class="card-body">
+      <div class="terms-grid">
+        <div class="terms-item">
+          <div class="t-label">All of it</div>
+          Accept the quote as it stands at <strong>${escapeHtml(data.quoteTotal)}</strong>.
+          One booking, one team on site${data.cocIncluded ? ', one certificate' : ''}.
+        </div>
+        ${partItem}
+        ${mixItem}
+      </div>
+      <div class="disclaimer-box">
+        Leaving work out doesn&rsquo;t simply subtract its subtotal: ${data.cocIncluded
+          ? 'getting to site, setting up and issuing the certificate are'
+          : 'getting to site and setting up are'} charged once for the visit, so a smaller job carries a
+        larger share of them. That&rsquo;s why we re-price rather than cross lines out &mdash; the new figure
+        is always confirmed with you in writing before anything starts.
+      </div>
+    </div>
+  </div>`
+}
+
 function needsPricingNote(data: ScopeQuoteData): string {
   if (data.needsPricing === 0) return ''
   return `
@@ -574,7 +646,7 @@ ${scopeSummarySection(data)}${sectionsTable(data)}${needsPricingNote(data)}${pho
       </table>
     </div>
   </div>
-${exclusionsSection(data)}
+${takeAllOrPartSection(data)}${exclusionsSection(data)}
   <div class="card no-break">
     <div class="card-header"><h2>Terms &amp; Warranty</h2></div>
     <div class="card-body">
