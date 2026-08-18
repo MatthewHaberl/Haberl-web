@@ -25,7 +25,7 @@
 
 export type StaffPayType = 'hourly' | 'piece'
 export type TimeEntryStatus = 'running' | 'submitted' | 'approved' | 'paid'
-export type TimeEntrySource = 'manual' | 'clock'
+export type TimeEntrySource = 'manual' | 'clock' | 'crew'
 export type TimeEntryCategory = 'work' | 'travel' | 'workshop' | 'standby' | 'other'
 export type StaffPaymentKind = 'piece' | 'bonus' | 'allowance' | 'deduction' | 'advance'
 export type PayslipStatus = 'draft' | 'finalised' | 'paid'

@@ -1,7 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  applyCrewShift,
   convertCrewUnit,
+  crewLineDays,
   crewCostR,
   crewLineCostR,
   crewLineSellR,
@@ -200,4 +202,58 @@ test('a typed labour description still wins over the bare "Labour" default', () 
   const bom = scopeToBom(scope, CATALOG, 1.15)
   const labour = bom.sections.flatMap((s) => s.lines).find((l) => l.kind === 'labour')
   assert.equal(labour?.description, 'Installation and commissioning')
+})
+
+// ── The shift block: days x hours per day ────────────────────────────────────
+
+test('applyCrewShift derives hours on every hourly line from days x hours per day', () => {
+  const scope = crewScope(
+    newCrewLine({ name: 'Lindelani', costR: 50, markup: 1.2, qty: 9 }),
+    newCrewLine({ name: 'Lucas', costR: 62.5, markup: 1.2, qty: 9 }),
+  )
+  const labour = applyCrewShift(scope.labour, { crewDays: 3 })
+  assert.deepEqual(labour.crew.map((c) => c.qty), [27, 27])
+  assert.equal(labour.crewDays, 3)
+})
+
+test('a person with their own days keeps them when the job gets longer', () => {
+  const scope = crewScope(
+    newCrewLine({ name: 'Full job', costR: 50, markup: 1.2, qty: 9 }),
+    newCrewLine({ name: 'First day only', costR: 50, markup: 1.2, qty: 9, days: 1 }),
+  )
+  const labour = applyCrewShift(scope.labour, { crewDays: 4 })
+  assert.deepEqual(labour.crew.map((c) => c.qty), [36, 9])
+  assert.equal(crewLineDays(labour.crew[0], labour), 4)
+  assert.equal(crewLineDays(labour.crew[1], labour), 1)
+})
+
+test('a shorter working day reprices the crew', () => {
+  const scope = crewScope(newCrewLine({ name: 'Half shift', costR: 100, markup: 1.2, qty: 9 }))
+  const labour = applyCrewShift(scope.labour, { crewDays: 2, crewHoursPerDay: 4.5 })
+  assert.equal(labour.crew[0].qty, 9)
+  assert.equal(crewSellR(labour), 1080) // 9 h x R100 x 1.2
+})
+
+test('day- and job-priced lines are left alone by the shift block', () => {
+  const scope = crewScope(
+    newCrewLine({ name: 'Day rate hand', costR: 900, markup: 1.2, qty: 2, unit: 'day' }),
+    newCrewLine({ name: 'Piece work', costR: 1500, markup: 1.2, qty: 1, unit: 'job' }),
+  )
+  const labour = applyCrewShift(scope.labour, { crewDays: 5 })
+  assert.deepEqual(labour.crew.map((c) => c.qty), [2, 1])
+})
+
+test('a quote saved before the shift block existed keeps its hours and its total', () => {
+  const legacy = parseScope({
+    version: 1,
+    labour: {
+      mode: 'crew',
+      crew: [{ id: 'a', name: 'Sipho', qty: 18, unit: 'hr', costR: 150, markup: 1.6 }],
+    },
+  })!
+  assert.equal(legacy.labour.crewDays, 1)
+  assert.equal(legacy.labour.crewHoursPerDay, CREW_HOURS_PER_DAY)
+  assert.equal(legacy.labour.crew[0].qty, 18)
+  assert.equal(legacy.labour.crew[0].days, null)
+  assert.equal(labourAmountR(legacy.labour), 4320) // 18 h x R150 x 1.6
 })

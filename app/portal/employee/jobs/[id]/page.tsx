@@ -19,6 +19,9 @@ import { TestimonialPanel, type TestimonialSummary } from './TestimonialPanel'
 import { getBaseUrl } from '@/lib/quotes/server'
 import { JobLayout3DPanel } from './JobLayout3DPanel'
 import { SchedulePanel } from './SchedulePanel'
+import { JobCrewPanel } from './JobCrewPanel'
+import { loadCrews, loadQuotedLabour } from '@/lib/crews/query'
+import type { JobTimeEntry } from '@/lib/crews/crews'
 import type { CableRouteRow } from '@/lib/solar/job-layout-3d'
 import { PageShell, PageHeader } from '@/components/layout/page'
 
@@ -29,7 +32,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const supabase = await createClient()
 
-  const [{ data: jobData, error: jobError }, { data: taskData }, { data: materialData }, { data: historyData }, { data: profile }, { data: slotData }, { data: staffData }] = await Promise.all([
+  const [{ data: jobData, error: jobError }, { data: taskData }, { data: materialData }, { data: historyData }, { data: profile }, { data: slotData }, { data: staffData }, { data: timeData }] = await Promise.all([
     supabase.from('jobs').select('*, site:sites(name, address), assignee:user_profiles!jobs_assigned_to_fkey(full_name)').eq('id', id).single(),
     supabase.from('job_tasks').select('*').eq('job_id', id).order('sort_order').order('id'),
     supabase.from('job_materials').select('*').eq('job_id', id).order('sort_order'),
@@ -38,6 +41,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     // Booked working days (migration 106) — a job can run across several.
     supabase.from('job_schedule_slots').select('*').eq('job_id', id).order('starts_at'),
     supabase.from('user_profiles').select('id, full_name').in('role', ['field_worker', 'manager', 'admin']).order('full_name'),
+    // Hours already booked against this job — the actual half of quoted-vs-actual,
+    // and what says which booked days have been confirmed (migration 117).
+    supabase
+      .from('time_entries')
+      .select('id, staff_id, slot_id, work_date, hours, overtime_hours, cost_rate_r, overtime_multiplier, source, payslip_id')
+      .eq('job_id', id),
   ])
 
   if (jobError) {
@@ -57,6 +66,17 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const role = profile?.role ?? 'field_worker'
   const isManager = role === 'manager' || role === 'admin'
   const canAdvance = isManager || job.assigned_to === user.id
+
+  // ── Crews and labour (migration 117) ──────────────────────────────────────
+  // The crew is picked once on the job; every booked day inherits it. Hours
+  // confirmed off those days are the ACTUAL labour, which is only interesting
+  // next to what the quote promised.
+  const crews = await loadCrews(supabase, { includeInactive: true })
+  const timeEntries = (timeData ?? []) as unknown as JobTimeEntry[]
+
+  const quotedLabour = job.quote_request_id
+    ? await loadQuotedLabour(supabase, job.quote_request_id)
+    : null
 
   // Which pipeline this job runs — lite (non-solar) skips procurement,
   // commissioning and handover, and relabels installation (W97). Resolved via
@@ -239,12 +259,28 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         />
       )}
 
+      <JobCrewPanel
+        jobId={job.id}
+        crewId={job.crew_id ?? null}
+        crews={crews}
+        entries={timeEntries}
+        quoted={quotedLabour}
+        canEdit={isManager}
+      />
+
       <SchedulePanel
         jobId={job.id}
         initialSlots={scheduleSlots}
         staff={staff}
         defaultAssignee={job.assigned_to}
+        crews={crews}
+        jobCrewId={job.crew_id ?? null}
+        loggedSlotIds={[...new Set(timeEntries.map((e) => e.slot_id).filter((id): id is string => !!id))]}
+        paidSlotIds={[...new Set(
+          timeEntries.filter((e) => e.slot_id && e.payslip_id).map((e) => e.slot_id as string),
+        )]}
         canEdit={canAdvance}
+        canLogHours={isManager}
       />
 
       <div className="grid sm:grid-cols-2 gap-4">

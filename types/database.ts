@@ -238,6 +238,11 @@ export interface Job {
   stage: JobStage
   on_hold_reason: string | null
   quote_request_id: string | null
+  /**
+   * Who is on site (migration 117). `assigned_to` above stays the responsible
+   * LOGIN; a crew is `staff`, who mostly have no login at all.
+   */
+  crew_id?: string | null
   priority: JobPriority
   created_by: string
   created_at: string
@@ -841,6 +846,8 @@ export interface JobScheduleSlot {
   starts_at: string
   ends_at: string
   assigned_to: string | null
+  /** Null means "the job's crew" — set only when this day differs (migration 117). */
+  crew_id?: string | null
   notes: string | null
   created_by: string | null
   created_at: string
@@ -963,6 +970,41 @@ export interface Staff {
   updated_at: string
 }
 
+// ── Crews (migration 117) ────────────────────────────────────────────────────
+
+/**
+ * A named team of staff — "Crew A", "Byron's team".
+ *
+ * Built on `staff`, not user_profiles: the people on a crew are paid whether
+ * or not they can log in. A quote SNAPSHOTS a crew's members and rates; a job
+ * REFERENCES the crew itself.
+ */
+export interface Crew {
+  id: string
+  name: string
+  /** Chip colour on the calendar — the UI owns the palette. */
+  colour: string | null
+  notes: string | null
+  active: boolean
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  /** joined */
+  members?: CrewMember[]
+}
+
+/** One person's place on a crew. */
+export interface CrewMember {
+  crew_id: string
+  staff_id: string
+  /** The person in charge on site — at most one per crew. */
+  role: 'leader' | 'member'
+  sort_order: number
+  created_at: string
+  /** joined */
+  staff?: Staff
+}
+
 /** Hours worked on one day, optionally against a job. */
 export interface TimeEntry {
   id: string
@@ -980,7 +1022,9 @@ export interface TimeEntry {
   /** Snapshot of the pay basis at capture — a later raise must not reprice this. */
   cost_rate_r: number
   overtime_multiplier: number
-  source: 'manual' | 'clock'
+  source: 'manual' | 'clock' | 'crew'
+  /** The booked day that generated these hours, for crew-day entries (migration 117). */
+  slot_id?: string | null
   status: 'running' | 'submitted' | 'approved' | 'paid'
   approved_by: string | null
   approved_at: string | null

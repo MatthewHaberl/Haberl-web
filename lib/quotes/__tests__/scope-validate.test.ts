@@ -112,8 +112,8 @@ test('crew members with no hours warn — they bill R0', () => {
       ...emptyScope().labour,
       mode: 'crew',
       crew: [
-        { id: 'a', staffId: null, name: 'Sipho', qty: 8, unit: 'hr', costR: 150, markup: 1.6, sellR: null },
-        { id: 'b', staffId: null, name: 'Thabo', qty: 0, unit: 'hr', costR: 150, markup: 1.6, sellR: null },
+        { id: 'a', staffId: null, name: 'Sipho', qty: 8, unit: 'hr', days: null, costR: 150, markup: 1.6, sellR: null },
+        { id: 'b', staffId: null, name: 'Thabo', qty: 0, unit: 'hr', days: null, costR: 150, markup: 1.6, sellR: null },
       ],
     },
   })

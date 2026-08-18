@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { CalendarClock, HardHat, Receipt, Wallet } from 'lucide-react'
+import { CalendarClock, HardHat, Receipt, Users, Wallet } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { requireSection } from '@/lib/auth/permissions'
 import { PageShell, PageHeader } from '@/components/layout/page'
@@ -93,6 +93,12 @@ export default async function StaffPage() {
         description="The team, the hours they work, and what those hours cost."
         actions={
           <>
+            <Button asChild variant="outline">
+              <Link href="/portal/employee/staff/crews">
+                <Users className="mr-2 h-4 w-4" />
+                Crews
+              </Link>
+            </Button>
             <Button asChild variant="outline">
               <Link href="/portal/employee/staff/timesheet">
                 <CalendarClock className="mr-2 h-4 w-4" />

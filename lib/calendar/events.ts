@@ -31,6 +31,8 @@ export interface CalendarItem {
   status: string
   assignedTo: string | null
   assigneeName: string | null
+  /** The crew on site, for booked installation days (migration 117). */
+  crewName?: string | null
   location: string | null
   /** Where clicking the item should go (jobs link out; events open the editor). */
   href: string | null
@@ -136,16 +138,24 @@ interface SlotRow {
   starts_at: string
   ends_at: string
   assigned_to: string | null
+  crew_id: string | null
   job?: {
     title: string
     stage: string
     assigned_to: string | null
+    crew_id: string | null
     site?: { name: string | null; address: string | null } | null
   } | null
 }
 
 /** One booked working day on a job — a timed block, not an all-day one. */
-function slotToItem(s: SlotRow, dayNumber: number, dayCount: number, assigneeName: string | null): CalendarItem {
+function slotToItem(
+  s: SlotRow,
+  dayNumber: number,
+  dayCount: number,
+  assigneeName: string | null,
+  crewName: string | null,
+): CalendarItem {
   const suffix = dayCount > 1 ? ` (day ${dayNumber}/${dayCount})` : ''
   return {
     id: `slot:${s.id}`,
@@ -158,6 +168,7 @@ function slotToItem(s: SlotRow, dayNumber: number, dayCount: number, assigneeNam
     status: s.job?.stage ?? 'scheduled',
     assignedTo: s.assigned_to ?? s.job?.assigned_to ?? null,
     assigneeName,
+    crewName,
     location: s.job?.site?.address ?? s.job?.site?.name ?? null,
     href: `/portal/employee/jobs/${s.job_id}`,
   }
@@ -194,7 +205,7 @@ export async function loadCalendarItems(
   // bare scheduled_date query below skips them so nothing shows twice.
   const { data: slotRows } = await supabase
     .from('job_schedule_slots')
-    .select('id, job_id, starts_at, ends_at, assigned_to, job:jobs(title, stage, assigned_to, site:sites(name, address))')
+    .select('id, job_id, starts_at, ends_at, assigned_to, crew_id, job:jobs(title, stage, assigned_to, crew_id, site:sites(name, address))')
     .gte('starts_at', rangeStart)
     .lt('starts_at', rangeEnd)
     .order('starts_at', { ascending: true })
@@ -224,10 +235,28 @@ export async function loadCalendarItems(
     }
   }
 
+  // Crew names for the booked days — the slot's own crew, else the job's
+  // (migration 117). One lookup for the whole window.
+  const crewIds = new Set(
+    slots.map((s) => s.crew_id ?? s.job?.crew_id ?? null).filter((id): id is string => !!id),
+  )
+  const crewNameById = new Map<string, string>()
+  if (crewIds.size > 0) {
+    const { data: crewRows } = await supabase.from('crews').select('id, name').in('id', [...crewIds])
+    for (const c of crewRows ?? []) crewNameById.set(c.id as string, c.name as string)
+  }
+
   const slotItems = slots.map((s) => {
     const pos = dayNumberBySlot.get(s.id) ?? { n: 1, of: 1 }
     const assignee = s.assigned_to ?? s.job?.assigned_to ?? null
-    return slotToItem(s, pos.n, pos.of, assignee ? nameById.get(assignee) ?? null : null)
+    const crewId = s.crew_id ?? s.job?.crew_id ?? null
+    return slotToItem(
+      s,
+      pos.n,
+      pos.of,
+      assignee ? nameById.get(assignee) ?? null : null,
+      crewId ? crewNameById.get(crewId) ?? null : null,
+    )
   })
 
   const startDate = rangeStart.slice(0, 10)

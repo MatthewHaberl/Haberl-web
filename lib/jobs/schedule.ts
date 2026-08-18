@@ -37,6 +37,8 @@ export interface SlotDraft {
   start: string // HH:MM
   end: string   // HH:MM
   assignedTo: string | null
+  /** The crew on site that day. Null means "whatever the job's crew is". */
+  crewId: string | null
   notes: string | null
 }
 
@@ -64,6 +66,7 @@ export function slotToDraft(slot: JobScheduleSlot): SlotDraft {
     start: timeKey(s),
     end: timeKey(e),
     assignedTo: slot.assigned_to,
+    crewId: slot.crew_id ?? null,
     notes: slot.notes,
   }
 }
@@ -105,7 +108,7 @@ export function fillRange(
   const byDate = new Map(existing.map((s) => [s.date, s]))
   for (const date of workingDaysBetween(from, to, hours.skipWeekends)) {
     if (byDate.has(date)) continue
-    byDate.set(date, { id: null, date, start: hours.start, end: hours.end, assignedTo, notes: null })
+    byDate.set(date, { id: null, date, start: hours.start, end: hours.end, assignedTo, crewId: null, notes: null })
   }
   return sortDrafts([...byDate.values()])
 }

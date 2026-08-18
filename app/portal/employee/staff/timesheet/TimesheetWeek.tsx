@@ -596,6 +596,10 @@ export function TimesheetWeek({
                         {e.source === 'clock' && (
                           <span className="ml-1 text-xs text-accent">· clocked</span>
                         )}
+                        {/* Generated from a booked crew day — see migration 117. */}
+                        {e.source === 'crew' && (
+                          <span className="ml-1 text-xs text-accent">· crew day</span>
+                        )}
                       </td>
                       <td className="py-1 pr-3">
                         <TimeCell

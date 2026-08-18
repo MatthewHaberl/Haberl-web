@@ -37,7 +37,7 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
     <button
       type="button"
       onClick={() => setLabour({ mode })}
-      className={`flex-1 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+      className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
         labour.mode === mode
           ? 'border-primary bg-primary/5 text-primary'
           : 'border-border text-muted-foreground hover:border-primary/40'
@@ -51,17 +51,16 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
     <Card data-issue-anchor="labour">
       <CardContent className="space-y-3 pt-6">
         <div className="text-sm font-semibold">Labour</div>
-        <div className="flex gap-2">
+        {/* One row now the panel is full width — it used to sit in a 340px rail. */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {modeBtn('hourly', 'Call-out + hourly')}
           {modeBtn('daily', 'Day rate')}
-        </div>
-        <div className="flex gap-2">
           {modeBtn('fixed', 'Fixed price')}
           {modeBtn('crew', 'My crew')}
         </div>
 
         {labour.mode === 'hourly' && (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <label className="space-y-1 text-[11px] text-muted-foreground">
               Call-out
               <Input leadingText="R" type="number" min={0} step="any" className="h-9"
@@ -80,7 +79,7 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
                 value={labour.rateR === 0 ? '' : String(labour.rateR)}
                 onChange={(e) => setLabour({ rateR: num(e.target.value) })} />
             </label>
-            <p className="col-span-3 text-[11px] text-muted-foreground">
+            <p className="col-span-2 text-[11px] text-muted-foreground sm:col-span-3">
               The call-out covers the first hour — enter total hours on site and only
               the hours beyond the first are charged at the hourly rate.
             </p>
@@ -88,7 +87,7 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
         )}
 
         {labour.mode === 'daily' && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <label className="space-y-1 text-[11px] text-muted-foreground">
               Days on site
               <Input type="number" min={0} step="0.5" className="h-9"
@@ -101,7 +100,7 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
                 value={labour.dayRateR === 0 ? '' : String(labour.dayRateR)}
                 onChange={(e) => setLabour({ dayRateR: num(e.target.value) })} />
             </label>
-            <p className="col-span-2 text-[11px] text-muted-foreground">
+            <p className="col-span-2 text-[11px] text-muted-foreground sm:col-span-1">
               Standard team of 4. Settings default: {rand(pricing.dayRateR)}/day — no
               call-out is added on day-rate work.
             </p>
@@ -109,7 +108,7 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
         )}
 
         {labour.mode === 'fixed' && (
-          <label className="block space-y-1 text-[11px] text-muted-foreground">
+          <label className="block max-w-xs space-y-1 text-[11px] text-muted-foreground">
             Fixed labour amount
             <Input leadingText="R" type="number" min={0} step="any" className="h-9"
               value={labour.fixedR === 0 ? '' : String(labour.fixedR)}

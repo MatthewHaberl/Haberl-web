@@ -253,7 +253,7 @@ function ItemChip({
       onDragStart={canDrag ? (e) => { e.stopPropagation(); onDragStart?.() } : undefined}
       onDragEnd={canDrag ? onDragEnd : undefined}
       title={
-        `${kindLabel(it.kind)} · ${it.title}${it.assigneeName ? ` · ${it.assigneeName}` : ''}` +
+        `${kindLabel(it.kind)} · ${it.title}${it.crewName ? ` · ${it.crewName}` : ''}${it.assigneeName ? ` · ${it.assigneeName}` : ''}` +
         (canDrag ? ' · drag to reschedule' : '')
       }
       className={cn(
@@ -426,6 +426,8 @@ function DayAgenda({
                     </span>
                     <span className="block truncate text-xs text-muted-foreground">
                       {kindLabel(it.kind)}
+                      {/* The crew is who is on site; the assignee is who owns the job. */}
+                      {it.crewName ? ` · ${it.crewName}` : ''}
                       {it.assigneeName ? ` · ${it.assigneeName}` : ''}
                       {it.location ? ` · ${it.location}` : ''}
                     </span>

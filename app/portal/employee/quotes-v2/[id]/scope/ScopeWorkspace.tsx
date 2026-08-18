@@ -148,55 +148,58 @@ export function ScopeWorkspace({ requestId, rawScope, workType, registerPrefligh
 
       <ScopeIssuesPanel issues={issues} />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="space-y-6">
-          <Card data-issue-anchor="summary">
-            <CardContent className="space-y-2 pt-6">
-              <div className="text-sm font-semibold">Scope of works</div>
-              <p className="text-xs text-muted-foreground">
-                What the customer reads at the top of the quote — plain language, no prices.
-              </p>
-              <Textarea
-                value={scope.summary}
-                onChange={(e) => setScope((s) => ({ ...s, summary: e.target.value }))}
-                placeholder="e.g. Replace the existing DB board with a 24-way board, rewire the kitchen circuits and issue a Certificate of Compliance."
-                rows={4}
-              />
-            </CardContent>
-          </Card>
+      {/* One column, full width. The line editor is a table — squeezing it into
+          two thirds of the page to keep a 340px rail of read-only figures cost
+          more than the rail was worth. Everything that used to sit in the rail
+          now reads in the order the quote is built: scope, lines, labour,
+          exclusions, then the totals you check before Generate. */}
+      <div className="space-y-6">
+        <Card data-issue-anchor="summary">
+          <CardContent className="space-y-2 pt-6">
+            <div className="text-sm font-semibold">Scope of works</div>
+            <p className="text-xs text-muted-foreground">
+              What the customer reads at the top of the quote — plain language, no prices.
+            </p>
+            <Textarea
+              value={scope.summary}
+              onChange={(e) => setScope((s) => ({ ...s, summary: e.target.value }))}
+              placeholder="e.g. Replace the existing DB board with a 24-way board, rewire the kitchen circuits and issue a Certificate of Compliance."
+              rows={4}
+            />
+          </CardContent>
+        </Card>
 
-          <ScopeEditor
-            scope={scope}
-            onChange={setScope}
-            pricing={pricing}
-            requestId={requestId}
-            issues={issues}
-            showIssues={showIssues}
-          />
-        </div>
+        <ScopeEditor
+          scope={scope}
+          onChange={setScope}
+          pricing={pricing}
+          requestId={requestId}
+          issues={issues}
+          showIssues={showIssues}
+        />
 
-        <div className="space-y-6">
-          <ScopeSummaryPanel scope={scope} totals={totals} />
-          <LabourPanel scope={scope} onChange={setScope} pricing={pricing} issues={issues} />
-          <Card>
-            <CardContent className="space-y-2 pt-6">
-              <div className="text-sm font-semibold">What&rsquo;s not included</div>
-              <p className="text-xs text-muted-foreground">
-                One exclusion per line — the cheapest dispute prevention available.
-              </p>
-              <Textarea
-                value={exclText}
-                onChange={(e) => {
-                  setExclText(e.target.value)
-                  const parsed = e.target.value.split('\n').map((l) => l.trim()).filter(Boolean)
-                  setScope((s) => ({ ...s, exclusions: parsed }))
-                }}
-                placeholder={'Wall chasing and plastering\nMunicipal connection fees\nWork outside the quoted scope'}
-                rows={4}
-              />
-            </CardContent>
-          </Card>
-        </div>
+        <LabourPanel scope={scope} onChange={setScope} pricing={pricing} issues={issues} />
+
+        <Card>
+          <CardContent className="space-y-2 pt-6">
+            <div className="text-sm font-semibold">What&rsquo;s not included</div>
+            <p className="text-xs text-muted-foreground">
+              One exclusion per line — the cheapest dispute prevention available.
+            </p>
+            <Textarea
+              value={exclText}
+              onChange={(e) => {
+                setExclText(e.target.value)
+                const parsed = e.target.value.split('\n').map((l) => l.trim()).filter(Boolean)
+                setScope((s) => ({ ...s, exclusions: parsed }))
+              }}
+              placeholder={'Wall chasing and plastering\nMunicipal connection fees\nWork outside the quoted scope'}
+              rows={4}
+            />
+          </CardContent>
+        </Card>
+
+        <ScopeSummaryPanel scope={scope} totals={totals} />
       </div>
     </div>
   )

@@ -54,7 +54,7 @@ function fixtureScope(): QuoteScope {
     line('Wiring & containment', { catalogId: 'cable1', qty: 25, unit: 'm' }),
     line('Wiring & containment', { description: 'Misc gland kit', qty: 1, unitSellR: 150, unitCostR: 100 }),
   ]
-  scope.labour = { mode: 'hourly', calloutR: 750, hours: 8, rateR: 750, days: 0, dayRateR: 5500, fixedR: 0, crew: [], description: '' }
+  scope.labour = { mode: 'hourly', calloutR: 750, hours: 8, rateR: 750, days: 0, dayRateR: 5500, fixedR: 0, crew: [], crewDays: 1, crewHoursPerDay: 9, description: '' }
   scope.coc = { included: true, feeR: 1500 }
   return scope
 }
@@ -182,7 +182,7 @@ test('daily labour bills days × the team day rate, with no call-out', () => {
 
 test('fixed labour bills the typed amount only', () => {
   const scope = fixtureScope()
-  scope.labour = { mode: 'fixed', calloutR: 750, hours: 8, rateR: 750, days: 0, dayRateR: 5500, fixedR: 4200, crew: [], description: 'Fixed price' }
+  scope.labour = { mode: 'fixed', calloutR: 750, hours: 8, rateR: 750, days: 0, dayRateR: 5500, fixedR: 4200, crew: [], crewDays: 1, crewHoursPerDay: 9, description: 'Fixed price' }
   const bom = scopeToBom(scope, fixtureCatalog(), MARKUP)
   const labour = bom.sections.find((s) => s.name === 'Labour')!
   assert.equal(labour.sellR, 4200)

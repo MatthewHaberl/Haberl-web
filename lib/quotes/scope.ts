@@ -53,6 +53,17 @@ export interface ScopeCrewLine {
   /** Hours, days or units — read against `unit`. */
   qty: number
   unit: 'hr' | 'day' | 'job'
+  /**
+   * Days this person is on site, for hourly lines. Null follows the crew's
+   * `crewDays`, which is the normal case — the exception is the person who
+   * only comes for the first day (`days: 1` on a three-day job).
+   *
+   * `qty` stays the number that PRICES the line; this is what derives it
+   * (days x crewHoursPerDay). Anything that reads a quote — the BOM, the
+   * margin, an old quote saved before this field existed — reads qty and is
+   * unaffected.
+   */
+  days: number | null
   /** What this person costs the business per unit. */
   costR: number
   /** Sell = cost × markup, unless sellR overrides it. */
@@ -80,6 +91,13 @@ export interface ScopeLabour {
   fixedR: number
   /** Priced crew (crew mode only) — internal; never rendered to a customer. */
   crew: ScopeCrewLine[]
+  /**
+   * Length of the job in working days, and the hours in one of those days
+   * (crew mode). One shift shape for the whole crew: booking a 3-day install
+   * is "3 days x 9 hours", not "27" typed against every person.
+   */
+  crewDays: number
+  crewHoursPerDay: number
   description: string
 }
 
@@ -138,6 +156,8 @@ export function emptyScope(opts: EmptyScopeOpts = {}): QuoteScope {
       dayRateR: num(opts.dayRateR, 5500),
       fixedR: 0,
       crew: [],
+      crewDays: 1,
+      crewHoursPerDay: CREW_HOURS_PER_DAY,
       description: '',
     },
     coc: { included: false, feeR: num(opts.cocFeeR, 1500) },
@@ -228,6 +248,11 @@ export function parseScope(raw: unknown): QuoteScope | null {
       crew: Array.isArray(labourRaw.crew)
         ? labourRaw.crew.map(parseCrewLine).filter((c): c is ScopeCrewLine => c !== null)
         : [],
+      // Quotes saved before the shift block existed read as a single 9-hour
+      // day; their crew lines already carry the hours that price them, so the
+      // total does not move.
+      crewDays: Math.max(num(labourRaw.crewDays, 1), 0),
+      crewHoursPerDay: Math.max(num(labourRaw.crewHoursPerDay, CREW_HOURS_PER_DAY), 0),
       description: str(labourRaw.description),
     },
     coc: {
@@ -249,6 +274,7 @@ function parseCrewLine(raw: unknown): ScopeCrewLine | null {
     name: str(r.name),
     qty: num(r.qty, 0),
     unit: CREW_UNITS.includes(r.unit as ScopeCrewLine['unit']) ? (r.unit as ScopeCrewLine['unit']) : 'hr',
+    days: typeof r.days === 'number' && Number.isFinite(r.days) && r.days >= 0 ? r.days : null,
     costR: num(r.costR, 0),
     // A zero markup would sell labour at cost. Treated as "unset" → 1 (at cost,
     // deliberately) only when it parses as a real number; junk falls back to 1.
@@ -275,6 +301,7 @@ export function newCrewLine(over: Partial<ScopeCrewLine> = {}): ScopeCrewLine {
     name: '',
     qty: 0,
     unit: 'hr',
+    days: null,
     costR: 0,
     markup: CREW_DEFAULT_MARKUP,
     sellR: null,
@@ -291,6 +318,33 @@ export function newCrewLine(over: Partial<ScopeCrewLine> = {}): ScopeCrewLine {
  * One constant, so the quote and the wage bill cannot drift apart.
  */
 export const CREW_HOURS_PER_DAY = 9
+
+/** Days this crew line is on site — its own figure, else the job's. */
+export function crewLineDays(line: ScopeCrewLine, labour: ScopeLabour): number {
+  return line.days ?? labour.crewDays
+}
+
+/**
+ * Re-derive `qty` on the hourly crew lines from the shift block.
+ *
+ * Called whenever days or hours-per-day change so the priced number can never
+ * disagree with what the panel reads. Day- and job-unit lines are left alone:
+ * their qty means days or jobs, not hours.
+ */
+export function applyCrewShift(
+  labour: ScopeLabour,
+  patch: { crewDays?: number; crewHoursPerDay?: number },
+): ScopeLabour {
+  const next: ScopeLabour = { ...labour, ...patch }
+  return {
+    ...next,
+    crew: next.crew.map((c) =>
+      c.unit === 'hr'
+        ? { ...c, qty: round2(crewLineDays(c, next) * next.crewHoursPerDay) }
+        : c,
+    ),
+  }
+}
 
 /**
  * Re-express a crew line's rates when its unit changes.
@@ -339,6 +393,21 @@ export function crewLineCostR(line: ScopeCrewLine): number {
 /** Total crew sell — the only crew figure that ever reaches a customer. */
 export function crewSellR(labour: ScopeLabour): number {
   return round2(labour.crew.reduce((sum, c) => sum + crewLineSellR(c), 0))
+}
+
+/**
+ * Hours the crew is quoted for — the yardstick a job's timesheets are measured
+ * against. Day-priced lines count as their days × the shift's hours; a
+ * job-priced line has no hours to count.
+ */
+export function crewHours(labour: ScopeLabour): number {
+  return round2(
+    labour.crew.reduce((sum, c) => {
+      if (c.unit === 'hr') return sum + c.qty
+      if (c.unit === 'day') return sum + c.qty * labour.crewHoursPerDay
+      return sum
+    }, 0),
+  )
 }
 
 /** Total crew cost — internal margin reporting only. */
