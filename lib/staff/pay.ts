@@ -126,6 +126,76 @@ export function splitOvertime(hours: number, dailyThreshold = 9): { normal: numb
   return { normal: round2(dailyThreshold), overtime: round2(h - dailyThreshold) }
 }
 
+// ── Times of day on the card ─────────────────────────────────────────────────
+//
+// started_at / ended_at are absolute timestamps: the clock writes them, and a
+// manager edits them afterwards as plain "07:00" / "16:30". Both directions go
+// through SAST explicitly rather than the machine's local zone — Vercel runs in
+// UTC and the crew does not, so a browser-local reading would render one time
+// on the server and another after hydration.
+
+const SAST = 'Africa/Johannesburg'
+/** SA has no daylight saving, so the offset is a constant, not a lookup. */
+const SAST_OFFSET = '+02:00'
+
+/** "07:30" from a stored timestamp. Empty string when there is nothing to show. */
+export function clockTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  return d.toLocaleTimeString('en-ZA', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: SAST,
+  })
+}
+
+/** A "HH:MM" typed against a work date, back to an absolute timestamp. */
+export function clockStamp(workDate: string, hhmm: string, dayOffset = 0): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate) || !/^\d{2}:\d{2}$/.test(hhmm)) return null
+  const base = new Date(`${workDate}T${hhmm}:00${SAST_OFFSET}`)
+  if (!Number.isFinite(base.getTime())) return null
+  return new Date(base.getTime() + dayOffset * 86_400_000).toISOString()
+}
+
+/**
+ * The two timestamps a start and end time of day mean on a given work date.
+ *
+ * An end at or before the start is read as the next morning — a night shift,
+ * not a negative day. Either side may be blank; a half-filled pair is still
+ * worth storing, since a manager often knows when someone arrived long before
+ * they know when they left.
+ */
+export function clockSpan(
+  workDate: string,
+  startHHMM: string,
+  endHHMM: string,
+): { startedAt: string | null; endedAt: string | null } {
+  const startedAt = clockStamp(workDate, startHHMM)
+  let endedAt = clockStamp(workDate, endHHMM)
+  if (startedAt && endedAt && new Date(endedAt).getTime() <= new Date(startedAt).getTime()) {
+    endedAt = clockStamp(workDate, endHHMM, 1)
+  }
+  return { startedAt, endedAt }
+}
+
+/**
+ * Hours implied by a start/end pair on a work date, less the unpaid break.
+ * Returns null when the pair is incomplete — the caller keeps whatever hours
+ * were typed by hand rather than zeroing the day.
+ */
+export function hoursFromTimes(
+  workDate: string,
+  startHHMM: string,
+  endHHMM: string,
+  breakMinutes = 0,
+): number | null {
+  const { startedAt, endedAt } = clockSpan(workDate, startHHMM, endHHMM)
+  if (!startedAt || !endedAt) return null
+  return hoursFromClock(startedAt, endedAt, breakMinutes)
+}
+
 // ── What one entry is worth ──────────────────────────────────────────────────
 
 /**

@@ -17,7 +17,14 @@ import { Card, CardContent } from '@/components/ui/card'
 import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { datesBetween, entryPayR, type TimeEntryCategory } from '@/lib/staff/pay'
+import {
+  clockSpan,
+  clockTime,
+  datesBetween,
+  entryPayR,
+  hoursFromTimes,
+  type TimeEntryCategory,
+} from '@/lib/staff/pay'
 import type { TimeEntry } from '@/types/database'
 import { rand } from '../shared'
 
@@ -43,10 +50,72 @@ interface Draft {
   staff_id: string
   work_date: string
   job_id: string
+  /** "HH:MM" times of day — optional, but they drive the hours when both are set. */
+  start_time: string
+  end_time: string
+  break_minutes: string
   hours: string
   overtime_hours: string
   category: TimeEntryCategory
   notes: string
+}
+
+/**
+ * Hours re-derived from the times whenever a time, the break, or the overtime
+ * changes. Overtime is captured separately and added on top, so the normal
+ * hours are the span less what was already split out as overtime — otherwise a
+ * 10-hour day with 1 hour of overtime bills 11.
+ *
+ * With one end of the span missing the typed hours stand untouched: a manager
+ * who only knows the arrival time still gets to say the day was 8 hours.
+ */
+function withDerivedHours(d: Draft): Draft {
+  const derived = hoursFromTimes(
+    d.work_date,
+    d.start_time,
+    d.end_time,
+    Math.max(0, Number(d.break_minutes) || 0),
+  )
+  if (derived === null) return d
+  const normal = Math.max(0, derived - Math.max(0, Number(d.overtime_hours) || 0))
+  return { ...d, hours: normal ? String(Math.round(normal * 100) / 100) : '' }
+}
+
+/**
+ * One editable time-of-day cell in the entries list.
+ *
+ * Holds its own text so a half-typed time isn't fighting the server, and only
+ * writes on blur — every keystroke in a time input is a valid value, and saving
+ * each one would fire four updates on the way to "07:30". The caller keys it on
+ * the saved value, so a refresh from the server remounts the cell with the new
+ * time rather than leaving the stale draft on screen.
+ */
+function TimeCell({
+  value,
+  disabled,
+  title,
+  onSave,
+}: {
+  value: string
+  disabled: boolean
+  title: string
+  onSave: (next: string) => void
+}) {
+  const [local, setLocal] = useState(value)
+  return (
+    <input
+      type="time"
+      value={local}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        if (local !== value) onSave(local)
+      }}
+      className="w-[104px] rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm tabular-nums hover:border-border focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+    />
+  )
 }
 
 export function TimesheetWeek({
@@ -97,6 +166,9 @@ export function TimesheetWeek({
       staff_id: staffId,
       work_date: date,
       job_id: '',
+      start_time: '',
+      end_time: '',
+      break_minutes: '0',
       hours: '',
       overtime_hours: '',
       category: 'work',
@@ -123,10 +195,17 @@ export function TimesheetWeek({
     const supabase = createClient()
     const { data: auth } = await supabase.auth.getUser()
 
+    // Times of day are optional here; when they're given they're stored on the
+    // same columns the clock writes, so a booked day and a clocked one read alike.
+    const { startedAt, endedAt } = clockSpan(draft.work_date, draft.start_time, draft.end_time)
+
     const { error: dbError } = await supabase.from('time_entries').insert({
       staff_id: draft.staff_id,
       job_id: draft.job_id || null,
       work_date: draft.work_date,
+      started_at: startedAt,
+      ended_at: endedAt,
+      break_minutes: Math.max(0, Number(draft.break_minutes) || 0),
       hours,
       overtime_hours: overtime,
       category: draft.category,
@@ -145,7 +224,7 @@ export function TimesheetWeek({
       return
     }
     // Keep the person and day loaded — days are captured in runs.
-    setDraft({ ...draft, hours: '', overtime_hours: '', notes: '' })
+    setDraft({ ...draft, start_time: '', end_time: '', hours: '', overtime_hours: '', notes: '' })
     router.refresh()
   }
 
@@ -180,6 +259,42 @@ export function TimesheetWeek({
       })
       .in('id', ids)
     setBusy(false)
+    router.refresh()
+  }
+
+  /**
+   * Correct the start or end time of an entry that's already been captured —
+   * the clock guesses wrong, someone forgets to clock out, a day gets booked
+   * with no times at all.
+   *
+   * Re-deriving the hours is the point: an edited end time that left the hours
+   * alone would show 07:00–16:00 next to a 4-hour day and quietly pay the wrong
+   * number. Once a payslip has claimed the entry it is frozen — a paid day is
+   * history, not a draft.
+   */
+  async function saveTimes(entry: TimeEntry, next: { start?: string; end?: string }) {
+    if (entry.payslip_id) return
+    const start = next.start ?? clockTime(entry.started_at)
+    const end = next.end ?? clockTime(entry.ended_at)
+    const { startedAt, endedAt } = clockSpan(entry.work_date, start, end)
+    const breakMinutes = Math.max(0, Number(entry.break_minutes) || 0)
+    const derived = hoursFromTimes(entry.work_date, start, end, breakMinutes)
+
+    const patch: Record<string, unknown> = { started_at: startedAt, ended_at: endedAt }
+    if (derived !== null) {
+      // Overtime stays where the manager put it; the span pays the rest.
+      patch.hours = Math.max(0, Math.round((derived - Number(entry.overtime_hours || 0)) * 100) / 100)
+    }
+
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const { error: dbError } = await supabase.from('time_entries').update(patch).eq('id', entry.id)
+    setBusy(false)
+    if (dbError) {
+      setError(dbError.message)
+      return
+    }
     router.refresh()
   }
 
@@ -348,6 +463,38 @@ export function TimesheetWeek({
                   ))}
                 </Select>
               </FormField>
+              <FormField label="Start" htmlFor="ts-start">
+                <Input
+                  id="ts-start"
+                  type="time"
+                  value={draft.start_time}
+                  onChange={(e) =>
+                    setDraft(withDerivedHours({ ...draft, start_time: e.target.value }))
+                  }
+                />
+              </FormField>
+              <FormField label="End" htmlFor="ts-end">
+                <Input
+                  id="ts-end"
+                  type="time"
+                  value={draft.end_time}
+                  onChange={(e) =>
+                    setDraft(withDerivedHours({ ...draft, end_time: e.target.value }))
+                  }
+                />
+              </FormField>
+              <FormField label="Break" htmlFor="ts-break">
+                <Input
+                  id="ts-break"
+                  inputMode="numeric"
+                  trailingText="min"
+                  value={draft.break_minutes}
+                  onChange={(e) =>
+                    setDraft(withDerivedHours({ ...draft, break_minutes: e.target.value }))
+                  }
+                  placeholder="0"
+                />
+              </FormField>
               <FormField label="Hours" htmlFor="ts-hours">
                 <Input
                   id="ts-hours"
@@ -364,7 +511,9 @@ export function TimesheetWeek({
                   inputMode="decimal"
                   trailingText="hr"
                   value={draft.overtime_hours}
-                  onChange={(e) => setDraft({ ...draft, overtime_hours: e.target.value })}
+                  onChange={(e) =>
+                    setDraft(withDerivedHours({ ...draft, overtime_hours: e.target.value }))
+                  }
                   placeholder="0"
                 />
               </FormField>
@@ -383,7 +532,7 @@ export function TimesheetWeek({
                   ))}
                 </Select>
               </FormField>
-              <FormField label="Note" htmlFor="ts-notes" className="lg:col-span-5">
+              <FormField label="Note" htmlFor="ts-notes" className="lg:col-span-2">
                 <Input
                   id="ts-notes"
                   value={draft.notes}
@@ -416,13 +565,15 @@ export function TimesheetWeek({
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-sm">
+              <table className="w-full min-w-[1040px] text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="pb-2 pr-3 font-medium">Date</th>
                     <th className="pb-2 pr-3 font-medium">Person</th>
                     <th className="pb-2 pr-3 font-medium">Job</th>
                     <th className="pb-2 pr-3 font-medium">Type</th>
+                    <th className="pb-2 pr-3 font-medium">Start</th>
+                    <th className="pb-2 pr-3 font-medium">End</th>
                     <th className="pb-2 pr-3 text-right font-medium">Hours</th>
                     <th className="pb-2 pr-3 text-right font-medium">OT</th>
                     <th className="pb-2 pr-3 text-right font-medium">Cost</th>
@@ -445,6 +596,24 @@ export function TimesheetWeek({
                         {e.source === 'clock' && (
                           <span className="ml-1 text-xs text-accent">· clocked</span>
                         )}
+                      </td>
+                      <td className="py-1 pr-3">
+                        <TimeCell
+                          key={clockTime(e.started_at)}
+                          value={clockTime(e.started_at)}
+                          disabled={busy || Boolean(e.payslip_id)}
+                          title={`Start time — ${e.work_date}`}
+                          onSave={(v) => void saveTimes(e, { start: v })}
+                        />
+                      </td>
+                      <td className="py-1 pr-3">
+                        <TimeCell
+                          key={clockTime(e.ended_at)}
+                          value={clockTime(e.ended_at)}
+                          disabled={busy || Boolean(e.payslip_id) || e.status === 'running'}
+                          title={`End time — ${e.work_date}`}
+                          onSave={(v) => void saveTimes(e, { end: v })}
+                        />
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums">{Number(e.hours).toFixed(1)}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">

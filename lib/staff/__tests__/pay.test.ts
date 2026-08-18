@@ -2,10 +2,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildPayslipDraft,
+  clockSpan,
+  clockTime,
   datesBetween,
   entryHours,
   entryPayR,
   hoursFromClock,
+  hoursFromTimes,
   isoDate,
   payPeriod,
   outstandingOn,
@@ -378,4 +381,37 @@ test('datesBetween yields every day inclusive', () => {
 
 test('datesBetween is empty when the range is inverted', () => {
   assert.deepEqual(datesBetween('2026-08-23', '2026-08-17'), [])
+})
+
+// ── Times of day ─────────────────────────────────────────────────────────────
+
+test('clockTime reads a stored timestamp back as SAST, whatever the machine runs on', () => {
+  // 05:30 UTC is 07:30 on the Reef. A UTC server must not render "05:30".
+  assert.equal(clockTime('2026-08-17T05:30:00Z'), '07:30')
+  assert.equal(clockTime(null), '')
+  assert.equal(clockTime('not a date'), '')
+})
+
+test('clockSpan anchors the typed times to the work date', () => {
+  const { startedAt, endedAt } = clockSpan('2026-08-17', '07:00', '16:30')
+  assert.equal(startedAt, '2026-08-17T05:00:00.000Z')
+  assert.equal(endedAt, '2026-08-17T14:30:00.000Z')
+})
+
+test('clockSpan reads an end before the start as a night shift, not a negative day', () => {
+  const { endedAt } = clockSpan('2026-08-17', '22:00', '02:30')
+  assert.equal(endedAt, '2026-08-18T00:30:00.000Z') // 02:30 SAST the next morning
+  assert.equal(hoursFromTimes('2026-08-17', '22:00', '02:30'), 4.5)
+})
+
+test('clockSpan keeps a half-filled pair rather than discarding what is known', () => {
+  const { startedAt, endedAt } = clockSpan('2026-08-17', '07:00', '')
+  assert.equal(startedAt, '2026-08-17T05:00:00.000Z')
+  assert.equal(endedAt, null)
+})
+
+test('hoursFromTimes subtracts the break and returns null when a time is missing', () => {
+  assert.equal(hoursFromTimes('2026-08-17', '07:00', '16:00', 30), 8.5)
+  assert.equal(hoursFromTimes('2026-08-17', '07:00', '', 30), null)
+  assert.equal(hoursFromTimes('', '07:00', '16:00'), null)
 })
