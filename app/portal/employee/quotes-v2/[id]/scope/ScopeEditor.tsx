@@ -5,7 +5,8 @@
 // same column rhythm as the supplier-quote panel.
 //
 // Pricing columns: landed cost (supplier ex-VAT × 1.15) → sell (landed × markup)
-// → the effective markup. Typing a sell price overrides the derived one
+// → the effective markup %. Sell and markup are two views of one number —
+// type either and the other follows. Typing a sell price overrides the derived one
 // (sellOverridden) and shows amber with a reset; catalog lines show their cost
 // read-only because generate re-reads it from the catalog. Unpriced lines show
 // the same amber "Quote" treatment as the solar BOM panel.
@@ -70,13 +71,26 @@ const COLUMNS: ScopeCol[] = [
   { key: 'unit', label: 'Unit', width: 64, min: 48, max: 120 },
   { key: 'cost', label: 'Cost', width: 96, min: 56, max: 180, hint: 'Landed cost — supplier ex-VAT x 1.15' },
   { key: 'sell', label: 'Sell', width: 96, min: 56, max: 180, hint: 'Sell price per unit' },
-  { key: 'markup', label: 'Markup', width: 52, min: 44, max: 120, hint: 'Sell / cost' },
+  { key: 'markup', label: 'Markup %', width: 88, min: 64, max: 160, hint: 'Markup on landed cost — type 15 for cost x 1.15' },
   { key: 'total', label: 'Total', width: 92, min: 60, max: 200, align: 'right' },
   { key: 'opt', label: 'Opt', width: 24, min: 24, max: 60, hint: 'Optional extra', align: 'center' },
   { key: 'bin', label: '', width: 28, min: 28 },
 ]
 
 const COL_STORE = 'scope-editor-col-widths'
+
+/**
+ * Widths remembered before a column changed shape are re-clamped on read — a
+ * stored 52px on a column whose minimum is now 64 would clip its field.
+ */
+const clampWidths = (stored: Record<string, unknown>) =>
+  Object.fromEntries(
+    COLUMNS.flatMap((c) => {
+      const px = Number(stored?.[c.key])
+      if (c.width === null || !Number.isFinite(px)) return []
+      return [[c.key, Math.min(c.max ?? 320, Math.max(c.min ?? 32, Math.round(px)))]]
+    }),
+  ) as Record<string, number>
 
 const defaultWidths = () =>
   Object.fromEntries(
@@ -91,7 +105,7 @@ function useColumnWidths() {
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(COL_STORE)
-      if (raw) setWidths((w) => ({ ...w, ...JSON.parse(raw) }))
+      if (raw) setWidths((w) => ({ ...w, ...clampWidths(JSON.parse(raw)) }))
     } catch { /* private mode or stale JSON — the defaults stand */ }
   }, [])
 
@@ -163,6 +177,73 @@ function ColResizer({ col, width, onResize }: {
 const markupOf = (line: ScopeLine) =>
   line.unitCostR > 0 && line.unitSellR > 0 ? line.unitSellR / line.unitCostR : null
 
+const fmtPct = (p: number) => String(Math.round(p * 10) / 10)
+
+/**
+ * Markup as a percentage you can type: 15 means sell = landed cost x 1.15.
+ * The stored value is still the sell price — this cell only does the sum, so
+ * "put another 5% on this line" no longer needs a calculator.
+ */
+function MarkupCell({ line, houseMarkup, onMarkupPct, onReset }: {
+  line: ScopeLine
+  houseMarkup: number
+  onMarkupPct: (pct: number) => void
+  onReset: () => void
+}) {
+  // The typed text is held locally while the field is focused: the value
+  // round-trips through the sell price, so typing "2" on the way to "25" would
+  // otherwise reprice the line at 2% and reformat the field under the caret.
+  const [draft, setDraft] = useState<string | null>(null)
+  const mk = markupOf(line)
+  const pct = mk === null ? null : (mk - 1) * 100
+  const shown = draft ?? (pct === null ? '' : fmtPct(pct))
+  const housePct = fmtPct((houseMarkup - 1) * 100)
+
+  // Nothing to be a percentage of — those lines are priced by typing a sell.
+  if (line.unitCostR <= 0) {
+    return (
+      <span
+        className="flex h-8 items-center px-1 text-[11px] text-muted-foreground"
+        title="No landed cost on this line — type a sell price instead"
+      >
+        —
+      </span>
+    )
+  }
+
+  return (
+    <div className="flex h-8 items-center gap-0.5">
+      <Input
+        type="number" step="any"
+        trailingText="%"
+        value={shown}
+        placeholder={housePct}
+        title={mk === null
+          ? `Markup on landed cost — house rate is ${housePct}%`
+          : `${fmtPct(pct as number)}% on landed cost (x${mk.toFixed(2)}) · ${(100 - 100 / mk).toFixed(1)}% margin`
+            + (line.sellOverridden ? ` · house rate ${housePct}%` : '')}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          const n = Number(e.target.value)
+          if (e.target.value.trim() !== '' && Number.isFinite(n)) onMarkupPct(n)
+        }}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={() => setDraft(null)}
+        // Spinners are useless at this width and would sit on top of the "%".
+        className={`h-8 pr-7 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none${
+          line.sellOverridden ? ' text-amber-600 dark:text-amber-400' : ''}`}
+      />
+      {line.sellOverridden && (
+        <Button type="button" variant="ghost" size="icon" className="h-6 w-6"
+          title={`Back to the house ${housePct}%`}
+          onClick={onReset}>
+          <RotateCcw className="h-3 w-3" />
+        </Button>
+      )}
+    </div>
+  )
+}
+
 // Sections that plausibly hold a distribution board get the DB-builder
 // shortcut (default work-type sections: "Distribution board", "Generator &
 // changeover", "Supply & protection" — plus anything the user names DB-ish).
@@ -221,6 +302,15 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
     updateLine(line.id, {
       unitCostR: costR,
       ...(line.sellOverridden ? {} : { unitSellR: round2(costR * pricing.markup) }),
+    })
+
+  // Typing a markup % re-derives the sell price from landed cost. Landing back
+  // on the house rate hands the line to auto-pricing again, so a later cost
+  // change still flows through.
+  const setMarkupPct = (line: ScopeLine, pct: number) =>
+    updateLine(line.id, {
+      unitSellR: round2(line.unitCostR * (1 + pct / 100)),
+      sellOverridden: Math.abs(1 + pct / 100 - pricing.markup) > 0.0001,
     })
 
   const resetSell = (line: ScopeLine) =>
@@ -375,7 +465,6 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
 
               <div className="space-y-0.5">
                 {lines.map((line) => {
-                  const mk = markupOf(line)
                   const rowIssues = showIssues ? (lineIssues.get(line.id) ?? []) : []
                   return (
                     <div
@@ -454,25 +543,12 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                         }}
                         className="h-8 text-xs" placeholder="Sell"
                       />
-                      <div className="flex h-8 items-center gap-0.5">
-                        <span
-                          className={`text-[11px] ${line.sellOverridden ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}
-                          title={mk
-                            ? line.sellOverridden
-                              ? `Typed price — x${mk.toFixed(2)} on landed cost (house markup x${pricing.markup.toFixed(2)})`
-                              : `Sell = landed cost x ${pricing.markup.toFixed(2)}`
-                            : 'No landed cost on this line'}
-                        >
-                          {mk ? `x${mk.toFixed(2)}` : '—'}
-                        </span>
-                        {line.sellOverridden && line.unitCostR > 0 && (
-                          <Button type="button" variant="ghost" size="icon" className="h-6 w-6"
-                            title={`Reset to cost x markup (${rand(round2(line.unitCostR * pricing.markup))})`}
-                            onClick={() => resetSell(line)}>
-                            <RotateCcw className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
+                      <MarkupCell
+                        line={line}
+                        houseMarkup={pricing.markup}
+                        onMarkupPct={(pct) => setMarkupPct(line, pct)}
+                        onReset={() => resetSell(line)}
+                      />
                       <div className="flex h-8 items-center justify-end text-right">
                         {line.unitSellR <= 0
                           ? <Badge variant="warning">Quote</Badge>
