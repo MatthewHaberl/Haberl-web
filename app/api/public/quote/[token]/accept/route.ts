@@ -96,6 +96,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const wantedPackageId = typeof body.packageId === 'string' ? body.packageId : ''
   let chosenPackage = null
   if (wantedPackageId) {
+    // Two ways to get here with no choice on offer: the quote never had parts,
+    // or it is all-or-nothing (migration 124). Say which — the second is a
+    // decision someone made about this quote and the customer deserves the
+    // reason, not a flat refusal.
+    if (quote.allow_partial_acceptance === false) {
+      return new Response(
+        'This quote is priced as one job and has to be accepted in full — call us and we will quote you for a smaller job.',
+        { status: 409 },
+      )
+    }
     if (!packageChoice) {
       return new Response('This quote cannot be accepted in parts', { status: 400 })
     }

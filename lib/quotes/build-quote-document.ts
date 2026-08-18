@@ -51,6 +51,19 @@ export interface QuoteRequestForDocument {
    * already has never changes because a column was added under it.
    */
   show_equipment_photos?: boolean | null
+  /**
+   * Document detail level (migration 124). 'detailed' prints every line item
+   * with its quantity and price; anything else — including an older row that
+   * predates the column being read — is the simplified section-subtotal
+   * document every quote has had until now.
+   */
+  quote_version?: string | null
+  /**
+   * May the customer accept one work package on its own (migration 124)?
+   * Absent/null reads as true, so an older saved row keeps the choice its
+   * document already offers.
+   */
+  allow_partial_acceptance?: boolean | null
 }
 
 /** A validated, priced quote — one engine's parsed input plus its BOM. */
@@ -176,6 +189,8 @@ export function renderQuoteDocument(
       scope, bom, catalog,
       req: quote,
       showEquipmentPhotos: quote.show_equipment_photos !== false,
+      showLineItems: quote.quote_version === 'detailed',
+      allowPartial: quote.allow_partial_acceptance !== false,
       quoteNumber, expiryDays,
       workType: quote.work_type ?? '',
       workTypeLabel: workTypeLabel(quote.work_type ?? null, workTypes),
@@ -199,6 +214,7 @@ export function renderQuoteDocument(
     design, bom, catalog,
     req: quote,
     showEquipmentPhotos: quote.show_equipment_photos !== false,
+    showLineItems: quote.quote_version === 'detailed',
     quoteNumber, expiryDays,
     tariffRate: getTariffRateForMunicipality(quote.municipality ?? ''),
     complianceChecks,

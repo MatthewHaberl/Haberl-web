@@ -559,12 +559,23 @@ export interface QuoteRequest {
   // v2 quote generation (added migration 003)
   quote_html: string | null
   quote_number: string | null
+  /**
+   * How much of the pricing the customer document shows (migration 124):
+   * 'simplified' = section subtotals, 'detailed' = every line item with its
+   * quantity and price. Default simplified; applies on the next generate.
+   */
   quote_version: 'simplified' | 'detailed'
   /**
    * Render the "What You're Getting" product-photo panel (migration 121).
    * Sells a solar system; embarrasses a board swap. Per-quote, default true.
    */
   show_equipment_photos: boolean
+  /**
+   * May the customer accept one work package on its own (migration 124)?
+   * Off = all-or-nothing: the accept page offers only the whole quote, and the
+   * document stops offering parts. Default true.
+   */
+  allow_partial_acceptance: boolean
   generation_method: QuoteGenerationMethod
   deposit_items: string[]
   deposit_amount: number | null  // cents

@@ -24,6 +24,25 @@ export interface SupplierBomItem {
 }
 
 /** One picture of one piece of kit on the customer quote (W53). */
+/**
+ * One line of the itemised breakdown on a DETAILED quote (migration 124).
+ * Sell prices only — cost and markup never leave the office.
+ */
+export interface DetailedBomLine {
+  description: string
+  qty: number
+  /** Formatted unit price, or '' when the line is still to be priced. */
+  unit: string
+  /** Formatted line total, or 'Quote' when unpriced. */
+  amount: string
+}
+
+export interface DetailedBomSection {
+  name: string
+  subtotal: string
+  lines: DetailedBomLine[]
+}
+
 export interface EquipmentPhoto {
   /** What it is — "Inverter", "Battery", "Solar panels". */
   label: string
@@ -152,6 +171,14 @@ export interface QuoteData {
 
   // Product photography for the customer's "What you're getting" panel (W53).
   equipmentPhotos?: EquipmentPhoto[]
+
+  /**
+   * Every part and task behind the summarised sections above, priced one line
+   * at a time (migration 124). Present only when the quote is set to
+   * 'detailed'; absent is the simplified document, which is the default and
+   * what every quote before W100 carries.
+   */
+  detailedSections?: DetailedBomSection[]
 
   // SANS 10142-1 / design-rule verification results (internal — admin only)
   complianceChecks?: ComplianceCheck[]
@@ -511,8 +538,56 @@ function renderCustomerSingleHtml(data: QuoteData, tierLabel?: string): string {
   }
 
   html = html.replace('{{EQUIPMENT_PHOTOS_SECTION}}', renderEquipmentPhotosSection(data))
+  html = html.replace('{{DETAILED_BOM_SECTION}}', renderDetailedBomSection(data))
 
   return html
+}
+
+/**
+ * The itemised breakdown — every part and task behind the summarised sections,
+ * with its quantity and its price.
+ *
+ * The customer document has never carried a bill of materials — it states the
+ * system, the price and the returns — so this is additive rather than a second
+ * copy of anything: the list a customer asks for when they want to put our
+ * quote beside someone else's. It sums to the quote total because it is the
+ * same BOM the total came from. Empty on a simplified quote, the default.
+ */
+function renderDetailedBomSection(data: QuoteData): string {
+  const sections = data.detailedSections ?? []
+  if (sections.length === 0) return ''
+
+  const cards = sections.map((section) => {
+    const rows = section.lines.map((l) => `
+          <tr>
+            <td>${escapeHtml(l.description)}</td>
+            <td class="right">${l.qty}</td>
+            <td class="right">${escapeHtml(l.unit || '—')}</td>
+            <td class="right">${escapeHtml(l.amount)}</td>
+          </tr>`).join('')
+    return `
+  <div class="card no-break">
+    <div class="card-header"><h2>${escapeHtml(section.name)}</h2></div>
+    <div class="card-body">
+      <table class="bom-table">
+        <thead><tr><th style="width:52%">Item</th><th class="right">Qty</th><th class="right">Unit</th><th class="right">Total (R)</th></tr></thead>
+        <tbody>${rows}
+          <tr class="subtotal-row"><td colspan="3">Section Total</td><td class="right">${escapeHtml(section.subtotal)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>`
+  }).join('')
+
+  return `
+  <div class="section-heading">Itemised Breakdown</div>
+
+  <div class="disclaimer-box">
+    Every part and every task in this installation, priced one line at a time. These
+    amounts are the quote total stated in detail &mdash; they add up to it, they are
+    not extra to it.
+  </div>
+${cards}`
 }
 
 /**
@@ -633,9 +708,9 @@ function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
       <thead>
         <tr>
           <th></th>
-          <th>Premium</th>
-          <th class="comp-recommended-head">Recommended</th>
-          <th>Budget</th>
+          <th>&#9733;&#9733;&#9733; Premium</th>
+          <th class="comp-recommended-head">&#9733;&#9733;&#9734; Recommended</th>
+          <th>&#9733;&#9734;&#9734; Budget</th>
         </tr>
       </thead>
       <tbody>${comparisonRows}</tbody>
@@ -1622,6 +1697,8 @@ const CUSTOMER_TEMPLATE = `<!DOCTYPE html>
   </div>
 
   {{EQUIPMENT_PHOTOS_SECTION}}
+
+  {{DETAILED_BOM_SECTION}}
 
   <div class="section-heading">Total Investment</div>
 

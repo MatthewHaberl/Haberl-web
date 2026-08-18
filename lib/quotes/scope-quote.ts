@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { bomToSupplierBom } from '@/lib/solar/design-quote'
-import type { DesignBom } from '@/lib/solar/design-bom'
+import type { BomLine, DesignBom } from '@/lib/solar/design-bom'
 import type { EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import type { EquipmentPhoto } from '@/lib/solar/render-quote'
 import {
@@ -20,7 +20,8 @@ import {
 } from './scope'
 import { bomForPackage, computeScopeDeposit, stripOptionalLines } from './scope-bom'
 import type {
-  ScopeQuoteData, ScopeQuotePackageView, ScopeQuoteSectionView, ScopeOptionalExtraView,
+  ScopeQuoteData, ScopeQuoteLineView, ScopeQuotePackageView, ScopeQuoteSectionView,
+  ScopeOptionalExtraView,
 } from './render-scope-quote'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -71,6 +72,27 @@ export function equipmentPhotosFromScope(
   return photos
 }
 
+/**
+ * A section's line items for a DETAILED quote — what the customer is actually
+ * paying for, one row at a time.
+ *
+ * Sell prices only. The unit price is what it costs them per item, never our
+ * cost or the markup that produced it, and an unpriced line says "Quote" rather
+ * than a zero — the same word the section subtotal uses for it.
+ */
+function lineViews(lines: BomLine[]): ScopeQuoteLineView[] {
+  return lines
+    .filter((l) => !l.optional)
+    .map((l) => ({
+      description: l.description.trim() || l.sku || 'Item',
+      qty: l.qty,
+      // A single item's unit price is its line total — printing both says the
+      // same number twice.
+      unit: l.priced && l.qty !== 1 ? rand(l.unitSellR) : '',
+      amount: l.priced ? rand(l.lineSellR) : 'Quote',
+    }))
+}
+
 export interface ScopeQuoteArgs {
   scope: QuoteScope
   /** From scopeToBom — optional lines still present. */
@@ -89,6 +111,16 @@ export interface ScopeQuoteArgs {
   workTypeLabel: string
   /** Print the "What You're Getting" photo panel. Default on. */
   showEquipmentPhotos?: boolean
+  /**
+   * Detailed quote: print every line item with its quantity and price under
+   * its section. Default off — Matthew's rule is simplified unless asked.
+   */
+  showLineItems?: boolean
+  /**
+   * May the customer accept one work package on its own? Default true; false
+   * takes the standalone prices and the options table off the document.
+   */
+  allowPartial?: boolean
 }
 
 export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
@@ -110,6 +142,7 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
       subtotalRands: s.sellR,
       toQuote: s.needsPricing,
       deposit: depositSections.includes(s.name),
+      ...(args.showLineItems ? { lines: lineViews(s.lines) } : {}),
     }))
 
   // Work packages: each one's sections, and its own price bought alone. The
@@ -197,6 +230,7 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
     separateTotalRands: separateR,
     bundleSaving: rand(savingR),
     bundleSavingRands: savingR,
+    allowPartial: args.allowPartial !== false,
     optionalExtras,
     exclusions: scope.exclusions.map((e) => e.trim()).filter(Boolean),
     cocIncluded: scope.coc.included,

@@ -147,6 +147,8 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
                 viewedAt={req.viewed_at ?? null}
                 isSolar={engine !== 'scope'}
                 initialShowPhotos={req.show_equipment_photos !== false}
+                initialDetailed={req.quote_version === 'detailed'}
+                initialAllowPartial={req.allow_partial_acceptance !== false}
                 preflight={engine === 'scope' ? () => scopePreflight.current?.() ?? [] : undefined}
               />
             </div>

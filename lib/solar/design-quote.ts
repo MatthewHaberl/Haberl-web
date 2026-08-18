@@ -26,7 +26,9 @@ import { computeStringLayout, runComplianceChecks, type ComplianceCheck } from '
 import { assessDesignContainment, containmentChecks } from './containment-fill'
 import { buildSavingsSummary } from './savings'
 import type { DesignBom } from './design-bom'
-import type { QuoteData, SupplierBomItem, DepositItem, EquipmentPhoto } from './render-quote'
+import type {
+  QuoteData, SupplierBomItem, DepositItem, DetailedBomSection, EquipmentPhoto,
+} from './render-quote'
 
 const DAYS_PER_MONTH = 30.4
 
@@ -60,6 +62,33 @@ export function bomToSupplierBom(bom: DesignBom): SupplierBomItem[] {
         lineSellRands: l.lineSellR,
       })
     }
+  }
+  return out
+}
+
+/**
+ * The BOM as the customer's itemised breakdown (migration 124) — the same walk
+ * as bomToSupplierBom, with the cost columns left behind.
+ *
+ * Sell prices only, and the split matters: bomToSupplierBom feeds procurement
+ * and job materials, where unit cost is the point, while this is printed on a
+ * document the customer keeps. Nothing here may ever carry cost or markup.
+ */
+export function detailedBomSections(bom: DesignBom): DetailedBomSection[] {
+  const out: DetailedBomSection[] = []
+  for (const s of bom.sections) {
+    if (s.lines.length === 0) continue
+    out.push({
+      name: s.name,
+      subtotal: rand(s.sellR),
+      lines: s.lines.map((l) => ({
+        description: l.description.trim() || l.sku || 'Item',
+        qty: l.qty,
+        // One of something prices itself — "1 × R450.00" beside R450.00 is noise.
+        unit: l.priced && l.qty !== 1 ? rand(l.unitSellR) : '',
+        amount: l.priced ? rand(l.lineSellR) : 'Quote',
+      })),
+    })
   }
   return out
 }
@@ -162,6 +191,12 @@ export interface DesignQuoteArgs {
   complianceChecks?: ComplianceCheck[]
   /** Print the "What You're Getting" photo panel. Default on. */
   showEquipmentPhotos?: boolean
+  /**
+   * Detailed quote: print the itemised breakdown — every part and task with
+   * its quantity and price. Default off (Matthew's rule: simplified unless the
+   * customer asks for the detail).
+   */
+  showLineItems?: boolean
 }
 
 /**
@@ -334,6 +369,7 @@ export function buildQuoteDataFromDesign(args: DesignQuoteArgs): QuoteData {
     // Deposit + supplier BOM + verification
     depositItems: deposit.items,
     supplierBom: bomToSupplierBom(bom),
+    detailedSections: args.showLineItems ? detailedBomSections(bom) : undefined,
     equipmentPhotos: args.showEquipmentPhotos === false
       ? [] : equipmentPhotosFromDesign(design, catalog),
     complianceChecks: args.complianceChecks ?? [],

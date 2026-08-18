@@ -86,10 +86,18 @@ export interface PublicPackageChoice {
  * bundled figures to weigh them against. Returns null for an ordinary quote —
  * including a combined one with a single package, where there is no choice to
  * make.
+ *
+ * Also null when the quote is all-or-nothing (`allow_partial_acceptance` off,
+ * migration 124). The switch is enforced HERE, in the one function the accept
+ * page and the accept route both call, rather than in each of them: a partial
+ * acceptance the page never offers must also be one the API refuses, and the
+ * only way to guarantee that is for both to be asking the same question.
  */
 export function parsePackageChoice(quote: {
   generated_quote?: string | null
+  allow_partial_acceptance?: boolean | null
 }): PublicPackageChoice | null {
+  if (quote.allow_partial_acceptance === false) return null
   if (!quote.generated_quote) return null
   try {
     const data = JSON.parse(quote.generated_quote)

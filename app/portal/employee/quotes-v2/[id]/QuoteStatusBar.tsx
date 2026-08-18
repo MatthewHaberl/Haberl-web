@@ -56,6 +56,14 @@ interface Props {
   isSolar?: boolean
   /** quote_requests.show_equipment_photos — the photo panel's saved state. */
   initialShowPhotos?: boolean
+  /** quote_requests.quote_version === 'detailed' — line-by-line pricing. */
+  initialDetailed?: boolean
+  /**
+   * quote_requests.allow_partial_acceptance. Scope engine only — taking one
+   * part of a quote means taking one work package, which the solar canvas has
+   * no notion of.
+   */
+  initialAllowPartial?: boolean
   /**
    * Asked before Generate runs. Returns the reasons the builder can't become a
    * document yet (empty = go ahead) and reveals them in the builder itself.
@@ -65,7 +73,7 @@ interface Props {
   preflight?: () => string[]
 }
 
-export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt, isSolar = true, initialShowPhotos = true, preflight }: Props) {
+export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt, isSolar = true, initialShowPhotos = true, initialDetailed = false, initialAllowPartial = true, preflight }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState<QuoteRequestStatus>(initialStatus)
   const [saving, setSaving] = useState(false)
@@ -73,23 +81,53 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [showPhotos, setShowPhotos] = useState(initialShowPhotos)
+  const [detailed, setDetailed] = useState(initialDetailed)
+  const [allowPartial, setAllowPartial] = useState(initialAllowPartial)
 
-  // The photo panel is a property of the quote, not of this render — saved on
-  // the row so Preview, Generate and the eventual send all agree. It only
-  // reaches the customer's document on the next generate, which is why the
-  // label says so rather than leaving the operator to wonder.
-  async function togglePhotos(next: boolean) {
-    setShowPhotos(next)
+  /**
+   * The document switches are properties of the QUOTE, not of this render —
+   * saved on the row so Preview, Generate and the eventual send all agree.
+   * They reach the customer's document on the next generate, which is why each
+   * label says so rather than leaving the operator to wonder.
+   *
+   * `revert` puts the box back when the row didn't change: a checkbox that
+   * stays ticked after a failed write is a lie about what will be sent.
+   */
+  async function saveDocumentOption(patch: Record<string, unknown>, revert: () => void) {
     setError('')
     const supabase = createClient()
     const { error: dbError } = await supabase
       .from('quote_requests')
-      .update({ show_equipment_photos: next })
+      .update(patch)
       .eq('id', requestId)
     if (dbError) {
-      setShowPhotos(!next)   // the row didn't change; neither should the box
+      revert()
       setError(dbError.message)
     }
+  }
+
+  function togglePhotos(next: boolean) {
+    setShowPhotos(next)
+    void saveDocumentOption({ show_equipment_photos: next }, () => setShowPhotos(!next))
+  }
+
+  function toggleDetailed(next: boolean) {
+    setDetailed(next)
+    void saveDocumentOption(
+      { quote_version: next ? 'detailed' : 'simplified' },
+      () => setDetailed(!next),
+    )
+  }
+
+  // Ticked = all-or-nothing, so the box reads as the restriction being applied
+  // rather than as a permission being withdrawn. The column stores the
+  // permission, hence the inversion here and nowhere else.
+  function toggleAllOrNothing(allOrNothing: boolean) {
+    setAllowPartial(!allOrNothing)
+    void saveDocumentOption(
+      { allow_partial_acceptance: !allOrNothing },
+      () => setAllowPartial(allOrNothing),
+    )
   }
 
   async function updateStatus(next: QuoteRequestStatus, extra: Record<string, unknown> = {}) {
@@ -290,18 +328,50 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
         {/* Document options — only while the quote is still a draft; once sent,
             regeneration is blocked and a switch here would change nothing. */}
         {(status === 'pending' || status === 'generated') && (
-          <label
-            className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
-            title="Show the product photos of the kit being supplied. Turn off for small jobs where a strip of breaker photos says less than the scope does. Applies on the next generate."
-          >
-            <input
-              type="checkbox"
-              checked={showPhotos}
-              onChange={(e) => togglePhotos(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-border accent-primary"
-            />
-            Product photos
-          </label>
+          <div className="flex items-center gap-3 flex-wrap">
+            <label
+              className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
+              title="Show the product photos of the kit being supplied. Turn off for small jobs where a strip of breaker photos says less than the scope does. Applies on the next generate."
+            >
+              <input
+                type="checkbox"
+                checked={showPhotos}
+                onChange={(e) => togglePhotos(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-border accent-primary"
+              />
+              Product photos
+            </label>
+
+            <label
+              className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
+              title="Price the quote line by line — every part and task with its quantity and price, under the section it belongs to. Off is the simplified document: section subtotals only. Turn it on when the customer is comparing us against another quote. Applies on the next generate."
+            >
+              <input
+                type="checkbox"
+                checked={detailed}
+                onChange={(e) => toggleDetailed(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-border accent-primary"
+              />
+              Line-by-line pricing
+            </label>
+
+            {/* Scope engine only: taking part of a quote means taking one work
+                package, which a solar design has no notion of. */}
+            {!isSolar && (
+              <label
+                className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
+                title="Make this quote all-or-nothing. The customer can only accept the whole thing: the standalone prices, the options table and the take-part wording come off the document, and the accept page refuses a single package. Use it when the work is only priced — or only safe — as one job. Applies on the next generate."
+              >
+                <input
+                  type="checkbox"
+                  checked={!allowPartial}
+                  onChange={(e) => toggleAllOrNothing(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-border accent-primary"
+                />
+                All or nothing
+              </label>
+            )}
+          </div>
         )}
 
         {/* See it the customer's way, at any status. Draft quotes render live

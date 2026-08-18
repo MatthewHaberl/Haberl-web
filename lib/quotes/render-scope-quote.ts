@@ -16,6 +16,20 @@
 
 import type { DepositItem, EquipmentPhoto, SupplierBomItem } from '@/lib/solar/render-quote'
 
+/**
+ * One line of a DETAILED quote — a single part or task with its quantity and
+ * its price. Present only when the quote is set to `detailed`; the simplified
+ * document (the default) states section subtotals and nothing below them.
+ */
+export interface ScopeQuoteLineView {
+  description: string
+  qty: number
+  /** Formatted unit price, or '' when the line is still to be priced. */
+  unit: string
+  /** Formatted line total, or 'Quote' when unpriced. */
+  amount: string
+}
+
 export interface ScopeQuoteSectionView {
   name: string
   /** One-line description of what the section covers — no per-part prices. */
@@ -26,6 +40,11 @@ export interface ScopeQuoteSectionView {
   toQuote: number
   /** True when this section is part of the deposit (holds material lines). */
   deposit: boolean
+  /**
+   * Every line making up the subtotal. Only on a detailed quote — absent means
+   * simplified, which is what every quote generated before W100 carries.
+   */
+  lines?: ScopeQuoteLineView[]
 }
 
 /**
@@ -95,6 +114,14 @@ export interface ScopeQuoteData {
   /** What taking everything together saves. Zero when there is nothing to save. */
   bundleSaving: string
   bundleSavingRands: number
+  /**
+   * May the customer take one work package on its own? False = all-or-nothing:
+   * the standalone prices, the options table and the "or just one part" wording
+   * all come off, because the accept page will refuse a part (migration 124).
+   * Absent on a quote generated before W100 — read as true, which is what those
+   * documents already promise.
+   */
+  allowPartial?: boolean
   optionalExtras: ScopeOptionalExtraView[]
   exclusions: string[]
   cocIncluded: boolean
@@ -510,21 +537,54 @@ function scopeSummarySection(data: ScopeQuoteData): string {
   </div>`
 }
 
+/** A detailed quote is one whose sections carry their line items. */
+function isDetailed(sections: ScopeQuoteSectionView[]): boolean {
+  return sections.some((s) => s.lines !== undefined)
+}
+
+/**
+ * The line items under a section, on a detailed quote.
+ *
+ * Quantity and unit price sit with the description rather than in columns of
+ * their own: the same table has to hold a simplified quote, a package card and
+ * this, and a two-column table that never changes shape is what keeps every
+ * amount on the page in one straight line down the right-hand edge.
+ */
+function lineRows(lines: ScopeQuoteLineView[]): string {
+  return lines.map((l, i) => {
+    const last = i === lines.length - 1 ? ' last-line' : ''
+    // A quantity of one adds nothing — "1 × R450.00" beside R450.00 is noise.
+    const qty = l.qty !== 1 || l.unit
+      ? `<span class="line-qty">${l.qty}${l.unit ? ` &times; ${escapeHtml(l.unit)}` : ''}</span>`
+      : ''
+    return `
+        <tr class="line-row${last}">
+          <td>${escapeHtml(l.description)}${qty ? ` &nbsp;<span class="subtitle">${qty}</span>` : ''}</td>
+          <td class="right amount">${escapeHtml(l.amount)}</td>
+        </tr>`
+  }).join('')
+}
+
 /** The section rows shared by the flat table and every package card. */
 function sectionRows(sections: ScopeQuoteSectionView[]): string {
+  const detailed = isDetailed(sections)
   return sections.map((s) => {
     const star = s.deposit ? ' <span class="star">&#9733;</span>' : ''
     const toQuote = s.toQuote > 0
       ? `<div class="subtitle">${s.toQuote} item${s.toQuote === 1 ? '' : 's'} to be priced separately &mdash; not in this subtotal</div>`
       : ''
+    // The one-line summary IS the first few item names, so on a detailed quote
+    // it would restate the rows immediately below it.
+    const detail = s.detail && !detailed
+      ? `<div class="subtitle">${escapeHtml(s.detail)}</div>` : ''
     return `
-        <tr>
+        <tr${detailed ? ' class="section-row"' : ''}>
           <td>
             <strong>${escapeHtml(s.name)}</strong>${star}
-            ${s.detail ? `<div class="subtitle">${escapeHtml(s.detail)}</div>` : ''}${toQuote}
+            ${detail}${toQuote}
           </td>
           <td class="right amount">${escapeHtml(s.subtotal)}</td>
-        </tr>`
+        </tr>${detailed ? lineRows(s.lines ?? []) : ''}`
   }).join('')
 }
 
@@ -542,10 +602,11 @@ function sectionTable(
   footNote = '',
 ): string {
   if (sections.length === 0) return ''
+  const detailed = isDetailed(sections)
   return `
-      <table class="bom-table">
+      <table class="bom-table${detailed ? ' detailed' : ''}">
         <thead>
-          <tr><th>Section</th><th class="right">Subtotal</th></tr>
+          <tr><th>${detailed ? 'Section &amp; items' : 'Section'}</th><th class="right">${detailed ? 'Amount' : 'Subtotal'}</th></tr>
         </thead>
         <tbody>${sectionRows(sections)}
         </tbody>
@@ -566,6 +627,9 @@ function sectionTable(
 function packagesTable(data: ScopeQuoteData): string {
   const hasShared = data.sharedSections.length > 0
   const ownVisit = data.cocIncluded ? 'its own site visit and certificate' : 'its own site visit'
+  // "If done on its own" is an offer. On an all-or-nothing quote it is an offer
+  // the accept page will refuse, so the price comes off with the choice.
+  const allowPartial = data.allowPartial !== false
 
   const cards = data.packages.map((pkg, i) => {
     // What this work adds to THIS quote — its sections, before the costs the
@@ -589,13 +653,13 @@ function packagesTable(data: ScopeQuoteData): string {
         rand(included),
         hasShared ? 'in this quote, before the costs shared across the job' : 'in this quote',
       )}
-      <div class="own-price">
+      ${allowPartial ? `<div class="own-price">
         <div class="op-row">
           <span class="op-label">If done on its own</span>
           <span class="op-value">${escapeHtml(pkg.ownTotal)}</span>
         </div>
         <p class="op-note">${note}</p>
-      </div>
+      </div>` : ''}
     </div>
   </div>`
   }).join('')
@@ -627,6 +691,9 @@ ${cards}${shared}`
  */
 function bundleChoiceSection(data: ScopeQuoteData): string {
   if (data.packages.length < 2 || data.bundleSavingRands <= 0) return ''
+  // Nothing to choose between on an all-or-nothing quote — printing the table
+  // would advertise prices the accept page cannot honour.
+  if (data.allowPartial === false) return ''
   const rows = data.packages.map((p, i) => `
         <tr>
           <td>${i + 1}. ${escapeHtml(p.name)} <span class="subtitle">on its own</span></td>
@@ -738,6 +805,52 @@ function photosSection(data: ScopeQuoteData): string {
 }
 
 /**
+ * The all-or-nothing card, printed in place of "Taking All of It, or Part of It"
+ * when the quote is priced as one job (allow_partial_acceptance off).
+ *
+ * Silence would be worse than the old wording: a customer looking at three
+ * numbered items of work assumes they can pick, asks for one, and hears no for
+ * the first time in a phone call. This says it up front, gives the reason —
+ * the work is priced, ordered and booked as one visit — and still leaves the
+ * door open, because "we'll quote you for a different mix" is true and costs
+ * nothing to say.
+ */
+function allOrNothingSection(data: ScopeQuoteData): string {
+  const parts = data.packages.length >= 2 ? 'the items of work' : 'the sections'
+  return `
+  <div class="card no-break">
+    <div class="card-header"><h2>What You&rsquo;re Accepting</h2></div>
+    <div class="card-body">
+      <div class="terms-grid">
+        <div class="terms-item">
+          <div class="t-label">All of it, as one job</div>
+          Accept the quote as it stands at <strong>${escapeHtml(data.quoteTotal)}</strong>.
+          One booking, one team on site${data.cocIncluded ? ', one certificate' : ''}.
+        </div>
+        <div class="terms-item">
+          <div class="t-label">It isn&rsquo;t priced in parts</div>
+          This quote is priced, ordered and booked as a single job, so ${parts} above
+          can&rsquo;t be taken on their own at the amounts shown &mdash; those are what each part
+          contributes to the total, not a price to buy it at.
+        </div>
+        <div class="terms-item">
+          <div class="t-label">Want a smaller job?</div>
+          Tell us what you&rsquo;d like left out and we&rsquo;ll send a fresh quote priced for
+          exactly that. No obligation, and nothing here changes in the meantime.
+        </div>
+      </div>
+      <div class="disclaimer-box">
+        Leaving work out doesn&rsquo;t simply subtract its subtotal: ${data.cocIncluded
+          ? 'getting to site, setting up and issuing the certificate are'
+          : 'getting to site and setting up are'} charged once for the visit, so a smaller job carries a
+        larger share of them. That&rsquo;s why we re-price rather than cross lines out &mdash; and why
+        the figure on a shorter job is never the arithmetic you&rsquo;d expect.
+      </div>
+    </div>
+  </div>`
+}
+
+/**
  * "Taking All of It, or Part of It" — the quote's own instructions for buying
  * less than the whole thing.
  *
@@ -750,6 +863,8 @@ function photosSection(data: ScopeQuoteData): string {
  *   packages  — everything, or ONE package on its own, both a real button.
  *   sections  — everything is the button; a subset is a conversation, so it
  *               says so rather than implying a checkbox that isn't there.
+ * A quote with partial acceptance switched off has neither, and prints
+ * allOrNothingSection() instead.
  * Either way it refuses to imply that section subtotals subtract cleanly: the
  * visit, the set-up and the certificate are charged once, so what is left costs
  * more than the arithmetic. Nothing to choose between (one section, no
@@ -758,6 +873,7 @@ function photosSection(data: ScopeQuoteData): string {
 function takeAllOrPartSection(data: ScopeQuoteData): string {
   const hasPackages = data.packages.length >= 2
   if (!hasPackages && (data.chooseableSections ?? 0) < 2) return ''
+  if (data.allowPartial === false) return allOrNothingSection(data)
 
   const partItem = hasPackages
     ? `<div class="terms-item">
