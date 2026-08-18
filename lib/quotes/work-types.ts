@@ -28,7 +28,14 @@ export interface WorkType {
   active: boolean
 }
 
-/** Mirror of the seeded work types (105 + 108) — fallback when the table can't be read. */
+/**
+ * Mirror of the seeded work types (105 + 108) — fallback when the table can't be read.
+ *
+ * No 'Labour' section: labour is priced by the builder's own Labour block and
+ * scopeToBom emits it as its own section on the quote (migration 118). Seeding
+ * one here gave every scope quote an empty Labour heading to delete, beside a
+ * Labour block that was already going to produce the real line.
+ */
 export const DEFAULT_WORK_TYPES: WorkType[] = [
   {
     code: 'solar', label: 'Solar PV / hybrid system', engine: 'solar', job_pipeline: 'full',
@@ -44,19 +51,19 @@ export const DEFAULT_WORK_TYPES: WorkType[] = [
   },
   {
     code: 'solar_repair', label: 'Solar repair / service', engine: 'scope', job_pipeline: 'lite',
-    default_sections: ['Fault finding', 'Materials', 'Labour', 'Compliance'],
+    default_sections: ['Fault finding', 'Materials', 'Compliance'],
     description: 'Fault-finding and repairs on existing solar installs — inverters, batteries, panels, monitoring.',
     sort_order: 2, active: true,
   },
   {
     code: 'electrical', label: 'General electrical & repairs', engine: 'scope', job_pipeline: 'lite',
-    default_sections: ['Materials', 'Labour', 'Compliance'],
+    default_sections: ['Materials', 'Compliance'],
     description: 'Repairs, new circuits, lights, plugs — scoped as line items.',
     sort_order: 3, active: true,
   },
   {
     code: 'db_rewire', label: 'DB board / rewire', engine: 'scope', job_pipeline: 'lite',
-    default_sections: ['Distribution board', 'Wiring & containment', 'Accessories', 'Labour', 'Compliance'],
+    default_sections: ['Distribution board', 'Wiring & containment', 'Accessories', 'Compliance'],
     description: 'Distribution board replacements, upgrades and rewires.',
     sort_order: 4, active: true,
   },
@@ -68,13 +75,13 @@ export const DEFAULT_WORK_TYPES: WorkType[] = [
   },
   {
     code: 'generator', label: 'Generator & changeover', engine: 'scope', job_pipeline: 'lite',
-    default_sections: ['Generator & changeover', 'Wiring & containment', 'Labour', 'Compliance'],
+    default_sections: ['Generator & changeover', 'Wiring & containment', 'Compliance'],
     description: 'Generator supply, changeover switches and wiring.',
     sort_order: 6, active: true,
   },
   {
     code: 'ev_charger', label: 'EV charger install', engine: 'scope', job_pipeline: 'lite',
-    default_sections: ['Charger', 'Supply & protection', 'Labour', 'Compliance'],
+    default_sections: ['Charger', 'Supply & protection', 'Compliance'],
     description: 'EV charge point supply and installation.',
     sort_order: 7, active: true,
   },

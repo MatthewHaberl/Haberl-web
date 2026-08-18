@@ -34,6 +34,19 @@ export interface ScopePricing {
 
 const DEFAULT_PRICING: ScopePricing = { markup: 1.15, labourRateR: 750, dayRateR: 5500, calloutR: 750, cocFeeR: 1500 }
 
+/**
+ * Quotes seeded before migration 118 carry an empty "Labour" section — labour
+ * is priced in the Labour block below and scopeToBom emits its own section, so
+ * the heading was only ever something to delete. Dropped on open, and only
+ * while it is empty: a Labour section someone actually put lines under still
+ * bills and stays.
+ */
+function dropEmptyLabourSection(scope: QuoteScope): QuoteScope {
+  const used = scope.lines.some((l) => l.section === 'Labour')
+  if (used || !scope.sections.includes('Labour')) return scope
+  return { ...scope, sections: scope.sections.filter((n) => n !== 'Labour') }
+}
+
 export function ScopeWorkspace({ requestId, rawScope, workType, registerPreflight }: {
   requestId: string
   rawScope: unknown
@@ -47,7 +60,9 @@ export function ScopeWorkspace({ requestId, rawScope, workType, registerPrefligh
 }) {
   const supabase = useMemo(() => createClient(), [])
   const [scope, setScope] = useState<QuoteScope>(
-    () => parseScope(rawScope) ?? emptyScope({ sections: workType.default_sections }),
+    () => dropEmptyLabourSection(
+      parseScope(rawScope) ?? emptyScope({ sections: workType.default_sections }),
+    ),
   )
   const [pricing, setPricing] = useState<ScopePricing>(DEFAULT_PRICING)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
