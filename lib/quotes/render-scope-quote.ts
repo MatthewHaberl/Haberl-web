@@ -80,15 +80,16 @@ function escapeHtml(value: unknown): string {
 // extraction lands.
 const SCOPE_CSS = `
   :root {
-    --primary:      #1e3a5f;
-    --accent:       #f97316;
-    --accent-light: #fff7ed;
-    --fg:           #171717;
+    --primary:      #0f1b2d;
+    --accent:       #e8850c;
+    --accent-fg:    #0f1b2d;
+    --accent-light: #fdf3e7;
+    --fg:           #14181f;
     --muted:        #f5f5f5;
-    --muted-fg:     #737373;
-    --border:       #e5e7eb;
+    --muted-fg:     #5b6470;
+    --border:       #e6e8ec;
     --white:        #ffffff;
-    --success:      #22c55e;
+    --success:      #16a34a;
     --row-alt:      #f8fafc;
   }
 

@@ -32,7 +32,7 @@ export function PrintQuoteButton({ html }: { html: string }) {
     <button
       type="button"
       onClick={handlePrint}
-      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-white px-3 py-2 text-sm font-medium hover:border-accent transition-colors"
+      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium hover:border-accent transition-colors"
     >
       <Printer className="h-4 w-4" /> Download PDF / Print
     </button>

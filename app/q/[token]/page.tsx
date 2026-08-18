@@ -49,7 +49,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   if (state === 'closed') {
     return (
       <PublicShell quoteNumber={quote.quote_number} solar={isSolar}>
-        <div className="rounded-lg border border-border bg-white p-8 flex flex-col items-center gap-3 text-center">
+        <div className="rounded-lg border border-border bg-card p-8 flex flex-col items-center gap-3 text-center">
           <Archive className="h-10 w-10 text-muted-foreground" />
           <h1 className="text-xl font-bold text-primary">This quote is no longer available</h1>
           <p className="text-sm text-muted-foreground max-w-sm">
@@ -119,11 +119,11 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border border-border bg-white p-4">
+        <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Total</p>
           <p className="text-lg font-bold text-primary mt-1">{formatCents(quote.total_amount)}</p>
         </div>
-        <div className="rounded-lg border border-border bg-white p-4">
+        <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Deposit</p>
           <p className="text-lg font-bold text-primary mt-1">{formatCents(quote.deposit_amount)}</p>
         </div>
@@ -141,7 +141,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
         </div>
       )}
       {state === 'declined' && (
-        <div className="rounded-lg border border-border bg-white px-4 py-3 text-sm text-muted-foreground">
+        <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
           This quote was declined. Changed your mind, or want an adjusted version? Ask us for an
           updated quote below — no obligation.
         </div>

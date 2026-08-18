@@ -372,7 +372,7 @@ function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
     .option-wrapper { margin-bottom: 48px; }
     .option-recommended { border: 3px solid var(--accent); border-radius: 12px; padding: 0; overflow: hidden; position: relative; }
     .rec-ribbon {
-      background: var(--accent); color: white; text-align: center;
+      background: var(--accent); color: var(--accent-fg); text-align: center;
       font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
       padding: 6px 0;
     }
@@ -386,7 +386,7 @@ function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
     .comp-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
     .comp-table thead tr { background: var(--primary); color: white; }
     .comp-table thead th { padding: 12px 16px; text-align: left; font-weight: 600; }
-    .comp-table thead th.comp-recommended-head { background: var(--accent); }
+    .comp-table thead th.comp-recommended-head { background: var(--accent); color: var(--accent-fg); }
     .comp-table tbody tr:nth-child(odd) { background: var(--muted); }
     .comp-table tbody tr:nth-child(even) { background: white; }
     .comp-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
@@ -591,14 +591,14 @@ function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
     ${BASE_CSS}
     .option-wrapper { margin-bottom: 48px; }
     .option-recommended { border: 3px solid var(--accent); border-radius: 12px; padding: 0; overflow: hidden; position: relative; }
-    .rec-ribbon { background: var(--accent); color: white; text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 6px 0; }
+    .rec-ribbon { background: var(--accent); color: var(--accent-fg); text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 6px 0; }
     .tier-badge { display: inline-block; background: rgba(255,255,255,0.15); border-radius: 20px; padding: 4px 14px; font-size: 13px; font-weight: 600; color: white; margin-top: 8px; }
     .comparison-wrapper { margin-bottom: 36px; }
     .comparison-wrapper h2 { font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 16px; }
     .comp-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
     .comp-table thead tr { background: var(--primary); color: white; }
     .comp-table thead th { padding: 12px 16px; text-align: left; font-weight: 600; }
-    .comp-table thead th.comp-recommended-head { background: var(--accent); }
+    .comp-table thead th.comp-recommended-head { background: var(--accent); color: var(--accent-fg); }
     .comp-table tbody tr:nth-child(odd) { background: var(--muted); }
     .comp-table tbody tr:nth-child(even) { background: white; }
     .comp-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
@@ -903,15 +903,16 @@ function renderTwentyYearSection(data: QuoteData): string {
 
 const BASE_CSS = `
   :root {
-    --primary:      #1e3a5f;
-    --accent:       #f97316;
-    --accent-light: #fff7ed;
-    --fg:           #171717;
+    --primary:      #0f1b2d;
+    --accent:       #e8850c;
+    --accent-fg:    #0f1b2d;
+    --accent-light: #fdf3e7;
+    --fg:           #14181f;
     --muted:        #f5f5f5;
-    --muted-fg:     #737373;
-    --border:       #e5e7eb;
+    --muted-fg:     #5b6470;
+    --border:       #e6e8ec;
     --white:        #ffffff;
-    --success:      #22c55e;
+    --success:      #16a34a;
     --row-alt:      #f8fafc;
   }
 

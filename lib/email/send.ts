@@ -66,14 +66,14 @@ export function emailLayout(title: string, bodyHtml: string): string {
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:8px;overflow:hidden;">
         <tr>
-          <td style="background:#1e3a5f;padding:20px 28px;">
+          <td style="background:#0f1b2d;padding:20px 28px;">
             <span style="color:#ffffff;font-size:18px;font-weight:bold;">Haberl</span>
-            <span style="color:#f97316;font-size:18px;font-weight:bold;"> Solar</span>
+            <span style="color:#e8850c;font-size:18px;font-weight:bold;"> Solar</span>
           </td>
         </tr>
         <tr>
           <td style="padding:28px;">
-            <h1 style="margin:0 0 16px;font-size:20px;color:#1e3a5f;">${escapeHtml(title)}</h1>
+            <h1 style="margin:0 0 16px;font-size:20px;color:#0f1b2d;">${escapeHtml(title)}</h1>
             ${bodyHtml}
           </td>
         </tr>
@@ -96,8 +96,8 @@ export function emailButton(href: string, label: string): string {
   // today, but this is the same sink class as the quote-HTML XSS — the helper
   // should not depend on every future caller remembering.
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;">
-    <tr><td style="background:#f97316;border-radius:6px;">
-      <a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 28px;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">${escapeHtml(label)}</a>
+    <tr><td style="background:#e8850c;border-radius:6px;">
+      <a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 28px;color:#0f1b2d;text-decoration:none;font-weight:bold;font-size:15px;">${escapeHtml(label)}</a>
     </td></tr>
   </table>`
 }

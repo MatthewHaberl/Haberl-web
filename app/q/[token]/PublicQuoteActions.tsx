@@ -98,7 +98,7 @@ export function PublicQuoteActions({
 
     return (
       <div className="flex flex-col gap-4">
-        <div className="rounded-lg border border-border bg-white p-5">
+        <div className="rounded-lg border border-border bg-card p-5">
           <h2 className="flex items-center gap-2 font-semibold text-primary mb-3">
             <Landmark className="h-4 w-4 text-accent" /> Pay your deposit by EFT
           </h2>
@@ -125,7 +125,7 @@ export function PublicQuoteActions({
           )}
         </div>
 
-        <div className="rounded-lg border border-border bg-white p-5">
+        <div className="rounded-lg border border-border bg-card p-5">
           <h2 className="flex items-center gap-2 font-semibold text-primary mb-2">
             <CloudUpload className="h-4 w-4 text-accent" /> Proof of payment
           </h2>
@@ -167,7 +167,7 @@ export function PublicQuoteActions({
                     e.target.value = ''
                   }}
                 />
-                <span className="inline-flex items-center gap-2 cursor-pointer rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90">
+                <span className="inline-flex items-center gap-2 cursor-pointer rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground hover:opacity-90">
                   {uploading
                     ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</>
                     : <><CloudUpload className="h-4 w-4" /> {proof?.uploaded ? 'Upload new file' : 'Upload proof of payment'}</>}
@@ -183,7 +183,7 @@ export function PublicQuoteActions({
 
   // ── Open: accept or decline ─────────────────────────────────────────────────
   return (
-    <div className="rounded-lg border border-border bg-white p-5 flex flex-col gap-4">
+    <div className="rounded-lg border border-border bg-card p-5 flex flex-col gap-4">
       <h2 className="font-semibold text-primary">Ready to go ahead?</h2>
 
       {tierOptions && tierOptions.length > 1 && (
@@ -266,7 +266,7 @@ export function PublicQuoteActions({
             onChange={(e) => setDeclineReason(e.target.value)}
             placeholder="Optional — tell us why, or what would change your mind"
             rows={2}
-            className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm resize-none"
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none"
           />
           <div className="flex gap-2">
             <Button

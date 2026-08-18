@@ -17,7 +17,8 @@ export function PublicShell({
 }) {
   return (
     <div className="min-h-screen bg-muted/40">
-      <header className="bg-primary text-primary-foreground">
+      {/* bg-brand, not bg-primary: primary inverts to near-white in dark mode. */}
+      <header className="bg-brand text-brand-foreground">
         <div className="mx-auto max-w-3xl px-4 py-4 flex items-center justify-between">
           <span className="text-lg font-bold">
             Haberl <span className="text-accent">{solar ? 'Solar' : 'Electrical'}</span>

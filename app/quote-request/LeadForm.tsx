@@ -39,7 +39,7 @@ export function LeadForm() {
 
   if (done) {
     return (
-      <div className="rounded-lg border border-border bg-white p-8 text-center flex flex-col items-center gap-3">
+      <div className="rounded-lg border border-border bg-card p-8 text-center flex flex-col items-center gap-3">
         <CheckCircle2 className="h-10 w-10 text-green-600" />
         <h2 className="text-lg font-bold text-primary">Thanks, {name.trim().split(' ')[0]}!</h2>
         <p className="text-sm text-muted-foreground max-w-sm">
@@ -54,7 +54,7 @@ export function LeadForm() {
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-border bg-white p-6 flex flex-col gap-4">
+    <form onSubmit={submit} className="rounded-lg border border-border bg-card p-6 flex flex-col gap-4">
       <label className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">Your name *</span>
         <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />

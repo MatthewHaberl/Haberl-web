@@ -137,7 +137,7 @@ export default async function QuotePreviewPage({ params }: { params: Promise<{ i
 
       {error || !html ? (
         <PublicShell quoteNumber={quote.quote_number} solar={isSolar}>
-          <div className="rounded-lg border border-border bg-white p-8 text-center">
+          <div className="rounded-lg border border-border bg-card p-8 text-center">
             <h1 className="text-lg font-bold text-primary">Nothing to show the customer yet</h1>
             <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
               {error ?? 'This quote has no document yet.'}
@@ -160,11 +160,11 @@ export default async function QuotePreviewPage({ params }: { params: Promise<{ i
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-border bg-white p-4">
+            <div className="rounded-lg border border-border bg-card p-4">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Total</p>
               <p className="mt-1 text-lg font-bold text-primary">{formatCents(totalCents)}</p>
             </div>
-            <div className="rounded-lg border border-border bg-white p-4">
+            <div className="rounded-lg border border-border bg-card p-4">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Deposit</p>
               <p className="mt-1 text-lg font-bold text-primary">{formatCents(depositCents)}</p>
             </div>
@@ -176,19 +176,25 @@ export default async function QuotePreviewPage({ params }: { params: Promise<{ i
             </p>
           )}
 
-          {/* Facsimile of the accept panel — deliberately inert. */}
-          <div className="rounded-lg border border-border bg-white p-5 opacity-70">
+          {/* Facsimile of the accept panel — deliberately inert, but drawn at the
+              same weight the customer sees. A blanket opacity here greyed the
+              whole panel out, which is not what the customer's page looks like;
+              the caption below carries the "this does nothing" message. */}
+          <div className="rounded-lg border border-border bg-card p-5">
             <h2 className="font-semibold text-primary">Ready to go ahead?</h2>
             <p className="mt-3 text-sm text-muted-foreground">Your full name (acts as your signature)</p>
-            <div className="mt-1.5 h-10 rounded-md border border-border bg-muted/40" />
+            <div className="mt-1.5 h-10 rounded-md border border-border bg-background" />
             <label className="mt-3 flex items-start gap-2.5 text-sm">
-              <input type="checkbox" disabled className="mt-0.5 h-4 w-4" />
+              <input type="checkbox" disabled className="mt-0.5 h-4 w-4 accent-[var(--accent)]" />
               <span className="text-muted-foreground">
                 I accept this quote and authorise Haberl Electrical &amp; Solar to proceed with the{' '}
                 {isSolar ? 'installation' : 'work'} as quoted.
               </span>
             </label>
-            <div className="mt-4 inline-flex items-center gap-2 rounded-md bg-accent/60 px-4 py-2.5 text-sm font-medium text-accent-foreground">
+            <div
+              aria-disabled
+              className="mt-4 inline-flex cursor-not-allowed items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground"
+            >
               <Check className="h-4 w-4" /> Accept quote
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
