@@ -1,21 +1,15 @@
 import { redirect } from 'next/navigation'
-import { createClient, getUser } from '@/lib/supabase/server'
+import { getUserAccess } from '@/lib/auth/permissions'
 
 const EMPLOYEE_ROLES = new Set(['field_worker', 'manager', 'admin'])
 
 export default async function EmployeeLayout({ children }: { children: React.ReactNode }) {
-  const user = await getUser()
-  if (!user) redirect('/auth/login')
+  const access = await getUserAccess()
+  if (!access) redirect('/auth/login')
 
-  const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  const role = profile?.role ?? 'customer'
-  if (!EMPLOYEE_ROLES.has(role)) redirect('/portal/customer')
+  // Effective role, so previewing the portal as a customer really does land you
+  // in the customer portal rather than just re-labelling the sidebar.
+  if (!EMPLOYEE_ROLES.has(access.role)) redirect('/portal/customer')
 
   return children
 }

@@ -1,20 +1,11 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getUserAccess } from '@/lib/auth/permissions'
 
-// Redirect to the correct dashboard based on role
+// Redirect to the correct dashboard based on role (the previewed one, if any)
 export default async function PortalPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth/login')
+  const access = await getUserAccess()
+  if (!access) redirect('/auth/login')
 
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  const role = profile?.role ?? 'customer'
-
-  if (role === 'customer') redirect('/portal/customer')
+  if (access.role === 'customer') redirect('/portal/customer')
   redirect('/portal/employee')
 }

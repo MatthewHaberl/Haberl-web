@@ -7,11 +7,12 @@ import {
   BarChart2, Users, Zap, User, Menu, X, Settings, Activity,
   ClipboardList, PackageX, Search, Sunrise, PhoneIncoming, Sparkles,
   PanelLeftClose, PanelLeftOpen, Receipt, Ticket, UserCog, CalendarDays,
-  BookOpenCheck, HardHat,
+  BookOpenCheck, HardHat, Eye, Check,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { ROLE_LABELS, viewableRoles } from '@/lib/auth/roles'
 import type { Role } from '@/types/database'
 
 const customerLinks = [
@@ -56,9 +57,13 @@ interface SidebarContentProps {
   pathname: string
   name: string
   role: Role
+  realRole: Role
+  viewingAs: Role | null
+  busy: boolean
   collapsed?: boolean
   onLinkClick: () => void
   onSignOut: () => void
+  onViewAs: (role: Role | null) => void
   onToggleCollapse?: () => void
 }
 
@@ -70,9 +75,76 @@ function isLinkActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + '/')
 }
 
+/**
+ * "View the portal as…" picker. Only lists roles below the user's real one —
+ * the switcher is a way to see less, never more — so it renders nothing at all
+ * for a field worker or a customer.
+ */
+function RoleSwitcher({
+  realRole, viewingAs, busy, onViewAs,
+}: { realRole: Role; viewingAs: Role | null; busy: boolean; onViewAs: (role: Role | null) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const options = viewableRoles(realRole)
+
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  if (options.length === 0) return null
+
+  const current = viewingAs ?? realRole
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        disabled={busy}
+        title="View the portal as another role"
+        aria-label="View the portal as another role"
+        aria-expanded={open}
+        className={cn(
+          'rounded-md p-1.5 transition-colors disabled:opacity-50',
+          viewingAs
+            ? 'bg-accent text-white'
+            : 'text-sidebar-text/70 hover:bg-white/10 hover:text-white'
+        )}
+      >
+        <Eye className="h-4 w-4" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-lg border border-white/15 bg-sidebar-bg shadow-xl">
+          <p className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-sidebar-text/50">
+            View portal as
+          </p>
+          {[realRole, ...options].map((r) => (
+            <button
+              key={r}
+              onClick={() => { setOpen(false); onViewAs(r === realRole ? null : r) }}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-sidebar-text hover:bg-white/10 hover:text-white"
+            >
+              <span>
+                {ROLE_LABELS[r]}
+                {r === realRole && <span className="text-sidebar-text/50"> (me)</span>}
+              </span>
+              {r === current && <Check className="h-3.5 w-3.5 text-accent shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SidebarContent({
-  links, pathname, name, role, collapsed = false,
-  onLinkClick, onSignOut, onToggleCollapse,
+  links, pathname, name, role, realRole, viewingAs, busy, collapsed = false,
+  onLinkClick, onSignOut, onViewAs, onToggleCollapse,
 }: SidebarContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -93,9 +165,40 @@ function SidebarContent({
       {/* User info — hidden when collapsed to keep the rail narrow */}
       {!collapsed && (
         <div className="px-6 py-4 border-b border-white/10">
-          <p className="text-xs text-sidebar-text/60 uppercase tracking-wider">Signed in as</p>
-          <p className="text-sm font-medium text-white mt-0.5 truncate">{name}</p>
-          <p className="text-xs text-sidebar-text/60 capitalize">{role.replace('_', ' ')}</p>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs text-sidebar-text/60 uppercase tracking-wider">Signed in as</p>
+              <p className="text-sm font-medium text-white mt-0.5 truncate">{name}</p>
+              <p className="text-xs text-sidebar-text/60 capitalize">{role.replace('_', ' ')}</p>
+            </div>
+            <div className="flex items-center gap-0.5 shrink-0">
+              <RoleSwitcher realRole={realRole} viewingAs={viewingAs} busy={busy} onViewAs={onViewAs} />
+              <button
+                onClick={onSignOut}
+                title="Sign out"
+                aria-label="Sign out"
+                className="rounded-md p-1.5 text-sidebar-text/70 hover:bg-white/10 hover:text-white transition-colors"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Preview banner — so a borrowed view is never mistaken for the real one */}
+          {viewingAs && (
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-accent/15 border border-accent/40 px-2.5 py-1.5">
+              <span className="text-xs text-white truncate">
+                Viewing as <strong>{ROLE_LABELS[viewingAs]}</strong>
+              </span>
+              <button
+                onClick={() => onViewAs(null)}
+                disabled={busy}
+                className="text-xs font-medium text-accent hover:text-white transition-colors disabled:opacity-50"
+              >
+                Exit
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -126,17 +229,17 @@ function SidebarContent({
 
       {/* Footer actions */}
       <div className="mt-auto px-3 py-4 border-t border-white/10 flex flex-col gap-1">
-        <button
-          onClick={onSignOut}
-          title={collapsed ? 'Sign out' : undefined}
-          className={cn(
-            'flex w-full items-center gap-3 rounded-lg py-2.5 text-sm font-medium text-sidebar-text hover:bg-white/10 hover:text-white transition-colors',
-            collapsed ? 'justify-center px-2' : 'px-3'
-          )}
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          {!collapsed && 'Sign out'}
-        </button>
+        {/* The collapsed rail has no user block, so sign out lives down here instead */}
+        {collapsed && (
+          <button
+            onClick={onSignOut}
+            title="Sign out"
+            aria-label="Sign out"
+            className="flex w-full items-center justify-center rounded-lg px-2 py-2.5 text-sm font-medium text-sidebar-text hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+          </button>
+        )}
 
         {/* Collapse toggle — desktop only */}
         {onToggleCollapse && (
@@ -161,7 +264,11 @@ function SidebarContent({
 }
 
 interface Props {
+  /** Effective role — the previewed one while a role preview is active. */
   role: Role
+  /** The role actually on the profile. */
+  realRole: Role
+  viewingAs: Role | null
   name: string
   /** Section keys the user may access (from the permissions matrix). */
   allowedSections?: string[]
@@ -169,11 +276,12 @@ interface Props {
 
 const COLLAPSE_KEY = 'haberl.portal.sidebarCollapsed'
 
-export function PortalSidebar({ role, name, allowedSections = [] }: Props) {
+export function PortalSidebar({ role, realRole, viewingAs, name, allowedSections = [] }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   // Restore the saved collapse preference after mount (client-only). localStorage
   // does not exist during SSR, so this cannot be read during render without
@@ -201,7 +309,37 @@ export function PortalSidebar({ role, name, allowedSections = [] }: Props) {
         return true // sectionless, role-less links (e.g. Profile) show for all employees
       })
 
+  async function setViewAs(next: Role | null) {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/portal/view-as', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: next }),
+      })
+      if (!res.ok) {
+        setBusy(false)
+        return
+      }
+      // Full navigation to /portal: it re-resolves the right dashboard for the
+      // new role and drops any client-cached pages the old role rendered.
+      window.location.assign('/portal')
+    } catch {
+      setBusy(false)
+    }
+  }
+
   async function handleSignOut() {
+    // Drop any role preview first, so the next sign-in starts as yourself.
+    try {
+      await fetch('/api/portal/view-as', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: null }),
+      })
+    } catch {
+      // Signing out matters more than clearing the preview.
+    }
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/')
@@ -213,8 +351,12 @@ export function PortalSidebar({ role, name, allowedSections = [] }: Props) {
     pathname,
     name,
     role,
+    realRole,
+    viewingAs,
+    busy,
     onLinkClick: () => setMobileOpen(false),
     onSignOut: handleSignOut,
+    onViewAs: setViewAs,
   }
 
   return (

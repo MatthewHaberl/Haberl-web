@@ -8,12 +8,18 @@ export default async function PortalLayout({ children }: { children: React.React
   const access = await getUserAccess()
   if (!access) redirect('/auth/login')
 
-  const { role, name, sections } = access
+  const { role, realRole, viewingAs, name, sections } = access
 
   return (
     <ConfirmProvider>
       <div className="flex min-h-screen">
-        <PortalSidebar role={role} name={name} allowedSections={[...sections]} />
+        <PortalSidebar
+          role={role}
+          realRole={realRole}
+          viewingAs={viewingAs}
+          name={name}
+          allowedSections={[...sections]}
+        />
         <main className="flex-1 overflow-auto md:ml-0 pt-14 md:pt-0">
           <div className="p-4 md:p-6">
             {children}

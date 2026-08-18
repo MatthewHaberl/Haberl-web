@@ -4,10 +4,16 @@ import type { User } from '@supabase/supabase-js'
 import { createClient, getUser } from '@/lib/supabase/server'
 import type { Role } from '@/types/database'
 import { PORTAL_SECTIONS, type PortalSectionKey } from './sections'
+import { resolveViewAs } from './view-as'
 
 export interface UserAccess {
   user: User
+  /** The role the portal behaves as — the preview role while one is active. */
   role: Role
+  /** The role actually stored on the profile. Never changes with a preview. */
+  realRole: Role
+  /** Set when the user is previewing the portal as a less-privileged role. */
+  viewingAs: Role | null
   name: string
   /** Section keys this user may access. Admin ⇒ every section. */
   sections: Set<string>
@@ -23,6 +29,11 @@ export interface UserAccess {
  * (e.g. block Finance for Byron). An admin always keeps the `users` section so
  * access control can never be lost and the portal stays recoverable.
  *
+ * If a role PREVIEW is active (lib/auth/view-as.ts) the effective role drops to
+ * the previewed one and sections come from that role's plain defaults — no
+ * per-user overrides, since those belong to the real person, not the role being
+ * simulated. A preview can only ever narrow access.
+ *
  * Request-cached: the portal layout, the employee layout, and every page guard
  * can call this freely without extra DB round-trips.
  */
@@ -37,12 +48,13 @@ export const getUserAccess = cache(async (): Promise<UserAccess | null> => {
     .eq('id', user.id)
     .single()
 
-  const role = (profile?.role ?? 'customer') as Role
+  const realRole = (profile?.role ?? 'customer') as Role
   const name = profile?.full_name || user.email || 'User'
+  const { role, viewingAs } = await resolveViewAs(realRole)
 
   const sections = new Set<string>()
   if (role === 'customer') {
-    return { user, role, name, sections }
+    return { user, role, realRole, viewingAs, name, sections }
   }
 
   // 1. Role default.
@@ -63,21 +75,23 @@ export const getUserAccess = cache(async (): Promise<UserAccess | null> => {
   }
 
   // 2. Per-user overrides (force a section on/off for this person specifically).
-  const { data: overrides } = await supabase
-    .from('user_section_permissions')
-    .select('section, allowed')
-    .eq('user_id', user.id)
-  if (overrides) {
-    for (const o of overrides) {
-      if (o.allowed) sections.add(o.section)
-      else sections.delete(o.section)
+  if (!viewingAs) {
+    const { data: overrides } = await supabase
+      .from('user_section_permissions')
+      .select('section, allowed')
+      .eq('user_id', user.id)
+    if (overrides) {
+      for (const o of overrides) {
+        if (o.allowed) sections.add(o.section)
+        else sections.delete(o.section)
+      }
     }
   }
 
   // 3. Safety: an admin never loses access control, so the portal is recoverable.
   if (role === 'admin') sections.add('users')
 
-  return { user, role, name, sections }
+  return { user, role, realRole, viewingAs, name, sections }
 })
 
 export function canAccess(access: UserAccess | null, key: PortalSectionKey): boolean {
