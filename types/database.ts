@@ -569,6 +569,12 @@ export interface QuoteRequest {
   deposit_items: string[]
   deposit_amount: number | null  // cents
   total_amount: number | null    // cents
+  /**
+   * Solar-engine draft total in RANDS (migration 122) — written by the design
+   * canvas as it saves so the quotes list can price a quote nobody has
+   * generated. Scope quotes derive theirs from `scope` instead.
+   */
+  working_total_rands: number | null
   selected_inverter_id: string | null
   selected_battery_id: string | null
   selected_panel_id: string | null

@@ -644,6 +644,8 @@ interface DesignContextValue {
   activeStep: number
   setActiveStep: (i: number) => void
   saveState: 'idle' | 'saving' | 'saved' | 'error'
+  /** False in read-only views — nothing under the provider may write. */
+  canSave: boolean
 }
 
 const DesignContext = createContext<DesignContextValue | null>(null)
@@ -695,7 +697,7 @@ export function DesignProvider({
 
   return (
     <DesignContext.Provider
-      value={{ design, dispatch, requestId, gridSupply, record, activeStep, setActiveStep: setStep, saveState }}
+      value={{ design, dispatch, requestId, gridSupply, record, activeStep, setActiveStep: setStep, saveState, canSave }}
     >
       {children}
     </DesignContext.Provider>

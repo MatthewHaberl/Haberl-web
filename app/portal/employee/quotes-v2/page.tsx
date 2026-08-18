@@ -1,5 +1,6 @@
 import { createClient, getUser } from '@/lib/supabase/server'
 import { getStaffDirectory } from '@/lib/records/sharing'
+import { summariseQuoteRow } from '@/lib/quotes/quote-list-summary'
 import { QuotesV2List, type QuoteRow } from './QuotesV2List'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,9 +50,34 @@ export default async function QuotesV2Page() {
     ;(sharesByQuote[g.record_id] ??= []).push({ id: g.user_id, full_name: nameById.get(g.user_id) ?? 'Someone' })
   }
 
+  // The list shows money and shape, so each row is summarised here rather than
+  // shipped whole: `scope` and `system_design` are the two biggest columns on
+  // the table and the list needs neither — only what they add up to.
+  const rows: QuoteRow[] = (requests ?? []).map((r) => ({
+    id: r.id,
+    customer_name: r.customer_name,
+    customer_phone: r.customer_phone,
+    customer_email: r.customer_email,
+    site_number: r.site_number,
+    site_label: r.site_label,
+    option_label: r.option_label,
+    quote_number: r.quote_number,
+    address: r.address,
+    system_type: r.system_type,
+    work_type: r.work_type,
+    monthly_kwh: r.monthly_kwh,
+    created_at: r.created_at,
+    status: r.status,
+    total_amount: r.total_amount,
+    submitted_by: r.submitted_by,
+    archived_at: r.archived_at,
+    submitter: r.submitter,
+    summary: summariseQuoteRow(r),
+  }))
+
   return (
     <QuotesV2List
-      rows={(requests ?? []) as QuoteRow[]}
+      rows={rows}
       isManager={isManager}
       isAdmin={isAdmin}
       deletedCount={deletedCount ?? 0}

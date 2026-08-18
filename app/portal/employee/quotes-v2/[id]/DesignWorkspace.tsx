@@ -21,6 +21,7 @@ import { ActiveSection } from './design/sections/ActiveSection'
 import { DesignBomPanel } from './design/DesignBomPanel'
 import { DesignCanvasPanel } from './design/DesignCanvasPanel'
 import { DesignStudio } from './design/DesignStudio'
+import { DraftTotalSync } from './design/DraftTotalSync'
 import { ScopeWorkspace } from './scope/ScopeWorkspace'
 import { SupplierQuotesPanel } from './SupplierQuotesPanel'
 import type { WorkType } from '@/lib/quotes/work-types'
@@ -144,6 +145,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
                 quoteNumber={req.quote_number ?? null}
                 viewedAt={req.viewed_at ?? null}
                 isSolar={engine !== 'scope'}
+                initialShowPhotos={req.show_equipment_photos !== false}
                 preflight={engine === 'scope' ? () => scopePreflight.current?.() ?? [] : undefined}
               />
             </div>
@@ -177,6 +179,9 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
               record={{ monthly_kwh: req.monthly_kwh ?? null, municipality: req.municipality ?? null }}
               canSave
             >
+              {/* Keeps the quotes list showing a figure for a design that has
+                  never been generated (migration 122). Headless, both layouts. */}
+              <DraftTotalSync />
               {layout === 'studio' ? (
                 <DesignStudio
                   consoleOpen={consoleOpen}

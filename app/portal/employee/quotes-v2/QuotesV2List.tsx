@@ -13,13 +13,14 @@ import { formatCurrency } from '@/lib/utils'
 import {
   FileText, Plus, ChevronRight, Clock, Sparkles, Map as MapIcon,
   MapPin, Copy, Pencil, Check, X, Loader2, Trash2, UserCog,
-  Archive, ArchiveRestore, Undo2,
+  Archive, ArchiveRestore, Undo2, Layers,
 } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { RecordShareControl } from '@/components/records/RecordShareControl'
 import type { StaffMember } from '@/lib/records/sharing'
 import { workTypeFor } from '@/lib/quotes/work-types'
+import type { QuoteListSummary } from '@/lib/quotes/quote-list-summary'
 
 const statusVariant: Record<QuoteRequestStatus, 'default' | 'warning' | 'success'> = {
   pending: 'warning',
@@ -45,6 +46,8 @@ export type QuoteRow = {
   created_at: string
   status: QuoteRequestStatus
   total_amount: number | null
+  /** Derived on the server (lib/quotes/quote-list-summary): money + shape. */
+  summary?: QuoteListSummary
   submitted_by: string | null
   archived_at: string | null
   submitter?: { full_name: string } | null
@@ -424,8 +427,33 @@ export function QuotesV2List({
                                       >
                                         <Pencil className="h-3 w-3" />
                                       </button>
-                                      {option.total_amount != null && (
-                                        <span className="text-xs font-semibold text-foreground">{formatCurrency(option.total_amount)}</span>
+                                      {/* Money on every row, not just generated ones: a draft
+                                          figure reads muted with a dashed underline so nobody
+                                          quotes it as final, but you can still tell the R4k job
+                                          from the R140k one without opening either. */}
+                                      {option.summary?.totalR != null && (
+                                        <span
+                                          className={
+                                            option.summary.draft
+                                              ? 'text-xs text-muted-foreground border-b border-dashed border-muted-foreground/50'
+                                              : 'text-xs font-semibold text-foreground'
+                                          }
+                                          title={
+                                            option.summary.draft
+                                              ? 'Working total from the builder — this quote hasn’t been generated yet'
+                                              : 'Total on the generated quote'
+                                          }
+                                        >
+                                          {formatCurrency(Math.round(option.summary.totalR * 100))}
+                                        </span>
+                                      )}
+                                      {(option.summary?.needsPricing ?? 0) > 0 && (
+                                        <span
+                                          className="text-xs text-warning"
+                                          title="Lines still waiting on a supplier price — not in the figure shown"
+                                        >
+                                          +{option.summary!.needsPricing} to price
+                                        </span>
                                       )}
                                     </div>
                                     <p className="text-xs text-muted-foreground truncate">
@@ -441,6 +469,15 @@ export function QuotesV2List({
                               {editingOption !== option.id && (
                                 <div className="flex items-center gap-2 shrink-0">
                                   {option.archived_at && <Badge variant="outline">archived</Badge>}
+                                  {/* One option, several jobs inside it (W99 combined quotes).
+                                      The customer accepts the lot or one part, so the list has
+                                      to say that this line is more than one piece of work. */}
+                                  {(option.summary?.packages.length ?? 0) > 1 && (
+                                    <Badge variant="outline" className="gap-1" title="Combined quote — several jobs priced under one option">
+                                      <Layers className="h-3 w-3" />
+                                      {option.summary!.packages.length} jobs
+                                    </Badge>
+                                  )}
                                   {/* Work type (W97) — only 'solar' is the unmarked default; every other
                                       offering (incl. backup_inverter) gets its badge. */}
                                   {option.work_type && option.work_type !== 'solar' && (
@@ -512,6 +549,23 @@ export function QuotesV2List({
                               </button>
                             )}
                            </div>
+                           {/* What's inside a combined quote, each job at the price it
+                               costs bought on its own. Indented under its option so the
+                               nesting is visible without opening anything. */}
+                           {(option.summary?.packages.length ?? 0) > 1 && (
+                             <div className="px-4 pb-3">
+                               <div className="ml-1 flex flex-col gap-1 border-l-2 border-border pl-3">
+                                 {option.summary!.packages.map((pkg) => (
+                                   <div key={pkg.name} className="flex items-center justify-between gap-3 text-xs">
+                                     <span className="truncate text-muted-foreground">{pkg.name}</span>
+                                     <span className="shrink-0 text-muted-foreground tabular-nums">
+                                       {pkg.ownTotalR > 0 ? `${formatCurrency(Math.round(pkg.ownTotalR * 100))} on its own` : 'not priced yet'}
+                                     </span>
+                                   </div>
+                                 ))}
+                               </div>
+                             </div>
+                           )}
                            {isManager && sharingOption === option.id && (
                              <div className="px-3 pb-3">
                                <RecordShareControl
