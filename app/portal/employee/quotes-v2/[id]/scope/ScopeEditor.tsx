@@ -26,6 +26,7 @@ import {
 } from '@/lib/quotes/scope'
 import { CatalogSearch, type CatalogPick } from './CatalogSearch'
 import { ScopeDbBuilder } from './ScopeDbBuilder'
+import { LineMovePicker, type MoveTarget } from './LineMovePicker'
 import {
   SupplierQuoteLinePicker, useSupplierQuoteLines, type PickableSupplierLine,
 } from '../SupplierQuoteLinePicker'
@@ -74,6 +75,7 @@ const COLUMNS: ScopeCol[] = [
   { key: 'markup', label: 'Markup %', width: 88, min: 64, max: 160, hint: 'Markup on landed cost — type 15 for cost x 1.15' },
   { key: 'total', label: 'Total', width: 92, min: 60, max: 200, align: 'right' },
   { key: 'opt', label: 'Opt', width: 24, min: 24, max: 60, hint: 'Optional extra', align: 'center' },
+  { key: 'move', label: '', width: 28, min: 28 },
   { key: 'bin', label: '', width: 28, min: 28 },
 ]
 
@@ -328,6 +330,49 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   const removeLine = (id: string) =>
     onChange((s) => ({ ...s, lines: s.lines.filter((l) => l.id !== id) }))
 
+  // A move rewrites where the line lives and nothing else — same id, same
+  // price, same markup override, same supplier note.
+  const moveLine = (id: string, target: MoveTarget) =>
+    updateLine(id, { section: target.section, packageId: target.packageId })
+
+  // Every section a line could move to: this editor's own sections first, then
+  // the other packages' (and the not-in-any-package bucket) when the quote has
+  // packages, so a line can cross a package boundary without being retyped.
+  const sectionsOf = (ofPackage: string | null) => {
+    const declared = ofPackage
+      ? (scope.packages.find((p) => p.id === ofPackage)?.sections ?? [])
+      : scope.sections
+    const names = [...declared]
+    for (const l of scope.lines) {
+      if (l.packageId !== ofPackage) continue
+      if (l.section && !names.includes(l.section)) names.push(l.section)
+    }
+    return names
+  }
+
+  const otherBuckets: { packageId: string | null; label: string }[] = scope.packages.length
+    ? [
+        ...scope.packages
+          .filter((p) => p.id !== packageId)
+          .map((p) => ({ packageId: p.id as string | null, label: p.label || 'Package' })),
+        ...(packageId === null ? [] : [{ packageId: null, label: 'Not in any package' }]),
+      ]
+    : []
+
+  const moveTargetsFor = (line: ScopeLine): MoveTarget[] => [
+    ...sectionNames
+      .filter((n) => n !== line.section)
+      .map((n) => ({ id: `${packageId ?? ''}:${n}`, section: n, packageId, packageLabel: null })),
+    ...otherBuckets.flatMap((b) =>
+      sectionsOf(b.packageId).map((n) => ({
+        id: `${b.packageId ?? ''}:${n}`,
+        section: n,
+        packageId: b.packageId,
+        packageLabel: b.label,
+      })),
+    ),
+  ]
+
   // Landed cost drives the sell price (cost × markup) until someone types
   // their own price — after that the typed price stands until it's reset.
   const setCost = (line: ScopeLine, costR: number) =>
@@ -486,7 +531,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                           <RotateCcw className="h-3 w-3" />
                         </Button>
                       ) : col.label}
-                      {col.width !== null && col.key !== 'bin' && (
+                      {col.width !== null && col.key !== 'bin' && col.key !== 'move' && (
                         <ColResizer
                           col={col}
                           width={cols.widths[col.key]}
@@ -600,6 +645,12 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                         />
                         <span className="ml-1 text-[11px] text-muted-foreground @[52rem]:hidden">Optional extra</span>
                       </label>
+                      <div className="justify-self-end">
+                        <LineMovePicker
+                          targets={moveTargetsFor(line)}
+                          onMove={(t) => moveLine(line.id, t)}
+                        />
+                      </div>
                       <Button type="button" variant="ghost" size="icon" className="h-8 w-7 justify-self-end"
                         onClick={() => removeLine(line.id)} title="Remove line">
                         <Trash2 className="h-3.5 w-3.5" />
