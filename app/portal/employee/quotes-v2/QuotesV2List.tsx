@@ -11,9 +11,9 @@ import { useConfirm } from '@/components/ui/confirm-dialog'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils'
 import {
-  FileText, Plus, ChevronRight, Clock, Sparkles, Map as MapIcon,
+  FileText, Plus, ChevronRight, ChevronDown, Clock, Sparkles, Map as MapIcon,
   MapPin, Copy, Pencil, Check, X, Loader2, Trash2, UserCog,
-  Archive, ArchiveRestore, Undo2, Layers,
+  Archive, ArchiveRestore, Undo2, Layers, ChevronsDownUp, ChevronsUpDown,
 } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
 import { PageShell, PageHeader } from '@/components/layout/page'
@@ -56,9 +56,23 @@ export type QuoteRow = {
 // Local-only: hiding the intro banner is a per-browser preference, not
 // something worth a profile column.
 const BANNER_KEY = 'quotes-v2-intro-dismissed'
+// Which customers are minimised. Also per-browser — Matthew collapsing the
+// customers he's done with shouldn't change what anyone else sees.
+const COLLAPSED_KEY = 'quotes-v2-collapsed-customers'
+
+// "Open" = still in play. Accepted and declined are finished business; everything
+// before that is work sitting on someone's desk.
+const OPEN_STATUSES: QuoteRequestStatus[] = ['pending', 'generated', 'sent']
 
 type SiteGroup = { key: string; label: string; sortKey: number; options: QuoteRow[] }
-type CustomerGroup = { key: string; name: string; latest: number; optionCount: number; sites: SiteGroup[] }
+type CustomerGroup = {
+  key: string
+  name: string
+  latest: number
+  optionCount: number
+  openCount: number
+  sites: SiteGroup[]
+}
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime()
@@ -115,7 +129,15 @@ function buildGroups(rows: QuoteRow[]): CustomerGroup[] {
           return { key: siteKey(sorted[0]), label: siteLabel(sorted), sortKey: sorted[0]?.site_number ?? 1, options: sorted }
         })
         .sort((a, b) => a.sortKey - b.sortKey)
-      return { key, name: c.name, latest: c.latest, optionCount: sites.reduce((n, s) => n + s.options.length, 0), sites }
+      const allOptions = sites.flatMap((s) => s.options)
+      return {
+        key,
+        name: c.name,
+        latest: c.latest,
+        optionCount: allOptions.length,
+        openCount: allOptions.filter((o) => OPEN_STATUSES.includes(o.status)).length,
+        sites,
+      }
     })
     .sort((a, b) => b.latest - a.latest)
 }
@@ -144,12 +166,20 @@ export function QuotesV2List({
   const [showArchived, setShowArchived] = useState(false)
   // null until the browser preference is read, so a dismissed banner never flashes.
   const [bannerDismissed, setBannerDismissed] = useState<boolean | null>(null)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   // Post-hydration read of external state: localStorage does not exist during SSR,
   // so the preference cannot be seeded during render without a hydration mismatch.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reads the saved dismissal after mount
     setBannerDismissed(window.localStorage.getItem(BANNER_KEY) === '1')
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reads the saved collapse state after mount
+      if (Array.isArray(saved)) setCollapsed(new Set(saved as string[]))
+    } catch {
+      // A corrupt preference is not worth an error — start expanded.
+    }
   }, [])
 
   function dismissBanner() {
@@ -157,9 +187,27 @@ export function QuotesV2List({
     setBannerDismissed(true)
   }
 
+  function persistCollapsed(next: Set<string>) {
+    setCollapsed(next)
+    window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]))
+  }
+
+  function toggleCustomer(key: string) {
+    const next = new Set(collapsed)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    persistCollapsed(next)
+  }
+
   const activeRows = rows.filter((r) => !r.archived_at)
   const archivedRows = rows.filter((r) => r.archived_at)
   const groups = buildGroups(showArchived ? archivedRows : activeRows)
+  const allCollapsed = groups.length > 0 && groups.every((g) => collapsed.has(g.key))
+  const totalOpen = groups.reduce((n, g) => n + g.openCount, 0)
+
+  function toggleAll() {
+    persistCollapsed(allCollapsed ? new Set() : new Set(groups.map((g) => g.key)))
+  }
 
   async function saveSite(optionIds: string[]) {
     setSaving(true)
@@ -241,10 +289,16 @@ export function QuotesV2List({
         description={
           showArchived
             ? `${archivedRows.length} archived ${archivedRows.length === 1 ? 'option' : 'options'} · kept whole, restore any time`
-            : `${groups.length} ${groups.length === 1 ? 'customer' : 'customers'} · ${activeRows.length} ${activeRows.length === 1 ? 'option' : 'options'}`
+            : `${groups.length} ${groups.length === 1 ? 'customer' : 'customers'} · ${activeRows.length} ${activeRows.length === 1 ? 'option' : 'options'} · ${totalOpen} open`
         }
         actions={
           <>
+            {groups.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={toggleAll}>
+                {allCollapsed ? <ChevronsUpDown className="h-4 w-4" /> : <ChevronsDownUp className="h-4 w-4" />}
+                {allCollapsed ? 'Expand all' : 'Collapse all'}
+              </Button>
+            )}
             {archivedRows.length > 0 && (
               <Button
                 variant={showArchived ? 'outline' : 'ghost'}
@@ -323,12 +377,28 @@ export function QuotesV2List({
         <div className="flex flex-col gap-3">
           {groups.map((group) => {
             const firstOptionId = group.sites[0]?.options[0]?.id
+            const isCollapsed = collapsed.has(group.key)
             return (
               <Card key={group.key}>
                 <CardContent className="pt-4 pb-4 flex flex-col gap-3">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold text-sm">{group.name}</p>
+                    {/* The whole name is the hit target — minimising a customer you're
+                        done with is the most common thing to do on this row. */}
+                    <button
+                      type="button"
+                      onClick={() => toggleCustomer(group.key)}
+                      aria-expanded={!isCollapsed}
+                      title={isCollapsed ? 'Expand customer' : 'Minimise customer'}
+                      className="flex items-center gap-1.5 min-w-0 text-left text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                      <span className="font-semibold text-sm text-foreground truncate">{group.name}</span>
+                    </button>
                     <div className="flex items-center gap-2">
+                      {/* Open work first — it's the number you act on. */}
+                      <Badge variant={group.openCount > 0 ? 'warning' : 'outline'}>
+                        {group.openCount} open
+                      </Badge>
                       <Badge variant="default">
                         {group.optionCount} {group.optionCount === 1 ? 'option' : 'options'} ·{' '}
                         {group.sites.length} {group.sites.length === 1 ? 'site' : 'sites'}
@@ -346,7 +416,7 @@ export function QuotesV2List({
                     </div>
                   </div>
 
-                  {group.sites.map((site) => (
+                  {!isCollapsed && group.sites.map((site) => (
                     <div key={site.key} className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                         <MapPin className="h-3 w-3 shrink-0" />
