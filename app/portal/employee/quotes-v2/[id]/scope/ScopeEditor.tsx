@@ -20,13 +20,17 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import {
-  newScopeLine, type QuoteScope, type ScopeLine, type ScopeLineUnit,
+  newScopeLine, renameScopeSection, scopeSectionNames,
+  type QuoteScope, type ScopeLine, type ScopeLineUnit,
 } from '@/lib/quotes/scope'
+import {
+  presetSectionName, presetToScopeLines, sectionToPreset, type ScopeSectionPreset,
+} from '@/lib/quotes/scope-presets'
 import { CatalogSearch, type CatalogPick } from './CatalogSearch'
 import { ScopeDbBuilder } from './ScopeDbBuilder'
 import { LineMovePicker, type MoveTarget } from './LineMovePicker'
+import { PresetPicker, SavePresetButton, useSectionPresets } from './SectionPresets'
 import {
   SupplierQuoteLinePicker, useSupplierQuoteLines, type PickableSupplierLine,
 } from '../SupplierQuoteLinePicker'
@@ -42,7 +46,7 @@ const rand = (n: number) =>
 const UNITS: ScopeLineUnit[] = ['ea', 'm', 'hr', 'job']
 
 // One row per line, same column rhythm as the supplier-quote panel:
-// sku · description · qty · unit · landed cost · sell · markup · total · opt · bin
+// sku · description · qty · landed cost · cost total · sell · markup · total · opt · bin
 //
 // Container query, not a viewport breakpoint: this editor shares the page with
 // the summary panel, so the panel is ~550px at 1280px wide and ~900px on a big
@@ -69,8 +73,10 @@ const COLUMNS: ScopeCol[] = [
   { key: 'sku', label: 'SKU', width: 80, min: 48, max: 260 },
   { key: 'description', label: 'Description', width: null },
   { key: 'qty', label: 'Qty', width: 52, min: 40, max: 120 },
-  { key: 'unit', label: 'Unit', width: 64, min: 48, max: 120 },
-  { key: 'cost', label: 'Cost', width: 96, min: 56, max: 180, hint: 'Landed cost — supplier ex-VAT x 1.15' },
+  { key: 'cost', label: 'Cost', width: 96, min: 56, max: 180, hint: 'Landed cost per unit — supplier ex-VAT x 1.15' },
+  // Cost x qty, beside sell x qty at the other end of the row: the two numbers
+  // the margin is the difference between, both on the page to be checked.
+  { key: 'costTotal', label: 'Cost total', width: 96, min: 60, max: 200, hint: 'Landed cost x qty — what this line costs the business', align: 'right' },
   { key: 'sell', label: 'Sell', width: 96, min: 56, max: 180, hint: 'Sell price per unit' },
   { key: 'markup', label: 'Markup %', width: 88, min: 64, max: 160, hint: 'Markup on landed cost — type 15 for cost x 1.15' },
   { key: 'total', label: 'Total', width: 92, min: 60, max: 200, align: 'right' },
@@ -246,6 +252,50 @@ function MarkupCell({ line, houseMarkup, onMarkupPct, onReset }: {
   )
 }
 
+/**
+ * The section heading, renamed in place.
+ *
+ * The name is a draft while it is being typed and only commits on blur or
+ * Enter: renaming per keystroke would rewrite every line in the section on the
+ * way through "Distributio", and a half-typed name that collides with another
+ * section would be refused mid-word. Escape abandons the edit; a refused
+ * rename (blank, or a name already used here) snaps back to the old name and
+ * the card says why underneath.
+ */
+function SectionName({ name, onRename }: {
+  name: string
+  /** Returns false when the rename was refused — the field reverts. */
+  onRename: (next: string) => boolean
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+
+  const commit = () => {
+    const next = draft
+    setDraft(null)
+    if (next === null || next === name) return
+    onRename(next)
+  }
+
+  return (
+    <input
+      value={draft ?? name}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+        if (e.key === 'Escape') { setDraft(null); e.currentTarget.blur() }
+      }}
+      title="Rename this section — the heading and every line under it"
+      aria-label="Section name"
+      placeholder="Section name"
+      // Reads as a heading until you touch it; the hover/focus underline is the
+      // only hint that it is editable, so the card still scans as a section.
+      className="min-w-0 flex-1 truncate rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold hover:border-border focus:border-primary focus:outline-none"
+    />
+  )
+}
+
 // Sections that plausibly hold a distribution board get the DB-builder
 // shortcut (default work-type sections: "Distribution board", "Generator &
 // changeover", "Supply & protection" — plus anything the user names DB-ish).
@@ -270,6 +320,10 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   const [newSection, setNewSection] = useState('')
   // Section the DB builder is currently building into (null = closed).
   const [dbSection, setDbSection] = useState<string | null>(null)
+  // Section whose rename was just refused, and why — shown under its header.
+  const [renameError, setRenameError] = useState<{ section: string; message: string } | null>(null)
+  // Saved sections, shared across every quote (migration 125).
+  const presets = useSectionPresets()
   // Lines on uploaded supplier quotes (W98) — pickable into any section.
   const supplierLines = useSupplierQuoteLines(requestId)
   // Column widths are shared by every section grid on the page.
@@ -283,11 +337,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   const declaredSections = packageId ? (pkg?.sections ?? []) : scope.sections
 
   // Display order: declared sections first, then any stragglers lines reference.
-  const sectionNames = [...declaredSections]
-  for (const line of scope.lines) {
-    if (!mine(line)) continue
-    if (line.section && !sectionNames.includes(line.section)) sectionNames.push(line.section)
-  }
+  const sectionNames = scopeSectionNames(scope, packageId)
 
   // Anchors stay exactly as they were on a single-package quote; a package
   // qualifies them so two sections called "Materials" scroll to their own card.
@@ -338,17 +388,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   // Every section a line could move to: this editor's own sections first, then
   // the other packages' (and the not-in-any-package bucket) when the quote has
   // packages, so a line can cross a package boundary without being retyped.
-  const sectionsOf = (ofPackage: string | null) => {
-    const declared = ofPackage
-      ? (scope.packages.find((p) => p.id === ofPackage)?.sections ?? [])
-      : scope.sections
-    const names = [...declared]
-    for (const l of scope.lines) {
-      if (l.packageId !== ofPackage) continue
-      if (l.section && !names.includes(l.section)) names.push(l.section)
-    }
-    return names
-  }
+  const sectionsOf = (ofPackage: string | null) => scopeSectionNames(scope, ofPackage)
 
   const otherBuckets: { packageId: string | null; label: string }[] = scope.packages.length
     ? [
@@ -453,6 +493,62 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
 
   const removeSection = (name: string) => setSections((names) => names.filter((n) => n !== name))
 
+  /**
+   * Rename a section — the heading AND every line filed under it, in one edit
+   * (renameScopeSection). Nothing about a line changes but the name it sits
+   * under: same id, same price, same override, same supplier note.
+   *
+   * Refused when the new name is blank or already another section's here —
+   * that would merge two sections' lines under one heading with no undo. The
+   * refusal is reported so the header can put the old name back and say why.
+   */
+  const renameSection = (from: string, to: string): boolean => {
+    let ok = true
+    onChange((s) => {
+      const next = renameScopeSection(s, packageId, from, to)
+      if (!next) { ok = false; return s }
+      return next
+    })
+    if (!ok) {
+      setRenameError({
+        section: from,
+        message: to.trim()
+          ? `This quote already has a section called "${to.trim()}".`
+          : 'A section needs a name.',
+      })
+      return false
+    }
+    setRenameError(null)
+    // Keep an open DB builder pointed at the section it was opened on.
+    setDbSection((cur) => (cur === from ? to.trim() : cur))
+    return true
+  }
+
+  const savePreset = (section: string, name: string) =>
+    presets.save(name, sectionToPreset(scope, packageId, section))
+
+  /**
+   * Drop a saved section in whole. It lands as its own section rather than
+   * merging into a same-named one already here — two 12-way boards is two
+   * boards, the same rule the packages model runs on.
+   */
+  const addPresetSection = (preset: ScopeSectionPreset) => {
+    const name = presetSectionName(preset.payload, sectionNames, preset.name)
+    onChange((s) => ({
+      ...s,
+      ...(packageId
+        ? {
+            packages: s.packages.map((p) =>
+              p.id === packageId && !p.sections.includes(name)
+                ? { ...p, sections: [...p.sections, name] }
+                : p,
+            ),
+          }
+        : { sections: s.sections.includes(name) ? s.sections : [...s.sections, name] }),
+      lines: [...s.lines, ...presetToScopeLines(preset.payload, name, packageId, pricing.markup)],
+    }))
+  }
+
   const addNamedSection = (raw: string) => {
     const name = raw.trim()
     if (!name) return
@@ -487,10 +583,10 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
           <Card key={name} data-issue-anchor={sectionAnchor(name)}>
             <CardContent className="@container space-y-3 pt-6">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">{name}</span>
+                <div className="flex min-w-0 items-center gap-2">
+                  <SectionName name={name} onRename={(to) => renameSection(name, to)} />
                   {lines.length > 0 && (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="shrink-0 text-xs text-muted-foreground">
                       {lines.length} line{lines.length === 1 ? '' : 's'} · {rand(round2(subtotal))}
                       {costTotal > 0 && (
                         <> · cost {rand(round2(costTotal))}
@@ -499,7 +595,14 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex shrink-0 items-center gap-1">
+                  {lines.length > 0 && (
+                    <SavePresetButton
+                      defaultName={name}
+                      lineCount={lines.length}
+                      onSave={(presetName) => savePreset(name, presetName)}
+                    />
+                  )}
                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
                     onClick={() => moveSection(name, -1)} disabled={idx === 0} title="Move up">
                     <ArrowUp className="h-3.5 w-3.5" />
@@ -516,6 +619,10 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                   )}
                 </div>
               </div>
+
+              {renameError?.section === name && (
+                <p className="text-[11px] font-medium text-destructive">{renameError.message}</p>
+              )}
 
               {lines.length > 0 && (
                 <div className={`hidden gap-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground @[52rem]:grid ${ROW_COLS}`}>
@@ -581,13 +688,6 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                         className={`h-8 text-xs ${badField(line.id, 'qty') ? INVALID : ''}`}
                         placeholder="Qty"
                       />
-                      <Select
-                        value={line.unit}
-                        onChange={(e) => updateLine(line.id, { unit: e.target.value as ScopeLineUnit })}
-                        className="h-8 pl-2 pr-6 text-xs"
-                      >
-                        {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                      </Select>
                       {/* Catalog lines are re-costed from the catalog at generate, so their
                           landed cost is shown, not typed. Free-text and supplier-quoted
                           lines carry their own cost. */}
@@ -607,6 +707,12 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                           className="h-8 text-xs" placeholder="Cost"
                         />
                       )}
+                      <div
+                        className="flex h-8 items-center justify-end text-right text-xs tabular-nums text-muted-foreground"
+                        title="Landed cost x qty — what this line costs the business"
+                      >
+                        {line.unitCostR > 0 && line.qty > 0 ? rand(round2(line.unitCostR * line.qty)) : '—'}
+                      </div>
                       <Input
                         type="number" min={0} step="any"
                         leadingText="R"
@@ -697,7 +803,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
             <p className="text-sm font-medium">No sections yet</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Sections are the headings this quote is built from. Add one below — or pick a
-              common one — then drop the items in.
+              common one, or drop in a section you saved earlier — then add the items.
             </p>
           </CardContent>
         </Card>
@@ -715,6 +821,12 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
           <Button type="button" variant="outline" size="sm" onClick={addSection} disabled={!newSection.trim()}>
             <Plus className="h-3.5 w-3.5" /> Add section
           </Button>
+          <PresetPicker
+            presets={presets.presets}
+            loading={presets.loading}
+            onPick={addPresetSection}
+            onDelete={(id) => presets.remove(id)}
+          />
         </div>
 
         {/* House vocabulary, one click away — a free-form quote should still

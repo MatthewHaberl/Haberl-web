@@ -84,6 +84,75 @@ export interface ScopeCrewLine {
   sellR: number | null
 }
 
+/**
+ * How a FIXED labour price is arrived at.
+ *
+ * A fixed price is still worked out from something — R/watt on a solar install,
+ * R/point on a house rewire, R/metre of trench — and the number that was used
+ * is the number Matthew needs back when the customer asks why, or when the next
+ * quote of the same shape has to be priced consistently. Storing only the lump
+ * threw that away and left him re-deriving it on a calculator.
+ *
+ * Every basis but 'amount' is rate x quantity, which is why they all fit one
+ * pair of fields. Whatever the basis, the CUSTOMER still sees one labour line
+ * with one number on it — this is how the number is reached, not how it is sold.
+ */
+export type ScopeFixedBasis = 'amount' | 'watt' | 'kwp' | 'panel' | 'point' | 'metre' | 'unit'
+
+export interface ScopeFixedBasisSpec {
+  key: ScopeFixedBasis
+  label: string
+  /** What the quantity field counts. */
+  qtyLabel: string
+  /** Suffix on the rate — "R6.50 /W". */
+  rateSuffix: string
+  /** Step on the rate field: cents matter at R/W, not at R/point. */
+  rateStep: number
+  qtyStep: number
+  hint: string
+}
+
+export const FIXED_BASES: ScopeFixedBasisSpec[] = [
+  {
+    key: 'amount', label: 'Set value', qtyLabel: '', rateSuffix: '', rateStep: 1, qtyStep: 1,
+    hint: 'One lump sum, typed straight in.',
+  },
+  {
+    key: 'watt', label: 'Per watt', qtyLabel: 'System size (W)', rateSuffix: '/W',
+    rateStep: 0.05, qtyStep: 100,
+    hint: 'The solar install rate — R/W across the array. 8 kW at R2.50/W is R20 000.',
+  },
+  {
+    key: 'kwp', label: 'Per kWp', qtyLabel: 'System size (kWp)', rateSuffix: '/kWp',
+    rateStep: 50, qtyStep: 0.5,
+    hint: 'The same rate stated per kilowatt-peak — R2 500/kWp is R2.50/W.',
+  },
+  {
+    key: 'panel', label: 'Per panel', qtyLabel: 'Panels', rateSuffix: '/panel',
+    rateStep: 25, qtyStep: 1,
+    hint: 'Mounting and stringing priced per module — the number that scales with roof work.',
+  },
+  {
+    key: 'point', label: 'Per point', qtyLabel: 'Points', rateSuffix: '/point',
+    rateStep: 25, qtyStep: 1,
+    hint: 'Plugs, lights and switches on a rewire — the trade’s standard unit.',
+  },
+  {
+    key: 'metre', label: 'Per metre', qtyLabel: 'Metres', rateSuffix: '/m',
+    rateStep: 5, qtyStep: 1,
+    hint: 'Trenching, conduit and cable pulls — priced by the run, not the day.',
+  },
+  {
+    key: 'unit', label: 'Per unit', qtyLabel: 'Units', rateSuffix: '/unit',
+    rateStep: 25, qtyStep: 1,
+    hint: 'Anything else you price by the each — DB ways, circuits, downlights. Name the unit.',
+  },
+]
+
+export function fixedBasisSpec(basis: ScopeFixedBasis): ScopeFixedBasisSpec {
+  return FIXED_BASES.find((b) => b.key === basis) ?? FIXED_BASES[0]
+}
+
 export interface ScopeLabour {
   /**
    * 'crew' prices labour from the `crew` list (per person); the other three
@@ -99,8 +168,22 @@ export interface ScopeLabour {
   days: number
   /** R/day for the standard team — seeded from company_settings.labour_day_rate_rands. */
   dayRateR: number
-  /** Fixed-price amount (fixed mode only). */
+  /**
+   * Fixed-price amount (fixed mode, 'amount' basis). On every other basis the
+   * amount is rate x quantity and this field is not read — see fixedLabourR.
+   */
   fixedR: number
+  /**
+   * How the fixed price is worked out. 'amount' on every quote saved before
+   * this existed, which is exactly what they already meant.
+   */
+  fixedBasis: ScopeFixedBasis
+  /** Rate per watt / kWp / panel / point / metre / unit. */
+  fixedRateR: number
+  /** How many of them. */
+  fixedQty: number
+  /** What a 'unit' is on this quote — "way", "circuit", "downlight". Internal. */
+  fixedUnitLabel: string
   /** Priced crew (crew mode only) — internal; never rendered to a customer. */
   crew: ScopeCrewLine[]
   /**
@@ -232,6 +315,10 @@ export function emptyScope(opts: EmptyScopeOpts = {}): QuoteScope {
       days: 0,
       dayRateR: num(opts.dayRateR, 5500),
       fixedR: 0,
+      fixedBasis: 'amount',
+      fixedRateR: 0,
+      fixedQty: 0,
+      fixedUnitLabel: '',
       crew: [],
       crewDays: num(opts.crewDays, 1),
       crewHoursPerDay: num(opts.crewHoursPerDay, CREW_HOURS_PER_DAY),
@@ -359,6 +446,14 @@ function parseLabour(raw: unknown, base: ScopeLabour): ScopeLabour {
     days: num(labourRaw.days, 0),
     dayRateR: num(labourRaw.dayRateR, base.dayRateR),
     fixedR: num(labourRaw.fixedR, 0),
+    // Absent on every quote saved before the bases existed — and 'amount' is
+    // precisely what those quotes meant, so they reprice to the same rand.
+    fixedBasis: FIXED_BASES.some((b) => b.key === labourRaw.fixedBasis)
+      ? (labourRaw.fixedBasis as ScopeFixedBasis)
+      : 'amount',
+    fixedRateR: num(labourRaw.fixedRateR, 0),
+    fixedQty: num(labourRaw.fixedQty, 0),
+    fixedUnitLabel: str(labourRaw.fixedUnitLabel),
     crew: Array.isArray(labourRaw.crew)
       ? labourRaw.crew.map(parseCrewLine).filter((c): c is ScopeCrewLine => c !== null)
       : [],
@@ -572,17 +667,34 @@ export function managementFeeR(labour: ScopeLabour): number {
 }
 
 /**
+ * The fixed-mode price: the typed lump on the 'amount' basis, otherwise
+ * rate × quantity.
+ *
+ * Negative inputs are floored at zero rather than rejected — a stray minus in a
+ * rate field must not hand the customer a credit halfway through typing.
+ */
+export function fixedLabourR(labour: ScopeLabour): number {
+  // Unknown or absent basis reads as the lump — the same fallback parseLabour
+  // applies, so a labour block built by hand (a fixture, an old import) still
+  // prices at the amount it carries rather than silently at zero.
+  const derived = labour.fixedBasis !== 'amount'
+    && FIXED_BASES.some((b) => b.key === labour.fixedBasis)
+  if (!derived) return round2(Math.max(0, labour.fixedR))
+  return round2(Math.max(0, labour.fixedRateR) * Math.max(0, labour.fixedQty))
+}
+
+/**
  * What the work itself is billed at, before the management fee.
  *
  *   hourly → call-out + hours × rate (the call-out IS the one-hour minimum, so
  *            the first hour is not billed twice)
  *   daily  → days × day rate (team rate; no call-out — a full day absorbs it)
- *   fixed  → the typed amount
+ *   fixed  → the typed amount, or rate × quantity on a per-watt/point/metre basis
  *   crew   → the sum of the priced crew (cost × markup, per person)
  */
 function labourWorkR(labour: ScopeLabour): number {
   if (labour.mode === 'crew') return crewSellR(labour)
-  if (labour.mode === 'fixed') return round2(labour.fixedR)
+  if (labour.mode === 'fixed') return fixedLabourR(labour)
   if (labour.mode === 'daily') return round2(labour.days * labour.dayRateR)
   const billableHours = Math.max(0, labour.hours - (labour.calloutR > 0 ? 1 : 0))
   return round2(labour.calloutR + billableHours * labour.rateR)
@@ -652,13 +764,75 @@ export function packageLines(scope: QuoteScope, packageId: string | null): Scope
   return scope.lines.filter((l) => l.packageId === packageId)
 }
 
-/** Section names used by a package — declared order first, then stragglers. */
-export function packageSectionNames(scope: QuoteScope, pkg: ScopePackage): string[] {
-  const names = [...pkg.sections]
-  for (const line of packageLines(scope, pkg.id)) {
+/**
+ * Section names in one bucket — a package's, or (packageId null) the quote's
+ * own — declared order first, then any section only its lines mention.
+ *
+ * A "straggler" is a section a line references that the declared list has lost
+ * (an imported line, a section removed while lines still sat under it). It is
+ * still a real heading on the document, so anything that reorders, renames or
+ * moves sections has to see it.
+ */
+export function scopeSectionNames(scope: QuoteScope, packageId: string | null): string[] {
+  const declared = packageId
+    ? (scope.packages.find((p) => p.id === packageId)?.sections ?? [])
+    : scope.sections
+  const names = [...declared]
+  for (const line of packageLines(scope, packageId)) {
     if (line.section && !names.includes(line.section)) names.push(line.section)
   }
   return names
+}
+
+/** Section names used by a package — declared order first, then stragglers. */
+export function packageSectionNames(scope: QuoteScope, pkg: ScopePackage): string[] {
+  return scopeSectionNames(scope, pkg.id)
+}
+
+/**
+ * Rename a section: the declared name AND the `section` on every line filed
+ * under it, in the one bucket that owns it. Nothing else about a line changes —
+ * same id, same price, same markup override, same supplier note — so a rename
+ * is a relabel, never a re-price.
+ *
+ * Returns null when the rename must be refused, and the caller puts the old
+ * name back:
+ *   - a blank name (an invisible heading that still bills), or
+ *   - a name another section in the same bucket already uses. That would silently
+ *     merge two sections' lines under one heading, and there is no undo for it.
+ *     Merging is what the per-line move picker is for.
+ * Re-casing a section ("materials" → "Materials") is not a clash with itself.
+ */
+export function renameScopeSection(
+  scope: QuoteScope,
+  packageId: string | null,
+  from: string,
+  to: string,
+): QuoteScope | null {
+  const name = to.trim()
+  if (!name) return null
+  if (name === from) return scope
+
+  const clash = scopeSectionNames(scope, packageId).some(
+    (n) => n !== from && n.toLowerCase() === name.toLowerCase(),
+  )
+  if (clash) return null
+
+  // A straggler has no declared entry to rewrite — its lines carry the name.
+  const renamed = (names: string[]) => names.map((n) => (n === from ? name : n))
+  const lines = scope.lines.map((l) =>
+    l.packageId === packageId && l.section === from ? { ...l, section: name } : l,
+  )
+
+  return packageId
+    ? {
+        ...scope,
+        lines,
+        packages: scope.packages.map((p) =>
+          p.id === packageId ? { ...p, sections: renamed(p.sections) } : p,
+        ),
+      }
+    : { ...scope, lines, sections: renamed(scope.sections) }
 }
 
 /**
