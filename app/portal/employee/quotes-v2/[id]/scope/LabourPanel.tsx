@@ -12,7 +12,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { labourAmountR, type QuoteScope } from '@/lib/quotes/scope'
+import { CREW_DEFAULT_MARKUP, labourAmountR, type QuoteScope } from '@/lib/quotes/scope'
 import type { ScopeIssue } from '@/lib/quotes/scope-validate'
 import { CrewPanel } from './CrewPanel'
 import type { ScopePricing } from './ScopeWorkspace'
@@ -118,7 +118,7 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
         )}
 
         {labour.mode === 'crew' && (
-          <CrewPanel scope={scope} onChange={onChange} defaultMarkup={pricing.markup} />
+          <CrewPanel scope={scope} onChange={onChange} defaultMarkup={CREW_DEFAULT_MARKUP} />
         )}
 
         <Input

@@ -257,6 +257,17 @@ function parseCrewLine(raw: unknown): ScopeCrewLine | null {
   }
 }
 
+/**
+ * Markup a new crew line starts at — 20% on the wage.
+ *
+ * Deliberately NOT the company materials markup. Crew lines used to seed from
+ * it, which billed a R250/hr sparky at R287,50/hr while the hourly mode billed
+ * the settings rate outright — so crew mode quietly under-priced labour against
+ * every other labour mode. Labour carries its own number; per-line edits still
+ * override it.
+ */
+export const CREW_DEFAULT_MARKUP = 1.2
+
 export function newCrewLine(over: Partial<ScopeCrewLine> = {}): ScopeCrewLine {
   return {
     id: newScopeLineId(),
@@ -265,7 +276,7 @@ export function newCrewLine(over: Partial<ScopeCrewLine> = {}): ScopeCrewLine {
     qty: 0,
     unit: 'hr',
     costR: 0,
-    markup: 1.6,
+    markup: CREW_DEFAULT_MARKUP,
     sellR: null,
     ...over,
   }

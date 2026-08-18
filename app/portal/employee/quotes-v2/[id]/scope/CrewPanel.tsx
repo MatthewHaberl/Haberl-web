@@ -62,7 +62,7 @@ export function CrewPanel({
 }: {
   scope: QuoteScope
   onChange: Dispatch<SetStateAction<QuoteScope>>
-  /** Company markup — the starting point for a new crew line. */
+  /** Labour markup (CREW_DEFAULT_MARKUP) — the starting point for a new crew line. */
   defaultMarkup: number
 }) {
   const supabase = useMemo(() => createClient(), [])
