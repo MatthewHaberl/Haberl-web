@@ -119,7 +119,7 @@ export function SavingsSection() {
           )}
         </div>
 
-        <div className="mt-3 grid grid-cols-2 @xl:grid-cols-4 gap-3">
+        <div className="mt-3 grid grid-cols-2 @xl:grid-cols-3 @3xl:grid-cols-4 gap-3">
           <Stat label="System price" value={rand(systemCostR)} />
           <Stat
             label="Payback" accent

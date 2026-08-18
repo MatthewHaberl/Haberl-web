@@ -81,6 +81,18 @@ export function EarthingSection() {
               {earthProducts.map((p) => <option key={p.id} value={p.id}>{p.description}</option>)}
             </select>
           </label>
+          {/* The earth run from the board — the default 5 m under-quotes any
+              electrode that isn't right beside the DB. */}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Distance from board (m)</span>
+            <input
+              type="number" min={0} step={0.5} placeholder="e.g. 5"
+              value={e.distanceFromDbM ?? ''}
+              onChange={(ev) => dispatch({ type: 'setEarthing', patch: { distanceFromDbM: ev.target.value === '' ? undefined : Math.max(0, Number(ev.target.value) || 0) } })}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            />
+            <span className="text-[10px] text-muted-foreground">Sizes the earth conductor. Blank draws 5 m.</span>
+          </label>
         </div>
         <p className="mt-1 text-[11px] text-muted-foreground">Pick catalog products (category “other”) to price spikes/bars; leave as “None” to surface them as Quote in the BOM.</p>
       </SectionCard>
@@ -125,7 +137,7 @@ export function EarthingSection() {
                     <input value={el.label} onChange={(ev) => up({ label: ev.target.value })} className="h-8 flex-1 rounded border border-border bg-background px-2 text-xs" />
                     <button type="button" onClick={() => setElectrodes(e.electrodes.filter((x) => x.id !== el.id))} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                   </div>
-                  <div className="mt-2 grid grid-cols-2 @xl:grid-cols-4 gap-2">
+                  <div className="mt-2 grid grid-cols-2 @xl:grid-cols-3 @3xl:grid-cols-4 gap-2">
                     <label className="flex flex-col gap-0.5">
                       <span className="text-[10px] text-muted-foreground">Spikes</span>
                       <input type="number" min={0} value={el.spikeCount} onChange={(ev) => up({ spikeCount: Math.max(0, Math.round(Number(ev.target.value) || 0)) })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]" />

@@ -7,7 +7,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  designToFlow, emptyDesign, defaultCombiner,
+  designToFlow, emptyDesign, defaultCombiner, defaultAcCombiner, defaultSupply,
+  parseDesign, posRunM,
   type SystemDesign, type PanelGroup, type DcCombiner,
 } from '../system-design'
 import type { CableEdgeData } from '../sld-builder'
@@ -90,4 +91,82 @@ test('an override that matches the computed value is not flagged as an edit', ()
 
   const data = cable(design, 'e-panel0-comb')
   assert.deepEqual(data.overriddenKeys, ['runs'])
+})
+
+// ── The AC / battery / comms / earth runs ────────────────────────────────────
+// Same bug class as the DC runs above: these were drawn at a fixed literal, so a
+// board 30 m from the inverter was still quoted 8 m of cable. Each now reads its
+// own field and keeps the old literal only as the blank fallback.
+
+/** A design that emits the AC, battery, BMS and earth edges too. */
+function fullDesign(over: Partial<SystemDesign> = {}): SystemDesign {
+  const d = designWith([panelGroup({ id: 'pg1' })], {
+    batteries: [{ id: 'b1', catalogId: 'bat', model: '5kWh', kwh: 5, qty: 1 }],
+    ...over,
+  } as Partial<SystemDesign>)
+  return d
+}
+
+test('the inverter → AC board run reads the board it actually feeds', () => {
+  const board = { ...defaultAcCombiner(), distanceFromInverterM: 30 }
+  assert.equal(cable(fullDesign({ acCombiners: [board] }), 'e-inv-db').lengthM, 30)
+  // Blank keeps the drawn default rather than collapsing to 0 m.
+  assert.equal(cable(fullDesign({ acCombiners: [defaultAcCombiner()] }), 'e-inv-db').lengthM, 8)
+  assert.equal(cable(fullDesign(), 'e-inv-db').lengthM, 8)
+})
+
+test('the grid → inverter run reads the incoming supply distance', () => {
+  const supply = { ...defaultSupply(), distanceToInverterM: 22 }
+  assert.equal(cable(fullDesign({ supply }), 'e-grid-inv').lengthM, 22)
+  assert.equal(cable(fullDesign({ supply: defaultSupply() }), 'e-grid-inv').lengthM, 5)
+})
+
+test('the battery run and its BMS comms both follow the bank distance', () => {
+  // Detailed is the default and the mode the BOM prices, so assert there: the leg
+  // that reaches the inverter carries the distance.
+  const base = fullDesign()
+  const design = { ...base, bank: { ...base.bank, distanceToInverterM: 18 } }
+  assert.equal(cable(design, 'e-bus-main').lengthM, 2)      // internal bank hop
+  assert.equal(cable(design, 'e-main-inv').lengthM, 18)     // the run to the inverter
+  // The CAN cable has to reach as far as the power cable — 3 m was the bug.
+  assert.equal(cable(design, 'e-bms-comms').lengthM, 18)
+
+  assert.equal(cable(base, 'e-main-inv').lengthM, 2)
+  assert.equal(cable(base, 'e-bms-comms').lengthM, 3)
+})
+
+test('simple mode draws the same bank distance as detailed', () => {
+  const base = fullDesign()
+  const design = { ...base, bank: { ...base.bank, distanceToInverterM: 18 } }
+  const simple = (d: SystemDesign, id: string) => {
+    const edge = designToFlow(d, { detail: 'simple' }).edges.find((e) => e.id === id)
+    assert.ok(edge, `expected edge ${id}`)
+    return edge.data as CableEdgeData
+  }
+  assert.equal(simple(design, 'e-bat-inv').lengthM, 18)
+  assert.equal(simple(design, 'e-bms-comms').lengthM, 18)
+  assert.equal(simple(base, 'e-bat-inv').lengthM, 2)
+})
+
+test('the earth run reads its distance from the board', () => {
+  const base = fullDesign()
+  const design = { ...base, earthing: { ...base.earthing, distanceFromDbM: 14 } }
+  assert.equal(cable(design, 'e-db-earth').lengthM, 14)
+  assert.equal(cable(base, 'e-db-earth').lengthM, 5)
+})
+
+test('a junk saved run length is dropped rather than drawn as 0 m', () => {
+  // Hand-edited JSON / an older payload can carry 0, a negative or a string.
+  for (const bad of [0, -5, NaN, '12' as unknown as number]) {
+    assert.equal(posRunM(bad), undefined)
+  }
+  assert.equal(posRunM(12), 12)
+
+  const parsed = parseDesign({
+    ...fullDesign(),
+    earthing: { ...fullDesign().earthing, distanceFromDbM: -5 },
+  } as unknown as Record<string, unknown>)
+  assert.ok(parsed, 'expected the design to parse')
+  assert.equal(parsed.earthing.distanceFromDbM, undefined)
+  assert.equal(cable(parsed, 'e-db-earth').lengthM, 5)
 })

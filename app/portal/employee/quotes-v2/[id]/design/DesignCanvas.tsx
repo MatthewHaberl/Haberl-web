@@ -187,7 +187,7 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
     // Inverter phaseConfig + PV/battery capability toggles (items 50/51) reshape the AC + DC topology.
     i: d.inverters.map((u) => [u.catalogId, u.kw, u.model, u.qty, u.phases, u.phaseConfig, u.acceptsPv, u.acceptsBattery]),
     b: d.batteries.map((b) => [b.catalogId, b.kwh, b.qty, b.model]),
-    bk: [d.bank.perBatteryDisconnect, d.bank.busbar, d.bank.mainDisconnect, d.bank.cableSizeMm2, d.bank.cutoffVoltage],
+    bk: [d.bank.perBatteryDisconnect, d.bank.busbar, d.bank.mainDisconnect, d.bank.cableSizeMm2, d.bank.cutoffVoltage, d.bank.distanceToInverterM],
     // New bank wiring (items 23/27/28): disconnect product/type, busbar spec, itemised cables.
     bkd: JSON.stringify([d.bank.perBatteryDisconnectChoice ?? null, d.bank.mainDisconnectChoice ?? null, d.bank.busbarSpec ?? null]),
     bkc: JSON.stringify(d.bank.cables ?? []),
@@ -195,9 +195,12 @@ function structureSig(d: SystemDesign, gridSupply?: string): string {
     mon: JSON.stringify(d.monitoring ?? []),
     dl: JSON.stringify(d.data?.links ?? []),
     xc: JSON.stringify(d.extras.map((x) => [x.id, x.components?.length ?? 0])),
-    // AC board device feeds drive the DB outgoing-way (outputCount) count (item 22).
-    ac: JSON.stringify(d.acCombiners.map((c) => c.components.map((k) => [k.id, k.fedFrom]))),
-    e: [d.earthing.spikeCount, d.earthing.spec],
+    // AC board device feeds drive the DB outgoing-way (outputCount) count (item 22),
+    // and the board's run from the inverter labels the AC cable.
+    ac: JSON.stringify(d.acCombiners.map((c) => [c.distanceFromInverterM, c.components.map((k) => [k.id, k.fedFrom])])),
+    // Incoming supply run — labels the grid → inverter cable.
+    sup: d.supply?.distanceToInverterM,
+    e: [d.earthing.spikeCount, d.earthing.spec, d.earthing.distanceFromDbM],
     em: [
       ...d.earthing.conductors.map((c) => `${c.fromId}>${c.toId}:${c.sizeMm2}:${c.kind}`),
       ...d.earthing.electrodes.map((x) => `el:${x.id}:${x.spikeCount}:${x.arrangement}:${x.groupSize}:${x.linkMm2}`),

@@ -198,6 +198,16 @@ export function AcCombinerSection() {
                     {enclosures.map((x) => <option key={x.id} value={x.id}>{x.description} ({x.sku})</option>)}
                   </select>
                 </label>
+                {/* The AC run back to the inverter — a board across the yard is
+                    quoted for the metres it actually takes, not a drawn 8 m. */}
+                <label className="mb-2.5 flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground">Distance from inverter (m)</span>
+                  <input type="number" min={0} step={0.5} placeholder="e.g. 8"
+                    value={c.distanceFromInverterM ?? ''}
+                    onChange={(e) => patch(c, { distanceFromInverterM: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+                    className="h-7 w-20 rounded-md border border-border bg-background px-2 text-xs" />
+                  <span className="text-[10px] text-muted-foreground">Sizes the inverter&rsquo;s AC output cable. Blank draws 8 m.</span>
+                </label>
                 {encOpen && (<>
                 {locked && (
                   <p className="mb-2 text-[10px] text-muted-foreground">

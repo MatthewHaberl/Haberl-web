@@ -129,7 +129,7 @@ export function MonitoringSection() {
                   <ReorderButtons index={i} count={monitoring.length} onMove={(from, to) => dispatch({ type: 'reorderMonitoring', from, to })} />
                   <button type="button" onClick={() => dispatch({ type: 'removeMonitoring', id: m.id })} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
-                <div className="mt-2 grid grid-cols-2 @xl:grid-cols-4 gap-2">
+                <div className="mt-2 grid grid-cols-2 @xl:grid-cols-3 @3xl:grid-cols-4 gap-2">
                   <label className="flex flex-col gap-0.5">
                     <span className="text-[10px] text-muted-foreground">Role</span>
                     <select value={m.role} onChange={(e) => up(m.id, { role: e.target.value as MonitoringDevice['role'] })} className="h-7 rounded border border-border bg-background px-1.5 text-[11px]">

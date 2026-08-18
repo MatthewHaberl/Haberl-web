@@ -303,7 +303,7 @@ export function BatterySection() {
           </label>
           {isStack && (
             <>
-              <div className="mt-2.5 grid grid-cols-2 @xl:grid-cols-4 gap-2.5">
+              <div className="mt-2.5 grid grid-cols-2 @xl:grid-cols-3 @3xl:grid-cols-4 gap-2.5">
                 <label className="flex flex-col gap-0.5">
                   <span className="text-[11px] text-muted-foreground">Stack size (series)</span>
                   <input
@@ -466,6 +466,17 @@ export function BatterySection() {
               </select>
             </label>
             <ProductPicker items={items} category="cable" label="Default cable product" value={bank.cableProductId} onChange={(v) => setBank({ cableProductId: v })} className="col-span-2 @xl:col-span-1" />
+            {/* The run from this bank to the inverter — the BMS comms cable
+                follows it too, so a battery down the passage isn't quoted 3 m
+                of CAN cable. */}
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-muted-foreground">Distance to inverter (m)</span>
+              <input type="number" min={0} step={0.5} placeholder="e.g. 2"
+                value={bank.distanceToInverterM ?? ''}
+                onChange={(e) => setBank({ distanceToInverterM: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+                className="h-8 rounded-md border border-border bg-background px-2 text-xs" />
+              <span className="text-[10px] text-muted-foreground">Sizes the battery + BMS runs. Blank draws 2 m.</span>
+            </label>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-muted-foreground">Worst-case cutoff V</span>
               <input type="number" min={0} step={0.1} value={bank.cutoffVoltage} disabled={!override} onChange={(e) => setBank({ cutoffVoltage: Number(e.target.value) || 0 })} className={`h-8 rounded-md border border-border bg-background px-2 text-xs ${LOCKED_FIELD}`} />

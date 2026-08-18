@@ -316,6 +316,10 @@ export interface BatteryBank {
   /** Separate disconnect + cable run to each inverter. */
   inverterFeeds: number
   cableSizeMm2: number
+  /** Run length from the bank to the inverter (m). Blank falls back to 2 m —
+   *  the BMS comms run follows it too (a battery 20 m away needs 20 m of CAN
+   *  cable, not 3 m). */
+  distanceToInverterM?: number
   /** Catalog products (null = none / not chosen). */
   cableProductId: string | null
   perBatteryDisconnectId: string | null
@@ -902,6 +906,8 @@ export interface AcCombiner {
   ipRating: string
   productCode: string
   productCodeLocked: boolean
+  /** Run length from the inverter to this board (m). Blank falls back to 8 m. */
+  distanceFromInverterM?: number
   /** Devices mounted inside the board, in wiring order. */
   components: DbComponent[]
   /** Cable entry on the top / bottom of the enclosure. */
@@ -956,6 +962,12 @@ export function defaultAcCombiner(): AcCombiner {
 
 /** Backfill a saved AC board: migrate the legacy fixed main/RCCB/SPD trio into the
  *  component list, and default the cable-entry fields. Idempotent. */
+/** A saved run length, kept only when it's a real positive number — anything
+ *  else becomes undefined so the diagram falls back to its drawn default. */
+export function posRunM(m: unknown): number | undefined {
+  return typeof m === 'number' && Number.isFinite(m) && m > 0 ? m : undefined
+}
+
 export function normalizeAcCombiner(c: AcCombiner): AcCombiner {
   let components = c.components
   if (!Array.isArray(components)) {
@@ -969,6 +981,7 @@ export function normalizeAcCombiner(c: AcCombiner): AcCombiner {
     components: components.map((x) => ({ ...x, qty: x.qty || 1, fedFrom: Array.isArray(x.fedFrom) ? x.fedFrom : [] })),
     topConnection: c.topConnection ?? 'glands',
     bottomConnection: c.bottomConnection ?? 'glands',
+    distanceFromInverterM: posRunM(c.distanceFromInverterM),
   }
 }
 
@@ -1025,6 +1038,9 @@ export interface EarthConductor {
 export interface EarthingConfig {
   spikeCount: number | null
   spec: string
+  /** Run length from the AC board to the earth electrode (m). Blank falls back
+   *  to 5 m. */
+  distanceFromDbM?: number
   /** Catalog products for pricing the earth spike + bar (null = none → quoted). */
   spikeProductId?: string | null
   barProductId?: string | null
@@ -1189,6 +1205,9 @@ export interface SupplyConfig {
   phases: 1 | 3
   /** Line-to-line voltage (V): 230 single-phase, 400 three-phase. */
   voltageV: number
+  /** Run length from the incoming supply to the inverter (m). Blank falls back
+   *  to 5 m. */
+  distanceToInverterM?: number
 }
 
 export function defaultSupply(): SupplyConfig {
@@ -1393,9 +1412,11 @@ export function parseDesign(raw: unknown): SystemDesign | null {
     ...base,
     ...src,
     energy,
+    supply: src.supply ? { ...src.supply, distanceToInverterM: posRunM(src.supply.distanceToInverterM) } : src.supply,
     bank: {
       ...base.bank,
       ...(src.bank ?? {}),
+      distanceToInverterM: posRunM(src.bank?.distanceToInverterM),
       // Backfill the disconnect product choices (item 23) from legacy ids when absent.
       perBatteryDisconnectChoice: src.bank?.perBatteryDisconnectChoice
         ?? (src.bank?.perBatteryDisconnectId ? { type: 'breaker', product: src.bank.perBatteryDisconnectId } : base.bank.perBatteryDisconnectChoice),
@@ -1413,6 +1434,7 @@ export function parseDesign(raw: unknown): SystemDesign | null {
     earthing: {
       ...base.earthing,
       ...(src.earthing ?? {}),
+      distanceFromDbM: posRunM(src.earthing?.distanceFromDbM),
       electrodes: (src.earthing?.electrodes ?? []).map((el) => ({ ...el, arrangement: el.arrangement ?? 'line', groupSize: el.groupSize ?? 1, linkMm2: el.linkMm2 ?? 16 })),
     },
     layout: {
@@ -2080,6 +2102,11 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
     const m = c?.distanceToInverterM
     return typeof m === 'number' && m > 0 ? m : fallback
   }
+  /** A hand-entered run, or the drawing's default when it hasn't been set.
+   *  Every fixed length in the diagram goes through this, so a board 30 m from
+   *  the inverter is quoted for 30 m of cable rather than the default 8. */
+  const runM = (m: number | undefined, fallback: number): number =>
+    typeof m === 'number' && m > 0 ? m : fallback
   // The list of combiners to render: explicit entries, or one implicit when needed.
   const renderCombiners: Array<DcCombiner | undefined> =
     d.dcCombiners.length > 0 ? d.dcCombiners : (useCombiner && groupCount > 0 ? [undefined] : [])
@@ -2187,8 +2214,8 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
       nodes.push({ id: NODE.battery, type: 'battery', position: pos(NODE.battery, { x: INV_X - 30, y: Y_BAT }), data: { label: totalQty > 1 ? `Battery bank ×${totalQty}` : 'Battery', model: bat0?.model ?? '', qty: totalQty, totalKwh: +batKwh.toFixed(1), chemistry: 'LiFePO4' } })
       const mRuns = cableRunsNeeded(batteryDcCurrent(invKw, d.bank.cutoffVoltage), d.bank.cableSizeMm2)
       const bspec = `CU ${d.bank.cableSizeMm2}mm²`
-      edges.push({ id: 'e-bat-inv', source: NODE.battery, target: NODE.inverter, sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable', data: { ...cableData('battery', bspec, 2), runs: mRuns }, label: `${mRuns > 1 ? `${mRuns}× ` : ''}${bspec}` })
-      edges.push({ id: 'e-bms-comms', source: NODE.battery, target: NODE.inverter, sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable', data: { ...cableData('communication', 'CAN/RS485', 3), circuitLayer: 'communication', routingType: 'bezier' }, label: 'BMS · CAN' })
+      edges.push({ id: 'e-bat-inv', source: NODE.battery, target: NODE.inverter, sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable', data: { ...cableData('battery', bspec, runM(d.bank.distanceToInverterM, 2)), runs: mRuns }, label: `${mRuns > 1 ? `${mRuns}× ` : ''}${bspec}` })
+      edges.push({ id: 'e-bms-comms', source: NODE.battery, target: NODE.inverter, sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable', data: { ...cableData('communication', 'CAN/RS485', runM(d.bank.distanceToInverterM, 3)), circuitLayer: 'communication', routingType: 'bezier' }, label: 'BMS · CAN' })
     } else {
     const bank = d.bank
     const batSize = bank.cableSizeMm2
@@ -2204,9 +2231,13 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
       const size = match?.sizeMm2 || `${batSize}`
       const finalRuns = match ? Math.max(1, Math.round(Number(match.runs) || 1)) : runs
       const spec = `${material} ${size}mm²`
+      // Only the leg that actually reaches the inverter carries the bank's
+      // distance. Busbar/disconnect hops are internal to the bank and stay
+      // short — item 28's itemised cables are how those get their own lengths.
+      const lengthM = target === NODE.inverter ? runM(d.bank.distanceToInverterM, 2) : 2
       edges.push({
         id, source, target, sourceHandle, targetHandle, type: 'cable',
-        data: { ...cableData('battery', spec, 2), runs: finalRuns },
+        data: { ...cableData('battery', spec, lengthM), runs: finalRuns },
         label: `${finalRuns > 1 ? `${finalRuns}× ` : ''}${spec}`,
       })
     }
@@ -2287,7 +2318,7 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
     edges.push({
       id: 'e-bms-comms', source: NODE.battery, target: NODE.inverter,
       sourceHandle: 'bat-out', targetHandle: 'bat-in', type: 'cable',
-      data: { ...cableData('communication', 'CAN/RS485', 3), circuitLayer: 'communication', routingType: 'bezier' },
+      data: { ...cableData('communication', 'CAN/RS485', runM(d.bank.distanceToInverterM, 3)), circuitLayer: 'communication', routingType: 'bezier' },
       label: 'BMS · CAN',
     })
     }
@@ -2304,7 +2335,8 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
     edges.push({
       id: 'e-grid-inv', source: gridId, target: NODE.inverter,
       sourceHandle: 'ac-out', targetHandle: 'grid-in', type: 'cable',
-      data: acCableData('CU 6mm²', 5, gridPhase), label: buildEdgeLabel(acCableData('CU 6mm²', 5, gridPhase)),
+      data: acCableData('CU 6mm²', runM(d.supply?.distanceToInverterM, 5), gridPhase),
+      label: buildEdgeLabel(acCableData('CU 6mm²', runM(d.supply?.distanceToInverterM, 5), gridPhase)),
     })
 
     const dbId = NODE.db
@@ -2330,7 +2362,8 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
       id: 'e-inv-db', source: NODE.inverter, target: dbId,
       sourceHandle: 'ac-out', targetHandle: 'ac-in', type: 'cable',
       // Item 50: the AC output cable's conductors follow the inverter's phaseConfig.
-      data: acCableData('CU 6mm²', 8, inverterPhase, inverterPhaseConfig), label: buildEdgeLabel(acCableData('CU 6mm²', 8, inverterPhase, inverterPhaseConfig)),
+      data: acCableData('CU 6mm²', runM(acBoard?.distanceFromInverterM, 8), inverterPhase, inverterPhaseConfig),
+      label: buildEdgeLabel(acCableData('CU 6mm²', runM(acBoard?.distanceFromInverterM, 8), inverterPhase, inverterPhaseConfig)),
     })
 
     // Default single earth node — only until a detailed earth map is drawn.
@@ -2344,7 +2377,7 @@ export function designToFlow(d: SystemDesign, opts: { gridSupply?: string; detai
       edges.push({
         id: 'e-db-earth', source: dbId, target: earthId,
         sourceHandle: 'earth-out', targetHandle: 'earth-in', type: 'cable',
-        data: { ...cableData('earth', 'CU GY 10mm²', 5), circuitLayer: 'earth' }, label: 'CU GY 10mm² · E',
+        data: { ...cableData('earth', 'CU GY 10mm²', runM(d.earthing.distanceFromDbM, 5)), circuitLayer: 'earth' }, label: 'CU GY 10mm² · E',
       })
     }
   }

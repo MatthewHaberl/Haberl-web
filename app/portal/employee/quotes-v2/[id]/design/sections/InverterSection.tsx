@@ -505,7 +505,7 @@ function SupplySizer() {
           : <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
       </button>
       {sizerOpen && (<>
-      <div className="mt-2.5 grid grid-cols-2 @xl:grid-cols-4 gap-2.5">
+      <div className="mt-2.5 grid grid-cols-2 @xl:grid-cols-3 @3xl:grid-cols-4 gap-2.5">
         <label className="flex flex-col gap-1">
           <span className="text-[11px] text-muted-foreground">Main breaker (A)</span>
           <input type="number" min={0} step={5} value={supply.mainBreakerA || ''}
@@ -526,6 +526,16 @@ function SupplySizer() {
           <input type="number" min={0} step={10} value={supply.voltageV || ''}
             onChange={(e) => set({ voltageV: Math.max(0, Number(e.target.value) || 0) })}
             className="h-8 rounded-md border border-border bg-background px-2 text-sm" />
+        </label>
+        {/* The incoming run to the inverter — an inverter in an outbuilding is
+            quoted for its real supply cable, not a drawn 5 m. */}
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] text-muted-foreground">Distance to inverter (m)</span>
+          <input type="number" min={0} step={0.5} placeholder="e.g. 5"
+            value={supply.distanceToInverterM ?? ''}
+            onChange={(e) => set({ distanceToInverterM: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })}
+            className="h-8 rounded-md border border-border bg-background px-2 text-sm" />
+          <span className="text-[10px] text-muted-foreground">Blank draws 5 m.</span>
         </label>
         <div className="flex flex-col justify-end">
           <p className="text-[11px] text-muted-foreground">Breaker capacity</p>

@@ -163,7 +163,7 @@ export function PanelsSection() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 @xl:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 @xl:grid-cols-3 @3xl:grid-cols-4 gap-3">
                   {/* Full row on the narrow console — panel model names are long, and a
                       half-width picker truncated every option to the same brand prefix. */}
                   <label className="flex flex-col gap-1 col-span-2">
