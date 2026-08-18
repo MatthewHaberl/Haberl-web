@@ -10,7 +10,10 @@
 // read-only because generate re-reads it from the catalog. Unpriced lines show
 // the same amber "Quote" treatment as the solar BOM panel.
 
-import { useState, type Dispatch, type SetStateAction } from 'react'
+import {
+  useEffect, useState,
+  type CSSProperties, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction,
+} from 'react'
 import { ArrowDown, ArrowUp, CircuitBoard, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -43,8 +46,118 @@ const UNITS: ScopeLineUnit[] = ['ea', 'm', 'hr', 'job']
 // the summary panel, so the panel is ~550px at 1280px wide and ~900px on a big
 // monitor. Below 52rem of ITS OWN width the columns would squeeze the
 // description to nothing, so the fields stack instead.
-const ROW_COLS =
-  '@[52rem]:grid-cols-[5rem_minmax(0,1fr)_3.25rem_4rem_6rem_6rem_3.25rem_5.75rem_1.5rem_1.75rem]'
+// Widths are drag-resizable — a long SKU is unreadable in the 5rem default —
+// and ride on a CSS variable set once on the wrapper rather than an inline
+// style per row, so the container query above can still switch the grid off.
+const ROW_COLS = '@[52rem]:grid-cols-[var(--scope-cols)]'
+
+type ScopeCol = {
+  key: string
+  label: string
+  /** null = the flexible column (description) — it absorbs what the others give up. */
+  width: number | null
+  min?: number
+  /** Ceiling, so a runaway drag can't push the row past the card. */
+  max?: number
+  hint?: string
+  align?: 'right' | 'center'
+}
+
+const COLUMNS: ScopeCol[] = [
+  { key: 'sku', label: 'SKU', width: 80, min: 48, max: 260 },
+  { key: 'description', label: 'Description', width: null },
+  { key: 'qty', label: 'Qty', width: 52, min: 40, max: 120 },
+  { key: 'unit', label: 'Unit', width: 64, min: 48, max: 120 },
+  { key: 'cost', label: 'Cost', width: 96, min: 56, max: 180, hint: 'Landed cost — supplier ex-VAT x 1.15' },
+  { key: 'sell', label: 'Sell', width: 96, min: 56, max: 180, hint: 'Sell price per unit' },
+  { key: 'markup', label: 'Markup', width: 52, min: 44, max: 120, hint: 'Sell / cost' },
+  { key: 'total', label: 'Total', width: 92, min: 60, max: 200, align: 'right' },
+  { key: 'opt', label: 'Opt', width: 24, min: 24, max: 60, hint: 'Optional extra', align: 'center' },
+  { key: 'bin', label: '', width: 28, min: 28 },
+]
+
+const COL_STORE = 'scope-editor-col-widths'
+
+const defaultWidths = () =>
+  Object.fromEntries(
+    COLUMNS.filter((c) => c.width !== null).map((c) => [c.key, c.width as number]),
+  ) as Record<string, number>
+
+/** Drag-resized column widths, remembered in this browser. */
+function useColumnWidths() {
+  const [widths, setWidths] = useState<Record<string, number>>(defaultWidths)
+
+  // Read after mount — touching localStorage during render breaks hydration.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(COL_STORE)
+      if (raw) setWidths((w) => ({ ...w, ...JSON.parse(raw) }))
+    } catch { /* private mode or stale JSON — the defaults stand */ }
+  }, [])
+
+  // Every pointermove restates the width; only the drop is written to storage.
+  const setWidth = (key: string, px: number, commit: boolean) =>
+    setWidths((w) => {
+      const next = { ...w, [key]: px }
+      if (commit) {
+        try { window.localStorage.setItem(COL_STORE, JSON.stringify(next)) } catch {}
+      }
+      return next
+    })
+
+  const reset = () => {
+    setWidths(defaultWidths())
+    try { window.localStorage.removeItem(COL_STORE) } catch {}
+  }
+
+  const template = COLUMNS
+    .map((c) => (c.width === null ? 'minmax(6rem,1fr)' : `${widths[c.key]}px`))
+    .join(' ')
+  const isDefault = COLUMNS.every((c) => c.width === null || widths[c.key] === c.width)
+
+  return { widths, setWidth, reset, template, isDefault }
+}
+
+/** Grab handle on a header cell's right edge. Double-click restores the default. */
+function ColResizer({ col, width, onResize }: {
+  col: ScopeCol
+  width: number
+  onResize: (px: number, commit: boolean) => void
+}) {
+  const start = (e: ReactPointerEvent) => {
+    e.preventDefault()
+    const x0 = e.clientX
+    let px = width
+    const move = (ev: globalThis.PointerEvent) => {
+      const want = Math.round(width + ev.clientX - x0)
+      px = Math.min(col.max ?? 320, Math.max(col.min ?? 32, want))
+      onResize(px, false)
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      onResize(px, true)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      title={`Drag to resize ${col.label} — double-click to reset`}
+      onPointerDown={start}
+      onDoubleClick={() => onResize(col.width as number, true)}
+      className="group absolute -right-1.5 top-0 z-10 flex h-full w-3 cursor-col-resize items-center justify-center"
+    >
+      <span className="h-3 w-px bg-border group-hover:bg-foreground/50" />
+    </span>
+  )
+}
 
 /** Effective markup on a line (sell ÷ landed cost), or null with no cost. */
 const markupOf = (line: ScopeLine) =>
@@ -70,6 +183,8 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   const [dbSection, setDbSection] = useState<string | null>(null)
   // Lines on uploaded supplier quotes (W98) — pickable into any section.
   const supplierLines = useSupplierQuoteLines(requestId)
+  // Column widths are shared by every section grid on the page.
+  const cols = useColumnWidths()
 
   // Display order: declared sections first, then any stragglers lines reference.
   const sectionNames = [...scope.sections]
@@ -184,7 +299,11 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   )
 
   return (
-    <div className="space-y-4" data-issue-anchor="sections">
+    <div
+      className="space-y-4"
+      data-issue-anchor="sections"
+      style={{ '--scope-cols': cols.template } as CSSProperties}
+    >
       {sectionNames.map((name, idx) => {
         const lines = scope.lines.filter((l) => l.section === name)
         const counted = lines.filter((l) => !l.optional && l.unitSellR > 0 && l.qty > 0)
@@ -230,20 +349,31 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
 
               {lines.length > 0 && (
                 <div className={`hidden gap-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground @[52rem]:grid ${ROW_COLS}`}>
-                  <span>SKU</span>
-                  <span>Description</span>
-                  <span>Qty</span>
-                  <span>Unit</span>
-                  <span title="Landed cost — supplier ex-VAT x 1.15">Cost</span>
-                  <span title="Sell price per unit">Sell</span>
-                  <span title="Sell / cost">Markup</span>
-                  <span className="text-right">Total</span>
-                  <span className="text-center" title="Optional extra">Opt</span>
-                  <span />
+                  {COLUMNS.map((col) => (
+                    <span
+                      key={col.key}
+                      title={col.hint}
+                      className={`relative truncate ${col.align === 'right' ? 'text-right' : ''} ${col.align === 'center' ? 'text-center' : ''}`}
+                    >
+                      {col.key === 'bin' && !cols.isDefault ? (
+                        <Button type="button" variant="ghost" size="icon" className="h-5 w-5"
+                          onClick={cols.reset} title="Reset column widths">
+                          <RotateCcw className="h-3 w-3" />
+                        </Button>
+                      ) : col.label}
+                      {col.width !== null && col.key !== 'bin' && (
+                        <ColResizer
+                          col={col}
+                          width={cols.widths[col.key]}
+                          onResize={(px, commit) => cols.setWidth(col.key, px, commit)}
+                        />
+                      )}
+                    </span>
+                  ))}
                 </div>
               )}
 
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {lines.map((line) => {
                   const mk = markupOf(line)
                   const rowIssues = showIssues ? (lineIssues.get(line.id) ?? []) : []
@@ -255,7 +385,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                       className={rowIssues.length > 0 ? 'rounded bg-destructive/5 py-1' : undefined}
                     >
                     <div
-                      className={`grid grid-cols-2 items-center gap-2 rounded border border-border/60 p-1 @[52rem]:border-0 @[52rem]:p-0 ${ROW_COLS}`}
+                      className={`grid grid-cols-2 items-start gap-2 rounded border border-border/60 p-1 @[52rem]:border-0 @[52rem]:p-0 ${ROW_COLS}`}
                     >
                       <Input
                         value={line.sku}
@@ -270,7 +400,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                           className={`h-8 text-xs ${badField(line.id, 'description') ? INVALID : ''}`}
                         />
                         {(line.kind === 'fee' || line.note) && (
-                          <div className="truncate px-1 text-[10px] text-muted-foreground">
+                          <div className="ml-1 truncate border-l border-border pl-1.5 text-[10px] leading-[1.15] text-muted-foreground">
                             {[line.kind === 'fee' ? 'fee' : null, line.note].filter(Boolean).join(' · ')}
                           </div>
                         )}
@@ -294,7 +424,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                           lines carry their own cost. */}
                       {line.catalogId ? (
                         <span
-                          className="truncate px-1 text-xs text-muted-foreground"
+                          className="flex h-8 items-center truncate px-1 text-xs text-muted-foreground"
                           title="Landed cost from the catalog — re-read when the quote is generated"
                         >
                           {line.unitCostR > 0 ? rand(line.unitCostR) : '—'}
@@ -324,7 +454,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                         }}
                         className="h-8 text-xs" placeholder="Sell"
                       />
-                      <div className="flex items-center gap-0.5">
+                      <div className="flex h-8 items-center gap-0.5">
                         <span
                           className={`text-[11px] ${line.sellOverridden ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}
                           title={mk
@@ -343,13 +473,13 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                           </Button>
                         )}
                       </div>
-                      <div className="text-right">
+                      <div className="flex h-8 items-center justify-end text-right">
                         {line.unitSellR <= 0
                           ? <Badge variant="warning">Quote</Badge>
                           : <span className="text-xs font-medium">{rand(round2(line.unitSellR * line.qty))}</span>}
                       </div>
                       <label
-                        className="flex cursor-pointer items-center justify-center"
+                        className="flex h-8 cursor-pointer items-center justify-center"
                         title="Optional extra — listed on the quote but excluded from the total"
                       >
                         <input
@@ -359,7 +489,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                         />
                         <span className="ml-1 text-[11px] text-muted-foreground @[52rem]:hidden">Optional extra</span>
                       </label>
-                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 justify-self-end"
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-7 justify-self-end"
                         onClick={() => removeLine(line.id)} title="Remove line">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
