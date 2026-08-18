@@ -46,7 +46,7 @@ const rand = (n: number) =>
 const UNITS: ScopeLineUnit[] = ['ea', 'm', 'hr', 'job']
 
 // One row per line, same column rhythm as the supplier-quote panel:
-// sku · description · qty · landed cost · cost total · sell · markup · total · opt · bin
+// sku · description · qty · landed cost · sell · markup · total · opt · bin
 //
 // Container query, not a viewport breakpoint: this editor shares the page with
 // the summary panel, so the panel is ~550px at 1280px wide and ~900px on a big
@@ -73,10 +73,7 @@ const COLUMNS: ScopeCol[] = [
   { key: 'sku', label: 'SKU', width: 80, min: 48, max: 260 },
   { key: 'description', label: 'Description', width: null },
   { key: 'qty', label: 'Qty', width: 52, min: 40, max: 120 },
-  { key: 'cost', label: 'Cost', width: 96, min: 56, max: 180, hint: 'Landed cost per unit — supplier ex-VAT x 1.15' },
-  // Cost x qty, beside sell x qty at the other end of the row: the two numbers
-  // the margin is the difference between, both on the page to be checked.
-  { key: 'costTotal', label: 'Cost total', width: 96, min: 60, max: 200, hint: 'Landed cost x qty — what this line costs the business', align: 'right' },
+  { key: 'cost', label: 'Cost', width: 96, min: 56, max: 180, hint: 'Landed cost — supplier ex-VAT x 1.15' },
   { key: 'sell', label: 'Sell', width: 96, min: 56, max: 180, hint: 'Sell price per unit' },
   { key: 'markup', label: 'Markup %', width: 88, min: 64, max: 160, hint: 'Markup on landed cost — type 15 for cost x 1.15' },
   { key: 'total', label: 'Total', width: 92, min: 60, max: 200, align: 'right' },
@@ -707,12 +704,6 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                           className="h-8 text-xs" placeholder="Cost"
                         />
                       )}
-                      <div
-                        className="flex h-8 items-center justify-end text-right text-xs tabular-nums text-muted-foreground"
-                        title="Landed cost x qty — what this line costs the business"
-                      >
-                        {line.unitCostR > 0 && line.qty > 0 ? rand(round2(line.unitCostR * line.qty)) : '—'}
-                      </div>
                       <Input
                         type="number" min={0} step="any"
                         leadingText="R"
