@@ -365,7 +365,7 @@ function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
   <title>${escapeHtml(data.quoteNumber)} — Haberl Solar Proposal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
   <style>
     ${BASE_CSS}
 
@@ -433,9 +433,9 @@ function renderMultiOptionQuote(data: MultiOptionQuoteData): string {
       <thead>
         <tr>
           <th></th>
-          <th>&#9733;&#9733;&#9733; Premium</th>
-          <th class="comp-recommended-head">&#9733;&#9733;&#9734; Recommended</th>
-          <th>&#9733;&#9734;&#9734; Budget</th>
+          <th>Premium</th>
+          <th class="comp-recommended-head">Recommended</th>
+          <th>Budget</th>
         </tr>
       </thead>
       <tbody>
@@ -535,13 +535,6 @@ function renderEquipmentPhotosSection(data: QuoteData): string {
   <div class="card no-break">
     <div class="card-header"><h2>What You&rsquo;re Getting</h2></div>
     <div class="card-body">
-      <style>
-        .eq-photos { display: flex; flex-wrap: wrap; gap: 16px; }
-        .eq-photo { width: 150px; text-align: center; }
-        .eq-photo img { width: 100%; height: 110px; object-fit: contain; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
-        .eq-photo-label { margin-top: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
-        .eq-photo-model { font-size: 12px; font-weight: 600; color: #111827; }
-      </style>
       <div class="eq-photos">${cards}
       </div>
     </div>
@@ -586,26 +579,26 @@ function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
   <title>${escapeHtml(data.quoteNumber)} — Haberl Solar Proposal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
   <style>
     ${BASE_CSS}
-    .option-wrapper { margin-bottom: 48px; }
-    .option-recommended { border: 3px solid var(--accent); border-radius: 12px; padding: 0; overflow: hidden; position: relative; }
-    .rec-ribbon { background: var(--accent); color: var(--accent-fg); text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 6px 0; }
-    .tier-badge { display: inline-block; background: rgba(255,255,255,0.15); border-radius: 20px; padding: 4px 14px; font-size: 13px; font-weight: 600; color: white; margin-top: 8px; }
-    .comparison-wrapper { margin-bottom: 36px; }
-    .comparison-wrapper h2 { font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 16px; }
-    .comp-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-    .comp-table thead tr { background: var(--primary); color: white; }
-    .comp-table thead th { padding: 12px 16px; text-align: left; font-weight: 600; }
-    .comp-table thead th.comp-recommended-head { background: var(--accent); color: var(--accent-fg); }
-    .comp-table tbody tr:nth-child(odd) { background: var(--muted); }
-    .comp-table tbody tr:nth-child(even) { background: white; }
-    .comp-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); }
-    .comp-label { font-weight: 500; color: var(--muted-fg); }
+    .option-wrapper { margin-bottom: 52px; }
+    .option-recommended { border: 1px solid var(--rule); border-top: 2px solid var(--accent); border-radius: 3px; overflow: hidden; position: relative; }
+    .rec-ribbon { background: var(--accent-wash); color: var(--accent-ink); text-align: center; font-size: 9.5px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+    .tier-badge { display: inline-block; margin-top: 14px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent); }
+    .comparison-wrapper { margin-bottom: 40px; }
+    .comparison-wrapper h2 { font-family: var(--serif); font-size: 19px; font-weight: 600; color: var(--ink); margin-bottom: 16px; }
+    .comp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+    .comp-table thead tr { background: none; }
+    .comp-table thead th { padding: 13px 18px 11px; text-align: left; font-weight: 600; font-size: 9.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted-fg); border-bottom: 1px solid var(--ink); }
+    .comp-table thead th.comp-recommended-head { color: var(--accent-ink); border-bottom-color: var(--accent); }
+    .comp-table tbody tr { background: none; }
+    .comp-table td { padding: 11px 18px; border-bottom: 1px solid var(--hairline); font-variant-numeric: tabular-nums; }
+    .comp-table tbody tr:last-child td { border-bottom: none; }
+    .comp-label { font-weight: 400; color: var(--muted-fg); }
     .comp-cell { font-weight: 500; }
-    .comp-recommended { background: var(--accent-light) !important; font-weight: 700; color: var(--primary); }
-    .page-divider { border: none; border-top: 3px dashed var(--border); margin: 48px 0; }
+    .comp-recommended { background: var(--accent-wash); font-weight: 600; color: var(--ink); }
+    .page-divider { border: none; border-top: 1px solid var(--rule); margin: 48px 0; }
   </style>
 </head>
 <body>
@@ -640,9 +633,9 @@ function renderMultiOptionCustomerQuote(data: MultiOptionQuoteData): string {
       <thead>
         <tr>
           <th></th>
-          <th>&#9733;&#9733;&#9733; Premium</th>
-          <th class="comp-recommended-head">&#9733;&#9733;&#9734; Recommended</th>
-          <th>&#9733;&#9734;&#9734; Budget</th>
+          <th>Premium</th>
+          <th class="comp-recommended-head">Recommended</th>
+          <th>Budget</th>
         </tr>
       </thead>
       <tbody>${comparisonRows}</tbody>
@@ -737,15 +730,15 @@ function renderMonthlyGenSection(data: QuoteData): string {
     <div class="card-header"><h2>Energy Flow — Month by Month</h2></div>
     <div class="card-body">
       <style>
-        .bar-wrap { display: flex; align-items: center; gap: 8px; }
-        .bar { height: 14px; border-radius: 3px; min-width: 4px; }
+        .bar-wrap { display: flex; align-items: center; gap: 9px; }
+        .bar { height: 9px; border-radius: 1px; min-width: 3px; }
         .bar-solar { background: var(--accent); }
-        .bar-grid  { background: #94a3b8; }
-        .bar-val { font-size: 11px; color: var(--muted-fg); white-space: nowrap; }
-        .saving-cell { color: #16a34a; font-weight: 600; }
-        .monthly-legend { display: flex; gap: 20px; padding: 12px 18px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted-fg); }
-        .monthly-legend span { display: flex; align-items: center; gap: 6px; }
-        .leg-dot { width: 12px; height: 12px; border-radius: 2px; }
+        .bar-grid  { background: #c3c9d1; }
+        .bar-val { font-size: 11px; color: var(--muted-fg); white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .saving-cell { color: var(--positive); font-weight: 600; }
+        .monthly-legend { display: flex; gap: 22px; padding: 13px 20px; border-top: 1px solid var(--hairline); font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted-fg); }
+        .monthly-legend span { display: flex; align-items: center; gap: 7px; }
+        .leg-dot { width: 9px; height: 9px; border-radius: 1px; }
       </style>
       <table class="bom-table">
         <thead>
@@ -773,7 +766,7 @@ function renderMonthlyGenSection(data: QuoteData): string {
       </table>
       <div class="monthly-legend">
         <span><span class="leg-dot" style="background:var(--accent)"></span>Solar generation</span>
-        <span><span class="leg-dot" style="background:#94a3b8"></span>Household consumption</span>
+        <span><span class="leg-dot" style="background:#c3c9d1"></span>Household consumption</span>
       </div>
     </div>
   </div>`
@@ -811,17 +804,15 @@ function renderTwentyYearSection(data: QuoteData): string {
 
   <div class="financial-hero no-break">
     <div class="hero-item">
-      <div class="hero-label">Lifetime Bill Savings</div>
+      <div class="hero-label">Lifetime bill savings</div>
       <div class="hero-value">${data.lifetimeBillSavings ?? ''}</div>
     </div>
-    <div class="hero-minus">−</div>
     <div class="hero-item">
-      <div class="hero-label">Net System Cost</div>
+      <div class="hero-label">Less system cost</div>
       <div class="hero-value">${data.netSystemCost ?? ''}</div>
     </div>
-    <div class="hero-equals">=</div>
     <div class="hero-item hero-net">
-      <div class="hero-label">Estimated Net Savings</div>
+      <div class="hero-label">Estimated net benefit</div>
       <div class="hero-value hero-net-value">${data.estimatedNetSavings ?? ''}</div>
     </div>
   </div>
@@ -853,25 +844,25 @@ function renderTwentyYearSection(data: QuoteData): string {
     <div class="card-header"><h2>Year-by-Year Projection</h2></div>
     <div class="card-body">
       <style>
-        .payback-row { background: #dcfce7 !important; font-weight: 600; }
-        .payback-row td:first-child { color: #16a34a; }
-        .cumulative-positive { color: #16a34a; font-weight: 600; }
+        .payback-row td { background: var(--accent-wash); font-weight: 600; }
+        .payback-row td:first-child { color: var(--accent-ink); }
+        .cumulative-positive { color: var(--positive); font-weight: 600; }
         .cumulative-negative { color: var(--muted-fg); }
-        .saving-cell { color: #16a34a; }
-        .financial-hero { display: flex; align-items: center; gap: 16px; background: var(--primary); border-radius: 12px; padding: 24px 28px; color: white; margin-bottom: 20px; }
+        .saving-cell { color: var(--positive); }
+        .financial-hero { display: flex; background: var(--ink); border-radius: 3px; padding: 28px 32px; color: #fff; margin-bottom: 22px; }
         .hero-item { flex: 1; }
-        .hero-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.6); margin-bottom: 4px; }
-        .hero-value { font-size: 24px; font-weight: 800; }
-        .hero-minus, .hero-equals { font-size: 28px; font-weight: 700; color: rgba(255,255,255,0.4); flex: 0; }
-        .hero-net-value { color: var(--accent); font-size: 28px; }
-        .metrics-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 20px; }
-        .metric-item { padding: 16px; border-right: 1px solid var(--border); }
+        .hero-item + .hero-item { border-left: 1px solid rgba(255,255,255,0.14); padding-left: 28px; margin-left: 28px; }
+        .hero-label { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.13em; color: rgba(255,255,255,0.5); margin-bottom: 7px; }
+        .hero-value { font-family: var(--serif); font-size: 25px; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .hero-net-value { color: var(--accent); }
+        .metrics-strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; margin-bottom: 22px; }
+        .metric-item { padding: 18px 20px 20px; border-right: 1px solid var(--hairline); }
         .metric-item:last-child { border-right: none; }
-        .metric-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted-fg); margin-bottom: 4px; }
-        .metric-value { font-size: 22px; font-weight: 700; color: var(--primary); }
-        .metric-value.accent { color: var(--accent); }
-        .metric-sub { font-size: 11px; color: var(--muted-fg); margin-top: 2px; }
-        .assumptions-note { font-size: 11px; color: var(--muted-fg); padding: 10px 18px; border-top: 1px solid var(--border); }
+        .metric-label { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.13em; color: var(--muted-fg); margin-bottom: 7px; }
+        .metric-value { font-family: var(--serif); font-size: 23px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+        .metric-value.accent { color: var(--accent-ink); }
+        .metric-sub { font-size: 11px; color: var(--muted-fg); margin-top: 5px; }
+        .assumptions-note { font-size: 11px; color: var(--muted-fg); padding: 12px 20px; border-top: 1px solid var(--hairline); line-height: 1.6; }
       </style>
       <table class="bom-table">
         <thead>
@@ -903,154 +894,298 @@ function renderTwentyYearSection(data: QuoteData): string {
 
 const BASE_CSS = `
   :root {
-    --primary:      #0f1b2d;
-    --accent:       #e8850c;
-    --accent-fg:    #0f1b2d;
-    --accent-light: #fdf3e7;
-    --fg:           #14181f;
-    --muted:        #f5f5f5;
-    --muted-fg:     #5b6470;
-    --border:       #e6e8ec;
-    --white:        #ffffff;
-    --success:      #16a34a;
-    --row-alt:      #f8fafc;
+    /* One ink, one accent, one positive. Everything else is a grey. */
+    --ink:          #0f1b2d;
+    --fg:           #1b2432;
+    --muted-fg:     #6a7482;
+    --rule:         #dfe3e9;
+    --hairline:     #edeff2;
+    --accent:       #e8850c;   /* amber on ink grounds */
+    --accent-ink:   #a4600b;   /* the same amber, readable on paper */
+    --accent-wash:  #fdf6ec;
+    --positive:     #15734a;
+    --paper:        #ffffff;
+    --surround:     #eceae6;
+
+    --serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+    --sans:  'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    /* Legacy aliases — older inline styles still reference these. */
+    --primary: var(--ink);
+    --border:  var(--rule);
+    --white:   var(--paper);
+    --muted:   #f6f7f9;
+    --accent-light: var(--accent-wash);
+    --accent-fg: var(--ink);
+    --success: var(--positive);
+    --row-alt: transparent;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html { font-size: 14px; }
   body {
-    font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--sans);
+    font-size: 13px;
     color: var(--fg);
-    background: var(--white);
-    line-height: 1.5;
+    background: var(--paper);
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
   .page {
-    max-width: 900px;
+    max-width: 860px;
     margin: 0 auto;
-    padding: 0 32px 48px;
+    padding: 0 40px 56px;
   }
 
+  /* ── Masthead — the one strong brand moment on the page ─────────────────── */
   .header {
-    background: var(--primary);
-    color: var(--white);
-    padding: 32px;
-    margin: 0 -32px 32px;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 36px 40px 32px;
+    margin: 0 -40px 36px;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 24px;
+    gap: 32px;
   }
-  .logo-block { display: flex; flex-direction: column; gap: 2px; }
-  .logo-name { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; }
-  .logo-name span { color: var(--accent); }
-  .logo-sub { font-size: 11px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.6); }
-  .logo-contact { margin-top: 12px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: rgba(255,255,255,0.75); }
+  .logo-block { display: flex; flex-direction: column; }
+  .logo-name {
+    font-family: var(--serif);
+    font-size: 25px; font-weight: 600;
+    letter-spacing: 0.16em; line-height: 1;
+  }
+  .logo-name span { color: var(--accent); letter-spacing: 0; }
+  .logo-sub {
+    margin-top: 9px;
+    font-size: 9.5px; font-weight: 500;
+    letter-spacing: 0.26em; text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+  }
+  .logo-contact {
+    margin-top: 18px; display: flex; flex-direction: column; gap: 3px;
+    font-size: 11.5px; color: rgba(255,255,255,0.72);
+  }
+
   .quote-meta { text-align: right; }
-  .quote-meta .quo-number { font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1; }
-  .quote-meta table { margin-top: 8px; border-collapse: collapse; }
-  .quote-meta td { padding: 2px 0 2px 16px; font-size: 12px; color: rgba(255,255,255,0.8); }
-  .quote-meta td:first-child { color: rgba(255,255,255,0.5); text-align: right; padding-left: 0; padding-right: 8px; }
-
-  .validity-bar {
-    background: var(--accent-light);
-    border: 1px solid #fed7aa;
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: 12.5px;
-    color: #9a3412;
-    margin-bottom: 28px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .quote-meta .quo-number {
+    font-family: var(--serif);
+    font-size: 19px; font-weight: 600; letter-spacing: 0.04em;
+    color: var(--paper); line-height: 1;
+    padding-bottom: 11px;
+    border-bottom: 1px solid rgba(232,133,12,0.65);
   }
-  .validity-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .quote-meta table { margin-top: 11px; border-collapse: collapse; }
+  .quote-meta td { padding: 2.5px 0 2.5px 18px; font-size: 11.5px; color: rgba(255,255,255,0.82); }
+  .quote-meta td:first-child {
+    color: rgba(255,255,255,0.42);
+    font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+    text-align: right; padding-left: 0; padding-right: 10px;
+  }
 
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+  /* ── A note in the margin, not an alert component ───────────────────────── */
+  .validity-bar {
+    background: none;
+    border: none;
+    border-left: 2px solid var(--accent);
+    border-radius: 0;
+    padding: 1px 0 1px 15px;
+    margin-bottom: 32px;
+    font-size: 12px;
+    color: var(--muted-fg);
+    display: block;
+  }
+  .validity-bar strong { color: var(--fg); font-weight: 600; }
+  .validity-bar .dot { display: none; }
 
-  .card { background: var(--white); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 20px; }
-  .card-header { background: var(--primary); color: var(--white); padding: 10px 18px; }
-  .card-header h2 { font-size: 13px; font-weight: 600; letter-spacing: 0.3px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 30px; }
+
+  /* ── Blocks — hairline-ruled, never filled ──────────────────────────────── */
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 22px;
+  }
+  .card-header {
+    background: none;
+    color: var(--ink);
+    padding: 13px 20px 11px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .card-header h2 {
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--ink);
+  }
   .card-body { padding: 0; }
 
   .info-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  .info-table td { padding: 6px 12px; border-bottom: 1px solid var(--border); }
+  .info-table td { padding: 9px 20px; border-bottom: 1px solid var(--hairline); }
   .info-table tr:last-child td { border-bottom: none; }
-  .info-table td:first-child { color: var(--muted-fg); width: 44%; font-size: 11.5px; }
-  .info-table td:last-child { font-weight: 500; }
+  .info-table td:first-child { color: var(--muted-fg); width: 42%; font-size: 11.5px; }
+  .info-table td:last-child { font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; }
 
   .section-heading {
-    font-size: 16px; font-weight: 700; color: var(--primary);
-    margin: 28px 0 14px;
-    display: flex; align-items: center; gap: 10px;
+    font-family: var(--serif);
+    font-size: 19px; font-weight: 600; color: var(--ink);
+    letter-spacing: -0.005em;
+    margin: 40px 0 16px;
+    display: flex; align-items: center; gap: 16px;
   }
-  .section-heading::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .section-heading::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
 
+  /* ── Tables — rules, not stripes ────────────────────────────────────────── */
   .bom-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  .bom-table thead tr { background: var(--muted); border-bottom: 1px solid var(--border); }
-  .bom-table thead th { padding: 8px 12px; text-align: left; font-weight: 600; color: var(--muted-fg); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .bom-table thead tr { background: none; border-bottom: 1px solid var(--ink); }
+  .bom-table thead th {
+    padding: 11px 20px 9px; text-align: left;
+    font-weight: 600; color: var(--muted-fg);
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.13em;
+  }
   .bom-table thead th.right { text-align: right; }
-  .bom-table tbody tr { border-bottom: 1px solid var(--border); }
+  .bom-table tbody tr { border-bottom: 1px solid var(--hairline); background: none; }
   .bom-table tbody tr:last-child { border-bottom: none; }
-  .bom-table tbody tr:nth-child(odd) { background: var(--row-alt); }
-  .bom-table tbody tr:nth-child(even) { background: var(--white); }
-  .bom-table td { padding: 7px 12px; vertical-align: top; }
-  .bom-table td.right { text-align: right; }
-  .bom-table .subtitle { font-size: 11px; color: var(--muted-fg); margin-top: 2px; }
-  .bom-table .star { color: var(--accent); font-weight: 700; }
-  .bom-table .subtotal-row { background: #eff6ff !important; font-weight: 600; }
-  .bom-table .subtotal-row td { color: var(--primary); border-top: 2px solid #bfdbfe; }
+  .bom-table td { padding: 10px 20px; vertical-align: top; }
+  .bom-table td.right, .bom-table th.right { text-align: right; font-variant-numeric: tabular-nums; }
+  .bom-table .subtitle { font-size: 11px; color: var(--muted-fg); margin-top: 3px; line-height: 1.5; }
+  .bom-table .star { color: var(--accent-ink); font-weight: 600; }
+  .bom-table .subtotal-row { background: none; font-weight: 600; }
+  .bom-table .subtotal-row td {
+    color: var(--ink);
+    border-top: 1px solid var(--ink);
+    border-bottom: none;
+    padding-top: 11px;
+  }
 
-  .summary-block { background: var(--primary); border-radius: 12px; padding: 28px; color: var(--white); margin-bottom: 20px; }
-  .summary-block h2 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+  /* ── The number that matters ────────────────────────────────────────────── */
+  .summary-block {
+    background: var(--ink);
+    border-radius: 3px;
+    padding: 32px 34px;
+    color: var(--paper);
+    margin-bottom: 22px;
+  }
+  .summary-block h2 {
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 6px;
+  }
   .summary-lines { border-collapse: collapse; width: 100%; }
-  .summary-lines td { padding: 5px 0; font-size: 13px; color: rgba(255,255,255,0.85); }
-  .summary-lines td:last-child { text-align: right; font-weight: 500; }
-  .summary-lines .divider td { border-top: 1px solid rgba(255,255,255,0.15); padding-top: 10px; }
-  .summary-lines .total-row td { font-size: 20px; font-weight: 800; color: var(--white); padding-top: 12px; }
+  .summary-lines td { padding: 6px 0; font-size: 13px; color: rgba(255,255,255,0.8); }
+  .summary-lines td:last-child { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .summary-lines .divider td { border-top: 1px solid rgba(255,255,255,0.16); padding-top: 12px; }
+  .summary-lines .total-row td {
+    font-family: var(--serif);
+    font-size: 27px; font-weight: 600; letter-spacing: -0.01em;
+    color: var(--paper);
+    padding-top: 14px;
+  }
+  .summary-lines .total-row td:first-child {
+    font-family: var(--sans);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    vertical-align: middle;
+  }
   .summary-lines .total-row td:last-child { color: var(--accent); }
-  .summary-lines .deposit-row td { font-size: 13px; color: rgba(255,255,255,0.6); }
-  .vat-badge { display: inline-block; margin-top: 12px; background: rgba(255,255,255,0.1); border-radius: 20px; padding: 4px 12px; font-size: 11px; color: rgba(255,255,255,0.6); }
+  .summary-lines .deposit-row td { font-size: 12.5px; color: rgba(255,255,255,0.62); }
+  .vat-badge {
+    display: block;
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,0.14);
+    background: none; border-radius: 0;
+    font-size: 11px; color: rgba(255,255,255,0.5);
+  }
 
-  .roi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
-  .roi-item { padding: 16px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  /* ── Figures ────────────────────────────────────────────────────────────── */
+  .roi-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .roi-item { padding: 18px 20px 20px; border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
   .roi-item:nth-child(3n) { border-right: none; }
   .roi-item:nth-child(n+4) { border-bottom: none; }
-  .roi-label { font-size: 10.5px; font-weight: 600; color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-  .roi-value { font-size: 20px; font-weight: 700; color: var(--primary); line-height: 1.1; }
-  .roi-value.accent { color: var(--accent); }
-  .roi-sub { font-size: 11px; color: var(--muted-fg); margin-top: 2px; }
+  .roi-label { font-size: 9.5px; font-weight: 600; color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.13em; margin-bottom: 7px; }
+  .roi-value { font-family: var(--serif); font-size: 23px; font-weight: 600; color: var(--ink); line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .roi-value.accent { color: var(--accent-ink); }
+  .roi-sub { font-size: 11px; color: var(--muted-fg); margin-top: 5px; line-height: 1.45; }
 
-  .disclaimer-box { background: var(--muted); border-left: 4px solid var(--accent); border-radius: 4px; padding: 12px 16px; margin: 16px 0; font-size: 12px; color: var(--fg); line-height: 1.6; }
+  .disclaimer-box {
+    background: var(--accent-wash);
+    border: none; border-left: 2px solid var(--accent);
+    border-radius: 0;
+    padding: 13px 18px; margin: 16px 0;
+    font-size: 12px; color: var(--fg); line-height: 1.6;
+  }
 
-  .exclusions-list { padding: 14px 18px; }
-  .exclusions-list ul { padding-left: 18px; }
-  .exclusions-list li { font-size: 12.5px; color: var(--fg); margin-bottom: 5px; line-height: 1.5; }
+  .exclusions-list { padding: 16px 20px 18px; }
+  .exclusions-list ul { list-style: none; padding-left: 0; }
+  .exclusions-list li {
+    font-size: 12.5px; color: var(--fg);
+    margin-bottom: 7px; padding-left: 18px;
+    position: relative; line-height: 1.55;
+  }
+  .exclusions-list li::before {
+    content: '—'; position: absolute; left: 0;
+    color: var(--muted-fg);
+  }
+  .exclusions-list li:last-child { margin-bottom: 0; }
 
-  .terms-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
-  .terms-item { padding: 10px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: 12px; }
+  .terms-grid { display: grid; grid-template-columns: 1fr 1fr; }
+  .terms-item {
+    padding: 13px 20px;
+    border-right: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    font-size: 12px;
+  }
   .terms-item:nth-child(2n) { border-right: none; }
   .terms-item:nth-child(n+5) { border-bottom: none; }
-  .terms-item .t-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted-fg); margin-bottom: 3px; }
+  .terms-item .t-label {
+    font-size: 9.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.13em;
+    color: var(--muted-fg); margin-bottom: 4px;
+  }
 
-  .footer { border-top: 1px solid var(--border); margin-top: 36px; padding-top: 20px; display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--muted-fg); }
-  .footer strong { color: var(--primary); }
-  .footer .badge { background: var(--primary); color: var(--white); border-radius: 4px; padding: 4px 10px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.5px; }
+  .footer {
+    border-top: 1px solid var(--ink);
+    margin-top: 48px; padding-top: 16px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 24px;
+    font-size: 11px; color: var(--muted-fg);
+  }
+  .footer strong { color: var(--ink); font-weight: 600; }
+  .footer .badge {
+    background: none; color: var(--muted-fg);
+    border-radius: 0; padding: 0;
+    font-size: 9.5px; font-weight: 600;
+    letter-spacing: 0.13em; text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .eq-photos { display: flex; flex-wrap: wrap; gap: 22px; padding: 20px; }
+  .eq-photo { width: 148px; }
+  .eq-photo img { width: 100%; height: 108px; object-fit: contain; background: var(--paper); border: 1px solid var(--rule); border-radius: 2px; padding: 8px; }
+  .eq-photo-label { margin-top: 9px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.13em; color: var(--muted-fg); font-weight: 600; }
+  .eq-photo-model { font-size: 12px; font-weight: 500; color: var(--fg); margin-top: 2px; line-height: 1.4; }
 
   @media print {
     @page { size: A4; margin: 0; }
     html { font-size: 12px; }
     body { padding: 0; }
-    .page { padding: 20mm 20mm 20mm; max-width: 100%; }
-    .header { margin: -20mm -20mm 24px; padding: 24px 20mm; }
+    .page { padding: 18mm 18mm 18mm; max-width: 100%; }
+    .header { margin: -18mm -18mm 30px; padding: 26px 18mm; }
     .no-break { page-break-inside: avoid; break-inside: avoid; }
   }
 
   @media screen {
-    body { background: #e5e7eb; }
-    .page { background: white; margin: 24px auto; box-shadow: 0 4px 32px rgba(0,0,0,0.10); border-radius: 4px; }
+    body { background: var(--surround); }
+    .page {
+      background: var(--paper);
+      margin: 28px auto;
+      box-shadow: 0 1px 2px rgba(15,27,45,0.05), 0 14px 44px rgba(15,27,45,0.10);
+      border-radius: 2px;
+    }
   }
 `
 
@@ -1066,7 +1201,7 @@ const SINGLE_TEMPLATE = `<!DOCTYPE html>
   <title>{{quoteNumber}} — Haberl Solar Quote</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
   <style>${BASE_CSS}</style>
 </head>
 <body>
@@ -1415,7 +1550,7 @@ const CUSTOMER_TEMPLATE = `<!DOCTYPE html>
   <title>{{quoteNumber}} — Haberl Solar Quote</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
   <style>${BASE_CSS}</style>
 </head>
 <body>
@@ -1491,9 +1626,8 @@ const CUSTOMER_TEMPLATE = `<!DOCTYPE html>
   <div class="section-heading">Total Investment</div>
 
   <div class="summary-block no-break">
-    <h2>Quote Total</h2>
     <table class="summary-lines">
-      <tr class="total-row"><td>QUOTE TOTAL</td><td>{{quoteTotal}}</td></tr>
+      <tr class="total-row"><td>Quote total</td><td>{{quoteTotal}}</td></tr>
     </table>
     <div class="vat-badge">Haberl Electrical &amp; Solar does not add VAT &mdash; all prices inclusive</div>
   </div>
