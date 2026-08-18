@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { checklistRowsFor } from './checklist'
 import { workTypeFor } from '@/lib/quotes/work-types'
+import { packageIdFromTier } from '@/lib/quotes/public'
 
 interface BomLine {
   section?: string
@@ -78,6 +79,15 @@ async function resolveCustomerSite(
 function extractBom(generatedQuote: string, acceptedTier?: string | null): BomLine[] {
   try {
     const data = JSON.parse(generatedQuote)
+    // Combined quote, one package accepted: the job is only that package's
+    // work, so it must only order that package's materials. The package
+    // carries its own supplierBom for exactly this — no matching section
+    // names by hand.
+    const packageId = packageIdFromTier(acceptedTier)
+    if (packageId && Array.isArray(data?.packages)) {
+      const pkg = data.packages.find((p: { id?: string }) => p?.id === packageId)
+      if (pkg) return Array.isArray(pkg.supplierBom) ? pkg.supplierBom : []
+    }
     // The v2 generate route stores bom_snapshot as the bare SupplierBomItem[]
     // (bomToSupplierBom output) — without this branch every v2 acceptance
     // seeded zero materials, because an array has no .supplierBom.
@@ -205,7 +215,12 @@ export async function createJobFromQuote(
 
   // Design lock: a frozen bom_snapshot beats the live quote — procurement
   // buys exactly what was locked, even if the quote was recalculated since.
-  const bomSource = quote.bom_snapshot
+  // Design lock normally wins, but a single accepted package is the exception:
+  // bom_snapshot freezes the WHOLE combined job, so using it here would order
+  // every package's materials for a customer who bought one. The per-package
+  // BOM lives in generated_quote.
+  const acceptedPackageId = packageIdFromTier(quote.accepted_tier)
+  const bomSource = quote.bom_snapshot && !acceptedPackageId
     ? JSON.stringify(quote.bom_snapshot)
     : quote.generated_quote
   const bom = extractBom(bomSource, quote.accepted_tier)

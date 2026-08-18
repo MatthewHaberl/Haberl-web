@@ -60,6 +60,12 @@ export interface BomSection {
   sellR: number
   /** Lines in this section still waiting on a price. */
   needsPricing: number
+  /**
+   * Work package this section belongs to (scope engine, multi-package quotes
+   * only). Lets the renderer group sections under the job they were quoted for
+   * and print a per-package price. The solar path never sets this.
+   */
+  package?: string
 }
 
 export interface DesignBom {
@@ -347,12 +353,16 @@ export function designToBom(
   if (pricing) {
     const panelW = design.panels.reduce((s, g) => s + panelGroupPanels(g) * g.panelWatts, 0)
     const invW = design.inverters.reduce((s, u) => s + u.kw * 1000 * u.qty, 0)
-    const pushLabour = (description: string, amt: number) => {
+    // Install labour is quoted sell-only (cost = sell). The management fee is the
+    // exception: it is Matthew's own time running the job, not a wage the
+    // business pays out, so it carries no cost and reads as margin.
+    const pushLabour = (description: string, amt: number, costR?: number) => {
       if (amt <= 0) return
       const r = round2(amt)
+      const c = round2(costR ?? amt)
       lines.push({
         section: 'Labour', catalogId: `labour:${description}`, sku: '—', description, qty: 1,
-        unitCostR: r, unitSellR: r, lineCostR: r, lineSellR: r, priced: true, status: 'ok',
+        unitCostR: c, unitSellR: r, lineCostR: c, lineSellR: r, priced: true, status: 'ok',
       })
     }
     if (panelW > 0) pushLabour(`Panel install (${panelW} Wp)`, panelW * pricing.labourPanelPerW)
@@ -362,6 +372,10 @@ export function designToBom(
       const storeys = Math.max(1, design.storeys ?? 1)
       if (storeys >= 3) pushLabour('Access premium (3-storey)', pricing.storeyPremium3)
       else if (storeys === 2) pushLabour('Access premium (2-storey)', pricing.storeyPremium2)
+      // Charged only when it has been switched on for this design, and only on a
+      // design that has install labour to manage — a parts-only BOM has no job
+      // to run. Margin, not cost (see pushLabour).
+      pushLabour('Project management & commissioning', design.managementFeeR ?? 0, 0)
     }
   }
 

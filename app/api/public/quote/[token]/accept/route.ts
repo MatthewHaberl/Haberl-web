@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 import { ensureCustomerPortalAccess } from '@/lib/auth/customer-onboarding'
 import { createJobFromQuote } from '@/lib/jobs/create-from-quote'
 import { sendAdminNotice, sendCustomerPortalOnboardingEmail } from '@/lib/email/quotes'
-import { CLOSED_QUOTE_MESSAGE, formatCents, isQuoteExpired, parseTierOptions } from '@/lib/quotes/public'
+import {
+  CLOSED_QUOTE_MESSAGE, formatCents, isQuoteExpired, packageTierValue, parsePackageChoice,
+  parseTierOptions,
+} from '@/lib/quotes/public'
 import { getBaseUrl, getClientIp, getCompanySettings, getQuoteByToken } from '@/lib/quotes/server'
 import { escapeHtml } from '@/lib/utils'
 
@@ -73,7 +76,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     return new Response('This quote has expired — please request an updated version', { status: 410 })
   }
 
-  let body: { name?: string; tier?: string }
+  let body: { name?: string; tier?: string; packageId?: string; acknowledgedSurcharge?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -83,6 +86,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   const name = String(body.name ?? '').trim()
   if (name.length < 2 || name.length > 120) {
     return new Response('Please enter your full name to accept', { status: 400 })
+  }
+
+  // Combined quote, one package taken: bill the STANDALONE price, not a share
+  // of the bundle. Doing this on the server (rather than trusting a total sent
+  // by the browser) is what stops the combined price being claimed for a
+  // single package.
+  const packageChoice = parsePackageChoice(quote)
+  const wantedPackageId = typeof body.packageId === 'string' ? body.packageId : ''
+  let chosenPackage = null
+  if (wantedPackageId) {
+    if (!packageChoice) {
+      return new Response('This quote cannot be accepted in parts', { status: 400 })
+    }
+    chosenPackage = packageChoice.packages.find((p) => p.id === wantedPackageId) ?? null
+    if (!chosenPackage) {
+      return new Response('That part of the quote is no longer available — please reload the page', { status: 409 })
+    }
+    // Matthew's rule: nobody buys one package without being told, in terms, that
+    // it costs more alone. The tick box on the page is the disclosure; this is
+    // the gate that makes it more than decoration.
+    if (body.acknowledgedSurcharge !== true) {
+      return new Response(
+        'Please confirm you understand that taking only part of the quote costs more than the combined price',
+        { status: 400 },
+      )
+    }
   }
 
   // Multi-tier: lock in the chosen option's totals so the job, deposit and
@@ -95,10 +124,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     accepted_at: new Date().toISOString(),
     acceptance_name: name,
     acceptance_ip: getClientIp(req),
-    accepted_tier: chosen?.tier ?? null,
+    accepted_tier: chosenPackage ? packageTierValue(chosenPackage.id) : (chosen?.tier ?? null),
   }
-  if (chosen?.totalCents != null) update.total_amount = chosen.totalCents
-  if (chosen?.depositCents != null) update.deposit_amount = chosen.depositCents
+  if (chosenPackage) {
+    update.total_amount = chosenPackage.totalCents
+    if (chosenPackage.depositCents != null) update.deposit_amount = chosenPackage.depositCents
+  } else {
+    if (chosen?.totalCents != null) update.total_amount = chosen.totalCents
+    if (chosen?.depositCents != null) update.deposit_amount = chosen.depositCents
+  }
 
   const { error: updateError } = await supabase
     .from('quote_requests')
@@ -171,7 +205,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       settings?.contact_email ?? null,
       `Quote accepted — ${quote.quote_number ?? quote.customer_name}`,
       [
-        `<strong>${escapeHtml(quote.customer_name)}</strong> accepted quote <strong>${escapeHtml(quote.quote_number ?? '')}</strong>${chosen ? ` (${escapeHtml(chosen.label)} option)` : ''}.`,
+        `<strong>${escapeHtml(quote.customer_name)}</strong> accepted quote <strong>${escapeHtml(quote.quote_number ?? '')}</strong>${
+          chosenPackage
+            ? ` &mdash; <strong>${escapeHtml(chosenPackage.label)} ONLY</strong>, at the standalone price. The rest of the quote was not taken.`
+            : chosen ? ` (${escapeHtml(chosen.label)} option)` : ''
+        }`,
         `Signed: ${escapeHtml(name)}`,
         ...(onboardingWarning ? [`Portal onboarding: ${onboardingWarning}`] : []),
         ...jobWarnings.map((warning) => `Job warning: ${warning}`),

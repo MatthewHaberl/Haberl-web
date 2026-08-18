@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { crewToScopeLines, type CrewWithPeople } from '@/lib/crews/crews'
+import { OVERTIME_DAILY_HOURS } from '@/lib/staff/pay'
 import { loadCrews } from '@/lib/crews/query'
 import {
   applyCrewShift,
@@ -185,7 +186,7 @@ export function CrewPanel({
    * 27 hours becoming "27 days" would bill nine times the job.
    */
   function changeUnit(line: ScopeCrewLine, unit: ScopeCrewLine['unit']) {
-    const converted = convertCrewUnit(line, unit)
+    const converted = convertCrewUnit(line, unit, labour.crewHoursPerDay)
     const days = crewLineDays(line, labour)
     const qty =
       unit === 'hr' ? Math.round(days * labour.crewHoursPerDay * 100) / 100
@@ -231,7 +232,9 @@ export function CrewPanel({
         </label>
         <p className="col-span-2 text-[11px] text-muted-foreground sm:col-span-1">
           {qtyText(shiftHours)} hours each. Everyone below follows this unless you
-          give them their own days. Payroll pays overtime past 9 hours in a day.
+          give them their own days.{' '}
+          {`Payroll pays overtime past ${OVERTIME_DAILY_HOURS} hours in a day.`}{' '}
+          Set the opening figures in Settings &rarr; Company.
         </p>
       </div>
 

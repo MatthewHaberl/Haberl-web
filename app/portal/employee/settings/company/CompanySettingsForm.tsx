@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { FormField } from '@/components/ui/form-field'
 import { Check, Loader2, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
 import { CIRCUIT_THEME, type CanvasColorOverrides, type CircuitLayer } from '@/lib/solar/canvas-theme'
+import { OVERTIME_DAILY_HOURS } from '@/lib/staff/pay'
 
 interface TariffRow {
   municipality: string
@@ -48,6 +49,14 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
 
   const [quotePrefix, setQuotePrefix] = useState(String(initial.quote_prefix ?? 'QUO'))
   const [expiryDays, setExpiryDays] = useState(String(initial.quote_expiry_days ?? 30))
+
+  const [labourRate, setLabourRate] = useState(String(initial.labour_hourly_rate_rands ?? 750))
+  const [dayRate, setDayRate] = useState(String(initial.labour_day_rate_rands ?? 5500))
+  const [calloutFee, setCalloutFee] = useState(String(initial.callout_fee_rands ?? 750))
+  const [crewDays, setCrewDays] = useState(String(initial.crew_days_default ?? 1))
+  const [crewHours, setCrewHours] = useState(String(initial.crew_hours_per_day ?? 9))
+  const [managementFee, setManagementFee] = useState(String(initial.management_fee_rands ?? 750))
+  const [managementOn, setManagementOn] = useState(initial.management_fee_default !== false)
 
   const [markupPct, setMarkupPct] = useState(String(initial.markup_pct ?? 15))
   const [cocFee, setCocFee] = useState(String(initial.coc_fee_rands ?? 1500))
@@ -120,6 +129,13 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
         },
         quote_prefix: (quotePrefix.trim() || 'QUO').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'QUO',
         quote_expiry_days: Math.max(1, Math.round(num(expiryDays, 30))),
+        labour_hourly_rate_rands: num(labourRate, 750),
+        labour_day_rate_rands: num(dayRate, 5500),
+        callout_fee_rands: num(calloutFee, 750),
+        crew_days_default: num(crewDays, 1),
+        crew_hours_per_day: num(crewHours, 9),
+        management_fee_rands: num(managementFee, 750),
+        management_fee_default: managementOn,
         markup_pct: num(markupPct, 15),
         coc_fee_rands: num(cocFee, 1500),
         labour_inverter_per_w: num(labourInverter, 0.25),
@@ -186,6 +202,38 @@ export function CompanySettingsForm({ initial }: { initial: Record<string, any> 
             {field('Quote number prefix', quotePrefix, setQuotePrefix, { placeholder: 'QUO' })}
             {field('Quote validity', expiryDays, setExpiryDays, { type: 'number', min: 1, trailingText: 'days' })}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="pt-5 pb-5 flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-foreground">Labour defaults</h2>
+          <p className="text-xs text-muted-foreground -mt-2">
+            What a new scope quote opens on. Every one of these stays editable on the quote
+            itself, and saved quotes keep the figures they were priced at.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {field('Hourly rate', labourRate, setLabourRate, { type: 'number', step: '25', min: 0, leadingText: 'R', trailingText: '/hr' })}
+            {field('Team day rate', dayRate, setDayRate, { type: 'number', step: '100', min: 0, leadingText: 'R', trailingText: '/day' }, 'Standard on-site team, full day.')}
+            {field('Call-out fee', calloutFee, setCalloutFee, { type: 'number', step: '50', min: 0, leadingText: 'R' }, 'Also the one-hour minimum — the first hour is not billed twice.')}
+            {field('Days on site', crewDays, setCrewDays, { type: 'number', step: '0.5', min: 0, trailingText: 'days' }, 'Opening figure on the crew shift block. Half-days allowed.')}
+            {field('Hours per day', crewHours, setCrewHours, { type: 'number', step: '0.5', min: 0, trailingText: 'hrs' }, `Prices the crew and converts hours to days. Payroll still pays overtime past ${OVERTIME_DAILY_HOURS} hours a day, whatever you set here.`)}
+            {field('Management fee', managementFee, setManagementFee, { type: 'number', step: '50', min: 0, leadingText: 'R' }, 'Flat per job, for supervising and running the work. Folded into the labour total — never a separate line to the customer.')}
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={managementOn}
+              onChange={(e) => setManagementOn(e.target.checked)}
+            />
+            Add the management fee to new quotes
+          </label>
+          <p className="text-xs text-muted-foreground -mt-1">
+            Still removable on any quote — untick it on the jobs you work yourself, where
+            your own hours are already being billed. Quotes already written keep what they say.
+            Solar designs are opt-in instead: tick “Management fee” on the BOM panel, which
+            pre-fills the amount above and bills it as its own labour line.
+          </p>
         </CardContent>
       </Card>
 

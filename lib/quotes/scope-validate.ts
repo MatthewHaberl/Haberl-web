@@ -17,7 +17,10 @@
 // Pure module — no Supabase, no React; safe on server and client.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { labourAmountR, scopeTotals, type QuoteScope, type ScopeLine } from './scope'
+import {
+  bundleSavingR, duplicatesAcrossPackages, labourAmountR, packageLines, packageTotals,
+  scopeTotals, separateTotalR, type QuoteScope, type ScopeLine,
+} from './scope'
 
 export type ScopeIssueLevel = 'blocker' | 'warning'
 
@@ -154,13 +157,97 @@ export function validateScope(scope: QuoteScope): ScopeIssue[] {
     }
   }
 
-  if (!scope.summary.trim()) {
+  // A combined quote describes itself package by package, so the quote-level
+  // paragraph is an optional intro there rather than the only description —
+  // worth asking for only when a package is silent too.
+  const packagesDescribeThemselves =
+    scope.packages.length > 0 && scope.packages.every((p) => p.summary.trim())
+  if (!scope.summary.trim() && !packagesDescribeThemselves) {
     warnings.push({
       id: 'no-summary',
       level: 'warning',
       anchor: 'summary',
-      message: 'No scope of works — the customer gets prices with no description of the job.',
+      message: scope.packages.length > 0
+        ? 'No description of the work — give the quote an opening line, or describe each package.'
+        : 'No scope of works — the customer gets prices with no description of the job.',
     })
+  }
+
+  // ── Work packages ──────────────────────────────────────────────────────────
+  // Only on quotes that have them; a single-package quote is silent here.
+  if (scope.packages.length > 0) {
+    // A package with no name reads as "Package 2" on the customer's document.
+    for (const [i, pkg] of scope.packages.entries()) {
+      if (pkg.label.trim()) continue
+      warnings.push({
+        id: `package:${pkg.id}:label`,
+        level: 'warning',
+        anchor: `package:${pkg.id}`,
+        message: `Package ${i + 1} has no name — the customer would see it called “Package ${i + 1}”.`,
+      })
+    }
+
+    // An empty package prices at its own call-out and nothing else: the
+    // customer is quoted money for a job with no work on it.
+    for (const pkg of scope.packages) {
+      if (packageLines(scope, pkg.id).length > 0) continue
+      warnings.push({
+        id: `package:${pkg.id}:empty`,
+        level: 'warning',
+        anchor: `package:${pkg.id}`,
+        message: `“${pkg.label.trim() || 'Untitled package'}” has no line items — it would be priced with nothing in it.`,
+      })
+    }
+
+    // Lines belonging to no package are billed by the bundle but appear under
+    // no heading a customer can buy, so the separate prices don't add up to it.
+    const loose = packageLines(scope, null).filter((l) => l.qty > 0)
+    if (loose.length > 0) {
+      warnings.push({
+        id: 'lines-outside-packages',
+        level: 'warning',
+        anchor: 'sections',
+        message: loose.length === 1
+          ? 'One line sits outside every package — it is in the combined price but in none of the individual ones.'
+          : `${loose.length} lines sit outside every package — they are in the combined price but in none of the individual ones.`,
+      })
+    }
+
+    // The same item under two packages. Never merged (two packages can each
+    // genuinely need one) but always worth a second look before it is sent.
+    for (const dupe of duplicatesAcrossPackages(scope)) {
+      const where = dupe.perPackage.map((p) => `${p.label} (${p.qty})`).join(', ')
+      warnings.push({
+        id: `duplicate:${dupe.key}`,
+        level: 'warning',
+        anchor: 'sections',
+        message: `“${dupe.description}” is on more than one package — ${where}. Correct if each job needs its own; otherwise drop one.`,
+      })
+    }
+
+    // A package priced at nothing at all can't be sold on its own.
+    for (const pkg of scope.packages) {
+      const totals = packageTotals(scope, pkg)
+      if (totals.sellR > 0 || totals.needsPricing > 0 || packageLines(scope, pkg.id).length === 0) continue
+      warnings.push({
+        id: `package:${pkg.id}:free`,
+        level: 'warning',
+        anchor: `package:${pkg.id}`,
+        message: `“${pkg.label.trim() || 'Untitled package'}” prices at R0 on its own — it has lines but nothing billable.`,
+      })
+    }
+
+    // The whole point of the combined quote is that taking everything is
+    // cheaper. If it isn't, the document has nothing to offer and says so.
+    if (scope.packages.length > 1 && separateTotalR(scope) > 0 && bundleSavingR(scope) <= 0) {
+      warnings.push({
+        id: 'no-bundle-saving',
+        level: 'warning',
+        anchor: 'labour',
+        message:
+          'Taking everything together costs the same or more than buying each package separately — there is no saving to show. Reduce the combined labour to the visit you would actually do.',
+      })
+    }
   }
 
   return [...blockers, ...warnings]

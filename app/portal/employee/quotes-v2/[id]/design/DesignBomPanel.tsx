@@ -138,7 +138,36 @@ export function DesignBomPanel() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              {/* Running the job — supervising, site visits, the admin. Off unless
+                  it is switched on here, so no saved design re-prices itself.
+                  The amount comes from Settings the moment it is ticked, then
+                  belongs to this design. */}
+              <label
+                className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-muted-foreground"
+                title="Charged when you are running the job rather than working it. Bills as its own labour line."
+              >
+                <input
+                  type="checkbox"
+                  checked={(design.managementFeeR ?? 0) > 0}
+                  onChange={(e) => dispatch({
+                    type: 'setManagementFee',
+                    feeR: e.target.checked ? (design.managementFeeR || pricing.managementFeeR) : null,
+                  })}
+                />
+                Management fee
+              </label>
+              {(design.managementFeeR ?? 0) > 0 && (
+                <input
+                  type="number"
+                  min={0}
+                  step="50"
+                  value={design.managementFeeR ?? 0}
+                  onChange={(e) => dispatch({ type: 'setManagementFee', feeR: Number(e.target.value) || null })}
+                  className="h-7 w-24 rounded-md border border-border bg-background px-2 text-xs"
+                  aria-label="Management fee (rands)"
+                />
+              )}
               <span className="text-[11px] font-medium text-muted-foreground">Install access</span>
               <select
                 value={design.storeys ?? 1}

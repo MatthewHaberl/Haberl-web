@@ -55,6 +55,95 @@ export function canRequestUpdatedQuote(state: PublicQuoteState): boolean {
 export const CLOSED_QUOTE_MESSAGE =
   'This quote is no longer available — request an updated one and we will send you fresh pricing.'
 
+/**
+ * One work package a customer can accept on its own, off a combined quote.
+ *
+ * `totalCents` is the STANDALONE price — higher than the same work inside the
+ * bundle, because taking it alone means its own site visit and its own
+ * certificate. `bundleSavingCents` is what the whole job saves against buying
+ * every package this way, and it is the number the disclaimer quotes.
+ */
+export interface PublicPackageOption {
+  id: string
+  label: string
+  totalCents: number
+  depositCents: number | null
+}
+
+export interface PublicPackageChoice {
+  packages: PublicPackageOption[]
+  /** Price for taking everything — the quote total. */
+  bundleTotalCents: number
+  bundleDepositCents: number | null
+  /** Every package bought separately. */
+  separateTotalCents: number
+  /** separate − bundle. Only ever positive; zero means nothing to advertise. */
+  bundleSavingCents: number
+}
+
+/**
+ * Combined quotes: the packages the customer may accept individually, plus the
+ * bundled figures to weigh them against. Returns null for an ordinary quote —
+ * including a combined one with a single package, where there is no choice to
+ * make.
+ */
+export function parsePackageChoice(quote: {
+  generated_quote?: string | null
+}): PublicPackageChoice | null {
+  if (!quote.generated_quote) return null
+  try {
+    const data = JSON.parse(quote.generated_quote)
+    if (data?.type !== 'scope' || !Array.isArray(data.packages) || data.packages.length < 2) {
+      return null
+    }
+    const rands = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) : null)
+
+    const packages: PublicPackageOption[] = []
+    for (const p of data.packages) {
+      const id = typeof p?.id === 'string' ? p.id : ''
+      const total = rands(p?.ownTotalRands)
+      // A package with no id can't be accepted (nothing to record), and one
+      // with no price can't be sold. Either way it is not an option.
+      if (!id || total === null || total <= 0) continue
+      packages.push({
+        id,
+        label: String(p?.name ?? 'Package'),
+        totalCents: total,
+        depositCents: rands(p?.depositTotalRands),
+      })
+    }
+    if (packages.length < 2) return null
+
+    const bundleTotalCents = rands(data.quoteTotalRands) ?? 0
+    const separateTotalCents = rands(data.separateTotalRands)
+      ?? packages.reduce((t, p) => t + p.totalCents, 0)
+
+    return {
+      packages,
+      bundleTotalCents,
+      bundleDepositCents: rands(data.depositTotalRands),
+      separateTotalCents,
+      bundleSavingCents: Math.max(0, separateTotalCents - bundleTotalCents),
+    }
+  } catch {
+    return null
+  }
+}
+
+/** How an accepted single package is recorded in quote_requests.accepted_tier. */
+export const PACKAGE_TIER_PREFIX = 'pkg:'
+
+export function packageTierValue(packageId: string): string {
+  return `${PACKAGE_TIER_PREFIX}${packageId}`
+}
+
+/** The package id behind an accepted_tier, or null when everything was taken. */
+export function packageIdFromTier(tier: string | null | undefined): string | null {
+  if (typeof tier !== 'string' || !tier.startsWith(PACKAGE_TIER_PREFIX)) return null
+  const id = tier.slice(PACKAGE_TIER_PREFIX.length)
+  return id || null
+}
+
 export interface PublicTierOption {
   tier: string
   label: string

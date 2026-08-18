@@ -1263,6 +1263,15 @@ export interface SystemDesign {
   data?: DataConfig
   /** Building storeys for the install (drives the access/storey labour premium). */
   storeys?: number
+  /**
+   * Flat management fee for the job — running it, supervising, the admin —
+   * charged on top of the per-watt install labour. Absent or 0 means not
+   * charged, so every design saved before this bills exactly what it billed.
+   *
+   * The scope engine hides its equivalent inside one "Labour" line; here labour
+   * is already itemised per task, so this bills as its own line beside them.
+   */
+  managementFeeR?: number | null
   layout: DesignLayout
 }
 
@@ -1411,6 +1420,8 @@ export function parseDesign(raw: unknown): SystemDesign | null {
   return {
     ...base,
     ...src,
+    // Never a credit, never a stray string off an old blob.
+    managementFeeR: Math.max(0, num(src.managementFeeR)) || null,
     energy,
     supply: src.supply ? { ...src.supply, distanceToInverterM: posRunM(src.supply.distanceToInverterM) } : src.supply,
     bank: {

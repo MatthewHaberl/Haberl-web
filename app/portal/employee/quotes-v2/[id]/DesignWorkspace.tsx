@@ -164,6 +164,9 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
             rawScope={req.scope}
             workType={workType}
             registerPreflight={registerPreflight}
+            customerId={req.customer_id ?? null}
+            customerName={req.customer_name ?? ''}
+            optionLabel={req.option_label ?? null}
           />
         ) : (
           <CanvasThemeProvider value={canvasColors}>

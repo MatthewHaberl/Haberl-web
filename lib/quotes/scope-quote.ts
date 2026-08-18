@@ -14,9 +14,13 @@ import { bomToSupplierBom } from '@/lib/solar/design-quote'
 import type { DesignBom } from '@/lib/solar/design-bom'
 import type { EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import type { EquipmentPhoto } from '@/lib/solar/render-quote'
-import type { QuoteScope } from './scope'
-import { computeScopeDeposit, stripOptionalLines } from './scope-bom'
-import type { ScopeQuoteData, ScopeQuoteSectionView, ScopeOptionalExtraView } from './render-scope-quote'
+import {
+  bundleSavingR, packageDisplayLabels, packageTotals, separateTotalR, type QuoteScope,
+} from './scope'
+import { bomForPackage, computeScopeDeposit, stripOptionalLines } from './scope-bom'
+import type {
+  ScopeQuoteData, ScopeQuotePackageView, ScopeQuoteSectionView, ScopeOptionalExtraView,
+} from './render-scope-quote'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -105,6 +109,47 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
       deposit: depositSections.includes(s.name),
     }))
 
+  // Work packages: each one's sections, and its own price bought alone. The
+  // BOM already carries the package a section belongs to, so this is a regroup
+  // rather than a second walk of the scope.
+  // Keyed by section NAME, not by index: `sections` above drops any section
+  // holding nothing but optional extras, so the two arrays do not line up.
+  // Names are unique across the BOM precisely because the package qualifies
+  // them (see qualifiedSectionName), which is what makes this lookup safe.
+  const packageOfSection = new Map(bom.sections.map((s) => [s.name, s.package]))
+  const byPackage = new Map<string, ScopeQuoteSectionView[]>()
+  const sharedSections: ScopeQuoteSectionView[] = []
+  for (const view of sections) {
+    const label = packageOfSection.get(view.name)
+    if (!label) { sharedSections.push(view); continue }
+    const list = byPackage.get(label) ?? []
+    list.push(view)
+    byPackage.set(label, list)
+  }
+
+  const labels = packageDisplayLabels(scope)
+  const packages: ScopeQuotePackageView[] = scope.packages.map((pkg) => {
+    const name = labels.get(pkg.id) ?? 'Package'
+    const own = packageTotals(scope, pkg).sellR
+    // This package's own slice of the BOM — what a single-package acceptance
+    // buys, deposits on, and seeds job materials from.
+    const ownBom = bomForPackage(bom, name)
+    const ownDeposit = computeScopeDeposit(ownBom)
+    return {
+      id: pkg.id,
+      name,
+      summary: pkg.summary.trim(),
+      sections: byPackage.get(name) ?? [],
+      ownTotal: rand(own),
+      ownTotalRands: own,
+      depositItems: ownDeposit.items,
+      depositTotalRands: ownDeposit.totalR,
+      supplierBom: bomToSupplierBom(stripOptionalLines(ownBom)),
+    }
+  })
+  const separateR = scope.packages.length > 0 ? separateTotalR(scope) : 0
+  const savingR = scope.packages.length > 0 ? bundleSavingR(scope) : 0
+
   const optionalExtras: ScopeOptionalExtraView[] = bom.sections
     .flatMap((s) => s.lines)
     .filter((l) => l.optional)
@@ -131,6 +176,12 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
     siteAddress: req.address ?? '—',
     summary: scope.summary,
     sections,
+    packages,
+    sharedSections,
+    separateTotal: rand(separateR),
+    separateTotalRands: separateR,
+    bundleSaving: rand(savingR),
+    bundleSavingRands: savingR,
     optionalExtras,
     exclusions: scope.exclusions.map((e) => e.trim()).filter(Boolean),
     cocIncluded: scope.coc.included,

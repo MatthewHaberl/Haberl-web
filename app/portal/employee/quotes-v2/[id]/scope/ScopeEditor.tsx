@@ -249,7 +249,7 @@ function MarkupCell({ line, houseMarkup, onMarkupPct, onReset }: {
 // changeover", "Supply & protection" — plus anything the user names DB-ish).
 const DB_SECTION_RE = /\b(db|board|distribution|changeover|supply|protection)\b/i
 
-export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showIssues }: {
+export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showIssues, packageId = null }: {
   scope: QuoteScope
   onChange: Dispatch<SetStateAction<QuoteScope>>
   pricing: ScopePricing
@@ -258,6 +258,12 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   issues: ScopeIssue[]
   /** Red fields appear only once Generate has actually been refused. */
   showIssues: boolean
+  /**
+   * Restrict this editor to one work package — its sections, its lines, and
+   * anything added lands on it. Null (the default) is a single-package quote,
+   * where sections live on the scope itself and nothing here changes.
+   */
+  packageId?: string | null
 }) {
   const [newSection, setNewSection] = useState('')
   // Section the DB builder is currently building into (null = closed).
@@ -267,11 +273,37 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   // Column widths are shared by every section grid on the page.
   const cols = useColumnWidths()
 
+  // Everything below reads one package's slice of the scope, or the whole scope
+  // when this quote has no packages. `mine` is the filter; keep every line read
+  // going through it or one package would show another's items.
+  const mine = (l: ScopeLine) => l.packageId === packageId
+  const pkg = packageId ? scope.packages.find((p) => p.id === packageId) : null
+  const declaredSections = packageId ? (pkg?.sections ?? []) : scope.sections
+
   // Display order: declared sections first, then any stragglers lines reference.
-  const sectionNames = [...scope.sections]
+  const sectionNames = [...declaredSections]
   for (const line of scope.lines) {
+    if (!mine(line)) continue
     if (line.section && !sectionNames.includes(line.section)) sectionNames.push(line.section)
   }
+
+  // Anchors stay exactly as they were on a single-package quote; a package
+  // qualifies them so two sections called "Materials" scroll to their own card.
+  const sectionAnchor = (name: string) =>
+    packageId ? `section:${packageId}:${name}` : `section:${name}`
+
+  /** Rewrite the section order this editor owns — the package's, or the scope's. */
+  const setSections = (fn: (names: string[]) => string[]) =>
+    onChange((s) =>
+      packageId
+        ? {
+            ...s,
+            packages: s.packages.map((p) =>
+              p.id === packageId ? { ...p, sections: fn(p.sections) } : p,
+            ),
+          }
+        : { ...s, sections: fn(s.sections) },
+    )
 
   // Issues by line, so a row can ring the offending field and say why under
   // itself. The row is ten columns wide at full width — there is no room for a
@@ -320,7 +352,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
     })
 
   const addFreeLine = (section: string, kind: 'material' | 'fee') =>
-    onChange((s) => ({ ...s, lines: [...s.lines, newScopeLine(section, kind)] }))
+    onChange((s) => ({ ...s, lines: [...s.lines, newScopeLine(section, kind, packageId)] }))
 
   const addCatalogLine = (section: string, item: CatalogPick) =>
     onChange((s) => ({
@@ -328,7 +360,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
       lines: [
         ...s.lines,
         {
-          ...newScopeLine(section, 'material'),
+          ...newScopeLine(section, 'material', packageId),
           catalogId: item.id,
           sku: item.sku,
           description: item.description,
@@ -347,7 +379,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
       lines: [
         ...s.lines,
         {
-          ...newScopeLine(section, 'material'),
+          ...newScopeLine(section, 'material', packageId),
           catalogId: null,
           sku: l.sku,
           description: l.description,
@@ -361,22 +393,25 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
     }))
 
   const moveSection = (name: string, dir: -1 | 1) =>
-    onChange((s) => {
+    setSections(() => {
+      // Reorders the DISPLAYED order, which folds any straggler section into
+      // the declared list — where it should have been all along.
       const order = [...sectionNames]
       const i = order.indexOf(name)
       const j = i + dir
-      if (i < 0 || j < 0 || j >= order.length) return s
-      ;[order[i], order[j]] = [order[j], order[i]]
-      return { ...s, sections: order }
+      if (i < 0 || j < 0 || j >= order.length) return order
+      const swap = order[i]
+      order[i] = order[j]
+      order[j] = swap
+      return order
     })
 
-  const removeSection = (name: string) =>
-    onChange((s) => ({ ...s, sections: s.sections.filter((n) => n !== name) }))
+  const removeSection = (name: string) => setSections((names) => names.filter((n) => n !== name))
 
   const addNamedSection = (raw: string) => {
     const name = raw.trim()
     if (!name) return
-    onChange((s) => (s.sections.includes(name) ? s : { ...s, sections: [...s.sections, name] }))
+    setSections((names) => (names.includes(name) ? names : [...names, name]))
   }
 
   const addSection = () => {
@@ -391,11 +426,11 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   return (
     <div
       className="space-y-4"
-      data-issue-anchor="sections"
+      data-issue-anchor={packageId ? undefined : 'sections'}
       style={{ '--scope-cols': cols.template } as CSSProperties}
     >
       {sectionNames.map((name, idx) => {
-        const lines = scope.lines.filter((l) => l.section === name)
+        const lines = scope.lines.filter((l) => mine(l) && l.section === name)
         const counted = lines.filter((l) => !l.optional && l.unitSellR > 0 && l.qty > 0)
         const subtotal = counted.reduce((t, l) => t + round2(l.unitSellR * l.qty), 0)
         // Landed cost behind the counted lines — margin is what's left of the sell.
@@ -404,7 +439,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
           ? ((subtotal - costTotal) / subtotal) * 100
           : null
         return (
-          <Card key={name} data-issue-anchor={`section:${name}`}>
+          <Card key={name} data-issue-anchor={sectionAnchor(name)}>
             <CardContent className="@container space-y-3 pt-6">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -428,7 +463,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                     onClick={() => moveSection(name, 1)} disabled={idx === sectionNames.length - 1} title="Move down">
                     <ArrowDown className="h-3.5 w-3.5" />
                   </Button>
-                  {lines.length === 0 && scope.sections.includes(name) && (
+                  {lines.length === 0 && declaredSections.includes(name) && (
                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
                       onClick={() => removeSection(name)} title="Remove empty section">
                       <Trash2 className="h-3.5 w-3.5" />
@@ -654,7 +689,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
         <ScopeDbBuilder
           section={dbSection}
           pricing={pricing}
-          existingLines={scope.lines.filter((l) => l.section === dbSection)}
+          existingLines={scope.lines.filter((l) => mine(l) && l.section === dbSection)}
           onClose={() => setDbSection(null)}
           onAdd={(built, replacedIds) => {
             onChange((s) => {
@@ -671,7 +706,8 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                 if (owned.has(line.id)) continue
                 kept.push(line)
               }
-              return { ...s, lines: [...kept, ...rebuilt.values()] }
+              const added = [...rebuilt.values()].map((l) => ({ ...l, packageId }))
+              return { ...s, lines: [...kept, ...added] }
             })
             setDbSection(null)
           }}

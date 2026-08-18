@@ -114,13 +114,22 @@ export function hoursFromClock(
 }
 
 /**
+ * Hours a day before overtime starts — BCEA ordinary time on a five-day week.
+ *
+ * Exported so the quote side can say so out loud without hardcoding a second
+ * copy of the number. A shorter quoted shift (Company Settings) does not move
+ * this: it is a statutory pay threshold, not a preference.
+ */
+export const OVERTIME_DAILY_HOURS = 9
+
+/**
  * Split a day's hours into normal and overtime at a daily threshold.
  *
  * BCEA ordinary time is 9 hours/day on a five-day week, but Matthew's crew
  * works a variable week — so the threshold is a parameter, not a constant, and
  * callers that don't want an automatic split simply pass Infinity.
  */
-export function splitOvertime(hours: number, dailyThreshold = 9): { normal: number; overtime: number } {
+export function splitOvertime(hours: number, dailyThreshold = OVERTIME_DAILY_HOURS): { normal: number; overtime: number } {
   const h = num(hours)
   if (!Number.isFinite(dailyThreshold) || h <= dailyThreshold) return { normal: round2(h), overtime: 0 }
   return { normal: round2(dailyThreshold), overtime: round2(h - dailyThreshold) }

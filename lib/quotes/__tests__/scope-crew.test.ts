@@ -59,6 +59,18 @@ test('a markup of 1 sells labour at cost rather than at zero', () => {
   assert.equal(crewLineSellR(line), 1200)
 })
 
+test('the shift block opens on the figures Settings hands it', () => {
+  const scope = emptyScope({ crewDays: 3, crewHoursPerDay: 8 })
+  assert.equal(scope.labour.crewDays, 3)
+  assert.equal(scope.labour.crewHoursPerDay, 8)
+})
+
+test('no setting means the house day, not zero', () => {
+  const scope = emptyScope()
+  assert.equal(scope.labour.crewDays, 1)
+  assert.equal(scope.labour.crewHoursPerDay, CREW_HOURS_PER_DAY)
+})
+
 // ── Changing the unit ────────────────────────────────────────────────────────
 // The rate seeded from the staff directory is R/hr. Switching to days without
 // converting it reads that hourly figure as a day rate — a nine-fold
@@ -85,6 +97,19 @@ test('a manual sell override is converted with the cost, not left behind', () =>
 test('a line with no override keeps null rather than inventing a sell price', () => {
   const line = newCrewLine({ costR: 250, markup: 1.6, unit: 'hr' })
   assert.equal(convertCrewUnit(line, 'day').sellR, null)
+})
+
+test('a shorter house shift converts at the quote’s own hours, not the 9-hour default', () => {
+  const line = newCrewLine({ costR: 250, markup: 1.6, qty: 8, unit: 'hr' })
+  const day = convertCrewUnit(line, 'day', 8)
+  assert.equal(day.costR, 250 * 8)
+  // ...and back again, with no drift from the round trip.
+  assert.equal(convertCrewUnit(day, 'hr', 8).costR, 250)
+})
+
+test('a zero or missing shift falls back to the house day rather than dividing by nothing', () => {
+  const line = newCrewLine({ costR: 250, markup: 1.6, qty: 8, unit: 'hr' })
+  assert.equal(convertCrewUnit(line, 'day', 0).costR, 250 * CREW_HOURS_PER_DAY)
 })
 
 test('a job lump has no hour basis, so its rate is left for the user to type', () => {

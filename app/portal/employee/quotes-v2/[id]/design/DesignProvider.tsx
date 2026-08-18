@@ -65,6 +65,7 @@ export type DesignAction =
   | { type: 'removeBattery' }
   | { type: 'setEarthing'; patch: Partial<EarthingConfig> }
   | { type: 'setStoreys'; storeys: number }
+  | { type: 'setManagementFee'; feeR: number | null }
   | { type: 'setSite'; patch: Partial<SiteConditions> }
   | { type: 'setSupply'; patch: Partial<SupplyConfig> }
   | { type: 'addCombiner' }
@@ -353,6 +354,10 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
 
     case 'setStoreys':
       return { ...d, storeys: Math.max(1, Math.min(3, Math.round(action.storeys) || 1)) }
+
+    // null switches the fee off; a positive amount switches it on at that figure.
+    case 'setManagementFee':
+      return { ...d, managementFeeR: action.feeR === null ? null : Math.max(0, action.feeR) || null }
     case 'setSite':
       return { ...d, site: { ...(d.site ?? DEFAULT_SITE_CONDITIONS), ...action.patch } }
 

@@ -7,6 +7,7 @@ import {
   canRequestUpdatedQuote,
   formatCents,
   isValidShareToken,
+  parsePackageChoice,
   parseTierOptions,
   publicQuoteState,
 } from '@/lib/quotes/public'
@@ -80,6 +81,9 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   const isOpen = state === 'open'
   const expired = state === 'expired'
   const tierOptions = parseTierOptions(quote)
+  // Combined quote: the customer may take the lot, or one package at its
+  // (higher) standalone price.
+  const packageChoice = parsePackageChoice(quote)
 
   // Accepted state: banking details for EFT + deposit/proof progress
   let banking = null
@@ -166,6 +170,7 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
           quoteNumber={quote.quote_number}
           depositCents={quote.deposit_amount}
           tierOptions={isOpen ? tierOptions : null}
+          packageChoice={isOpen ? packageChoice : null}
           banking={banking}
           proof={proof}
           contactPhone={contactPhone}

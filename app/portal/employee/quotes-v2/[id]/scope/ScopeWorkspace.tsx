@@ -14,7 +14,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import {
-  parseScope, emptyScope, scopeTotals, type QuoteScope,
+  parseScope, emptyScope, scopeTotals, applyCrewShift, importScopeAsPackage,
+  CREW_HOURS_PER_DAY, type QuoteScope,
 } from '@/lib/quotes/scope'
 import type { WorkType } from '@/lib/quotes/work-types'
 import { validateScope } from '@/lib/quotes/scope-validate'
@@ -22,6 +23,11 @@ import { ScopeEditor } from './ScopeEditor'
 import { LabourPanel } from './LabourPanel'
 import { ScopeSummaryPanel } from './ScopeSummaryPanel'
 import { ScopeIssuesPanel, scrollToIssue } from './ScopeIssuesPanel'
+import { PackagesPanel } from './PackagesPanel'
+import { BundlePanel } from './BundlePanel'
+import { ImportQuoteDialog, useImportableQuotes, type ImportableQuote } from './ImportQuoteDialog'
+import { Button } from '@/components/ui/button'
+import { PackagePlus } from 'lucide-react'
 
 /** Pricing context for the builder — markup + labour defaults from Settings. */
 export interface ScopePricing {
@@ -30,9 +36,17 @@ export interface ScopePricing {
   dayRateR: number
   calloutR: number
   cocFeeR: number
+  crewDays: number
+  crewHoursPerDay: number
+  managementR: number
+  managementDefault: boolean
 }
 
-const DEFAULT_PRICING: ScopePricing = { markup: 1.15, labourRateR: 750, dayRateR: 5500, calloutR: 750, cocFeeR: 1500 }
+const DEFAULT_PRICING: ScopePricing = {
+  markup: 1.15, labourRateR: 750, dayRateR: 5500, calloutR: 750, cocFeeR: 1500,
+  crewDays: 1, crewHoursPerDay: CREW_HOURS_PER_DAY,
+  managementR: 750, managementDefault: true,
+}
 
 /**
  * Quotes seeded before migration 118 carry an empty "Labour" section — labour
@@ -47,10 +61,17 @@ function dropEmptyLabourSection(scope: QuoteScope): QuoteScope {
   return { ...scope, sections: scope.sections.filter((n) => n !== 'Labour') }
 }
 
-export function ScopeWorkspace({ requestId, rawScope, workType, registerPreflight }: {
+export function ScopeWorkspace({
+  requestId, rawScope, workType, registerPreflight, customerId, customerName, optionLabel,
+}: {
   requestId: string
   rawScope: unknown
   workType: WorkType
+  /** Whose other quotes "Add another quote" offers. */
+  customerId?: string | null
+  customerName?: string
+  /** This quote's own option name — the label its existing scope folds into. */
+  optionLabel?: string | null
   /**
    * Hands Generate (in the status bar above this component) a way to ask
    * "can this be a document yet?". Returns the blocking messages, and reveals
@@ -67,6 +88,34 @@ export function ScopeWorkspace({ requestId, rawScope, workType, registerPrefligh
   const [pricing, setPricing] = useState<ScopePricing>(DEFAULT_PRICING)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [exclText, setExclText] = useState(() => scope.exclusions.join('\n'))
+  const [importing, setImporting] = useState(false)
+
+  const importable = useImportableQuotes(requestId, customerId ?? null, customerName ?? '')
+
+  /**
+   * Pull the chosen quotes in as packages.
+   *
+   * Applied in one setScope so the autosave writes once. Each import folds this
+   * quote's own scope into a first package on the way (ensurePackaged), so the
+   * result is N+1 packages rather than N packages beside a pile of loose lines.
+   */
+  function importQuotes(picked: ImportableQuote[]) {
+    let next = scope
+    for (const q of picked) {
+      next = importScopeAsPackage(next, q.scope, {
+        label: q.label,
+        sourceQuoteId: q.id,
+        existingLabel: optionLabel?.trim() || workType.label,
+      }).scope
+    }
+    setScope(next)
+    // The exclusions box holds its own text state, so an import that merges the
+    // sources' exclusions has to restate it. Without this the box keeps showing
+    // the pre-import list, and the next keystroke in it writes that shorter list
+    // back over the merged one — silently dropping exclusions off the quote.
+    setExclText(next.exclusions.join('\n'))
+    setImporting(false)
+  }
 
   // Markup + labour defaults from company settings. If the scope's labour block
   // is still at the built-in placeholder rates, refresh it to the real ones.
@@ -74,7 +123,7 @@ export function ScopeWorkspace({ requestId, rawScope, workType, registerPrefligh
     let cancelled = false
     supabase
       .from('company_settings')
-      .select('markup_pct, labour_hourly_rate_rands, labour_day_rate_rands, callout_fee_rands, coc_fee_rands')
+      .select('markup_pct, labour_hourly_rate_rands, labour_day_rate_rands, callout_fee_rands, coc_fee_rands, crew_days_default, crew_hours_per_day, management_fee_rands, management_fee_default')
       .eq('id', true)
       .maybeSingle()
       .then(({ data }) => {
@@ -87,6 +136,10 @@ export function ScopeWorkspace({ requestId, rawScope, workType, registerPrefligh
           dayRateR: num(data.labour_day_rate_rands, 5500),
           calloutR: num(data.callout_fee_rands, 750),
           cocFeeR: num(data.coc_fee_rands, 1500),
+          crewDays: num(data.crew_days_default, 1),
+          crewHoursPerDay: num(data.crew_hours_per_day, CREW_HOURS_PER_DAY),
+          managementR: num(data.management_fee_rands, 750),
+          managementDefault: data.management_fee_default !== false,
         }
         setPricing(next)
         setScope((s) => {
@@ -97,12 +150,29 @@ export function ScopeWorkspace({ requestId, rawScope, workType, registerPrefligh
             ((s.labour.rateR === 650 && s.labour.calloutR === 450) ||
              (s.labour.rateR === 750 && s.labour.calloutR === 750))
           const untouchedCoc = !s.coc.included && s.coc.feeR === 1500
-          if (!untouchedLabour && !untouchedCoc) return s
+          // The shift block is "never touched" while nobody is on the crew and
+          // both figures still read the built-in defaults. Once a crew line
+          // exists the hours price it, so re-seeding would silently re-quote.
+          const untouchedShift =
+            s.labour.crew.length === 0 &&
+            s.labour.crewDays === 1 &&
+            s.labour.crewHoursPerDay === CREW_HOURS_PER_DAY
+          if (!untouchedLabour && !untouchedCoc && !untouchedShift) return s
+          let labour = untouchedLabour
+            ? { ...s.labour, rateR: next.labourRateR, dayRateR: next.dayRateR, calloutR: next.calloutR }
+            : s.labour
+          // The management fee is switched on only where no labour has been
+          // entered at all. Reopening a quote that is already priced must never
+          // add money to it — the panel's tick box is the only way in there,
+          // and it takes its amount from Settings at the moment it is ticked.
+          if (untouchedLabour && next.managementDefault && next.managementR > 0) {
+            labour = { ...labour, managementIncluded: true, managementR: next.managementR }
+          }
           return {
             ...s,
-            labour: untouchedLabour
-              ? { ...s.labour, rateR: next.labourRateR, dayRateR: next.dayRateR, calloutR: next.calloutR }
-              : s.labour,
+            labour: untouchedShift
+              ? applyCrewShift(labour, { crewDays: next.crewDays, crewHoursPerDay: next.crewHoursPerDay })
+              : labour,
             coc: untouchedCoc ? { ...s.coc, feeR: next.cocFeeR } : s.coc,
           }
         })
@@ -184,14 +254,37 @@ export function ScopeWorkspace({ requestId, rawScope, workType, registerPrefligh
           </CardContent>
         </Card>
 
-        <ScopeEditor
-          scope={scope}
-          onChange={setScope}
-          pricing={pricing}
-          requestId={requestId}
-          issues={issues}
-          showIssues={showIssues}
-        />
+        {scope.packages.length > 0 ? (
+          <PackagesPanel
+            scope={scope}
+            onChange={setScope}
+            pricing={pricing}
+            requestId={requestId}
+            issues={issues}
+            showIssues={showIssues}
+            onAddQuote={() => setImporting(true)}
+          />
+        ) : (
+          <>
+            <ScopeEditor
+              scope={scope}
+              onChange={setScope}
+              pricing={pricing}
+              requestId={requestId}
+              issues={issues}
+              showIssues={showIssues}
+            />
+            {/* Offered only where there is something to combine WITH — on a
+                customer's first quote this button would open an empty list. */}
+            {(importable?.length ?? 0) > 0 && (
+              <Button type="button" variant="outline" size="sm" onClick={() => setImporting(true)}>
+                <PackagePlus className="h-3.5 w-3.5" /> Add another quote to this one
+              </Button>
+            )}
+          </>
+        )}
+
+        <BundlePanel scope={scope} />
 
         <LabourPanel scope={scope} onChange={setScope} pricing={pricing} issues={issues} />
 
@@ -216,6 +309,14 @@ export function ScopeWorkspace({ requestId, rawScope, workType, registerPrefligh
 
         <ScopeSummaryPanel scope={scope} totals={totals} />
       </div>
+
+      {importing && (
+        <ImportQuoteDialog
+          quotes={importable}
+          onImport={importQuotes}
+          onClose={() => setImporting(false)}
+        />
+      )}
     </div>
   )
 }

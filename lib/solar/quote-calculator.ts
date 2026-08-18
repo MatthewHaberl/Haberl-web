@@ -87,6 +87,13 @@ export interface PricingSettings {
   labourPanelPerW: number
   storeyPremium2: number
   storeyPremium3: number
+  /**
+   * House management fee — what the BOM panel pre-fills when the fee is
+   * switched on for a design. Nothing reads it while pricing: the amount that
+   * bills is the one stored on the design (`SystemDesign.managementFeeR`), so a
+   * quote never re-prices itself because Settings moved.
+   */
+  managementFeeR: number
   tariffs: Record<string, number>
 }
 
@@ -97,6 +104,7 @@ export const DEFAULT_PRICING: PricingSettings = {
   labourPanelPerW: 0.75,
   storeyPremium2: 2000,
   storeyPremium3: 5000,
+  managementFeeR: 750,
   tariffs: TARIFF_BY_MUNICIPALITY,
 }
 
@@ -117,6 +125,7 @@ export function mapSettingsToPricing(row: Record<string, unknown> | null | undef
     labourPanelPerW: num(row.labour_panel_per_w, 0.75),
     storeyPremium2: num(row.storey_premium_2, 2000),
     storeyPremium3: num(row.storey_premium_3, 5000),
+    managementFeeR: num(row.management_fee_rands, 750),
     tariffs,
   }
 }

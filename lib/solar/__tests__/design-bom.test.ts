@@ -8,8 +8,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { designToBom, consolidateBom, type DesignBom } from '../design-bom'
 import { computeDeposit, bomToSupplierBom } from '../design-quote'
-import { emptyDesign, type SystemDesign, type PanelGroup, type DcCombiner } from '../system-design'
-import type { EquipmentCatalogItem } from '../quote-calculator'
+import { emptyDesign, parseDesign, type SystemDesign, type PanelGroup, type DcCombiner } from '../system-design'
+import { DEFAULT_PRICING, type EquipmentCatalogItem } from '../quote-calculator'
 
 const MARKUP = 1.35
 
@@ -199,4 +199,70 @@ test('bomToSupplierBom preserves every line and its money for the job-materials 
 
   // Section names carry through — procurement groups by them.
   assert.ok(supplier.every((i) => typeof i.section === 'string' && i.section.length > 0))
+})
+
+// ── Management fee (W99) ─────────────────────────────────────────────────────
+// A flat charge for running the job — supervising, site visits, admin — on top
+// of the per-watt install labour. Opt-in per design: no saved design may start
+// billing it because Settings changed.
+
+function labourDesign(over: Partial<SystemDesign> = {}): SystemDesign {
+  return designWith({
+    panels: [panelGroup({ panelCount: 10, strings: 1 })],
+    inverters: [{ id: 'i1', catalogId: 'inv', model: '8kW', kw: 8, qty: 1, phases: 1 }],
+    ...over,
+  } as Partial<SystemDesign>)
+}
+
+const PRICING = { ...DEFAULT_PRICING, markup: MARKUP }
+
+function labourLines(bom: DesignBom) {
+  return bom.sections.find((s) => s.name === 'Labour')?.lines ?? []
+}
+
+test('a design that has not switched the management fee on is billed exactly as before', () => {
+  const bom = designToBom(labourDesign(), baseCatalog(), MARKUP, { pricing: PRICING })
+  const fee = labourLines(bom).find((l) => l.description.includes('Project management'))
+  assert.equal(fee, undefined)
+})
+
+test('switching it on adds one labour line at the amount stored on the design', () => {
+  const off = designToBom(labourDesign(), baseCatalog(), MARKUP, { pricing: PRICING })
+  const on = designToBom(labourDesign({ managementFeeR: 900 }), baseCatalog(), MARKUP, { pricing: PRICING })
+  const fee = labourLines(on).find((l) => l.description.includes('Project management'))
+  assert.ok(fee, 'the fee should bill as its own labour line')
+  assert.equal(fee.lineSellR, 900)
+  assert.equal(on.totalSellR, Math.round((off.totalSellR + 900) * 100) / 100)
+})
+
+test('the fee is margin — his own time, not a wage the business pays out', () => {
+  const bom = designToBom(labourDesign({ managementFeeR: 900 }), baseCatalog(), MARKUP, { pricing: PRICING })
+  const fee = labourLines(bom).find((l) => l.description.includes('Project management'))
+  assert.equal(fee?.lineCostR, 0)
+  // Install labour beside it still quotes cost = sell, as it always has.
+  const install = labourLines(bom).find((l) => l.description.startsWith('Panel install'))
+  assert.equal(install?.lineCostR, install?.lineSellR)
+})
+
+test('Settings cannot re-price a saved design — the design carries its own figure', () => {
+  const design = labourDesign({ managementFeeR: 900 })
+  const raised = designToBom(design, baseCatalog(), MARKUP, { pricing: { ...PRICING, managementFeeR: 5000 } })
+  const fee = labourLines(raised).find((l) => l.description.includes('Project management'))
+  assert.equal(fee?.lineSellR, 900)
+})
+
+test('a parts-only design has no job to manage, so the fee does not bill', () => {
+  // No panels and no inverters — nothing to install, so the labour block is skipped.
+  const bom = designToBom(designWith({ managementFeeR: 900 } as Partial<SystemDesign>), baseCatalog(), MARKUP, { pricing: PRICING })
+  assert.equal(labourLines(bom).find((l) => l.description.includes('Project management')), undefined)
+})
+
+test('parseDesign refuses a negative fee rather than crediting the customer', () => {
+  const parsed = parseDesign({ ...emptyDesign(), managementFeeR: -900 })
+  assert.equal(parsed?.managementFeeR, null)
+})
+
+test('a design saved before the fee existed parses to off', () => {
+  const parsed = parseDesign({ version: 1, panels: [], inverters: [] })
+  assert.equal(parsed?.managementFeeR ?? null, null)
 })

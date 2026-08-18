@@ -28,6 +28,31 @@ export interface ScopeQuoteSectionView {
   deposit: boolean
 }
 
+/**
+ * One work package on a combined quote — a job the customer could buy on its
+ * own, shown with its own price beside the bundled one.
+ */
+export interface ScopeQuotePackageView {
+  /** ScopePackage.id — what an acceptance of just this package records. */
+  id: string
+  name: string
+  /** This package's own scope-of-works paragraph. */
+  summary: string
+  sections: ScopeQuoteSectionView[]
+  /** What it costs bought on its own: its work, its visit, its CoC. */
+  ownTotal: string
+  ownTotalRands: number
+  /** Deposit if this package alone is accepted — its material lines. */
+  depositItems: DepositItem[]
+  depositTotalRands: number
+  /**
+   * Job materials for a single-package acceptance. Held per package so the
+   * accept route never has to guess which lines belong to it by matching
+   * section names.
+   */
+  supplierBom: SupplierBomItem[]
+}
+
 export interface ScopeOptionalExtraView {
   description: string
   qty: number
@@ -51,6 +76,19 @@ export interface ScopeQuoteData {
   /** Customer-facing scope-of-works narrative. */
   summary: string
   sections: ScopeQuoteSectionView[]
+  /**
+   * Work packages, when this quote combines several jobs. EMPTY on an ordinary
+   * single-job quote, which renders exactly as it always has.
+   */
+  packages: ScopeQuotePackageView[]
+  /** Sections billed across the whole job (labour, CoC) — no single package. */
+  sharedSections: ScopeQuoteSectionView[]
+  /** Every package bought separately. Only meaningful with packages. */
+  separateTotal: string
+  separateTotalRands: number
+  /** What taking everything together saves. Zero when there is nothing to save. */
+  bundleSaving: string
+  bundleSavingRands: number
   optionalExtras: ScopeOptionalExtraView[]
   exclusions: string[]
   cocIncluded: boolean
@@ -237,7 +275,115 @@ function scopeSummarySection(data: ScopeQuoteData): string {
   </div>`
 }
 
+/** The section rows shared by the flat table and every package card. */
+function sectionRows(sections: ScopeQuoteSectionView[]): string {
+  return sections.map((s) => {
+    const star = s.deposit ? ' <span class="star">&#9733;</span>' : ''
+    const toQuote = s.toQuote > 0
+      ? `<div class="subtitle">${s.toQuote} item${s.toQuote === 1 ? '' : 's'} to be priced separately &mdash; not in this subtotal</div>`
+      : ''
+    return `
+        <tr>
+          <td>
+            <strong>${escapeHtml(s.name)}</strong>${star}
+            ${s.detail ? `<div class="subtitle">${escapeHtml(s.detail)}</div>` : ''}${toQuote}
+          </td>
+          <td class="right">${escapeHtml(s.subtotal)}</td>
+        </tr>`
+  }).join('')
+}
+
+/**
+ * The combined quote's "What's Included" — one card per work package, each with
+ * its own sections and its own standalone price, then a final card for what is
+ * billed once across the whole job (labour, CoC).
+ */
+function packagesTable(data: ScopeQuoteData): string {
+  const cards = data.packages.map((pkg, i) => `
+  <div class="card no-break">
+    <div class="card-header"><h2>${i + 1}. ${escapeHtml(pkg.name)}</h2></div>
+    <div class="card-body">
+      ${pkg.summary ? `<p class="lead">${escapeHtml(pkg.summary)}</p>` : ''}
+      <table class="bom-table">
+        <thead>
+          <tr><th>Section</th><th class="right">Subtotal</th></tr>
+        </thead>
+        <tbody>${sectionRows(pkg.sections)}
+        </tbody>
+      </table>
+      <div class="disclaimer-box">
+        <strong>${escapeHtml(pkg.ownTotal)}</strong> if this work is done on its own &mdash;
+        it carries its own site visit and certificate. Taking it together with the rest costs less;
+        see the summary below.
+      </div>
+    </div>
+  </div>`).join('')
+
+  const shared = data.sharedSections.length === 0 ? '' : `
+  <div class="card no-break">
+    <div class="card-header"><h2>Across all of the work</h2></div>
+    <div class="card-body">
+      <table class="bom-table">
+        <thead>
+          <tr><th>Section</th><th class="right">Subtotal</th></tr>
+        </thead>
+        <tbody>${sectionRows(data.sharedSections)}
+        </tbody>
+      </table>
+      <div class="disclaimer-box">Charged once for the whole job, not once per item of work above.</div>
+    </div>
+  </div>`
+
+  return `
+  <div class="section-heading">What&rsquo;s Included</div>
+${cards}${shared}`
+}
+
+/**
+ * The choice, stated plainly: each job's own price, then the price for all of
+ * it. Printed only when there is genuinely something to save — a bundle that
+ * costs the same as the parts has no offer to make and must not imply one.
+ */
+function bundleChoiceSection(data: ScopeQuoteData): string {
+  if (data.packages.length < 2 || data.bundleSavingRands <= 0) return ''
+  const rows = data.packages.map((p) => `
+        <tr>
+          <td>${escapeHtml(p.name)} <span class="subtitle">on its own</span></td>
+          <td class="right">${escapeHtml(p.ownTotal)}</td>
+        </tr>`).join('')
+  return `
+  <div class="section-heading">Your Options</div>
+
+  <div class="card no-break">
+    <div class="card-body">
+      <table class="bom-table">
+        <thead>
+          <tr><th>Option</th><th class="right">Price</th></tr>
+        </thead>
+        <tbody>${rows}
+        <tr>
+          <td><strong>Each of them separately</strong></td>
+          <td class="right"><strong>${escapeHtml(data.separateTotal)}</strong></td>
+        </tr>
+        <tr class="total-row">
+          <td><strong>All of it together</strong>
+            <div class="subtitle">One booking, one team on site &mdash; you save ${escapeHtml(data.bundleSaving)}</div>
+          </td>
+          <td class="right"><strong>${escapeHtml(data.quoteTotal)}</strong></td>
+        </tr>
+        </tbody>
+      </table>
+      <div class="disclaimer-box">
+        Doing everything in one visit means one set-up, one team on site and one certificate, which is
+        where the ${escapeHtml(data.bundleSaving)} comes from. The quote total below is the combined
+        price. Happy to do any part on its own at the price shown &mdash; just say which.
+      </div>
+    </div>
+  </div>`
+}
+
 function sectionsTable(data: ScopeQuoteData): string {
+  if (data.packages.length > 0) return packagesTable(data)
   if (data.sections.length === 0) return ''
   const rows = data.sections.map((s) => {
     const star = s.deposit ? ' <span class="star">&#9733;</span>' : ''
@@ -406,7 +552,7 @@ export function renderScopeQuote(data: ScopeQuoteData): string {
       </div>
     </div>
   </div>
-${scopeSummarySection(data)}${sectionsTable(data)}${needsPricingNote(data)}${photosSection(data)}${optionalExtrasSection(data)}
+${scopeSummarySection(data)}${sectionsTable(data)}${needsPricingNote(data)}${photosSection(data)}${optionalExtrasSection(data)}${bundleChoiceSection(data)}
   <div class="section-heading">Total Investment</div>
 
   <div class="summary-block no-break">

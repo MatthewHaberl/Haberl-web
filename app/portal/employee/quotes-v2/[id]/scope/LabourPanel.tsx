@@ -12,7 +12,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { CREW_DEFAULT_MARKUP, labourAmountR, type QuoteScope } from '@/lib/quotes/scope'
+import { CREW_DEFAULT_MARKUP, labourAmountR, managementFeeR, type QuoteScope } from '@/lib/quotes/scope'
 import type { ScopeIssue } from '@/lib/quotes/scope-validate'
 import { CrewPanel } from './CrewPanel'
 import type { ScopePricing } from './ScopeWorkspace'
@@ -120,6 +120,46 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
           <CrewPanel scope={scope} onChange={onChange} defaultMarkup={CREW_DEFAULT_MARKUP} />
         )}
 
+        {/* ── Management fee ───────────────────────────────────────────────
+            Getting to site, running the job, the admin behind it. On by
+            default; switch it off on the jobs you are actually working, where
+            your own hours are already in the labour above. */}
+        <div className="rounded-md border border-border bg-muted/30 p-2">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={labour.managementIncluded}
+              // Ticking it on a quote that has never carried the fee takes the
+              // amount from Settings right here, so nothing has to be written
+              // onto quotes that are switched off just to keep a figure warm.
+              onChange={(e) => setLabour(
+                e.target.checked && labour.managementR <= 0
+                  ? { managementIncluded: true, managementR: pricing.managementR }
+                  : { managementIncluded: e.target.checked },
+              )}
+            />
+            Management fee
+          </label>
+          {labour.managementIncluded && (
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-end">
+              <label className="space-y-0.5 text-[10px] text-muted-foreground">
+                Fee
+                <Input leadingText="R" type="number" min={0} step="any" className="h-8 text-xs"
+                  value={labour.managementR === 0 ? '' : String(labour.managementR)}
+                  onChange={(e) => setLabour({ managementR: num(e.target.value) })} />
+              </label>
+              <p className="col-span-2 text-[11px] text-muted-foreground sm:col-span-1">
+                Supervision, site visits and admin — charged once per job whether or not
+                you are on the tools. The customer never sees it as its own line: it is
+                added into the labour total above.{' '}
+                {labour.mode === 'hourly' && labour.calloutR > 0
+                  ? 'On call-out work the call-out already covers getting you there — untick one of the two.'
+                  : `Settings default: ${rand(pricing.managementR)}.`}
+              </p>
+            </div>
+          )}
+        </div>
+
         <Input
           value={labour.description}
           onChange={(e) => setLabour({ description: e.target.value })}
@@ -130,6 +170,11 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
           <span className="text-muted-foreground">Labour total</span>
           <span className="font-medium">{rand(labourAmountR(labour))}</span>
         </div>
+        {managementFeeR(labour) > 0 && (
+          <p className="-mt-2 text-right text-[11px] text-muted-foreground">
+            includes {rand(managementFeeR(labour))} management
+          </p>
+        )}
         {/* R0 labour is legal (supply-only work), so this states the case
             rather than blocking it — the quote just carries no labour. */}
         {labourIssues.map((i) => (

@@ -4,7 +4,9 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { formatCents, type PublicTierOption } from '@/lib/quotes/public'
+import {
+  formatCents, type PublicPackageChoice, type PublicTierOption,
+} from '@/lib/quotes/public'
 import { Check, CloudUpload, Landmark, Loader2 } from 'lucide-react'
 
 interface BankingDetails {
@@ -21,6 +23,11 @@ interface Props {
   quoteNumber: string | null
   depositCents: number | null
   tierOptions: PublicTierOption[] | null
+  /**
+   * Combined quote: the individual work packages, plus the bundled figures.
+   * Null on an ordinary quote, where there is nothing to choose between.
+   */
+  packageChoice: PublicPackageChoice | null
   banking: BankingDetails | null
   proof: { uploaded: boolean; confirmed: boolean; rejected: boolean; rejectedReason: string | null } | null
   contactPhone: string | null
@@ -29,7 +36,8 @@ interface Props {
 }
 
 export function PublicQuoteActions({
-  token, state, quoteNumber, depositCents, tierOptions, banking, proof, contactPhone, isSolar = true,
+  token, state, quoteNumber, depositCents, tierOptions, packageChoice, banking, proof, contactPhone,
+  isSolar = true,
 }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -41,6 +49,19 @@ export function PublicQuoteActions({
   const [tier, setTier] = useState(
     tierOptions?.find((o) => o.tier === 'recommended')?.tier ?? tierOptions?.[0]?.tier ?? '',
   )
+
+  // '' = everything (the combined price, and the default). Otherwise the id of
+  // the single package being taken at its standalone price.
+  const [packageId, setPackageId] = useState('')
+  const [surchargeOk, setSurchargeOk] = useState(false)
+  const chosenPackage = packageChoice?.packages.find((p) => p.id === packageId) ?? null
+
+  // Picking a different option re-asks the question — an acknowledgement given
+  // for one package must never carry over to another, or to "everything".
+  function choosePackage(id: string) {
+    setPackageId(id)
+    setSurchargeOk(false)
+  }
 
   // Decline form
   const [showDecline, setShowDecline] = useState(false)
@@ -214,6 +235,104 @@ export function PublicQuoteActions({
         </div>
       )}
 
+      {packageChoice && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">
+            You can go ahead with everything, or with just one part of it:
+          </p>
+
+          <button
+            type="button"
+            onClick={() => choosePackage('')}
+            className={`rounded-lg border p-3 text-left transition-colors ${
+              packageId === ''
+                ? 'border-accent bg-accent/5 ring-1 ring-accent'
+                : 'border-border hover:border-accent/50'
+            }`}
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-sm font-semibold">Everything on this quote</span>
+              <span className="text-base font-bold text-primary">
+                {formatCents(packageChoice.bundleTotalCents)}
+              </span>
+            </div>
+            {packageChoice.bundleSavingCents > 0 && (
+              <p className="mt-0.5 text-xs font-medium text-green-700 dark:text-green-300">
+                Best value — saves {formatCents(packageChoice.bundleSavingCents)} against taking each
+                part on its own
+              </p>
+            )}
+            {packageChoice.bundleDepositCents != null && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Deposit {formatCents(packageChoice.bundleDepositCents)}
+              </p>
+            )}
+          </button>
+
+          {packageChoice.packages.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => choosePackage(option.id)}
+              className={`rounded-lg border p-3 text-left transition-colors ${
+                packageId === option.id
+                  ? 'border-accent bg-accent/5 ring-1 ring-accent'
+                  : 'border-border hover:border-accent/50'
+              }`}
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-sm font-semibold">{option.label} only</span>
+                <span className="text-base font-bold text-primary">
+                  {formatCents(option.totalCents)}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                On its own — carries its own site visit and certificate
+                {option.depositCents != null && <> · deposit {formatCents(option.depositCents)}</>}
+              </p>
+            </button>
+          ))}
+
+          {/* The disclaimer. Shown only when a single package is actually
+              selected, and it has to be ticked before Accept will submit —
+              the same condition the API enforces, so it cannot be skipped by
+              driving the endpoint directly. */}
+          {chosenPackage && (
+            <div className="rounded-md border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 p-3">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                Taking only this part costs more
+              </p>
+              <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                <strong>{chosenPackage.label}</strong> on its own is{' '}
+                <strong>{formatCents(chosenPackage.totalCents)}</strong>, because it carries its own
+                call-out, its own day on site and its own Certificate of Compliance instead of
+                sharing them with the rest of the work.
+                {packageChoice.bundleSavingCents > 0 && (
+                  <> Everything together is {formatCents(packageChoice.bundleTotalCents)} &mdash;{' '}
+                    {formatCents(packageChoice.bundleSavingCents)} less than buying each part
+                    separately.</>
+                )}{' '}
+                The rest of this quote is not booked, and its price may change if you come back to it
+                later.
+              </p>
+              <label className="mt-2.5 flex items-start gap-2.5 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={surchargeOk}
+                  onChange={(e) => setSurchargeOk(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
+                />
+                <span className="font-medium text-amber-900 dark:text-amber-200">
+                  I understand I am taking {chosenPackage.label} on its own at{' '}
+                  {formatCents(chosenPackage.totalCents)}, which is more than it would cost as part
+                  of the full job.
+                </span>
+              </label>
+            </div>
+          )}
+        </div>
+      )}
+
       <label className="flex flex-col gap-1.5">
         <span className="text-sm text-muted-foreground">Your full name (acts as your signature)</span>
         <Input
@@ -232,21 +351,32 @@ export function PublicQuoteActions({
           className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
         />
         <span className="text-muted-foreground">
-          {isSolar
-            ? <>I accept this quote and authorise Haberl Electrical &amp; Solar to proceed with the
-              installation as quoted. The deposit secures equipment and the installation date.</>
-            : <>I accept this quote and authorise Haberl Electrical &amp; Solar to proceed with the
-              work as quoted. The deposit secures materials and the booking.</>}
+          {chosenPackage
+            ? <>I accept the <strong>{chosenPackage.label}</strong> part of this quote and authorise
+              Haberl Electrical &amp; Solar to proceed with that work. The deposit secures its
+              materials and the booking.</>
+            : isSolar
+              ? <>I accept this quote and authorise Haberl Electrical &amp; Solar to proceed with the
+                installation as quoted. The deposit secures equipment and the installation date.</>
+              : <>I accept this quote and authorise Haberl Electrical &amp; Solar to proceed with the
+                work as quoted. The deposit secures materials and the booking.</>}
         </span>
       </label>
 
       <div className="flex items-center gap-3 flex-wrap">
         <Button
           variant="accent"
-          disabled={busy || !agreed || name.trim().length < 2}
-          onClick={() => post('accept', { name: name.trim(), tier: tier || undefined })}
+          disabled={busy || !agreed || name.trim().length < 2 || (chosenPackage !== null && !surchargeOk)}
+          onClick={() => post('accept', {
+            name: name.trim(),
+            tier: tier || undefined,
+            packageId: packageId || undefined,
+            acknowledgedSurcharge: chosenPackage ? surchargeOk : undefined,
+          })}
         >
-          {busy ? <><Loader2 className="h-4 w-4 animate-spin" /> Submitting…</> : <><Check className="h-4 w-4" /> Accept quote</>}
+          {busy
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> Submitting…</>
+            : <><Check className="h-4 w-4" /> {chosenPackage ? `Accept ${chosenPackage.label} only` : 'Accept quote'}</>}
         </Button>
         {!showDecline && (
           <button

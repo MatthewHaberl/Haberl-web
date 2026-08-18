@@ -23,7 +23,10 @@
 
 import type { BomLine, BomSection, DesignBom } from '@/lib/solar/design-bom'
 import type { EquipmentCatalogItem, PricingSettings } from '@/lib/solar/quote-calculator'
-import { labourAmountR, labourCostR, type QuoteScope, type ScopeLine } from './scope'
+import {
+  labourAmountR, labourCostR, managementFeeR, packageDisplayLabels, qualifiedSectionName,
+  type QuoteScope, type ScopeLine,
+} from './scope'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -154,6 +157,10 @@ function labourDescription(scope: QuoteScope): string {
     if (d <= 0) return 'Labour'
     return `Labour — ${d} ${d === 1 ? 'day' : 'days'} on site (team)`
   }
+  // Hourly is the one mode that itemises its own arithmetic. A management fee
+  // rides inside the same line, so spelling out "call-out + 3 hr @ R750" beside
+  // a total that is R750 bigger reads as a mistake — say "Labour" instead.
+  if (managementFeeR(scope.labour) > 0) return 'Labour'
   const parts: string[] = []
   // The call-out carries the first hour, so quote the remainder at the hourly rate.
   const billable = Math.max(0, scope.labour.hours - (scope.labour.calloutR > 0 ? 1 : 0))
@@ -171,13 +178,38 @@ export function scopeToBom(
   markup: number,
   opts: { pricing?: PricingSettings } = {},
 ): DesignBom {
-  const sectionOrder: string[] = [...scope.sections]
+  // On a multi-package quote a section name is only unique WITHIN its package —
+  // "Materials" under "Add a battery" and "Materials" under "Panel repair" are
+  // two different sections holding different parts. A DesignBom keys sections by
+  // name alone, so the package qualifies the name here. Without this the two
+  // would fuse into one section and one subtotal, and the per-package price the
+  // whole feature exists to show would be gone.
+  const labels = packageDisplayLabels(scope)
+  const packageOfSection = new Map<string, string>()
+
+  const sectionOrder: string[] = []
   const linesBySection = new Map<string, BomLine[]>()
   let missing = 0
 
-  const push = (line: BomLine) => {
-    const section = line.section || 'Scope of work'
+  // Declared order first: every package's own sections, in package order, then
+  // whatever the unpackaged lines use.
+  for (const pkg of scope.packages) {
+    const label = labels.get(pkg.id) ?? ''
+    for (const name of pkg.sections) {
+      const qualified = qualifiedSectionName(label, name)
+      if (!sectionOrder.includes(qualified)) sectionOrder.push(qualified)
+      packageOfSection.set(qualified, label)
+    }
+  }
+  for (const name of scope.sections) {
+    if (!sectionOrder.includes(name)) sectionOrder.push(name)
+  }
+
+  const push = (line: BomLine, packageLabel: string) => {
+    const raw = line.section || 'Scope of work'
+    const section = qualifiedSectionName(packageLabel, raw)
     if (!sectionOrder.includes(section)) sectionOrder.push(section)
+    if (packageLabel) packageOfSection.set(section, packageLabel)
     const list = linesBySection.get(section) ?? []
     list.push({ ...line, section })
     linesBySection.set(section, list)
@@ -187,7 +219,7 @@ export function scopeToBom(
     if (line.qty <= 0) continue
     const { line: priced, missing: isMissing } = priceScopeLine(line, catalog, markup)
     if (isMissing) missing += 1
-    push(priced)
+    push(priced, (line.packageId && labels.get(line.packageId)) || '')
   }
 
   // Labour — ALWAYS one generated line, whichever mode priced it (hourly:
@@ -211,7 +243,7 @@ export function scopeToBom(
       priced: true,
       status: 'ok',
       kind: 'labour',
-    })
+    }, '')
   }
 
   // Certificate of Compliance — bills exactly the scope's fee. An explicit R0
@@ -233,7 +265,7 @@ export function scopeToBom(
       priced: true,
       status: 'ok',
       kind: 'fee',
-    })
+    }, '')
   }
 
   const sections: BomSection[] = []
@@ -249,12 +281,14 @@ export function scopeToBom(
     // same posture as unpriced lines on the solar path. needsPricing also skips
     // them: an unpriced optional extra is not blocking the quote.
     const counted = lines.filter((l) => !l.optional)
+    const pkg = packageOfSection.get(name)
     sections.push({
       name,
       lines,
       costR: round2(counted.reduce((t, l) => t + l.lineCostR, 0)),
       sellR: round2(counted.reduce((t, l) => t + l.lineSellR, 0)),
       needsPricing: counted.filter((l) => !l.priced).length,
+      ...(pkg ? { package: pkg } : {}),
     })
   }
 
@@ -289,6 +323,25 @@ export function computeScopeDeposit(bom: DesignBom): { items: { name: string; am
 }
 
 /**
+ * The slice of a BOM belonging to ONE work package.
+ *
+ * What a customer buys when they take a single package off a combined quote:
+ * that package's sections and nothing else — not the bundle's labour, not the
+ * one shared certificate, both of which are priced for the whole job and are
+ * replaced by the package's own when it is bought alone.
+ */
+export function bomForPackage(bom: DesignBom, packageLabel: string): DesignBom {
+  const sections = bom.sections.filter((s) => s.package === packageLabel)
+  return {
+    sections,
+    totalCostR: round2(sections.reduce((t, s) => t + s.costR, 0)),
+    totalSellR: round2(sections.reduce((t, s) => t + s.sellR, 0)),
+    missing: 0,
+    needsPricing: sections.reduce((t, s) => t + s.needsPricing, 0),
+  }
+}
+
+/**
  * Remove optional-extra lines (and any section left empty). Used before
  * bom_snapshot/job-materials seeding so procurement never orders an extra the
  * customer didn't take. Totals are recomputed but unchanged by construction —
@@ -305,6 +358,7 @@ export function stripOptionalLines(bom: DesignBom): DesignBom {
       costR: round2(lines.reduce((t, l) => t + l.lineCostR, 0)),
       sellR: round2(lines.reduce((t, l) => t + l.lineSellR, 0)),
       needsPricing: lines.filter((l) => !l.priced).length,
+      ...(s.package ? { package: s.package } : {}),
     })
   }
   return {
