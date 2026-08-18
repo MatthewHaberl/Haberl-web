@@ -222,6 +222,58 @@ const SCOPE_CSS = `
   .bom-table .subtitle { font-size: 11px; color: var(--muted-fg); margin-top: 2px; }
   .bom-table .star { color: var(--accent); font-weight: 700; }
 
+  /* Money column: one width, one alignment, figures that line up down the page. */
+  .bom-table th.right, .bom-table td.right { white-space: nowrap; }
+  .bom-table .amount {
+    width: 150px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--primary);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Every section table states its own total rather than leaving it to be added up. */
+  .bom-table tfoot tr { background: var(--muted); border-top: 1px solid var(--border); }
+  .bom-table tfoot tr:first-child { border-top: 2px solid var(--primary); }
+  .bom-table tfoot tr.pick { background: var(--accent-light); }
+  .bom-table tfoot tr.pick td.amount { color: #9a3412; font-size: 18px; }
+  .bom-table tfoot td { padding: 10px 12px; font-weight: 700; font-size: 13px; color: var(--primary); }
+  .bom-table tfoot td.amount { font-size: 16px; text-align: right; }
+  .bom-table tfoot .foot-note {
+    display: block; margin-top: 2px;
+    font-size: 10.5px; font-weight: 500; letter-spacing: 0.3px;
+    text-transform: none; color: var(--muted-fg);
+  }
+
+  /* Intro paragraph above a section table (a package's own scope of works). */
+  .lead {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px; line-height: 1.6; color: var(--muted-fg);
+    white-space: pre-line;
+  }
+
+  /* The quiet footnote under a card — never louder than the table above it. */
+  .card-note {
+    padding: 11px 18px; border-top: 1px solid var(--border);
+    font-size: 11.5px; line-height: 1.55; color: var(--muted-fg);
+  }
+
+  /* The standalone-price footnote: a stated figure, not a price buried in a sentence. */
+  .own-price { padding: 11px 18px; border-top: 1px solid var(--border); }
+  .own-price .op-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .own-price .op-label {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.5px;
+    text-transform: uppercase; color: var(--muted-fg);
+  }
+  .own-price .op-value {
+    font-size: 14px; font-weight: 600; color: var(--fg);
+    font-variant-numeric: tabular-nums; font-feature-settings: 'tnum';
+  }
+  .own-price .op-note { margin-top: 4px; font-size: 11.5px; line-height: 1.55; color: var(--muted-fg); }
+  .own-price .op-note strong { color: var(--fg); font-weight: 600; }
+
   .scope-summary { padding: 14px 18px; font-size: 13px; line-height: 1.7; white-space: pre-line; }
 
   .summary-block { background: var(--primary); border-radius: 12px; padding: 28px; color: var(--white); margin-bottom: 20px; }
@@ -270,6 +322,20 @@ const SCOPE_CSS = `
   }
 `
 
+/**
+ * Same formatting as lib/quotes/scope-quote's rand(). Totals shown on this
+ * document are derived here from the *Rands figures rather than added as new
+ * string fields, so a quote generated before these totals existed still
+ * renders them.
+ */
+function rand(n: number): string {
+  return `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function sumSubtotals(sections: ScopeQuoteSectionView[]): number {
+  return Math.round(sections.reduce((t, s) => t + (s.subtotalRands || 0), 0) * 100) / 100
+}
+
 function scopeSummarySection(data: ScopeQuoteData): string {
   if (!data.summary.trim()) return ''
   return `
@@ -294,9 +360,39 @@ function sectionRows(sections: ScopeQuoteSectionView[]): string {
             <strong>${escapeHtml(s.name)}</strong>${star}
             ${s.detail ? `<div class="subtitle">${escapeHtml(s.detail)}</div>` : ''}${toQuote}
           </td>
-          <td class="right">${escapeHtml(s.subtotal)}</td>
+          <td class="right amount">${escapeHtml(s.subtotal)}</td>
         </tr>`
   }).join('')
+}
+
+/**
+ * A section table that states its own total.
+ *
+ * The total is the figure a customer actually looks for, so it belongs in the
+ * table as a footer row rather than being left for them to add up from the
+ * rows above. `footLabel` and `footNote` are HTML — escape at the call site.
+ */
+function sectionTable(
+  sections: ScopeQuoteSectionView[],
+  footLabel: string,
+  footAmount: string,
+  footNote = '',
+): string {
+  if (sections.length === 0) return ''
+  return `
+      <table class="bom-table">
+        <thead>
+          <tr><th>Section</th><th class="right">Subtotal</th></tr>
+        </thead>
+        <tbody>${sectionRows(sections)}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>${footLabel}${footNote ? `<span class="foot-note">${footNote}</span>` : ''}</td>
+            <td class="right amount">${escapeHtml(footAmount)}</td>
+          </tr>
+        </tfoot>
+      </table>`
 }
 
 /**
@@ -305,38 +401,54 @@ function sectionRows(sections: ScopeQuoteSectionView[]): string {
  * billed once across the whole job (labour, CoC).
  */
 function packagesTable(data: ScopeQuoteData): string {
-  const cards = data.packages.map((pkg, i) => `
+  const hasShared = data.sharedSections.length > 0
+  const ownVisit = data.cocIncluded ? 'its own site visit and certificate' : 'its own site visit'
+
+  const cards = data.packages.map((pkg, i) => {
+    // What this work adds to THIS quote — its sections, before the costs the
+    // whole job shares. The standalone price sits below it as a comparison,
+    // stated as a figure rather than buried in a sentence.
+    const included = sumSubtotals(pkg.sections)
+    const premium = Math.round((pkg.ownTotalRands - included) * 100) / 100
+    const note = premium > 0
+      ? `<strong>${escapeHtml(rand(premium))} more</strong> than the subtotal above: on its own this job
+         carries ${ownVisit}. Done with the rest of the work, that is shared &mdash; which is the whole
+         reason the combined price is lower.`
+      : `On its own this job carries ${ownVisit}. Done with the rest of the work, that is shared.`
+    return `
   <div class="card no-break">
     <div class="card-header"><h2>${i + 1}. ${escapeHtml(pkg.name)}</h2></div>
     <div class="card-body">
       ${pkg.summary ? `<p class="lead">${escapeHtml(pkg.summary)}</p>` : ''}
-      <table class="bom-table">
-        <thead>
-          <tr><th>Section</th><th class="right">Subtotal</th></tr>
-        </thead>
-        <tbody>${sectionRows(pkg.sections)}
-        </tbody>
-      </table>
-      <div class="disclaimer-box">
-        <strong>${escapeHtml(pkg.ownTotal)}</strong> if this work is done on its own &mdash;
-        it carries its own site visit and certificate. Taking it together with the rest costs less;
-        see the summary below.
+      ${sectionTable(
+        pkg.sections,
+        `Subtotal &mdash; ${escapeHtml(pkg.name)}`,
+        rand(included),
+        hasShared ? 'in this quote, before the costs shared across the job' : 'in this quote',
+      )}
+      <div class="own-price">
+        <div class="op-row">
+          <span class="op-label">If done on its own</span>
+          <span class="op-value">${escapeHtml(pkg.ownTotal)}</span>
+        </div>
+        <p class="op-note">${note}</p>
       </div>
     </div>
-  </div>`).join('')
+  </div>`
+  }).join('')
 
-  const shared = data.sharedSections.length === 0 ? '' : `
+  const shared = !hasShared ? '' : `
   <div class="card no-break">
     <div class="card-header"><h2>Across all of the work</h2></div>
     <div class="card-body">
-      <table class="bom-table">
-        <thead>
-          <tr><th>Section</th><th class="right">Subtotal</th></tr>
-        </thead>
-        <tbody>${sectionRows(data.sharedSections)}
-        </tbody>
-      </table>
-      <div class="disclaimer-box">Charged once for the whole job, not once per item of work above.</div>
+      ${sectionTable(
+        data.sharedSections,
+        'Subtotal &mdash; shared across the job',
+        rand(sumSubtotals(data.sharedSections)),
+        'charged once, not once per item of work',
+      )}
+      <div class="card-note">These follow the job, not any one part of it: one visit, one team on site${
+        data.cocIncluded ? ', one certificate' : ''}.</div>
     </div>
   </div>`
 
@@ -352,10 +464,10 @@ ${cards}${shared}`
  */
 function bundleChoiceSection(data: ScopeQuoteData): string {
   if (data.packages.length < 2 || data.bundleSavingRands <= 0) return ''
-  const rows = data.packages.map((p) => `
+  const rows = data.packages.map((p, i) => `
         <tr>
-          <td>${escapeHtml(p.name)} <span class="subtitle">on its own</span></td>
-          <td class="right">${escapeHtml(p.ownTotal)}</td>
+          <td>${i + 1}. ${escapeHtml(p.name)} <span class="subtitle">on its own</span></td>
+          <td class="right amount">${escapeHtml(p.ownTotal)}</td>
         </tr>`).join('')
   return `
   <div class="section-heading">Your Options</div>
@@ -367,17 +479,17 @@ function bundleChoiceSection(data: ScopeQuoteData): string {
           <tr><th>Option</th><th class="right">Price</th></tr>
         </thead>
         <tbody>${rows}
-        <tr>
-          <td><strong>Each of them separately</strong></td>
-          <td class="right"><strong>${escapeHtml(data.separateTotal)}</strong></td>
-        </tr>
-        <tr class="total-row">
-          <td><strong>All of it together</strong>
-            <div class="subtitle">One booking, one team on site &mdash; you save ${escapeHtml(data.bundleSaving)}</div>
-          </td>
-          <td class="right"><strong>${escapeHtml(data.quoteTotal)}</strong></td>
-        </tr>
         </tbody>
+        <tfoot>
+        <tr>
+          <td>Each of them separately<span class="foot-note">every job booked on its own</span></td>
+          <td class="right amount">${escapeHtml(data.separateTotal)}</td>
+        </tr>
+        <tr class="pick">
+          <td>All of it together<span class="foot-note">one booking, one team on site &mdash; you save ${escapeHtml(data.bundleSaving)}</span></td>
+          <td class="right amount">${escapeHtml(data.quoteTotal)}</td>
+        </tr>
+        </tfoot>
       </table>
       <div class="disclaimer-box">
         Doing everything in one visit means one set-up, one team on site and one certificate, which is
@@ -391,32 +503,14 @@ function bundleChoiceSection(data: ScopeQuoteData): string {
 function sectionsTable(data: ScopeQuoteData): string {
   if (data.packages.length > 0) return packagesTable(data)
   if (data.sections.length === 0) return ''
-  const rows = data.sections.map((s) => {
-    const star = s.deposit ? ' <span class="star">&#9733;</span>' : ''
-    const toQuote = s.toQuote > 0
-      ? `<div class="subtitle">${s.toQuote} item${s.toQuote === 1 ? '' : 's'} to be priced separately &mdash; not in this subtotal</div>`
-      : ''
-    return `
-        <tr>
-          <td>
-            <strong>${escapeHtml(s.name)}</strong>${star}
-            ${s.detail ? `<div class="subtitle">${escapeHtml(s.detail)}</div>` : ''}${toQuote}
-          </td>
-          <td class="right">${escapeHtml(s.subtotal)}</td>
-        </tr>`
-  }).join('')
+  // The sections ARE the whole quote here, so their total is the quote total —
+  // stated in the table so nobody has to add the subtotals up by hand.
   return `
   <div class="section-heading">What&rsquo;s Included</div>
 
   <div class="card no-break">
     <div class="card-body">
-      <table class="bom-table">
-        <thead>
-          <tr><th>Section</th><th class="right">Subtotal</th></tr>
-        </thead>
-        <tbody>${rows}
-        </tbody>
-      </table>
+      ${sectionTable(data.sections, 'Quote total', data.quoteTotal)}
     </div>
   </div>`
 }

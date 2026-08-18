@@ -100,8 +100,12 @@ test('the document prints the options table and what the saving buys', () => {
   assert.match(html, /Each of them separately/)
   assert.match(html, /All of it together/)
   assert.match(html, /you save/i)
-  // The per-package price appears with the reason it is higher.
-  assert.match(html, /if this work is done on its own/i)
+  // The per-package price appears as a stated figure, with the reason it is higher.
+  assert.match(html, /If done on its own/i)
+  assert.match(html, /carries its own site visit/i)
+  // Each package card totals itself rather than leaving the subtotals to be added up.
+  assert.match(html, /Subtotal &mdash; Panel repair/)
+  assert.match(html, /Subtotal &mdash; Add a battery/)
 })
 
 test('a combined quote with no saving does not pretend to offer one', () => {
@@ -134,7 +138,9 @@ test('an ordinary single-job quote renders exactly as it always has', () => {
   const html = renderScopeQuote(data)
   assert.match(html, /What&rsquo;s Included/)
   assert.doesNotMatch(html, /Your Options/)
-  assert.doesNotMatch(html, /done on its own/i)
+  assert.doesNotMatch(html, /on its own/i)
+  // ...but it still states its own total instead of making the reader add up.
+  assert.match(html, /Quote total/i)
 })
 
 test('the deposit still covers materials only, package by package', () => {
