@@ -28,10 +28,13 @@ export function useSectionPresets() {
   const [loading, setLoading] = useState(true)
 
   const reload = useCallback(async () => {
+    // By name, not newest-first: presets come in families ("2 IN 2 OUT PV
+    // Combiner Noark 1000vdc 40A"), and alphabetical keeps a family together
+    // and its sizes in order. Creation order interleaves them by accident.
     const { data } = await createClient()
       .from('quote_section_presets')
       .select('id,name,payload,created_by')
-      .order('created_at', { ascending: false })
+      .order('name', { ascending: true })
     setPresets(
       (data ?? []).flatMap((row) => {
         const r = row as { id: string; name: string; payload: unknown; created_by: string | null }
@@ -166,31 +169,71 @@ export function PresetPicker({ presets, loading, onPick, onDelete }: {
   onDelete: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const close = useCallback(() => setOpen(false), [])
+  const [query, setQuery] = useState('')
+  const close = useCallback(() => { setOpen(false); setQuery('') }, [])
   const box = useDismiss(open, close)
+
+  // Every word must appear somewhere in the name, in any order — so "500 3 in"
+  // finds the 3 IN 3 OUT 500vdc combiners the way you'd say it out loud.
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const shown = terms.length === 0
+    ? presets
+    : presets.filter((p) => {
+        const name = p.name.toLowerCase()
+        return terms.every((t) => name.includes(t))
+      })
+
+  // Only worth the extra control once the list outgrows a glance.
+  const filterable = presets.length > 8
 
   return (
     <div ref={box} className="relative">
       <Button
         type="button" variant="outline" size="sm"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? close() : setOpen(true))}
         title="Insert a section you saved earlier"
       >
         <LayoutList className="h-3.5 w-3.5" /> From preset
       </Button>
       {open && (
-        <div className="absolute left-0 z-30 mt-1 w-72 max-w-[85vw] rounded-md border border-border bg-background py-1 shadow-lg">
-          <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Saved sections
+        // Wide enough for the full name: the combiner presets differ only in
+        // their last few characters ("… Noark 1000vdc 40A"), so a truncated
+        // name tells you nothing about which one you are picking.
+        <div className="absolute left-0 z-30 mt-1 w-[28rem] max-w-[92vw] rounded-md border border-border bg-background py-1 shadow-lg">
+          <div className="flex items-baseline justify-between gap-2 px-3 py-1">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Saved sections
+            </span>
+            {filterable && (
+              <span className="text-[10px] tabular-nums text-muted-foreground">
+                {shown.length} of {presets.length}
+              </span>
+            )}
           </div>
+          {filterable && (
+            <div className="px-3 pb-1.5">
+              <Input
+                value={query}
+                autoFocus
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder='Filter — try "500" or "3 in"'
+                className="h-8 text-xs"
+              />
+            </div>
+          )}
           {loading && <p className="px-3 py-2 text-xs text-muted-foreground">Loading…</p>}
           {!loading && presets.length === 0 && (
             <p className="px-3 py-2 text-xs text-muted-foreground">
               None yet — save one from the bookmark button on any section.
             </p>
           )}
-          <div className="max-h-64 overflow-y-auto">
-            {presets.map((p) => (
+          {!loading && presets.length > 0 && shown.length === 0 && (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              Nothing matches that filter.
+            </p>
+          )}
+          <div className="max-h-[24rem] overflow-y-auto">
+            {shown.map((p) => (
               <div key={p.id} className="flex items-center gap-1 pr-1 hover:bg-muted">
                 <button
                   type="button"
