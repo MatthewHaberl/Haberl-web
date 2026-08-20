@@ -24,6 +24,7 @@ import { DesignStudio } from './design/DesignStudio'
 import { DraftTotalSync } from './design/DraftTotalSync'
 import { ScopeWorkspace } from './scope/ScopeWorkspace'
 import { CreditsPanel } from './CreditsPanel'
+import { ContingencyPanel } from './ContingencyPanel'
 import { SendSettingsPanel } from './SendSettingsPanel'
 import { parseScope } from '@/lib/quotes/scope'
 import { RfqPanel } from './RfqPanel'
@@ -246,6 +247,17 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, s
           status={req.status}
           generatedQuote={req.generated_quote}
           hasPackages={creditablePackages}
+        />
+        {/* Contingency (migration 129), shared by both engines: the allowance this
+            quote carries for what nobody can see yet. Sits beside credits on
+            purpose — one adds money to the price of the work, the other takes it
+            off the bottom, and they are the only two things on a quote that
+            aren't a line item. */}
+        <ContingencyPanel
+          requestId={req.id}
+          raw={req.contingency}
+          status={req.status}
+          generatedQuote={req.generated_quote}
         />
         {/* Supplier pricing loop, shared by both engines: ask (W99), then receive (W98). */}
         <RfqPanel requestId={req.id} />

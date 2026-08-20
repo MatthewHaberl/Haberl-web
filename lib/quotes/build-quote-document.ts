@@ -34,6 +34,10 @@ import { buildScopeQuoteData } from '@/lib/quotes/scope-quote'
 import {
   applyCredits, creditViews, grossFiguresFromDocument, parseCredits, type QuoteCredit,
 } from '@/lib/quotes/credits'
+import {
+  applyContingency, contingencyBases, parseContingency,
+  type ContingencyBases, type ContingencyResult,
+} from '@/lib/quotes/contingency'
 import { renderScopeQuote, type ScopeQuoteData } from '@/lib/quotes/render-scope-quote'
 
 /** The quote_requests columns either engine reads. */
@@ -74,12 +78,31 @@ export interface QuoteRequestForDocument {
    * or empty on every quote that has none, which renders as it always has.
    */
   credits?: unknown
+  /**
+   * Allowance added for unforeseen work (migration 129) — a percentage of
+   * materials/labour/total, a fixed amount, and/or rounding the total up.
+   * Applied to the finished BOM, so it is in the price of the work rather than
+   * subtracted from it like a credit. Absent/{} on every quote that has none.
+   */
+  contingency?: unknown
 }
 
-/** A validated, priced quote — one engine's parsed input plus its BOM. */
-export type PricedQuote =
+/**
+ * A validated, priced quote — one engine's parsed input plus its BOM.
+ *
+ * `bom` already has the contingency in it (migration 129), because everything
+ * downstream of this point spends the BOM: the document total, the deposit, the
+ * materials snapshot, the job. `bases` holds the figures it was worked out FROM,
+ * before any of it was added — the panel needs those to price a change without
+ * compounding, exactly as credits needs grossFiguresFromDocument.
+ */
+export type PricedQuote = {
+  bases: ContingencyBases
+  contingency: ContingencyResult
+} & (
   | { engine: 'scope'; scope: QuoteScope; bom: DesignBom }
   | { engine: 'solar'; design: SystemDesign; bom: DesignBom }
+)
 
 export type PriceResult =
   | { ok: true; priced: PricedQuote }
@@ -119,6 +142,16 @@ export interface PriceArgs {
  */
 export function priceQuoteRequest({ quote, catalog, pricing, workTypes }: PriceArgs): PriceResult {
   const engine = engineFor(quote.work_type ?? null, workTypes)
+  const contingency = parseContingency(quote.contingency)
+
+  // The allowance goes on AFTER the engine has finished pricing and BEFORE
+  // anything reads the total, so the two engines stay ignorant of it and every
+  // consumer downstream sees one figure with it already inside.
+  const withAllowance = (bom: DesignBom) => {
+    const bases = contingencyBases(bom)
+    const applied = applyContingency(bom, contingency)
+    return { bases, contingency: applied.result, bom: applied.bom }
+  }
 
   if (engine === 'scope') {
     const scope = parseScope(quote.scope)
@@ -141,7 +174,7 @@ export function priceQuoteRequest({ quote, catalog, pricing, workTypes }: PriceA
         error: 'The scope has no priced work yet — add materials, labour or fees first.',
       }
     }
-    return { ok: true, priced: { engine: 'scope', scope, bom } }
+    return { ok: true, priced: { engine: 'scope', scope, ...withAllowance(bom) } }
   }
 
   const design = parseDesign(quote.system_design)
@@ -157,7 +190,7 @@ export function priceQuoteRequest({ quote, catalog, pricing, workTypes }: PriceA
     priced: {
       engine: 'solar',
       design,
-      bom: consolidateBom(designToBom(design, catalog, pricing.markup, { gridSupply, pricing })),
+      ...withAllowance(consolidateBom(designToBom(design, catalog, pricing.markup, { gridSupply, pricing }))),
     },
   }
 }
@@ -217,7 +250,10 @@ export function renderQuoteDocument(
     })
     return {
       html: renderScopeQuote(scopeData),
-      generatedQuoteJson: JSON.stringify(scopeData),
+      // The contingency bases ride along in the saved document (never rendered)
+      // so the panel can re-price a change to the allowance without loading the
+      // catalog — see ContingencyBases.
+      generatedQuoteJson: JSON.stringify({ ...scopeData, contingencyBases: priced.bases }),
       // Optional extras stay out of procurement/job materials.
       bomSnapshot: bomToSupplierBom(stripOptionalLines(bom)),
       bom,
@@ -245,7 +281,7 @@ export function renderQuoteDocument(
   const money = applyCredits(bom.totalSellR, deposit.totalR, credits)
   return {
     html: renderCustomerQuote(quoteData),
-    generatedQuoteJson: JSON.stringify(quoteData),
+    generatedQuoteJson: JSON.stringify({ ...quoteData, contingencyBases: priced.bases }),
     bomSnapshot: bomToSupplierBom(bom),
     bom,
     payableTotalR: money.payableR,

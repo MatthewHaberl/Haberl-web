@@ -1,4 +1,5 @@
 import type { QuoteCredit } from '@/lib/quotes/credits'
+import type { QuoteContingency } from '@/lib/quotes/contingency'
 
 export type Role = 'customer' | 'field_worker' | 'manager' | 'admin'
 
@@ -587,6 +588,15 @@ export interface QuoteRequest {
    * still add up to the price of the work. Defaults to [].
    */
   credits: QuoteCredit[]
+  /**
+   * The allowance this quote carries for unforeseen work (migration 129): a
+   * percentage of materials/labour/total, a fixed amount, and/or rounding the
+   * total up to the next figure. See lib/quotes/contingency.ts. Added to the
+   * finished BOM at generate time, so it is part of the price of the work —
+   * the mirror of `credits`, which comes off the bottom. Never part of the
+   * deposit. Defaults to {}, which parses as none.
+   */
+  contingency: QuoteContingency
   generation_method: QuoteGenerationMethod
   deposit_items: string[]
   deposit_amount: number | null  // cents
