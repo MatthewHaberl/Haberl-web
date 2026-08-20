@@ -261,8 +261,15 @@ export function renderQuoteDocument(
       html: scrubSupplierMarkup(renderScopeQuote(scopeData)),
       // The contingency bases ride along in the saved document (never rendered)
       // so the panel can re-price a change to the allowance without loading the
-      // catalog — see ContingencyBases.
-      generatedQuoteJson: JSON.stringify({ ...scopeData, contingencyBases: priced.bases }),
+      // catalog — see ContingencyBases. `contingencyApplied` records what this
+      // document was actually BUILT with, which is the only way the panel can
+      // tell that the setting has moved on since the last generate and say so
+      // instead of showing a figure the customer's document doesn't carry.
+      generatedQuoteJson: JSON.stringify({
+        ...scopeData,
+        contingencyBases: priced.bases,
+        contingencyApplied: priced.contingency,
+      }),
       // Optional extras stay out of procurement/job materials.
       bomSnapshot: bomToSupplierBom(stripOptionalLines(bom)),
       bom,
@@ -290,7 +297,11 @@ export function renderQuoteDocument(
   const money = applyCredits(bom.totalSellR, deposit.totalR, credits)
   return {
     html: scrubSupplierMarkup(renderCustomerQuote(quoteData)),
-    generatedQuoteJson: JSON.stringify({ ...quoteData, contingencyBases: priced.bases }),
+    generatedQuoteJson: JSON.stringify({
+      ...quoteData,
+      contingencyBases: priced.bases,
+      contingencyApplied: priced.contingency,
+    }),
     bomSnapshot: bomToSupplierBom(bom),
     bom,
     payableTotalR: money.payableR,

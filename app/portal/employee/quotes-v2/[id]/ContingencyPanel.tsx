@@ -23,9 +23,8 @@
 // catalog to work it out.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Loader2, TriangleAlert, Umbrella } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, Loader2, TriangleAlert, Umbrella } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -76,26 +75,103 @@ function basesFromDocument(generatedQuote: unknown): ContingencyBases | null {
   }
 }
 
-export function ContingencyPanel({ requestId, raw, status, generatedQuote }: Props) {
-  const router = useRouter()
-  const saved = useMemo(() => parseContingency(raw), [raw])
-  const [draft, setDraft] = useState<QuoteContingency>(saved)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+/** What the last generate actually put on the customer's document, in rands. */
+function appliedFromDocument(generatedQuote: unknown): number | null {
+  if (!generatedQuote) return null
+  let data: unknown = generatedQuote
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data) } catch { return null }
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  const applied = (data as Record<string, unknown>).contingencyApplied
+  if (!applied || typeof applied !== 'object') return null
+  const n = (applied as Record<string, unknown>).amountR
+  return typeof n === 'number' && Number.isFinite(n) ? n : null
+}
 
-  // Re-seed when the row is re-read from the server (a save, a regenerate).
+export function ContingencyPanel({ requestId, raw, status, generatedQuote }: Props) {
+  // Keyed on CONTENT, not object identity. `raw` is a fresh object on every
+  // server render, so a memo on [raw] recomputed — and the effect below fired —
+  // on every router.refresh() anywhere on this page (a regenerate, a send, a
+  // document-settings toggle). That reset the form to the last saved value and
+  // took whatever was half-typed with it.
+  const savedKey = useMemo(() => JSON.stringify(parseContingency(raw)), [raw])
+  const [draft, setDraft] = useState<QuoteContingency>(() => JSON.parse(savedKey))
+  const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [error, setError] = useState('')
+
+  /**
+   * What the server is known to hold. Moved by a save of ours AND by a value
+   * genuinely arriving from the server — which is what tells the two apart. A
+   * refresh that re-serialises the same row leaves this untouched, so nothing
+   * on screen moves.
+   */
+  const knownRef = useRef(savedKey)
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing to a new server prop, not deriving state from render.
-    setDraft(saved)
-  }, [saved])
+    if (savedKey === knownRef.current) return
+    knownRef.current = savedKey
+    setDraft(JSON.parse(savedKey))
+  }, [savedKey])
 
   const set = (patch: Partial<QuoteContingency>) => setDraft((d) => ({ ...d, ...patch }))
 
+  /**
+   * Normalised exactly the way the server will read it back, so the autosave
+   * below compares like with like and can't chase its own tail on a label with
+   * a trailing space.
+   */
+  const value = useMemo<QuoteContingency>(() => ({
+    ...draft,
+    label: draft.label.trim() || DEFAULT_CONTINGENCY_LABEL,
+    note: draft.note?.trim() || null,
+  }), [draft])
+  const valueKey = JSON.stringify(value)
+
+  /**
+   * Autosave, debounced.
+   *
+   * It used to need an explicit Save, and the panel's own hint said to
+   * regenerate afterwards — so the natural move was to type a percentage and
+   * hit Regenerate, which priced the quote off the OLD setting and then
+   * refreshed the page, wiping the typing. Nothing about that was recoverable
+   * or visible. A setting that changes no money until you regenerate has no
+   * business having a save button to forget.
+   */
+  useEffect(() => {
+    if (valueKey === knownRef.current) return
+    const timer = setTimeout(async () => {
+      setState('saving')
+      setError('')
+      // .select() matters: a Supabase update filtered out by RLS returns no
+      // error and no rows, so without it a save nobody was allowed to make
+      // would report success.
+      const { data, error: dbError } = await createClient()
+        .from('quote_requests').update({ contingency: value }).eq('id', requestId).select('id')
+      if (dbError || !data || data.length === 0) {
+        setState('idle')
+        setError(dbError?.message ?? 'Could not save — you may not have permission to change this quote.')
+        return
+      }
+      knownRef.current = valueKey
+      setState('saved')
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [valueKey, value, requestId])
+
   const bases = useMemo(() => basesFromDocument(generatedQuote), [generatedQuote])
   const preview = bases ? computeContingencyFrom(draft, bases) : null
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
   const issued = status === 'sent' || status === 'accepted' || status === 'declined'
+  const enabledOnRow = useMemo(() => parseContingency(raw).enabled, [raw])
+
+  /**
+   * What the CUSTOMER'S document was actually built with, stamped at generate.
+   * Until this matches the setting, the quote on the page and the quote they
+   * can open are two different numbers — the one thing this panel must never
+   * leave unsaid.
+   */
+  const appliedR = useMemo(() => appliedFromDocument(generatedQuote), [generatedQuote])
+  const stale = preview !== null && appliedR !== null && Math.abs(appliedR - preview.amountR) >= 0.01
   const spec = contingencyBasisSpec(draft.basis)
   const isPercent = draft.basis === 'materials' || draft.basis === 'labour' || draft.basis === 'total'
 
@@ -104,34 +180,6 @@ export function ContingencyPanel({ requestId, raw, status, generatedQuote }: Pro
   // line on a document that was told to hide it.
   const foldImpossible = draft.enabled && !draft.show && bases !== null && !bases.hasLabour
 
-  async function save() {
-    setSaving(true)
-    setError('')
-    setMessage('')
-    // Normalised on the way out so what is stored is what the server will read
-    // back — the same clamps parseContingency applies at generate time.
-    const value: QuoteContingency = {
-      ...draft,
-      label: draft.label.trim() || DEFAULT_CONTINGENCY_LABEL,
-      note: draft.note?.trim() || null,
-    }
-    const { error: dbError } = await createClient()
-      .from('quote_requests').update({ contingency: value }).eq('id', requestId)
-    setSaving(false)
-    if (dbError) {
-      setError(dbError.message)
-      return
-    }
-    setMessage(
-      status === 'pending'
-        ? 'Saved — it lands on the quote when you generate it.'
-        : issued
-          ? 'Saved — Reissue the quote above to put the new total in front of the customer.'
-          : 'Saved — hit Regenerate above to re-price the quote with it.',
-    )
-    router.refresh()
-  }
-
   return (
     <Card>
       <CardContent className="p-4">
@@ -139,8 +187,8 @@ export function ContingencyPanel({ requestId, raw, status, generatedQuote }: Pro
           storageKey={`quote-contingency:${requestId}`}
           title="Contingency"
           icon={<Umbrella />}
-          count={saved.enabled ? 1 : undefined}
-          defaultOpen={saved.enabled}
+          count={enabledOnRow ? 1 : undefined}
+          defaultOpen={enabledOnRow}
         >
           <p className="text-xs text-muted-foreground mb-3 max-w-3xl">
             Money added to this quote for what you can&rsquo;t see yet &mdash; the perished conduit
@@ -387,21 +435,40 @@ export function ContingencyPanel({ requestId, raw, status, generatedQuote }: Pro
             </p>
           ) : null}
 
-          <div className="mt-4 flex items-center gap-3 flex-wrap">
-            <Button onClick={save} disabled={saving || !dirty} type="button" variant="accent" size="sm">
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              Save contingency
-            </Button>
-            <span className="text-xs text-muted-foreground">
+          {/* The document is built at generate time, so the setting and the
+              customer's copy can disagree. Say which, rather than showing a
+              figure the customer's quote doesn't carry. */}
+          {stale && (
+            <p className="mt-3 text-xs text-warning flex items-start gap-1.5">
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              Saved, but not on the quote yet — the document was built with{' '}
+              {randZA(appliedR ?? 0)} of contingency.{' '}
+              {issued
+                ? 'Reissue above to put the new figure in front of the customer.'
+                : 'Hit Regenerate above to re-price it.'}
+            </p>
+          )}
+
+          <div className="mt-4 flex items-center gap-2 flex-wrap text-xs">
+            {state === 'saving' && (
+              <span className="text-muted-foreground flex items-center gap-1.5">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving&hellip;
+              </span>
+            )}
+            {state === 'saved' && !error && (
+              <span className="text-success flex items-center gap-1.5">
+                <Check className="h-3.5 w-3.5" /> Saved automatically
+              </span>
+            )}
+            <span className="text-muted-foreground">
               {status === 'pending'
-                ? 'The quote hasn’t been generated yet — this is applied when you generate it.'
+                ? 'Changes save as you make them; the allowance is priced in when you generate the quote.'
                 : issued
-                  ? 'This changes the price, so the customer only sees it after a Reissue.'
-                  : 'Regenerate the quote after saving — the allowance is priced in at generate time.'}
+                  ? 'Changes save as you make them. This moves the price, so the customer only sees it after a Reissue.'
+                  : 'Changes save as you make them, then hit Regenerate above to re-price the quote with it.'}
             </span>
           </div>
 
-          {message && <p className="mt-2 text-xs text-success">{message}</p>}
           {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
         </CollapsibleSection>
       </CardContent>
