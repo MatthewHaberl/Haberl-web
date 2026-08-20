@@ -341,6 +341,16 @@ export interface EquipmentCatalogItem {
   notes: string | null
   /** Stamped by DB trigger whenever cost_rands changes (migration 030). */
   price_updated_at?: string | null
+  /**
+   * Supplier has discontinued this line (migration 128). Never reaches a
+   * customer — kept quotable for stock on hand, so the calculator ignores it.
+   */
+  end_of_life?: boolean
+  /**
+   * Supplier is out of stock for now (migration 130). A warning for whoever is
+   * quoting, not a gate — the calculator ignores it exactly as it does EOL.
+   */
+  temporarily_out_of_stock?: boolean
   // Store-facing fields (migration 048). Ignored by the calculator.
   show_on_store?: boolean
   store_price_rands?: number | null

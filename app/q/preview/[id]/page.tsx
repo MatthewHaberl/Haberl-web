@@ -10,6 +10,7 @@ import { formatCents } from '@/lib/quotes/public'
 import { PublicShell } from '../../[token]/PublicShell'
 import { QuoteFrame } from '../../[token]/QuoteFrame'
 import { PrintQuoteButton } from '../../[token]/PrintQuoteButton'
+import { scrubSupplierMarkup } from '@/lib/catalog/supplier-tags'
 
 export const metadata = { title: 'Customer preview — Haberl' }
 
@@ -109,6 +110,10 @@ export default async function QuotePreviewPage({ params }: { params: Promise<{ i
       depositCents = quote.deposit_amount
     }
   }
+
+  // Same scrub the live link applies — the preview's job is to show exactly
+  // what the customer will see (see lib/catalog/supplier-tags.ts).
+  if (html) html = scrubSupplierMarkup(html)
 
   const expiryFormatted = quote.expiry_date
     ? new Date(quote.expiry_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })

@@ -96,10 +96,16 @@ export function ProductPicker({
   // closed control shows the placeholder name rather than a bare "+ Custom…".
   // The SKU rides along as `hint` (shown beside each row) and in `search`, with the
   // brand, so a part number typed off a supplier quote finds the product.
+  // Discontinued lines stay selectable — stock on hand still gets quoted — but they
+  // sink below everything in production and say so in the label. An item the
+  // supplier is simply out of right now is flagged the same way but not sunk:
+  // it is still the right part, it just needs a delivery-date conversation.
   const selectOptions = [
-    ...options.map((o) => ({
+    ...[...options]
+      .sort((a, b) => Number(a.end_of_life ?? false) - Number(b.end_of_life ?? false))
+      .map((o) => ({
       value: o.id,
-      label: `${o.description}${o.pending ? ' (to add)' : ''}`,
+      label: `${o.description}${o.end_of_life ? ' — EOL' : ''}${o.temporarily_out_of_stock ? ' — no stock' : ''}${o.pending ? ' (to add)' : ''}`,
       hint: o.sku || undefined,
       search: [o.sku, o.brand].filter(Boolean).join(' '),
     })),

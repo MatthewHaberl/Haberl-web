@@ -18,6 +18,10 @@ export interface CatalogPick {
   category: string
   cost_rands: number
   supplier: string | null
+  /** Discontinued by the supplier (migration 128) — pickable, but badged. */
+  end_of_life?: boolean
+  /** Supplier is out of stock for now (migration 130) — pickable, but badged. */
+  temporarily_out_of_stock?: boolean
 }
 
 const rand = (n: number) =>
@@ -47,12 +51,16 @@ export function CatalogSearch({ onPick, placeholder = 'Search the catalog…' }:
       const safe = q.replace(/[,()]/g, ' ').trim()
       const { data } = await supabase
         .from('equipment_catalog')
-        .select('id, sku, description, brand, category, cost_rands, supplier')
+        .select('id, sku, description, brand, category, cost_rands, supplier, end_of_life, temporarily_out_of_stock')
         .eq('active', true)
         .or(`description.ilike.%${safe}%,sku.ilike.%${safe}%,brand.ilike.%${safe}%`)
         .order('description')
         .limit(30)
-      setResults((data ?? []) as CatalogPick[])
+      // Discontinued lines stay findable — someone quoting stock on hand needs
+      // them — but they sort below everything still in production.
+      const rows = ((data ?? []) as CatalogPick[])
+        .sort((a, b) => Number(a.end_of_life ?? false) - Number(b.end_of_life ?? false))
+      setResults(rows)
       setOpen(true)
       setSearching(false)
     }, 300)
@@ -97,7 +105,25 @@ export function CatalogSearch({ onPick, placeholder = 'Search the catalog…' }:
               }}
             >
               <span className="min-w-0">
-                <span className="block text-sm leading-snug line-clamp-2">{r.description}</span>
+                <span className="block text-sm leading-snug line-clamp-2">
+                  {r.description}
+                  {r.end_of_life && (
+                    <span
+                      className="ml-2 inline-flex items-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400 align-middle"
+                      title="Discontinued by the supplier — only quote this if you have stock on hand"
+                    >
+                      EOL
+                    </span>
+                  )}
+                  {r.temporarily_out_of_stock && (
+                    <span
+                      className="ml-2 inline-flex items-center rounded-full bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-400 align-middle"
+                      title="Supplier was out of stock when the price list was loaded — check availability before you promise a date"
+                    >
+                      No stock
+                    </span>
+                  )}
+                </span>
                 <span className="block truncate text-xs text-muted-foreground">
                   {[r.brand, r.sku, r.supplier].filter(Boolean).join(' · ')}
                 </span>

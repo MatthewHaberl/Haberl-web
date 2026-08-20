@@ -16,7 +16,10 @@
 
 import type { EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 
-export const CATALOG_PAYLOAD_VERSION = 1
+// 3: added temporarily_out_of_stock (migration 130), which shifts every field
+// after it in the wire order — a browser decoding a cached v2 payload against
+// this list would read datasheet_url and specs out of the wrong slots.
+export const CATALOG_PAYLOAD_VERSION = 3
 
 /** Columns shipped to the canvas, in wire order. */
 export const CATALOG_FIELDS = [
@@ -41,6 +44,12 @@ export const CATALOG_FIELDS = [
   'height_mm',
   'frame_mm',
   'pending',
+  // Discontinued lines stay pickable for stock on hand, but every picker
+  // badges them so nobody specs one into a new job by accident.
+  'end_of_life',
+  // Same idea, but temporary: the supplier is out of stock right now. Badged in
+  // the pickers as a warning — it does not stop anyone quoting it.
+  'temporarily_out_of_stock',
   'datasheet_url',
   // Panels only — see pruneSpecs(). lib/solar/compliance.ts reads vmp/imp/temp-coeff
   // off panel specs for the string check; nothing else on the canvas touches specs.

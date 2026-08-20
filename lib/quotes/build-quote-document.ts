@@ -12,6 +12,14 @@
 // is what keeps "what the customer will see" honest — a preview that rendered
 // its own way would eventually lie.
 //
+// The rendered HTML is passed through scrubSupplierMarkup() on the way out.
+// The catalog no longer stores the supplier's status tags — "[EOL]" (migration
+// 128) or "[NEW]", "[UNI]", "[PROMO WHILE STOCKS LAST]" and the rest
+// (migration 130) — but a quote saved before those does, and a document
+// rendered off a stored snapshot must not print a supplier's internal stock
+// code at the customer. Adding a tag to lib/catalog/supplier-tags.ts is all it
+// takes for that to be honoured here.
+//
 // Pure module — no Supabase, no React; safe on server and client.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -39,6 +47,7 @@ import {
   type ContingencyBases, type ContingencyResult,
 } from '@/lib/quotes/contingency'
 import { renderScopeQuote, type ScopeQuoteData } from '@/lib/quotes/render-scope-quote'
+import { scrubSupplierMarkup } from '@/lib/catalog/supplier-tags'
 
 /** The quote_requests columns either engine reads. */
 export interface QuoteRequestForDocument {
@@ -249,7 +258,7 @@ export function renderQuoteDocument(
       workTypeLabel: workTypeLabel(quote.work_type ?? null, workTypes),
     })
     return {
-      html: renderScopeQuote(scopeData),
+      html: scrubSupplierMarkup(renderScopeQuote(scopeData)),
       // The contingency bases ride along in the saved document (never rendered)
       // so the panel can re-price a change to the allowance without loading the
       // catalog — see ContingencyBases.
@@ -280,7 +289,7 @@ export function renderQuoteDocument(
   const deposit = computeDeposit(bom)
   const money = applyCredits(bom.totalSellR, deposit.totalR, credits)
   return {
-    html: renderCustomerQuote(quoteData),
+    html: scrubSupplierMarkup(renderCustomerQuote(quoteData)),
     generatedQuoteJson: JSON.stringify({ ...quoteData, contingencyBases: priced.bases }),
     bomSnapshot: bomToSupplierBom(bom),
     bom,
@@ -365,9 +374,9 @@ export function reissueWithCredits(
     delete next.payableTotalRands
   }
 
-  const html = data.type === 'scope'
+  const html = scrubSupplierMarkup(data.type === 'scope'
     ? renderScopeQuote(next as unknown as ScopeQuoteData)
-    : renderCustomerQuote(next as unknown as Parameters<typeof renderCustomerQuote>[0])
+    : renderCustomerQuote(next as unknown as Parameters<typeof renderCustomerQuote>[0]))
 
   return {
     html,

@@ -116,6 +116,10 @@ type FormState = {
   sort_order: string
   notes: string
   active: boolean
+  /** Supplier has discontinued the line (migration 128). Never sold to a customer. */
+  end_of_life: boolean
+  /** Supplier is out of stock for now (migration 130). A warning, not a gate. */
+  temporarily_out_of_stock: boolean
   show_on_store: boolean
   store_price_rands: string
   shop_description: string
@@ -148,6 +152,8 @@ const EMPTY_FORM: FormState = {
   sort_order: '0',
   notes: '',
   active: true,
+  end_of_life: false,
+  temporarily_out_of_stock: false,
   show_on_store: false,
   store_price_rands: '',
   shop_description: '',
@@ -230,6 +236,8 @@ function itemToForm(item: EquipmentCatalogItem): FormState {
     sort_order: item.sort_order.toString(),
     notes: item.notes ?? '',
     active: item.active,
+    end_of_life: item.end_of_life ?? false,
+    temporarily_out_of_stock: item.temporarily_out_of_stock ?? false,
     show_on_store: item.show_on_store ?? false,
     store_price_rands: item.store_price_rands?.toString() ?? '',
     shop_description: item.shop_description ?? '',
@@ -357,7 +365,14 @@ export default function CatalogPage() {
       sort_order: Number(editing.sort_order || 0),
       notes: editing.notes.trim() || null,
       active: editing.active,
-      show_on_store: editing.show_on_store,
+      end_of_life: editing.end_of_life,
+      // Unlike EOL this does not touch show_on_store. Nothing clears the flag
+      // automatically, so delisting on it would leave an item dark long after
+      // stock came back — it is a warning for staff, not a gate.
+      temporarily_out_of_stock: editing.temporarily_out_of_stock,
+      // Discontinued stock is never sold online — the DB trigger enforces this
+      // too, but sending the pair together keeps the row honest either way.
+      show_on_store: editing.end_of_life ? false : editing.show_on_store,
       store_price_rands: coerceNumber(editing.store_price_rands),
       shop_description: editing.shop_description.trim() || null,
       primary_image_url: editing.primary_image_url.trim() || null,
@@ -395,6 +410,14 @@ export default function CatalogPage() {
   // Flip web-store visibility. The DB mirror trigger publishes/hides the
   // matching shop product automatically — quoting is unaffected.
   async function toggleStore(item: EquipmentCatalogItem) {
+    // A discontinued line has no business on the storefront. The mirror trigger
+    // would refuse to publish it anyway; saying so beats a toggle that flips and
+    // then quietly does nothing.
+    if (item.end_of_life) {
+      setError(`${item.sku} is end-of-life — discontinued stock can't be sold on the web store. Clear "End of life" on the item first.`)
+      return
+    }
+    setError('')
     await supabase
       .from('equipment_catalog')
       .update({ show_on_store: !item.show_on_store })
@@ -530,7 +553,25 @@ export default function CatalogPage() {
                         <td className="py-3 pr-4">{item.brand}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{item.supplier ?? '—'}</td>
                         <td className="py-3 pr-4 font-mono text-xs">{item.sku}</td>
-                        <td className="py-3 pr-4">{item.description}</td>
+                        <td className="py-3 pr-4">
+                          {item.description}
+                          {item.end_of_life && (
+                            <span
+                              className="ml-2 inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+                              title="Discontinued by the supplier. Still quotable for stock on hand, but never shown to a customer or sold on the web store."
+                            >
+                              EOL
+                            </span>
+                          )}
+                          {item.temporarily_out_of_stock && (
+                            <span
+                              className="ml-2 inline-flex items-center rounded-full bg-orange-500/15 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-400"
+                              title="Supplier was out of stock when the price list was loaded. Still quotable and still sellable — check availability before promising a date, and clear the flag when stock lands."
+                            >
+                              No stock
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3 pr-4">{spec}</td>
                         <td className="py-3 pr-4">
                           {formatRands(item.cost_rands)}
@@ -552,6 +593,12 @@ export default function CatalogPage() {
                           ) : (item.active ? 'Active' : 'Hidden')}
                         </td>
                         <td className="py-3 pr-4">
+                          {item.end_of_life ? (
+                            <span className="text-xs text-muted-foreground" title="Discontinued — not sold online">
+                              Discontinued
+                            </span>
+                          ) : (
+                          <>
                           <button
                             onClick={() => toggleStore(item)}
                             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
@@ -568,6 +615,8 @@ export default function CatalogPage() {
                           </button>
                           {item.show_on_store && (
                             <div className="mt-1 text-[11px] text-muted-foreground">{formatRands(storeSellPrice(item))}</div>
+                          )}
+                          </>
                           )}
                         </td>
                         <td className="py-3">
@@ -775,6 +824,27 @@ export default function CatalogPage() {
                 />
                 Active <span className="text-muted-foreground">(available to the quote calculator)</span>
               </label>
+              <label className="flex items-center gap-2 text-sm md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={editing.end_of_life}
+                  onChange={(event) => setEditing({
+                    ...editing,
+                    end_of_life: event.target.checked,
+                    // Going EOL pulls it off the storefront in the same action.
+                    show_on_store: event.target.checked ? false : editing.show_on_store,
+                  })}
+                />
+                End of life <span className="text-muted-foreground">(discontinued — still quotable for stock on hand, never shown to a customer)</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={editing.temporarily_out_of_stock}
+                  onChange={(event) => setEditing({ ...editing, temporarily_out_of_stock: event.target.checked })}
+                />
+                Temporarily out of stock <span className="text-muted-foreground">(supplier is out right now — quoting and the store carry on; clear this when stock lands)</span>
+              </label>
 
               {editing.id && (
                 <OffersPanel catalogId={editing.id} onChange={loadItems} />
@@ -787,13 +857,17 @@ export default function CatalogPage() {
                   Control whether customers can buy this item online, and what they see. Quoting is unaffected.
                 </p>
               </div>
-              <label className="flex items-center gap-2 text-sm md:col-span-2">
+              <label className={`flex items-center gap-2 text-sm md:col-span-2 ${editing.end_of_life ? 'opacity-60' : ''}`}>
                 <input
                   type="checkbox"
                   checked={editing.show_on_store}
+                  disabled={editing.end_of_life}
                   onChange={(event) => setEditing({ ...editing, show_on_store: event.target.checked })}
                 />
                 Sell on web store
+                {editing.end_of_life && (
+                  <span className="text-muted-foreground">— unavailable: this item is end of life</span>
+                )}
               </label>
               {/* Store detail fields only matter once the item is (or was) on the store —
                   hide them otherwise so the modal stays short. A field with a value stays

@@ -37,18 +37,81 @@ function overlap(a, b) {
   return c / Math.min(A.size, B.size)
 }
 
-const toDbRow = (r) => ({
-  category: r.category, brand: r.brand, supplier: r.supplier, sku: r.sku,
-  description: r.description, cost_rands: r.cost_rands, phase: r.phase || 'any',
-  // Electrical columns the quote pickers read (null for non-electrical lines like
-  // mounting/cable). Only set when the prep step parsed a value, so this stays a
-  // no-op for the protection import which never carried these.
-  watts_ac: r.watts_ac ?? null, watts_dc: r.watts_dc ?? null, kwh: r.kwh ?? null,
-  isc_amps: r.isc_amps ?? null, voc_volts: r.voc_volts ?? null,
-  specs: r.specs || {}, primary_image_url: r.primary_image_url || null,
-  datasheet_url: r.datasheet_url || null, source_url: r.source_url || null,
-  external_ref: r.external_ref || null, active: false, show_on_store: false, sort_order: 0,
-})
+// Key marks a discontinued line by prefixing its description: "[EOL] CHINT 16A…".
+// That is a status, not part of the name — it becomes end_of_life and comes out of
+// the text, so it can never reach a customer. Mirror of lib/catalog/eol.ts (this
+// script is plain ESM and cannot import the TS module).
+const EOL_MARKER = /[[({]\s*EOL\s*[\])}]?\s*[-–—:]?\s*/gi
+const isEol = (s) => { EOL_MARKER.lastIndex = 0; return EOL_MARKER.test(String(s || '')) }
+const stripEol = (s) => String(s || '').replace(EOL_MARKER, '').replace(/\s{2,}/g, ' ').trim()
+
+// The rest of Key's status vocabulary — "[NEW]", "[UNI]", "[10MT]", "[ECO]",
+// "[PROMO WHILE STOCKS LAST]", "[TEMP OUT OF STOCK]", "(DO NOT USE - DUPLICATE
+// CODE)". Same story as EOL: a status living inside the description text, which
+// then rides onto the customer's quote. Migration 130 cleaned the 53 rows that
+// were already loaded; this stops the next import putting them back.
+//
+// Mirror of lib/catalog/supplier-tags.ts — see it for why each tag is
+// classified the way it is. Three things must hold here as they do there:
+//   * an ALLOWLIST, never a pattern: "(T2US2C)" and "(181519)" are real product
+//     data sitting in identical-looking brackets;
+//   * a closing bracket is required, so "[NEW]" cannot eat "[NEW GEN]" — the
+//     only text separating the two Volta battery generations;
+//   * case-SENSITIVE, so our own "SolarEdge Synergy (New) Unit" is left alone.
+const TAG_DROP = new Set(['NEW', 'UNI', '10MT', 'ECO', 'PROMO WHILE STOCKS LAST'])
+const TAG_STOCK = new Set(['TEMP OUT OF STOCK'])
+const TAG_NOTE = new Map([
+  ['DO NOT USE - DUPLICATE CODE', 'Key Electric flagged this as a duplicate code — do not use. See the catalog de-duplication pass.'],
+])
+const BRACKETED = /[[({]\s*([^[\](){}]{1,40}?)\s*[\])}]\s*[-–—:]?\s*/g
+
+function parseSupplierTags(text) {
+  const raw = String(text || '')
+  let outOfStock = false
+  const notes = []
+  let touched = false
+  BRACKETED.lastIndex = 0
+  const out = raw.replace(BRACKETED, (match, inner) => {
+    if (/[a-z]/.test(inner)) return match           // ours, not Key's — leave it
+    const key = inner.trim().replace(/\s+/g, ' ').toUpperCase()
+    if (TAG_STOCK.has(key)) { outOfStock = true; touched = true; return '' }
+    if (TAG_NOTE.has(key)) {
+      const note = TAG_NOTE.get(key)
+      if (!notes.includes(note)) notes.push(note)
+      touched = true
+      return ''
+    }
+    if (TAG_DROP.has(key)) { touched = true; return '' }
+    return match                                     // unknown bracket: untouched
+  })
+  // Tidy only what we disturbed — 257 untagged descriptions carry a stray double
+  // space and must not be rewritten for nothing.
+  return {
+    description: touched ? out.replace(/\s{2,}/g, ' ').trim() : raw,
+    temporarilyOutOfStock: outOfStock,
+    notes,
+  }
+}
+
+const toDbRow = (r) => {
+  // EOL comes off first so a "[EOL] [NEW] …" prefix pair is fully handled.
+  const tags = parseSupplierTags(stripEol(r.description))
+  return {
+    category: r.category, brand: r.brand, supplier: r.supplier, sku: r.sku,
+    description: tags.description, end_of_life: isEol(r.description),
+    temporarily_out_of_stock: tags.temporarilyOutOfStock,
+    notes: tags.notes.length ? tags.notes.join('\n') : null,
+    cost_rands: r.cost_rands, phase: r.phase || 'any',
+    // Electrical columns the quote pickers read (null for non-electrical lines like
+    // mounting/cable). Only set when the prep step parsed a value, so this stays a
+    // no-op for the protection import which never carried these.
+    watts_ac: r.watts_ac ?? null, watts_dc: r.watts_dc ?? null, kwh: r.kwh ?? null,
+    isc_amps: r.isc_amps ?? null, voc_volts: r.voc_volts ?? null,
+    specs: r.specs || {}, primary_image_url: r.primary_image_url || null,
+    datasheet_url: r.datasheet_url || null, source_url: r.source_url || null,
+    external_ref: r.external_ref || null, active: false, show_on_store: false, sort_order: 0,
+  }
+}
 
 async function fetchAllExisting() {
   const all = []

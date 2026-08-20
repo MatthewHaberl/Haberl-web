@@ -16,6 +16,7 @@ import { QuoteFrame } from './QuoteFrame'
 import { PublicQuoteActions } from './PublicQuoteActions'
 import { PrintQuoteButton } from './PrintQuoteButton'
 import { PublicShell } from './PublicShell'
+import { scrubSupplierMarkup } from '@/lib/catalog/supplier-tags'
 
 export const metadata: Metadata = {
   // Work-type-agnostic — this page serves solar and electrical quotes (W97).
@@ -69,6 +70,12 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
   }
 
   if (!quote.quote_html || !VIEWABLE.includes(quote.status)) notFound()
+
+  // A quote sent before migrations 128/130 has the supplier's status tags baked
+  // into its line descriptions — "[EOL]", "[NEW]", "[PROMO WHILE STOCKS LAST]".
+  // The stored document is the record of what was sent and stays untouched;
+  // what the customer reads does not carry a supplier stock code.
+  const quoteHtml = scrubSupplierMarkup(quote.quote_html)
 
   // First-open tracking
   if (!quote.viewed_at) {
@@ -190,9 +197,9 @@ export default async function PublicQuotePage({ params }: { params: Promise<{ to
 
       {/* The quote itself */}
       <div className="flex justify-end">
-        <PrintQuoteButton html={quote.quote_html} />
+        <PrintQuoteButton html={quoteHtml} />
       </div>
-      <QuoteFrame html={quote.quote_html} title={isSolar ? 'Solar quote' : 'Quote'} />
+      <QuoteFrame html={quoteHtml} title={isSolar ? 'Solar quote' : 'Quote'} />
     </PublicShell>
   )
 }
