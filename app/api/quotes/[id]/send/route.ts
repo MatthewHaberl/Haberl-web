@@ -23,7 +23,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return new Response('Forbidden', { status: 403 })
   }
 
-  let body: { manual?: boolean; resend?: boolean; amendmentReason?: string } = {}
+  let body: {
+    manual?: boolean
+    resend?: boolean
+    amendmentReason?: string
+    /** How it actually went out, for the record (migration 127). */
+    method?: 'email' | 'whatsapp' | 'manual'
+  } = {}
   try {
     body = await req.json()
   } catch { /* empty body is fine */ }
@@ -41,6 +47,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   if (!quote.quote_html) {
     return new Response('Generate and save the quote first', { status: 400 })
+  }
+
+  /**
+   * Why this send differs from the last one. Typed at reissue time and parked
+   * on the row (migration 127) so it survives the reload between reissuing and
+   * sending; an explicit reason in the request still wins.
+   */
+  const amendmentReason = body.amendmentReason?.trim() || quote.amendment_reason || null
+
+  /**
+   * How it went out. 'manual' covers copy-link and handing it over; the client
+   * says 'whatsapp' when it opened a chat, because "they never got it" is
+   * answered very differently for a WhatsApp share than for an email.
+   */
+  const sentMethod: 'email' | 'whatsapp' | 'manual' =
+    body.method ?? (body.manual ? 'manual' : 'email')
+
+  const sendRecord = {
+    sent_at: new Date().toISOString(),
+    sent_method: sentMethod,
+    sent_by: user.id,
+    // The reason has now been recorded against a version — it must not attach
+    // itself to the NEXT send as well.
+    amendment_reason: null,
   }
 
   const { data: settings } = await supabase
@@ -64,19 +94,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
     await supabase
       .from('quote_requests')
-      .update({ sent_at: new Date().toISOString() })
+      .update(sendRecord)
       .eq('id', id)
     // A resend of unchanged content is the SAME document sent twice, so this
     // returns the existing version rather than minting one. If the quote was
     // edited since, it correctly records the amendment (W56).
-    const resendVersion = await snapshotQuoteVersion(quote, { sentBy: user.id })
+    const resendVersion = await snapshotQuoteVersion(quote, {
+      sentBy: user.id,
+      amendmentReason,
+    })
     return NextResponse.json({ ok: true, sent: true, resent: true, shareUrl, version: resendVersion.version })
   }
 
   async function markSent() {
     return supabase
       .from('quote_requests')
-      .update({ status: 'sent', sent_at: new Date().toISOString(), expiry_date: expiryDate })
+      .update({ status: 'sent', expiry_date: expiryDate, ...sendRecord })
       .eq('id', id)
   }
 
@@ -89,7 +122,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const result = await snapshotQuoteVersion(quote, {
       sentBy: user!.id,
       expiryDate,
-      amendmentReason: body.amendmentReason ?? null,
+      amendmentReason,
     })
     if (result.error) console.error('[quotes/send] version snapshot', { id, error: result.error })
     return result

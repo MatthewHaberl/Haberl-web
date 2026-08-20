@@ -15,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { DepositItem, EquipmentPhoto, SupplierBomItem } from '@/lib/solar/render-quote'
+import type { CreditView } from './credits'
 
 /**
  * One line of a DETAILED quote — a single part or task with its quantity and
@@ -125,8 +126,24 @@ export interface ScopeQuoteData {
   optionalExtras: ScopeOptionalExtraView[]
   exclusions: string[]
   cocIncluded: boolean
+  /** The price of the WORK — what the sections add up to. Credits never touch it. */
   quoteTotal: string
   quoteTotalRands: number
+  /**
+   * Credits taken off this quote (migration 126): a deposit already paid, a
+   * part back under warranty, a reimbursement, a discount. Already signed and
+   * already trimmed to what the quote can absorb — the renderer prints them as
+   * given. Absent on every quote generated before credits existed, which is
+   * exactly the same document those quotes have always shown.
+   */
+  credits?: CreditView[]
+  /**
+   * What the customer actually pays: quoteTotal less the credits. Equal to
+   * quoteTotal when there are none, and absent on an older document.
+   */
+  payableTotal?: string
+  payableTotalRands?: number
+  /** Deposit still due and balance on completion — both AFTER credits. */
   depositTotal: string
   depositTotalRands: number
   balanceTotal: string
@@ -351,6 +368,10 @@ const SCOPE_CSS = `
   }
   .summary-lines .total-row td:last-child { color: var(--accent); }
   .summary-lines .deposit-row td { font-size: 12.5px; color: rgba(255,255,255,0.62); }
+  /* A credit reads as a subtraction, not as another charge — same weight as the
+     line above it, with the amount picked out so the minus is impossible to
+     miss on a printed page. */
+  .summary-lines .credit-row td:last-child { color: var(--accent); }
   .vat-badge {
     display: block;
     margin-top: 18px; padding-top: 14px;
@@ -524,6 +545,54 @@ function rand(n: number): string {
 
 function sumSubtotals(sections: ScopeQuoteSectionView[]): number {
   return Math.round(sections.reduce((t, s) => t + (s.subtotalRands || 0), 0) * 100) / 100
+}
+
+// ── Credits (migration 126) ──────────────────────────────────────────────────
+//
+// A quote with no credits must render byte-for-byte the document it always
+// has — every helper below returns nothing at all in that case, which is the
+// overwhelming majority of quotes and the one the golden file pins.
+
+function hasCredits(data: ScopeQuoteData): boolean {
+  return (data.credits?.length ?? 0) > 0
+}
+
+/** The figure the customer actually pays. Falls back to the quote total. */
+function payableTotal(data: ScopeQuoteData): string {
+  return data.payableTotal || data.quoteTotal
+}
+
+/**
+ * The headline block. Without credits it is the single big Quote total it has
+ * always been; with them, the quote total drops to a stated line, each credit
+ * is subtracted by name, and the big number becomes what they actually pay —
+ * because that is the figure they will act on.
+ */
+function summaryLines(data: ScopeQuoteData): string {
+  if (!hasCredits(data)) {
+    return `
+      <tr class="total-row"><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>`
+  }
+  const rows = (data.credits ?? []).map((c) => `
+      <tr class="credit-row"><td>${escapeHtml(c.label)}</td><td>${escapeHtml(c.amount)}</td></tr>`).join('')
+  return `
+      <tr><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>${rows}
+      <tr class="total-row divider"><td>Total payable</td><td>${escapeHtml(payableTotal(data))}</td></tr>`
+}
+
+/**
+ * The same subtraction restated in the payment table, so the deposit and the
+ * balance are shown adding up to something the customer can point at. Without
+ * credits this is the "Quote total" row the table has always ended on.
+ */
+function creditPaymentRows(data: ScopeQuoteData): string {
+  if (!hasCredits(data)) {
+    return `<tr><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>`
+  }
+  const rows = (data.credits ?? []).map((c) => `
+        <tr><td>${escapeHtml(c.label)}</td><td>${escapeHtml(c.amount)}</td></tr>`).join('')
+  return `<tr><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>${rows}
+        <tr><td>Total payable</td><td><strong>${escapeHtml(payableTotal(data))}</strong></td></tr>`
 }
 
 function scopeSummarySection(data: ScopeQuoteData): string {
@@ -824,7 +893,7 @@ function allOrNothingSection(data: ScopeQuoteData): string {
       <div class="terms-grid">
         <div class="terms-item">
           <div class="t-label">All of it, as one job</div>
-          Accept the quote as it stands at <strong>${escapeHtml(data.quoteTotal)}</strong>.
+          Accept the quote as it stands at <strong>${escapeHtml(payableTotal(data))}</strong>.
           One booking, one team on site${data.cocIncluded ? ', one certificate' : ''}.
         </div>
         <div class="terms-item">
@@ -902,7 +971,7 @@ function takeAllOrPartSection(data: ScopeQuoteData): string {
       <div class="terms-grid">
         <div class="terms-item">
           <div class="t-label">All of it</div>
-          Accept the quote as it stands at <strong>${escapeHtml(data.quoteTotal)}</strong>.
+          Accept the quote as it stands at <strong>${escapeHtml(payableTotal(data))}</strong>.
           One booking, one team on site${data.cocIncluded ? ', one certificate' : ''}.
         </div>
         ${partItem}
@@ -1001,8 +1070,7 @@ ${scopeSummarySection(data)}${sectionsTable(data)}${needsPricingNote(data)}${pho
   <div class="section-heading">Total Investment</div>
 
   <div class="summary-block no-break">
-    <table class="summary-lines">
-      <tr class="total-row"><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>
+    <table class="summary-lines">${summaryLines(data)}
     </table>
     <div class="vat-badge">Haberl Electrical &amp; Solar does not add VAT &mdash; all prices inclusive</div>
   </div>
@@ -1011,10 +1079,10 @@ ${scopeSummarySection(data)}${sectionsTable(data)}${needsPricingNote(data)}${pho
     <div class="card-header"><h2>Deposit &amp; Payment</h2></div>
     <div class="card-body">
       <table class="info-table">
-        <tr><td>Deposit required (&#9733; sections)</td><td><strong>${escapeHtml(data.depositTotal)}</strong></td></tr>
+        <tr><td>Deposit ${hasCredits(data) ? 'still due' : 'required'} (&#9733; sections)</td><td><strong>${escapeHtml(data.depositTotal)}</strong></td></tr>
         ${depositCovers}
         <tr><td>Balance on completion</td><td>${escapeHtml(data.balanceTotal)}</td></tr>
-        <tr><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>
+        ${creditPaymentRows(data)}
       </table>
     </div>
   </div>

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Check, Copy, Send, X, Loader2, Briefcase, ArrowRight, Eye, MessageCircle, FileText, RefreshCw, ScanEye } from 'lucide-react'
+import { Check, Copy, Send, X, Loader2, Briefcase, ArrowRight, Eye, MessageCircle, FilePen, FileText, RefreshCw, ScanEye } from 'lucide-react'
 import type { QuoteRequestStatus } from '@/types/database'
 
 /**
@@ -54,16 +54,6 @@ interface Props {
   viewedAt: string | null
   /** Solar-engine quote — drives the WhatsApp message wording (W97). */
   isSolar?: boolean
-  /** quote_requests.show_equipment_photos — the photo panel's saved state. */
-  initialShowPhotos?: boolean
-  /** quote_requests.quote_version === 'detailed' — line-by-line pricing. */
-  initialDetailed?: boolean
-  /**
-   * quote_requests.allow_partial_acceptance. Scope engine only — taking one
-   * part of a quote means taking one work package, which the solar canvas has
-   * no notion of.
-   */
-  initialAllowPartial?: boolean
   /**
    * Asked before Generate runs. Returns the reasons the builder can't become a
    * document yet (empty = go ahead) and reveals them in the builder itself.
@@ -73,62 +63,18 @@ interface Props {
   preflight?: () => string[]
 }
 
-export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt, isSolar = true, initialShowPhotos = true, initialDetailed = false, initialAllowPartial = true, preflight }: Props) {
+export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareToken, customerEmail, customerPhone, customerName, quoteNumber, viewedAt, isSolar = true, preflight }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState<QuoteRequestStatus>(initialStatus)
   const [saving, setSaving] = useState(false)
   const [jobId, setJobId] = useState<string | null>(initialJobId ?? null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [showPhotos, setShowPhotos] = useState(initialShowPhotos)
-  const [detailed, setDetailed] = useState(initialDetailed)
-  const [allowPartial, setAllowPartial] = useState(initialAllowPartial)
-
-  /**
-   * The document switches are properties of the QUOTE, not of this render —
-   * saved on the row so Preview, Generate and the eventual send all agree.
-   * They reach the customer's document on the next generate, which is why each
-   * label says so rather than leaving the operator to wonder.
-   *
-   * `revert` puts the box back when the row didn't change: a checkbox that
-   * stays ticked after a failed write is a lie about what will be sent.
-   */
-  async function saveDocumentOption(patch: Record<string, unknown>, revert: () => void) {
-    setError('')
-    const supabase = createClient()
-    const { error: dbError } = await supabase
-      .from('quote_requests')
-      .update(patch)
-      .eq('id', requestId)
-    if (dbError) {
-      revert()
-      setError(dbError.message)
-    }
-  }
-
-  function togglePhotos(next: boolean) {
-    setShowPhotos(next)
-    void saveDocumentOption({ show_equipment_photos: next }, () => setShowPhotos(!next))
-  }
-
-  function toggleDetailed(next: boolean) {
-    setDetailed(next)
-    void saveDocumentOption(
-      { quote_version: next ? 'detailed' : 'simplified' },
-      () => setDetailed(!next),
-    )
-  }
-
-  // Ticked = all-or-nothing, so the box reads as the restriction being applied
-  // rather than as a permission being withdrawn. The column stores the
-  // permission, hence the inversion here and nowhere else.
-  function toggleAllOrNothing(allOrNothing: boolean) {
-    setAllowPartial(!allOrNothing)
-    void saveDocumentOption(
-      { allow_partial_acceptance: !allOrNothing },
-      () => setAllowPartial(allOrNothing),
-    )
-  }
+  // Reissue: the reason box is open, and what has been typed into it. A sent
+  // quote is never re-rendered without one — the reason is what the amendment
+  // trail is FOR, and asking afterwards never happens.
+  const [reissuing, setReissuing] = useState(false)
+  const [reason, setReason] = useState('')
 
   async function updateStatus(next: QuoteRequestStatus, extra: Record<string, unknown> = {}) {
     setSaving(true)
@@ -146,7 +92,11 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
 
   // Email the tokenized quote link to the customer (or stamp 'sent' for
   // manual WhatsApp/in-person sharing when manual=true).
-  async function sendToCustomer(manual = false, resend = false) {
+  async function sendToCustomer(
+    manual = false,
+    resend = false,
+    method: 'email' | 'whatsapp' | 'manual' = manual ? 'manual' : 'email',
+  ) {
     setSaving(true)
     setError('')
     setMessage('')
@@ -154,7 +104,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
       const res = await fetch(`/api/quotes/${requestId}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manual, resend }),
+        body: JSON.stringify({ manual, resend, method }),
       })
       const data = await res.json().catch(() => null)
       if (res.ok) {
@@ -178,7 +128,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
   // Generate & save the customer quote from the live design (the v2 bridge):
   // renders quote_html, allocates the quote number, snapshots the BOM and
   // flips pending → generated so the send buttons appear.
-  async function generateQuote() {
+  async function generateQuote(amend = false) {
     setError('')
     setMessage('')
     // Ask the builder first. A quote that can't be rendered should say so here,
@@ -192,12 +142,23 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
     }
     setSaving(true)
     try {
-      const res = await fetch(`/api/quotes/${requestId}/generate`, { method: 'POST' })
+      const res = await fetch(`/api/quotes/${requestId}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(amend ? { amend: true, reason } : {}),
+      })
       const data = await res.json().catch(() => null)
       if (res.ok) {
+        // A reissue drops the quote back to 'generated' server-side, which is
+        // what puts the send buttons back — the customer only hears about the
+        // change when it is actually sent.
         setStatus('generated')
+        setReissuing(false)
+        setReason('')
         const bits = [
-          `Quote ${data?.quoteNumber ?? ''} saved — R${Number(data?.totalR ?? 0).toLocaleString('en-ZA')}`,
+          amend
+            ? `Reissued — R${Number(data?.totalR ?? 0).toLocaleString('en-ZA')}. Send it to the customer.`
+            : `Quote ${data?.quoteNumber ?? ''} saved — R${Number(data?.totalR ?? 0).toLocaleString('en-ZA')}`,
           data?.needsPricing > 0 ? `${data.needsPricing} item(s) still need pricing` : null,
           data?.complianceBlockers > 0 ? `⚠ ${data.complianceBlockers} compliance blocker(s)` : null,
         ].filter(Boolean)
@@ -233,7 +194,9 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
     const message = `${greeting}, here's your ${isSolar ? 'Haberl Solar quote' : 'quote from Haberl Electrical & Solar'}${ref}. You can view it, accept it, or ask me anything here: ${url}`
     // Open synchronously inside the click so the browser doesn't block the tab.
     window.open(waLink(customerPhone, message), '_blank', 'noopener')
-    if (markSent) await sendToCustomer(true)
+    // Recorded as a WhatsApp share, not a generic "manual" one: "they never got
+    // it" is answered completely differently for a chat than for an email.
+    if (markSent) await sendToCustomer(true, false, 'whatsapp')
     else setMessage('Opened WhatsApp ✓')
   }
 
@@ -295,6 +258,27 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
     </Button>
   )
 
+  /**
+   * Reissue — how an already-sent quote gets changed.
+   *
+   * The builders never locked, so a sent quote could always be EDITED; what it
+   * could not do was rebuild the document, which meant the edit sat on screen
+   * while the customer's link went on serving the old page. This re-prices from
+   * today's catalog, replaces the document and drops the quote back to
+   * 'generated', so the ordinary send buttons are what put the change in front
+   * of the customer — and the send is what records the new version.
+   */
+  const reissueButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => setReissuing(true)}
+      title="Rebuild this quote's document from the current design and send it again. Re-prices from today's catalog; the version the customer already has is kept in Sent history."
+    >
+      <FilePen className="h-3.5 w-3.5" /> Reissue
+    </Button>
+  )
+
   // Re-email the quote without changing its status. Available in every state
   // after the first send (sent / accepted / declined).
   const resendButton = (
@@ -325,54 +309,10 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
 
         {saving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
 
-        {/* Document options — only while the quote is still a draft; once sent,
-            regeneration is blocked and a switch here would change nothing. */}
-        {(status === 'pending' || status === 'generated') && (
-          <div className="flex items-center gap-3 flex-wrap">
-            <label
-              className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
-              title="Show the product photos of the kit being supplied. Turn off for small jobs where a strip of breaker photos says less than the scope does. Applies on the next generate."
-            >
-              <input
-                type="checkbox"
-                checked={showPhotos}
-                onChange={(e) => togglePhotos(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-border accent-primary"
-              />
-              Product photos
-            </label>
-
-            <label
-              className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
-              title="Price the quote line by line — every part and task with its quantity and price, under the section it belongs to. Off is the simplified document: section subtotals only. Turn it on when the customer is comparing us against another quote. Applies on the next generate."
-            >
-              <input
-                type="checkbox"
-                checked={detailed}
-                onChange={(e) => toggleDetailed(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-border accent-primary"
-              />
-              Line-by-line pricing
-            </label>
-
-            {/* Scope engine only: taking part of a quote means taking one work
-                package, which a solar design has no notion of. */}
-            {!isSolar && (
-              <label
-                className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
-                title="Make this quote all-or-nothing. The customer can only accept the whole thing: the standalone prices, the options table and the take-part wording come off the document, and the accept page refuses a single package. Use it when the work is only priced — or only safe — as one job. Applies on the next generate."
-              >
-                <input
-                  type="checkbox"
-                  checked={!allowPartial}
-                  onChange={(e) => toggleAllOrNothing(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-border accent-primary"
-                />
-                All or nothing
-              </label>
-            )}
-          </div>
-        )}
+        {/* The document switches used to live here and disappear the moment the
+            quote was sent — which is the one time you most need to see them.
+            They are in the "Sending & document settings" panel below now, at
+            every status, next to the record of how the quote went out. */}
 
         {/* See it the customer's way, at any status. Draft quotes render live
             from the current design; sent ones show the document they hold. */}
@@ -391,7 +331,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
           <Button
             variant="accent"
             size="sm"
-            onClick={generateQuote}
+            onClick={() => generateQuote()}
             title="Render the customer quote from the design, allocate a quote number and unlock sending"
           >
             <FileText className="h-3.5 w-3.5" /> Generate quote
@@ -403,7 +343,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
             <Button
               variant="ghost"
               size="sm"
-              onClick={generateQuote}
+              onClick={() => generateQuote()}
               className="text-muted-foreground text-xs"
               title="Re-render the quote from the current design (overwrites the draft — fine until it's sent)"
             >
@@ -450,6 +390,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
             >
               <X className="h-3.5 w-3.5" /> Declined
             </Button>
+            {reissueButton}
             {whatsappButton(false)}
             {resendButton}
             {copyButton}
@@ -476,6 +417,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
 
         {!saving && status === 'declined' && (
           <>
+            {reissueButton}
             {resendButton}
             <Button
               variant="ghost"
@@ -488,6 +430,47 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
           </>
         )}
       </div>
+
+      {/* Why it changed. Asked BEFORE the document is replaced, because nobody
+          ever comes back to fill it in afterwards — and it is what makes the
+          Sent history an audit trail rather than a list of dates. */}
+      {reissuing && (
+        <div className="flex flex-col items-end gap-1.5 rounded-lg border border-border bg-card p-3">
+          <p className="text-xs text-muted-foreground max-w-sm text-right">
+            Rebuilds the document from the current design and re-prices it at today&rsquo;s catalog
+            costs. The version the customer already has is kept in Sent history &mdash; they only see
+            the new one once you send it.
+          </p>
+          <input
+            autoFocus
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="What changed? e.g. added the second battery"
+            maxLength={200}
+            className="h-9 w-72 rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground text-xs"
+              onClick={() => { setReissuing(false); setReason('') }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={reason.trim().length < 3}
+              onClick={() => generateQuote(true)}
+              title={reason.trim().length < 3 ? 'Say what changed first' : 'Rebuild and re-price the document'}
+            >
+              <FilePen className="h-3.5 w-3.5" /> Reissue quote
+            </Button>
+          </div>
+        </div>
+      )}
+
       {message && <p className="text-xs text-success">{message}</p>}
       {error && (
         <p className="text-xs text-destructive max-w-xs text-right break-all">{error}</p>

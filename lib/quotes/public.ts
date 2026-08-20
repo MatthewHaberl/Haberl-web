@@ -122,7 +122,13 @@ export function parsePackageChoice(quote: {
     }
     if (packages.length < 2) return null
 
-    const bundleTotalCents = rands(data.quoteTotalRands) ?? 0
+    const grossBundleCents = rands(data.quoteTotalRands) ?? 0
+    // What taking everything actually costs: net of any credits on the quote
+    // (migration 126), so this card agrees with the total printed above it and
+    // with total_amount. A single package still bills its STANDALONE price —
+    // the credit is priced against the whole job, and the credits panel says so
+    // rather than quietly spreading it across parts nobody has chosen yet.
+    const bundleTotalCents = rands(data.payableTotalRands) ?? grossBundleCents
     const separateTotalCents = rands(data.separateTotalRands)
       ?? packages.reduce((t, p) => t + p.totalCents, 0)
 
@@ -131,7 +137,10 @@ export function parsePackageChoice(quote: {
       bundleTotalCents,
       bundleDepositCents: rands(data.depositTotalRands),
       separateTotalCents,
-      bundleSavingCents: Math.max(0, separateTotalCents - bundleTotalCents),
+      // The bundle saving is a property of doing the work in one visit, not of
+      // a credit — measured against the GROSS bundle, or a credit would read as
+      // extra savings the packages would also have got.
+      bundleSavingCents: Math.max(0, separateTotalCents - grossBundleCents),
     }
   } catch {
     return null

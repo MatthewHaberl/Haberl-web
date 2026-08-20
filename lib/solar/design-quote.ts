@@ -29,6 +29,7 @@ import type { DesignBom } from './design-bom'
 import type {
   QuoteData, SupplierBomItem, DepositItem, DetailedBomSection, EquipmentPhoto,
 } from './render-quote'
+import { applyCredits, creditViews, type QuoteCredit } from '@/lib/quotes/credits'
 
 const DAYS_PER_MONTH = 30.4
 
@@ -197,6 +198,12 @@ export interface DesignQuoteArgs {
    * customer asks for the detail).
    */
   showLineItems?: boolean
+  /**
+   * Money already owed to this customer, taken off the bottom of the quote
+   * (migration 126). Never touches a section subtotal or the BOM — the
+   * sections still add up to the price of the system.
+   */
+  credits?: QuoteCredit[]
 }
 
 /**
@@ -261,7 +268,12 @@ export function buildQuoteDataFromDesign(args: DesignQuoteArgs): QuoteData {
 
   const deposit = computeDeposit(bom)
   const totalR = bom.totalSellR
-  const balanceR = round2(totalR - deposit.totalR)
+  // Credits come off AFTER the BOM, which is what keeps every section subtotal
+  // honest about the price of the system. With none, `money` returns the same
+  // deposit and balance this function has always produced.
+  const credits = args.credits ?? []
+  const money = applyCredits(totalR, deposit.totalR, credits)
+  const balanceR = money.balanceR
 
   const issued = new Date()
   const expires = new Date(issued.getTime() + expiryDays * 86_400_000)
@@ -334,10 +346,19 @@ export function buildQuoteDataFromDesign(args: DesignQuoteArgs): QuoteData {
     // Totals
     materialsLabourSubtotal: rand(totalR),
     quoteTotal: rand(totalR),
-    depositTotal: rand(deposit.totalR),
+    // Absent (not empty) with no credits, so the document and every quote
+    // generated before this existed are byte-identical.
+    ...(credits.length > 0
+      ? {
+          credits: creditViews(credits, money.appliedR),
+          payableTotal: rand(money.payableR),
+          payableTotalRands: money.payableR,
+        }
+      : {}),
+    depositTotal: rand(money.depositR),
     balanceTotal: rand(balanceR),
     quoteTotalRands: totalR,
-    depositTotalRands: deposit.totalR,
+    depositTotalRands: money.depositR,
 
     // ROI
     annualOffsetPercent: savings ? `${savings.balance.annual.gridIndependencePct}%` : '—',

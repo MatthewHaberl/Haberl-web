@@ -209,6 +209,9 @@
   }
   .summary-lines .total-row td:last-child { color: var(--accent); }
   .summary-lines .deposit-row td { font-size: 12.5px; color: rgba(255,255,255,0.62); }
+  /* A credit reads as a subtraction, not another charge — same weight as the
+     line above it, with the amount picked out so the minus survives printing. */
+  .summary-lines .credit-row td:last-child { color: var(--accent); }
   .vat-badge {
     display: block;
     margin-top: 18px; padding-top: 14px;

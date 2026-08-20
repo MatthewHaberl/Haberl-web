@@ -23,6 +23,9 @@ import { DesignCanvasPanel } from './design/DesignCanvasPanel'
 import { DesignStudio } from './design/DesignStudio'
 import { DraftTotalSync } from './design/DraftTotalSync'
 import { ScopeWorkspace } from './scope/ScopeWorkspace'
+import { CreditsPanel } from './CreditsPanel'
+import { SendSettingsPanel } from './SendSettingsPanel'
+import { parseScope } from '@/lib/quotes/scope'
 import { RfqPanel } from './RfqPanel'
 import { SupplierQuotesPanel } from './SupplierQuotesPanel'
 import type { WorkType } from '@/lib/quotes/work-types'
@@ -36,9 +39,11 @@ interface Props {
   linkedJobId: string | null
   engine: 'solar' | 'scope'
   workType: WorkType
+  /** Resolved name behind quote_requests.sent_by — '' when nobody is recorded. */
+  sentByName?: string
 }
 
-export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }: Props) {
+export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, sentByName = '' }: Props) {
   // Generate lives up here in the status bar while the scope it validates lives
   // below in ScopeWorkspace. The builder registers its check on this ref rather
   // than lifting the whole scope, which would re-render the bar on every
@@ -105,6 +110,14 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
     return emptyDesign()
   }, [req.system_design, req.generated_quote])
 
+  // A quote the customer can accept ONE package off is the one case a
+  // quote-level credit can't follow the money — the accept route bills that
+  // package's standalone price. The credits panel warns rather than guesses.
+  const creditablePackages = useMemo(() => {
+    if (engine !== 'scope' || req.allow_partial_acceptance === false) return false
+    return (parseScope(req.scope)?.packages.length ?? 0) >= 2
+  }, [engine, req.scope, req.allow_partial_acceptance])
+
   return (
     <div className={`flex flex-col gap-4 ${isAdmin && engine !== 'scope' && layout === 'studio' ? 'pb-4' : 'pb-20'}`}>
       {/* Header */}
@@ -146,9 +159,6 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
                 quoteNumber={req.quote_number ?? null}
                 viewedAt={req.viewed_at ?? null}
                 isSolar={engine !== 'scope'}
-                initialShowPhotos={req.show_equipment_photos !== false}
-                initialDetailed={req.quote_version === 'detailed'}
-                initialAllowPartial={req.allow_partial_acceptance !== false}
                 preflight={engine === 'scope' ? () => scopePreflight.current?.() ?? [] : undefined}
               />
             </div>
@@ -207,6 +217,36 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType }:
             </DesignProvider>
           </CanvasThemeProvider>
         )}
+        {/* How this quote reads and how it went out (migration 127). Shared by
+            both engines, and visible at EVERY status — the document switches
+            used to live in the status bar and vanish the moment it was sent. */}
+        <SendSettingsPanel
+          requestId={req.id}
+          status={req.status}
+          isSolar={engine !== 'scope'}
+          showPhotos={req.show_equipment_photos !== false}
+          detailed={req.quote_version === 'detailed'}
+          allowPartial={req.allow_partial_acceptance !== false}
+          expiryDate={req.expiry_date ?? null}
+          sentAt={req.sent_at ?? null}
+          sentMethod={req.sent_method ?? null}
+          sentByName={sentByName}
+          viewedAt={req.viewed_at ?? null}
+          reminderCount={req.reminder_count ?? 0}
+          customerEmail={req.customer_email ?? null}
+          customerPhone={req.customer_phone ?? null}
+          currentVersion={req.current_version ?? null}
+        />
+        {/* Credits (migration 126), shared by both engines: money already owed to
+            the customer — a deposit paid, a warranty part, a reimbursement —
+            taken off the bottom of the quote rather than off a line item. */}
+        <CreditsPanel
+          requestId={req.id}
+          rawCredits={req.credits}
+          status={req.status}
+          generatedQuote={req.generated_quote}
+          hasPackages={creditablePackages}
+        />
         {/* Supplier pricing loop, shared by both engines: ask (W99), then receive (W98). */}
         <RfqPanel requestId={req.id} />
         <SupplierQuotesPanel requestId={req.id} />

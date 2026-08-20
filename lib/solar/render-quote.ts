@@ -4,6 +4,7 @@
 // like DesignWorkspace still bundle it fine without it.
 
 import type { ComplianceCheck } from './compliance'
+import type { CreditView } from '@/lib/quotes/credits'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -146,9 +147,24 @@ export interface QuoteData {
 
   // Totals (formatted strings for template)
   materialsLabourSubtotal: string
+  /** The price of the SYSTEM — what the sections add up to. Credits never touch it. */
   quoteTotal: string
+  /** Deposit still due and balance on completion — both AFTER any credits. */
   depositTotal: string
   balanceTotal: string
+  /**
+   * Credits taken off this quote (migration 126): a deposit already paid, a
+   * part back under warranty, a reimbursement, a discount. Already signed and
+   * already trimmed to what the quote can absorb. Absent on every quote
+   * generated before credits existed, which renders exactly as it always has.
+   */
+  credits?: CreditView[]
+  /**
+   * What the customer actually pays: quoteTotal less the credits. Absent when
+   * there are none, in which case the quote total is the figure.
+   */
+  payableTotal?: string
+  payableTotalRands?: number
 
   // Totals as raw rands (for DepositSelector calculations)
   quoteTotalRands: number
@@ -344,7 +360,32 @@ function renderSingleOptionHtml(data: QuoteData, tierLabel?: string): string {
     html = html.replace('{{EV_CHARGER_SUMMARY_ROW}}', '')
   }
 
+  // Credits (migration 126) — money already owed to the customer, subtracted
+  // beneath the quote total rather than hidden inside a section subtotal. A
+  // quote with none resolves both placeholders to nothing and renders exactly
+  // the document it always has.
+  html = html.replace('{{CREDIT_SUMMARY_ROWS}}', renderCreditSummaryRows(data))
+  html = html.replace('{{CREDIT_PAYMENT_ROWS}}', renderCreditPaymentRows(data))
+
   return html
+}
+
+/** Credit rows under the headline total, ending on what they actually pay. */
+function renderCreditSummaryRows(data: QuoteData): string {
+  if (!data.credits?.length) return ''
+  const rows = data.credits.map((c) => `
+      <tr class="credit-row"><td>${escapeHtml(c.label)}</td><td>${escapeHtml(c.amount)}</td></tr>`).join('')
+  return `${rows}
+      <tr class="total-row divider"><td>TOTAL PAYABLE</td><td>${escapeHtml(data.payableTotal ?? data.quoteTotal)}</td></tr>`
+}
+
+/** The same subtraction restated in the deposit table, where they act on it. */
+function renderCreditPaymentRows(data: QuoteData): string {
+  if (!data.credits?.length) return ''
+  const rows = data.credits.map((c) => `
+        <tr><td>${escapeHtml(c.label)}</td><td>${escapeHtml(c.amount)}</td></tr>`).join('')
+  return `${rows}
+        <tr><td>Total payable</td><td><strong>${escapeHtml(data.payableTotal ?? data.quoteTotal)}</strong></td></tr>`
 }
 
 // ── Multi-option renderer ─────────────────────────────────────────────────────
@@ -539,6 +580,11 @@ function renderCustomerSingleHtml(data: QuoteData, tierLabel?: string): string {
 
   html = html.replace('{{EQUIPMENT_PHOTOS_SECTION}}', renderEquipmentPhotosSection(data))
   html = html.replace('{{DETAILED_BOM_SECTION}}', renderDetailedBomSection(data))
+
+  // Credits (migration 126) — see renderCreditSummaryRows. Both resolve to
+  // nothing on a quote with none, which is every quote until one is added.
+  html = html.replace('{{CREDIT_SUMMARY_ROWS}}', renderCreditSummaryRows(data))
+  html = html.replace('{{CREDIT_PAYMENT_ROWS}}', renderCreditPaymentRows(data))
 
   return html
 }
@@ -1169,6 +1215,9 @@ const BASE_CSS = `
   }
   .summary-lines .total-row td:last-child { color: var(--accent); }
   .summary-lines .deposit-row td { font-size: 12.5px; color: rgba(255,255,255,0.62); }
+  /* A credit reads as a subtraction, not another charge — same weight as the
+     line above it, with the amount picked out so the minus survives printing. */
+  .summary-lines .credit-row td:last-child { color: var(--accent); }
   .vat-badge {
     display: block;
     margin-top: 18px; padding-top: 14px;
@@ -1507,7 +1556,7 @@ const SINGLE_TEMPLATE = `<!DOCTYPE html>
       <tr><td>Consumables &amp; Compliance</td><td>{{consumablesSubtotal}}</td></tr>
       <tr><td>Installation Labour</td><td>{{labourSubtotal}}</td></tr>
       {{EV_CHARGER_SUMMARY_ROW}}
-      <tr class="total-row divider"><td>QUOTE TOTAL</td><td>{{quoteTotal}}</td></tr>
+      <tr class="total-row divider"><td>QUOTE TOTAL</td><td>{{quoteTotal}}</td></tr>{{CREDIT_SUMMARY_ROWS}}
     </table>
     <div class="vat-badge">Haberl Electrical &amp; Solar does not add VAT &mdash; all prices inclusive</div>
   </div>
@@ -1518,7 +1567,7 @@ const SINGLE_TEMPLATE = `<!DOCTYPE html>
       <table class="info-table">
         <tr><td>Deposit required (&#9733; items)</td><td><strong>{{depositTotal}}</strong></td></tr>
         <tr><td>Balance on completion</td><td>{{balanceTotal}}</td></tr>
-        <tr><td>Quote total</td><td>{{quoteTotal}}</td></tr>
+        <tr><td>Quote total</td><td>{{quoteTotal}}</td></tr>{{CREDIT_PAYMENT_ROWS}}
       </table>
     </div>
   </div>
@@ -1704,7 +1753,7 @@ const CUSTOMER_TEMPLATE = `<!DOCTYPE html>
 
   <div class="summary-block no-break">
     <table class="summary-lines">
-      <tr class="total-row"><td>Quote total</td><td>{{quoteTotal}}</td></tr>
+      <tr class="total-row"><td>Quote total</td><td>{{quoteTotal}}</td></tr>{{CREDIT_SUMMARY_ROWS}}
     </table>
     <div class="vat-badge">Haberl Electrical &amp; Solar does not add VAT &mdash; all prices inclusive</div>
   </div>
@@ -1715,7 +1764,7 @@ const CUSTOMER_TEMPLATE = `<!DOCTYPE html>
       <table class="info-table">
         <tr><td>Deposit required (&#9733; items)</td><td><strong>{{depositTotal}}</strong></td></tr>
         <tr><td>Balance on completion</td><td>{{balanceTotal}}</td></tr>
-        <tr><td>Quote total</td><td>{{quoteTotal}}</td></tr>
+        <tr><td>Quote total</td><td>{{quoteTotal}}</td></tr>{{CREDIT_PAYMENT_ROWS}}
       </table>
     </div>
   </div>

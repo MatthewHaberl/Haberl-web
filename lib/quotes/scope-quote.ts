@@ -19,12 +19,11 @@ import {
   type QuoteScope,
 } from './scope'
 import { bomForPackage, computeScopeDeposit, stripOptionalLines } from './scope-bom'
+import { applyCredits, creditViews, type QuoteCredit } from './credits'
 import type {
   ScopeQuoteData, ScopeQuoteLineView, ScopeQuotePackageView, ScopeQuoteSectionView,
   ScopeOptionalExtraView,
 } from './render-scope-quote'
-
-const round2 = (n: number) => Math.round(n * 100) / 100
 
 function rand(n: number): string {
   return `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -121,6 +120,12 @@ export interface ScopeQuoteArgs {
    * takes the standalone prices and the options table off the document.
    */
   allowPartial?: boolean
+  /**
+   * Money already owed to this customer, taken off the bottom of the quote
+   * (migration 126). Never touches a section subtotal or the BOM — the
+   * sections still add up to the price of the work.
+   */
+  credits?: QuoteCredit[]
 }
 
 export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
@@ -131,7 +136,12 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
   const deposit = computeScopeDeposit(bom)
   const depositSections = deposit.items.map((i) => i.name)
   const totalR = bom.totalSellR
-  const balanceR = round2(totalR - deposit.totalR)
+  // Credits come off AFTER the BOM, which is what keeps every section subtotal
+  // honest about the price of the work. With none, `money` returns the same
+  // deposit and balance this function has always produced.
+  const credits = args.credits ?? []
+  const money = applyCredits(totalR, deposit.totalR, credits)
+  const balanceR = money.balanceR
 
   const sections: ScopeQuoteSectionView[] = bom.sections
     .filter((s) => s.lines.some((l) => !l.optional))
@@ -236,8 +246,17 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
     cocIncluded: scope.coc.included,
     quoteTotal: rand(totalR),
     quoteTotalRands: totalR,
-    depositTotal: rand(deposit.totalR),
-    depositTotalRands: deposit.totalR,
+    // Absent (not empty) with no credits, so the document, the golden file and
+    // every quote generated before this existed are byte-identical.
+    ...(credits.length > 0
+      ? {
+          credits: creditViews(credits, money.appliedR),
+          payableTotal: rand(money.payableR),
+          payableTotalRands: money.payableR,
+        }
+      : {}),
+    depositTotal: rand(money.depositR),
+    depositTotalRands: money.depositR,
     balanceTotal: rand(balanceR),
     depositItems: deposit.items,
     // Optional extras never reach procurement/job materials.

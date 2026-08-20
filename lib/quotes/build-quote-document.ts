@@ -31,7 +31,10 @@ import { parseScope, type QuoteScope } from '@/lib/quotes/scope'
 import { scopeToBom, stripOptionalLines } from '@/lib/quotes/scope-bom'
 import { scopeBlockerMessage } from '@/lib/quotes/scope-validate'
 import { buildScopeQuoteData } from '@/lib/quotes/scope-quote'
-import { renderScopeQuote } from '@/lib/quotes/render-scope-quote'
+import {
+  applyCredits, creditViews, grossFiguresFromDocument, parseCredits, type QuoteCredit,
+} from '@/lib/quotes/credits'
+import { renderScopeQuote, type ScopeQuoteData } from '@/lib/quotes/render-scope-quote'
 
 /** The quote_requests columns either engine reads. */
 export interface QuoteRequestForDocument {
@@ -64,6 +67,13 @@ export interface QuoteRequestForDocument {
    * document already offers.
    */
   allow_partial_acceptance?: boolean | null
+  /**
+   * Money already owed to the customer (migration 126) — a deposit they have
+   * paid, a part back under warranty, a reimbursement, a discount. Subtracted
+   * after the BOM, so the sections still state the price of the work. Absent
+   * or empty on every quote that has none, which renders as it always has.
+   */
+  credits?: unknown
 }
 
 /** A validated, priced quote — one engine's parsed input plus its BOM. */
@@ -82,6 +92,13 @@ export interface QuoteDocument {
   generatedQuoteJson: string
   bomSnapshot: unknown
   bom: DesignBom
+  /**
+   * What the customer pays — the BOM total less any credits. Saved as
+   * total_amount, so everything downstream (the accept page, the job, the
+   * emails, finance) reads one figure and it is the real one.
+   */
+  payableTotalR: number
+  /** Deposit still due after credits — saved as deposit_amount. */
   depositTotalR: number
   depositNames: string[]
   complianceBlockers: number
@@ -183,6 +200,8 @@ export interface RenderArgs extends PriceArgs {
 export function renderQuoteDocument(
   { priced, quote, catalog, workTypes, quoteNumber, expiryDays }: RenderArgs,
 ): QuoteDocument {
+  const credits = parseCredits(quote.credits)
+
   if (priced.engine === 'scope') {
     const { scope, bom } = priced
     const scopeData = buildScopeQuoteData({
@@ -191,6 +210,7 @@ export function renderQuoteDocument(
       showEquipmentPhotos: quote.show_equipment_photos !== false,
       showLineItems: quote.quote_version === 'detailed',
       allowPartial: quote.allow_partial_acceptance !== false,
+      credits,
       quoteNumber, expiryDays,
       workType: quote.work_type ?? '',
       workTypeLabel: workTypeLabel(quote.work_type ?? null, workTypes),
@@ -201,6 +221,7 @@ export function renderQuoteDocument(
       // Optional extras stay out of procurement/job materials.
       bomSnapshot: bomToSupplierBom(stripOptionalLines(bom)),
       bom,
+      payableTotalR: scopeData.payableTotalRands ?? scopeData.quoteTotalRands,
       depositTotalR: scopeData.depositTotalRands,
       depositNames: scopeData.depositItems.map((i) => i.name),
       complianceBlockers: 0,
@@ -215,18 +236,107 @@ export function renderQuoteDocument(
     req: quote,
     showEquipmentPhotos: quote.show_equipment_photos !== false,
     showLineItems: quote.quote_version === 'detailed',
+    credits,
     quoteNumber, expiryDays,
     tariffRate: getTariffRateForMunicipality(quote.municipality ?? ''),
     complianceChecks,
   })
   const deposit = computeDeposit(bom)
+  const money = applyCredits(bom.totalSellR, deposit.totalR, credits)
   return {
     html: renderCustomerQuote(quoteData),
     generatedQuoteJson: JSON.stringify(quoteData),
     bomSnapshot: bomToSupplierBom(bom),
     bom,
-    depositTotalR: deposit.totalR,
+    payableTotalR: money.payableR,
+    depositTotalR: money.depositR,
     depositNames: deposit.items.map((i) => i.name),
     complianceBlockers: complianceChecks.filter((c) => c.status === 'blocker').length,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reissue with credits (migration 126)
+//
+// A credit is most often needed on a quote that has ALREADY been issued — the
+// job is done, something came back under warranty, and the customer needs the
+// number in front of them to change. Re-running the generator would re-price
+// the whole thing off today's catalog, so a credit could silently drag six
+// months of supplier increases onto a quote nobody meant to touch.
+//
+// So this never re-prices. It reads the priced document the quote already
+// holds (generated_quote — the exact data that rendered the HTML), applies the
+// credits to it, and re-renders. Everything else on the page is byte-identical
+// because it is literally the same data.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ReissuedDocument {
+  html: string
+  generatedQuoteJson: string
+  /** Net of credits — what total_amount becomes. */
+  payableTotalR: number
+  /** Deposit still due — what deposit_amount becomes. */
+  depositTotalR: number
+}
+
+function rand(n: number): string {
+  return `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/**
+ * Apply credits to an already-generated quote document.
+ *
+ * Returns null when there is nothing to reissue: no saved document, or a legacy
+ * multi-option quote, whose per-tier totals are a different shape than the one
+ * figure a credit comes off. The caller saves the credits either way and tells
+ * the operator to regenerate.
+ */
+export function reissueWithCredits(
+  generatedQuote: unknown,
+  credits: QuoteCredit[],
+): ReissuedDocument | null {
+  if (!generatedQuote) return null
+  let data: Record<string, unknown>
+  try {
+    data = (typeof generatedQuote === 'string' ? JSON.parse(generatedQuote) : generatedQuote) as Record<string, unknown>
+  } catch {
+    return null
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  if (data.type === 'multi-option') return null
+
+  // GROSS figures, never the (already-credited) totals on the row — see
+  // grossFiguresFromDocument. Crediting a credited number compounds.
+  const gross = grossFiguresFromDocument(data)
+  if (!gross) return null
+  const money = applyCredits(gross.grossTotalR, gross.grossDepositR, credits)
+
+  const next: Record<string, unknown> = {
+    ...data,
+    depositTotal: rand(money.depositR),
+    depositTotalRands: money.depositR,
+    balanceTotal: rand(money.balanceR),
+  }
+  if (credits.length > 0) {
+    next.credits = creditViews(credits, money.appliedR)
+    next.payableTotal = rand(money.payableR)
+    next.payableTotalRands = money.payableR
+  } else {
+    // Removing the last credit must leave the document with no trace of one —
+    // an empty credits array would still print a "Total payable" row.
+    delete next.credits
+    delete next.payableTotal
+    delete next.payableTotalRands
+  }
+
+  const html = data.type === 'scope'
+    ? renderScopeQuote(next as unknown as ScopeQuoteData)
+    : renderCustomerQuote(next as unknown as Parameters<typeof renderCustomerQuote>[0])
+
+  return {
+    html,
+    generatedQuoteJson: JSON.stringify(next),
+    payableTotalR: money.payableR,
+    depositTotalR: money.depositR,
   }
 }

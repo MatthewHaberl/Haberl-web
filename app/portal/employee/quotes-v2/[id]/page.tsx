@@ -54,6 +54,13 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
   const { data: linkedJob } = await supabase
     .from('jobs').select('id').eq('quote_request_id', id).maybeSingle()
 
+  // Who last sent it (migration 127). A separate read rather than a PostgREST
+  // embed: sent_by references auth.users, which user_profiles is not joined to
+  // from here, and a missing profile must not fail the page.
+  const { data: sender } = req.sent_by
+    ? await supabase.from('user_profiles').select('full_name').eq('id', req.sent_by).maybeSingle()
+    : { data: null }
+
   // What the customer has actually been sent (W56). Managers only — this is the
   // audit trail, not customer-facing, and it returns [] for a never-sent quote.
   const versions = isManager ? await listQuoteVersions(id) : []
@@ -82,6 +89,7 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
         linkedJobId={linkedJob?.id ?? null}
         engine={workType.engine}
         workType={workType}
+        sentByName={sender?.full_name ?? ''}
       />
     </>
   )

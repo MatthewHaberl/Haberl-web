@@ -1,3 +1,5 @@
+import type { QuoteCredit } from '@/lib/quotes/credits'
+
 export type Role = 'customer' | 'field_worker' | 'manager' | 'admin'
 
 /** A single (role × portal-section) access flag — see migration 060. */
@@ -576,6 +578,15 @@ export interface QuoteRequest {
    * document stops offering parts. Default true.
    */
   allow_partial_acceptance: boolean
+  /**
+   * Money already owed to this customer, taken off what they pay for this job
+   * (migration 126): a deposit already paid, a part back under warranty, a
+   * reimbursement, a goodwill discount. QuoteCredit[] — see
+   * lib/quotes/credits.ts. Positive amounts only; the `kind` decides whether it
+   * comes off the deposit or the balance. Sits OUTSIDE the BOM, so the sections
+   * still add up to the price of the work. Defaults to [].
+   */
+  credits: QuoteCredit[]
   generation_method: QuoteGenerationMethod
   deposit_items: string[]
   deposit_amount: number | null  // cents
@@ -618,6 +629,20 @@ export interface QuoteRequest {
   share_token: string
   expiry_date: string | null
   sent_at: string | null
+  /**
+   * How the last send went out (migration 127): 'email', 'whatsapp' or
+   * 'manual' (link copied / handed over). Null on a quote sent before this was
+   * recorded — it went out, we just don't know which way.
+   */
+  sent_method: 'email' | 'whatsapp' | 'manual' | null
+  /** Who sent it last — distinct from generated_by, who built it (migration 127). */
+  sent_by: string | null
+  /**
+   * Why the quote is being reissued (migration 127). Typed when a sent quote is
+   * regenerated, consumed by the next send — which copies it onto the
+   * quote_versions row and clears it here.
+   */
+  amendment_reason: string | null
   viewed_at: string | null
   accepted_at: string | null
   declined_at: string | null
