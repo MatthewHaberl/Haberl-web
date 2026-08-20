@@ -154,7 +154,13 @@ export function ContingencyPanel({ requestId, raw, status, generatedQuote }: Pro
             <input
               type="checkbox"
               checked={draft.enabled}
-              onChange={(e) => set({ enabled: e.target.checked })}
+              onChange={(e) => set(
+                // Seed the usual allowance when switching it on for the first time,
+                // rather than opening on a form that is enabled and adds R0.00.
+                e.target.checked && draft.percent === 0 && draft.amountR === 0
+                  ? { enabled: true, percent: 5 }
+                  : { enabled: e.target.checked },
+              )}
               className="mt-0.5 h-4 w-4 rounded border-border accent-primary shrink-0"
             />
             <span>
@@ -194,11 +200,17 @@ export function ContingencyPanel({ requestId, raw, status, generatedQuote }: Pro
                         inputMode="decimal"
                         trailingText="%"
                         value={draft.percent || ''}
-                        placeholder="5"
+                        // No numeric placeholder. A greyed-out "5" sitting in an empty
+                        // percentage box reads as a five that is being ignored, and the
+                        // quote then rounds up and adds nothing while appearing to
+                        // carry 5%. Empty must look empty.
+                        placeholder=""
                         onChange={(e) => set({ percent: Number(e.target.value) || 0 })}
                       />
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        5&ndash;10% is the usual allowance on a job with unknowns behind a wall.
+                      <p className={`mt-1 text-xs ${draft.percent > 0 ? 'text-muted-foreground' : 'text-warning'}`}>
+                        {draft.percent > 0
+                          ? '5–10% is the usual allowance on a job with unknowns behind a wall.'
+                          : 'Empty — nothing is being added. Type a percentage; 5–10% is usual on a job with unknowns behind a wall.'}
                       </p>
                     </>
                   ) : draft.basis === 'fixed' ? (
@@ -340,6 +352,14 @@ export function ContingencyPanel({ requestId, raw, status, generatedQuote }: Pro
                       : `${draft.percent}% of ${randZA(preview.baseR)}`}
                   </span>
                   <span className="tabular-nums text-accent">+{randZA(preview.uplift)}</span>
+                </div>
+              )}
+              {preview.uplift === 0 && draft.basis !== 'none' && (
+                <div className="flex justify-between py-0.5">
+                  <span className="text-warning">
+                    {draft.basis === 'fixed' ? 'No amount set' : 'No percentage set'} — nothing added
+                  </span>
+                  <span className="tabular-nums text-warning">+{randZA(0)}</span>
                 </div>
               )}
               {preview.rounding > 0 && (
