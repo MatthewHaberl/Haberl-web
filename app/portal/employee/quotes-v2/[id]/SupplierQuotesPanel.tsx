@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ChevronDown, ChevronRight, ExternalLink, Plus, RefreshCw, Trash2, Upload,
+  ChevronDown, ChevronRight, ExternalLink, Plus, RefreshCw, Tags, Trash2, Upload,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -25,6 +25,11 @@ import {
 import type { SupplierRfqRow } from '@/lib/quotes/supplier-rfq'
 import { SUPPLIER_QUOTES_CHANGED } from './SupplierQuoteLinePicker'
 import { RFQS_CHANGED } from './RfqPanel'
+import { ApplySupplierPricesDialog } from './ApplySupplierPricesDialog'
+import {
+  SUPPLIER_PRICES_STATE, requestClearSupplierPrices, requestSupplierPriceState,
+  type StateDetail,
+} from './supplier-prices-bus'
 
 const rand = (n: number) =>
   `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -51,6 +56,11 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Which supplier quote the "apply prices" review is open on.
+  const [applyingId, setApplyingId] = useState<string | null>(null)
+  // How many prices each document currently has on the quote — published by
+  // whichever builder is on the page, since it owns the quote's live state.
+  const [appliedBy, setAppliedBy] = useState<Record<string, number>>({})
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
@@ -107,6 +117,16 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
       window.dispatchEvent(new CustomEvent(RFQS_CHANGED))
     }
   }
+
+  useEffect(() => {
+    const onState = (e: Event) => {
+      const detail = (e as CustomEvent<StateDetail>).detail
+      setAppliedBy(detail?.countBySupplierQuote ?? {})
+    }
+    window.addEventListener(SUPPLIER_PRICES_STATE, onState)
+    requestSupplierPriceState()
+    return () => window.removeEventListener(SUPPLIER_PRICES_STATE, onState)
+  }, [])
 
   async function upload() {
     const file = fileRef.current?.files?.[0] ?? null
@@ -217,9 +237,12 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
         <div>
           <div className="text-sm font-semibold">Quoted line items</div>
           <p className="text-xs text-muted-foreground">
-            Upload a supplier&rsquo;s quote PDF and its lines are read straight off the document —
-            then pull them into sections as you build. Prices are ex&nbsp;VAT; landed cost =
-            ×&nbsp;1.15. A photo or a scanned quote has to be typed in below.
+            Upload a supplier&rsquo;s quote PDF and its lines are read straight off the document.
+            {' '}<strong className="font-medium text-foreground">Apply prices</strong>{' '}reprices every
+            item on this quote that the document covers, in one go — and tells you which items it
+            doesn&rsquo;t, so you can price those yourself. Or pull single lines into sections as you
+            build. Prices are ex&nbsp;VAT; landed cost = ×&nbsp;1.15. A photo or a scanned quote has
+            to be typed in below.
           </p>
         </div>
 
@@ -254,6 +277,7 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
           const exVatTotal = lines.reduce((sum, l) => sum + l.qty * l.unit_price_r, 0)
           const landedTotal = lines.reduce((sum, l) => sum + l.qty * landedCostR(l.unit_price_r), 0)
           const isCollapsed = collapsed[sq.id] ?? false
+          const applied = appliedBy[sq.id] ?? 0
           const badge = STATUS_BADGE[sq.status]
           const title = [sq.supplier, sq.reference].filter(Boolean).join(' · ') || sq.source_filename || 'Supplier quote'
           return (
@@ -289,7 +313,29 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
                     </select>
                   </label>
                 )}
+                {applied > 0 && (
+                  <Badge variant="success">{applied} price{applied === 1 ? '' : 's'} applied</Badge>
+                )}
                 <div className="ml-auto flex items-center gap-1">
+                  {lines.length > 0 && (
+                    <Button
+                      type="button" variant={applied > 0 ? 'outline' : 'default'} size="sm"
+                      onClick={() => setApplyingId(sq.id)}
+                      title="Reprice every item on this quote that this document covers"
+                    >
+                      <Tags className="h-3.5 w-3.5" />
+                      {applied > 0 ? 'Update prices' : 'Apply prices'}
+                    </Button>
+                  )}
+                  {applied > 0 && (
+                    <Button
+                      type="button" variant="ghost" size="sm"
+                      onClick={() => requestClearSupplierPrices({ supplierQuoteId: sq.id })}
+                      title="Put every line this document repriced back on its catalog price"
+                    >
+                      Undo
+                    </Button>
+                  )}
                   {sq.storage_path && (
                     <Button asChild type="button" variant="ghost" size="icon" className="h-7 w-7" title="Open the original document">
                       <a href={`/api/quotes/${requestId}/supplier-quotes/${sq.id}/file`} target="_blank" rel="noreferrer">
@@ -412,6 +458,13 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
           )
         })}
       </CardContent>
+      {applyingId && (
+        <ApplySupplierPricesDialog
+          requestId={requestId}
+          supplierQuoteId={applyingId}
+          onClose={() => setApplyingId(null)}
+        />
+      )}
     </Card>
   )
 }

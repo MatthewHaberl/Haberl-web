@@ -4,6 +4,8 @@ import {
   createContext, useContext, useReducer, useEffect, useRef, useState, useCallback,
 } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { foldSupplierPriceRequest, useSupplierPriceBridge, type BridgeRequest } from '../supplier-prices-bus'
+import type { SupplierPriceMap } from '@/lib/quotes/supplier-price-match'
 import {
   emptyDesign,
   nodeIdToRef,
@@ -86,6 +88,9 @@ export type DesignAction =
   | { type: 'addQuotedItem'; item: QuotedItem }
   | { type: 'updateQuotedItem'; id: string; patch: Partial<QuotedItem> }
   | { type: 'removeQuotedItem'; id: string }
+  // Prices applied off an uploaded supplier quote (W100) — an updater so the
+  // fold happens against the live design, never a copy captured in the panel.
+  | { type: 'setSupplierPrices'; update: (current: SupplierPriceMap) => SupplierPriceMap }
   // Extra sub-components (item 31)
   | { type: 'addExtraComponent'; extraId: string; kind?: string; label?: string }
   | { type: 'updateExtraComponent'; extraId: string; componentId: string; patch: Partial<ExtraSubComponent> }
@@ -458,6 +463,9 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
     case 'removeQuotedItem':
       return { ...d, quotedItems: (d.quotedItems ?? []).filter((q) => q.id !== action.id) }
 
+    case 'setSupplierPrices':
+      return { ...d, supplierPrices: action.update(d.supplierPrices ?? {}) }
+
     // ── Extra sub-components (item 31) ──────────────────────────────────────────
     case 'addExtraComponent':
       return {
@@ -694,6 +702,16 @@ export function DesignProvider({
   }, [design, canSave, requestId, supabase])
 
   const setStep = useCallback((i: number) => setActiveStep(i), [])
+
+  // Supplier prices applied from the Quoted-line-items panel below the canvas.
+  // The canvas prices everything through designToBom, which reads the map — so
+  // folding it is the whole job here; every total re-derives from it.
+  const handleSupplierPrices = useCallback(
+    (req: BridgeRequest) =>
+      dispatch({ type: 'setSupplierPrices', update: (current) => foldSupplierPriceRequest(current, req) }),
+    [],
+  )
+  useSupplierPriceBridge(design.supplierPrices, handleSupplierPrices)
 
   return (
     <DesignContext.Provider

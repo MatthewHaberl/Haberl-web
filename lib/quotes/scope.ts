@@ -10,6 +10,8 @@
 // discipline as lib/solar/design-quote.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { parseSupplierPrices, type SupplierPriceMap } from './supplier-price-match'
+
 export type ScopeLineKind = 'material' | 'labour' | 'fee'
 export type ScopeLineUnit = 'ea' | 'm' | 'hr' | 'job'
 
@@ -268,6 +270,13 @@ export interface QuoteScope {
    * into a package), and `labour`/`coc` price the bundle.
    */
   packages: ScopePackage[]
+  /**
+   * Prices this quote takes from an uploaded supplier quote instead of the
+   * catalog (W100), keyed by catalog id or SKU. Absent on every quote written
+   * before the feature, which is exactly right: nothing is overridden until a
+   * supplier's document says so.
+   */
+  supplierPrices?: SupplierPriceMap
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -419,6 +428,7 @@ export function parseScope(raw: unknown): QuoteScope | null {
     labour: parseLabour(r.labour, base.labour),
     coc: parseCoc(r.coc, base.coc),
     packages,
+    supplierPrices: parseSupplierPrices(r.supplierPrices),
   }
 }
 

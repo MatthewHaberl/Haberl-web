@@ -8,7 +8,7 @@
 // badge). Generate/Send live in the shared QuoteStatusBar above this component.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
@@ -28,6 +28,11 @@ import { BundlePanel } from './BundlePanel'
 import { ImportQuoteDialog, useImportableQuotes, type ImportableQuote } from './ImportQuoteDialog'
 import { Button } from '@/components/ui/button'
 import { PackagePlus } from 'lucide-react'
+import {
+  foldSupplierPriceRequest, useSupplierPriceBridge, type BridgeRequest,
+} from '../supplier-prices-bus'
+import { catalogKey, lookupSupplierPrice, skuKey } from '@/lib/quotes/supplier-price-match'
+import { useCatalog } from '../design/useCatalog'
 
 /** Pricing context for the builder — markup + labour defaults from Settings. */
 export interface ScopePricing {
@@ -41,6 +46,8 @@ export interface ScopePricing {
   managementR: number
   managementDefault: boolean
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 const DEFAULT_PRICING: ScopePricing = {
   markup: 1.15, labourRateR: 750, dayRateR: 5500, calloutR: 750, cocFeeR: 1500,
@@ -91,6 +98,55 @@ export function ScopeWorkspace({
   const [importing, setImporting] = useState(false)
 
   const importable = useImportableQuotes(requestId, customerId ?? null, customerName ?? '')
+
+  // Prices applied off an uploaded supplier quote (W100). The panel below asks;
+  // the scope is where they live, so the autosave carries them like any edit.
+  //
+  // scopeToBom prices off the map at generate, but this editor shows — and
+  // totals — the numbers ON the line rows. So the same setState stamps every
+  // affected row, and un-stamps it back to the catalog cost when the prices are
+  // taken off again. Both halves stay in step because both read one map.
+  const catalogItems = useCatalog().items
+  const handleSupplierPrices = useCallback((req: BridgeRequest) => {
+    setScope((s) => {
+      const supplierPrices = foldSupplierPriceRequest(s.supplierPrices, req)
+      const touched = req.kind === 'apply'
+        ? new Set(req.matches.map((m) => m.key))
+        : new Set(
+          Object.entries(s.supplierPrices ?? {})
+            .filter(([, v]) => v.supplierQuoteId === req.supplierQuoteId)
+            .map(([k]) => k),
+        )
+      if (touched.size === 0) return { ...s, supplierPrices }
+      const catalogCost = (id: string | null) =>
+        (id ? catalogItems.find((i) => i.id === id)?.cost_rands : undefined) ?? null
+      // What each line cost before any of these prices were applied — the
+      // number an undo puts back on a free-text line.
+      const previous = new Map(
+        Object.entries(s.supplierPrices ?? {}).map(([k, v]) => [k, v.previousUnitCostR]),
+      )
+      return {
+        ...s,
+        supplierPrices,
+        lines: s.lines.map((line) => {
+          if (line.kind !== 'material') return line
+          const key = line.catalogId ? catalogKey(line.catalogId) : skuKey(line.sku)
+          if (!touched.has(key)) return line
+          const quoted = lookupSupplierPrice(supplierPrices, line.catalogId, line.sku)
+          // Undo puts back the catalog cost where there is one, otherwise the
+          // cost the line carried before the first apply.
+          const restored = catalogCost(line.catalogId) ?? previous.get(key) ?? line.unitCostR
+          const cost = quoted ? quoted.unitCostR : (restored > 0 ? restored : line.unitCostR)
+          return {
+            ...line,
+            unitCostR: round2(cost),
+            ...(line.sellOverridden ? {} : { unitSellR: round2(cost * pricing.markup) }),
+          }
+        }),
+      }
+    })
+  }, [catalogItems, pricing.markup])
+  useSupplierPriceBridge(scope.supplierPrices, handleSupplierPrices)
 
   /**
    * Pull the chosen quotes in as packages.

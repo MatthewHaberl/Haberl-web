@@ -9,6 +9,8 @@
 // Pricing rules:
 //   - a line with a catalogId prices from the catalog at cost × markup;
 //     a manual unitSellR wins when sellOverridden
+//   - a price applied from an uploaded supplier quote (scope.supplierPrices,
+//     W100) outranks the catalog cost for that part — on this quote only
 //   - a free-text line with no price → priced:false / status:'no-product' —
 //     it renders as a "Quote" line exactly like the solar path. Never invent
 //     prices.
@@ -27,6 +29,7 @@ import {
   labourAmountR, labourCostR, managementFeeR, packageDisplayLabels, qualifiedSectionName,
   type QuoteScope, type ScopeLine,
 } from './scope'
+import { lookupSupplierPrice, type SupplierPriceMap } from './supplier-price-match'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -57,6 +60,7 @@ function priceScopeLine(
   line: ScopeLine,
   catalog: Map<string, EquipmentCatalogItem>,
   markup: number,
+  supplierPrices?: SupplierPriceMap,
 ): PricedResult {
   const optional = line.optional ? true : undefined
   const base = {
@@ -88,9 +92,14 @@ function priceScopeLine(
     }
   }
 
+  // A price applied off an uploaded supplier quote (W100) outranks the catalog
+  // for THIS quote: it is what the part actually costs on this job, this week.
+  // It never touches the catalog itself — other quotes keep their own prices.
+  const quoted = lookupSupplierPrice(supplierPrices, line.catalogId, line.sku)
+
   if (line.catalogId) {
     const item = catalog.get(line.catalogId)
-    if (!item) {
+    if (!item && !quoted) {
       // Product vanished from the catalog — force a re-pick rather than trusting
       // a stale price. Same policy as the solar path.
       return {
@@ -98,21 +107,23 @@ function priceScopeLine(
         missing: true,
       }
     }
-    const unitCost = item.cost_rands > 0 ? round2(item.cost_rands) : 0
+    const unitCost = quoted
+      ? round2(quoted.unitCostR)
+      : (item && item.cost_rands > 0 ? round2(item.cost_rands) : 0)
     const unitSell = line.sellOverridden && line.unitSellR > 0
       ? round2(line.unitSellR)
       : round2(unitCost * markup)
     if (unitSell <= 0) {
       return {
-        line: unpricedLine({ ...base, sku: line.sku || item.sku, description: line.description || item.description }, 'no-cost'),
+        line: unpricedLine({ ...base, sku: line.sku || item?.sku || '', description: line.description || item?.description || '' }, 'no-cost'),
         missing: false,
       }
     }
     return {
       line: {
         ...base,
-        sku: line.sku || item.sku,
-        description: line.description || item.description,
+        sku: line.sku || item?.sku || '',
+        description: line.description || item?.description || '',
         unitCostR: unitCost,
         unitSellR: unitSell,
         lineCostR: round2(unitCost * line.qty),
@@ -124,10 +135,14 @@ function priceScopeLine(
     }
   }
 
-  // Free-text material line: a typed price stands; no price → "Quote" line.
-  if (line.unitSellR > 0) {
-    const unitCost = round2(Math.max(line.unitCostR, 0))
-    const unitSell = round2(line.unitSellR)
+  // Free-text material line: a supplier's quoted price for that SKU stands, then
+  // a typed price; no price at all → "Quote" line.
+  if (quoted || line.unitSellR > 0) {
+    const unitCost = quoted ? round2(quoted.unitCostR) : round2(Math.max(line.unitCostR, 0))
+    const unitSell = quoted && !(line.sellOverridden && line.unitSellR > 0)
+      ? round2(unitCost * markup)
+      : round2(line.unitSellR)
+    if (unitSell <= 0) return { line: unpricedLine(base, 'no-cost'), missing: false }
     return {
       line: {
         ...base,
@@ -217,7 +232,7 @@ export function scopeToBom(
 
   for (const line of scope.lines) {
     if (line.qty <= 0) continue
-    const { line: priced, missing: isMissing } = priceScopeLine(line, catalog, markup)
+    const { line: priced, missing: isMissing } = priceScopeLine(line, catalog, markup, scope.supplierPrices)
     if (isMissing) missing += 1
     push(priced, (line.packageId && labels.get(line.packageId)) || '')
   }

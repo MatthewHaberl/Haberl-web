@@ -13,6 +13,7 @@ import {
   designBatteryKwh, designToFlow, panelGroupPanels, panelGroupStrings, type SystemDesign,
 } from './system-design'
 import { mountingForGroup, panelDimensionsFrom } from './mounting-bom'
+import { lookupSupplierPrice } from '@/lib/quotes/supplier-price-match'
 
 // Defensive mirror of ProductPicker's custom sentinel (CUSTOM_PREFIX). A finished
 // design should only carry real catalog ids (custom quick-adds become `pending`
@@ -106,12 +107,17 @@ export function designToBom(
     // never leak the raw `custom:` marker into the BOM.
     if (isCustomValue(catalogId)) { unpriced(`unpriced:${section}:${label ?? lines.length}`, '—', customLabel(catalogId) || label || `${section} item`, 'no-product'); return }
     const item = catalog.get(catalogId)
-    if (!item) { missing += 1; unpriced(catalogId, '—', label ? `${label} (product not in catalog)` : '(product not in catalog)', 'product-missing'); return }
-    if (!item.cost_rands || item.cost_rands <= 0) { unpriced(catalogId, item.sku, item.description || label || item.sku, 'no-cost'); return }
-    const unitCostR = item.cost_rands
+    // A price applied off an uploaded supplier quote (W100) outranks the catalog
+    // cost for this quote — the part costs what the supplier says it costs this
+    // week. The catalog itself is untouched; other quotes keep their own prices.
+    const quoted = lookupSupplierPrice(design.supplierPrices, catalogId, item?.sku)
+    if (!item && !quoted) { missing += 1; unpriced(catalogId, '—', label ? `${label} (product not in catalog)` : '(product not in catalog)', 'product-missing'); return }
+    const costR = quoted ? quoted.unitCostR : (item?.cost_rands ?? 0)
+    if (!costR || costR <= 0) { unpriced(catalogId, item?.sku ?? '—', item?.description || label || item?.sku || '', 'no-cost'); return }
+    const unitCostR = costR
     const unitSellR = round2(unitCostR * markup)
     lines.push({
-      section, catalogId, sku: item.sku, description: item.description, qty,
+      section, catalogId, sku: item?.sku ?? '—', description: item?.description ?? label ?? '', qty,
       unitCostR, unitSellR, lineCostR: round2(unitCostR * qty), lineSellR: round2(unitSellR * qty),
       approx: opts.approx, priced: true, status: 'ok',
     })

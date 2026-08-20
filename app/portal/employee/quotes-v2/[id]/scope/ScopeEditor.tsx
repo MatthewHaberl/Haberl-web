@@ -15,7 +15,7 @@ import {
   useEffect, useState,
   type CSSProperties, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction,
 } from 'react'
-import { ArrowDown, ArrowUp, CircuitBoard, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CircuitBoard, FileText, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,7 @@ import {
   SupplierQuoteLinePicker, useSupplierQuoteLines, type PickableSupplierLine,
 } from '../SupplierQuoteLinePicker'
 import { landedCostR, quotedSellR } from '@/lib/quotes/supplier-quotes'
+import { lookupSupplierPrice } from '@/lib/quotes/supplier-price-match'
 import { sectionSuggestions } from '@/lib/quotes/work-types'
 import type { ScopeIssue } from '@/lib/quotes/scope-validate'
 import type { ScopePricing } from './ScopeWorkspace'
@@ -323,6 +324,10 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
   const presets = useSectionPresets()
   // Lines on uploaded supplier quotes (W98) — pickable into any section.
   const supplierLines = useSupplierQuoteLines(requestId)
+  // A line whose cost came from an applied supplier quote (W100) says so, so a
+  // number that no longer follows the catalog is never a silent one.
+  const quotedPrice = (line: ScopeLine) =>
+    lookupSupplierPrice(scope.supplierPrices, line.catalogId, line.sku)
   // Column widths are shared by every section grid on the page.
   const cols = useColumnWidths()
 
@@ -688,7 +693,15 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                       {/* Catalog lines are re-costed from the catalog at generate, so their
                           landed cost is shown, not typed. Free-text and supplier-quoted
                           lines carry their own cost. */}
-                      {line.catalogId ? (
+                      {quotedPrice(line) ? (
+                        <span
+                          className="flex h-8 items-center gap-1 truncate px-1 text-xs font-medium"
+                          title={`Priced off ${[quotedPrice(line)!.supplier, quotedPrice(line)!.reference].filter(Boolean).join(' ') || 'an uploaded supplier quote'} — this quote only`}
+                        >
+                          <FileText className="h-3 w-3 shrink-0 text-primary" />
+                          {rand(line.unitCostR)}
+                        </span>
+                      ) : line.catalogId ? (
                         <span
                           className="flex h-8 items-center truncate px-1 text-xs text-muted-foreground"
                           title="Landed cost from the catalog — re-read when the quote is generated"

@@ -22,6 +22,7 @@ import {
   MIN_BATTERY_KWH_PER_INVERTER_KW,
   type EquipmentCatalogCategory,
 } from './quote-calculator'
+import { parseSupplierPrices, type SupplierPriceMap } from '@/lib/quotes/supplier-price-match'
 
 export const DESIGN_VERSION = 1
 
@@ -1257,6 +1258,12 @@ export interface SystemDesign {
   extras: ExtraComponent[]
   /** Lines pulled from uploaded supplier quotes (W98) — priced at the quoted rate. */
   quotedItems?: QuotedItem[]
+  /**
+   * Prices this quote takes from an uploaded supplier quote instead of the
+   * catalog (W100), keyed by catalog id or SKU. Absent until a supplier's
+   * document is applied, so every older design prices exactly as it did.
+   */
+  supplierPrices?: SupplierPriceMap
   /** Inverter monitoring/comms hardware (item 26). */
   monitoring?: MonitoringDevice[]
   /** Comms/data cabling links (item 30). */
@@ -1313,6 +1320,7 @@ export function emptyDesign(): SystemDesign {
     earthing: { spikeCount: null, spec: 'CU GY 10mm²', electrodes: [], bars: [], conductors: [] },
     extras: [],
     quotedItems: [],
+    supplierPrices: {},
     monitoring: [],
     data: defaultDataConfig(),
     layout: { nodes: {} },
@@ -1487,6 +1495,9 @@ export function parseDesign(raw: unknown): SystemDesign | null {
       qty: Math.max(0, num(q.qty)),
       unitCostR: Math.max(0, num(q.unitCostR)),
     })),
+    // Applied supplier prices (W100) — sanitised the same way, so a hand-edited
+    // save can't put a NaN cost under a part number.
+    supplierPrices: parseSupplierPrices(src.supplierPrices),
     // Backfill combiners saved before the product-driven protection model. The new
     // internals list (item 44) defaults EMPTY; legacy stringConnections stay parseable.
     dcCombiners: (src.dcCombiners ?? []).map((c) => ({
