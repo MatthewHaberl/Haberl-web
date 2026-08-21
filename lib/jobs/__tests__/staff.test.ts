@@ -2,6 +2,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   crewRosterRows,
+  effectiveRateR,
+  repricedRoster,
+  rosterForPay,
+  rosterQuotedCostR,
+  usingQuotedRate,
   quotedPeopleFromScope,
   quotedRosterRows,
   rosterHourlyCostR,
@@ -177,4 +182,69 @@ test('an hourly person with no rate is flagged; a piece worker is not', () => {
     person({ staffId: 'c', costRateR: 85 }),
   ])
   assert.deepEqual(flagged.map((p) => p.staffId), ['a'])
+})
+
+// ── The rate a job actually costs ────────────────────────────────────────────
+
+test('the staff rate wins — it is what the business pays today', () => {
+  assert.equal(effectiveRateR(person({ costRateR: 62.5, quotedCostRateR: 60 })), 62.5)
+  assert.equal(usingQuotedRate(person({ costRateR: 62.5, quotedCostRateR: 60 })), false)
+})
+
+test('with no staff rate, the quote’s rate is what this job costs', () => {
+  const owner = person({ name: 'Matthew', costRateR: 0, quotedCostRateR: 250 })
+  assert.equal(effectiveRateR(owner), 250, 'R0 would make the job look cheaper than it was sold')
+  assert.equal(usingQuotedRate(owner), true)
+})
+
+test('a piece worker still costs zero per hour — their money is staff_payments', () => {
+  const piece = person({ costRateR: 0, quotedCostRateR: 250, payType: 'piece' })
+  assert.equal(effectiveRateR(piece), 0)
+  assert.equal(usingQuotedRate(piece), false)
+})
+
+test('no rate anywhere is zero, and that person is flagged', () => {
+  const nobody = person({ staffId: 'n', costRateR: 0, quotedCostRateR: null })
+  assert.equal(effectiveRateR(nobody), 0)
+  assert.deepEqual(unratedRoster([nobody]).map((p) => p.staffId), ['n'])
+})
+
+test('the roster’s hourly cost includes the quote-rated people', () => {
+  // The exact shape of QUO-2026-013: three crew at their own rates, plus an
+  // owner the quote priced at R250/hr with no rate on his staff record.
+  const roster = [
+    person({ staffId: 'a', costRateR: 62.5, quotedCostRateR: 62.5 }),
+    person({ staffId: 'b', costRateR: 81.25, quotedCostRateR: 81.25 }),
+    person({ staffId: 'c', costRateR: 50, quotedCostRateR: 50 }),
+    person({ staffId: 'd', costRateR: 0, quotedCostRateR: 250 }),
+  ]
+  assert.equal(rosterHourlyCostR(roster), 443.75, 'R193,75 would silently drop the owner')
+})
+
+test('quoted wages are hours x the quoted rate, per person', () => {
+  const roster = [
+    person({ staffId: 'a', quotedHours: 8.5, quotedCostRateR: 62.5 }),
+    person({ staffId: 'b', quotedHours: 8.5, quotedCostRateR: 81.25 }),
+    person({ staffId: 'c', quotedHours: 8.5, quotedCostRateR: 50 }),
+    person({ staffId: 'd', quotedHours: 8.5, quotedCostRateR: 250 }),
+  ]
+  // Pinned to what the quote's own labour block says for QUO-2026-013.
+  assert.equal(rosterQuotedCostR(roster), 3771.88)
+})
+
+test('rosterForPay is what carries the rate into the timesheet', () => {
+  const paid = rosterForPay([
+    person({ staffId: 'a', costRateR: 0, quotedCostRateR: 250 }),
+    person({ staffId: 'b', costRateR: 62.5, quotedCostRateR: 60 }),
+  ])
+  assert.deepEqual(paid.map((p) => p.costRateR), [250, 62.5])
+})
+
+test('a rate that has moved since the quote is flagged, an unchanged one is not', () => {
+  const moved = person({ staffId: 'a', costRateR: 70, quotedCostRateR: 62.5 })
+  const same = person({ staffId: 'b', costRateR: 62.5, quotedCostRateR: 62.5 })
+  // Someone with no staff rate is "using the quoted rate", not "repriced" —
+  // they belong in one message, not both.
+  const noRate = person({ staffId: 'c', costRateR: 0, quotedCostRateR: 250 })
+  assert.deepEqual(repricedRoster([moved, same, noRate]).map((p) => p.staffId), ['a'])
 })

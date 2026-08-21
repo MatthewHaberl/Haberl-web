@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   dueDateFrom,
+  formatCents,
   isOverdue,
   issueBlocker,
   jobBilling,
@@ -273,4 +274,11 @@ test('only an issued, unpaid, past-due invoice is overdue', () => {
   assert.equal(isOverdue(invoice({ due_date: '2026-08-01', status: 'paid' }), today), false)
   assert.equal(isOverdue(invoice({ due_date: '2026-08-01', status: 'void' }), today), false)
   assert.equal(isOverdue(invoice({ due_date: null }), today), false)
+})
+
+test('a credit puts the minus in front of the R, not inside it', () => {
+  // "R-150,00" reads as a typo on a document somebody is being asked to pay.
+  assert.equal(formatCents(-15000), '-R150,00')
+  assert.equal(formatCents(15000), 'R150,00')
+  assert.equal(formatCents(0), 'R0,00')
 })

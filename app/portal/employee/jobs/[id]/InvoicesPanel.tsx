@@ -21,7 +21,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  AlertTriangle, Ban, Check, ExternalLink, Loader2, Mail, Plus, Receipt, Send, Trash2, X,
+  AlertTriangle, Ban, Check, Eye, ExternalLink, Loader2, Mail, Plus, Receipt, Trash2, X,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -232,10 +232,13 @@ export function InvoicesPanel({
         }),
       })
       if (!res.ok) throw new Error(await res.text())
+      const { invoiceId } = await res.json()
       setOpen(false)
       reset()
-      setNotice('Draft invoice raised — check it, then issue it.')
-      router.refresh()
+      // Straight to the document. Raising an invoice and issuing it blind are
+      // two different acts, and the gap between them is where a wrong figure
+      // gets caught.
+      router.push(`/portal/employee/invoices/${invoiceId}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not raise the invoice.')
     } finally {
@@ -265,22 +268,6 @@ export function InvoicesPanel({
     } finally {
       setBusy(null)
     }
-  }
-
-  async function issueInvoice(invoice: Invoice) {
-    const method = invoice.bill_to_email ? 'email' : 'manual'
-    const ok = await confirm({
-      title: `Issue this ${KIND_LABEL[invoice.kind].toLowerCase()} invoice?`,
-      body:
-        `${formatCents(invoice.total_cents)} to ${invoice.bill_to_name}. ` +
-        (method === 'email'
-          ? `It gets a number, the document is frozen, and it goes to ${invoice.bill_to_email}. `
-          : 'It gets a number and the document is frozen — there is no email address on file, so send the link yourself. ') +
-        'After that it can only be voided, not edited.',
-      confirmText: method === 'email' ? 'Issue and send' : 'Issue',
-    })
-    if (!ok) return
-    await act(invoice.id, { action: 'issue', method }, 'issue')
   }
 
   async function voidInvoice(invoice: Invoice) {
@@ -461,20 +448,10 @@ export function InvoicesPanel({
                   <div className="flex items-center gap-1">
                     {invoice.status === 'draft' ? (
                       <>
-                        <Button
-                          size="sm"
-                          variant="accent"
-                          disabled={!!busy}
-                          onClick={() => issueInvoice(invoice)}
-                        >
-                          {busy === `${invoice.id}:issue` ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : invoice.bill_to_email ? (
-                            <Send className="h-3.5 w-3.5" />
-                          ) : (
-                            <Check className="h-3.5 w-3.5" />
-                          )}
-                          Issue
+                        <Button size="sm" variant="accent" asChild>
+                          <Link href={`/portal/employee/invoices/${invoice.id}`}>
+                            <Eye className="h-3.5 w-3.5" /> Check &amp; issue
+                          </Link>
                         </Button>
                         <Button
                           size="sm"
@@ -511,6 +488,11 @@ export function InvoicesPanel({
                             Payment
                           </Button>
                         )}
+                        <Button size="sm" variant="ghost" asChild aria-label="Open the invoice">
+                          <Link href={`/portal/employee/invoices/${invoice.id}`}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </Link>
+                        </Button>
                         <Button size="sm" variant="ghost" asChild aria-label="Open the customer's copy">
                           <Link href={`/i/${invoice.share_token}`} target="_blank">
                             <ExternalLink className="h-3.5 w-3.5" />

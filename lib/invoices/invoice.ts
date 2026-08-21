@@ -55,8 +55,20 @@ export interface InvoiceSummaryRow {
   amount_paid_cents: number
 }
 
-export const formatCents = (cents: number): string =>
-  `R${(cents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+/**
+ * Money, with the sign in front of the R rather than inside it.
+ *
+ * A credit line rendered the naive way reads "R-150,00", which looks like a
+ * typo on a document a customer is being asked to pay. The minus belongs
+ * before the currency, as it does on every bank statement.
+ */
+export const formatCents = (cents: number): string => {
+  const abs = Math.abs(cents / 100).toLocaleString('en-ZA', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return `${cents < 0 ? '-' : ''}R${abs}`
+}
 
 /** Rands typed into a box → cents, without the float. `"1 234,56"` and `"1234.56"` both work. */
 export function randsToCents(input: string | number | null | undefined): number {

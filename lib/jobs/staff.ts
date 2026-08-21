@@ -238,9 +238,51 @@ export function quotedRosterRows(jobId: string, people: QuotedPerson[]): JobStaf
 
 // ── Reading the roster ───────────────────────────────────────────────────────
 
-/** What one hour of this roster costs in wages. */
+/**
+ * What this person's hour costs THIS JOB.
+ *
+ * The staff record wins, because that is what the business actually pays them
+ * today. The quote's rate is the fallback, and it earns that place: a person
+ * the quote priced at R250/hr who has no rate on their staff record — an owner
+ * or a subcontractor who draws no hourly wage — would otherwise cost this job
+ * R0. Booking R0 makes the job look cheaper than it was sold, which is the one
+ * direction a cost figure must never be wrong in.
+ *
+ * A piece worker is still 0: their money comes from staff_payments, agreed per
+ * job, and an hourly figure for them would be counted twice.
+ */
+export function effectiveRateR(person: RosterPerson): number {
+  if (person.payType === 'piece') return 0
+  if (person.costRateR > 0) return person.costRateR
+  return person.quotedCostRateR ?? 0
+}
+
+/** True when this person's cost is only known because the quote said so. */
+export function usingQuotedRate(person: RosterPerson): boolean {
+  return person.payType !== 'piece' && !(person.costRateR > 0) && (person.quotedCostRateR ?? 0) > 0
+}
+
+/**
+ * The roster as the timesheet should price it.
+ *
+ * crewDayEntries() reads `costRateR`, so substituting the effective rate here
+ * is what carries the quote's rate through to the hours a booked day writes —
+ * without teaching the crew arithmetic about rosters.
+ */
+export function rosterForPay(people: RosterPerson[]): CrewPerson[] {
+  return people.map((p) => ({ ...p, costRateR: effectiveRateR(p) }))
+}
+
+/** What one hour of this roster costs — at each person's effective rate. */
 export function rosterHourlyCostR(people: RosterPerson[]): number {
-  return round2(people.reduce((sum, p) => sum + (Number.isFinite(p.costRateR) ? p.costRateR : 0), 0))
+  return round2(people.reduce((sum, p) => sum + effectiveRateR(p), 0))
+}
+
+/** What the QUOTE said an hour of these people costs — the yardstick, per person. */
+export function rosterQuotedCostR(people: RosterPerson[]): number {
+  return round2(
+    people.reduce((sum, p) => sum + (p.quotedHours ?? 0) * (p.quotedCostRateR ?? 0), 0),
+  )
 }
 
 /** Hours the quote promised across the whole roster. */
@@ -248,9 +290,20 @@ export function rosterQuotedHours(people: RosterPerson[]): number {
   return round2(people.reduce((sum, p) => sum + (p.quotedHours ?? 0), 0))
 }
 
-/** People on the roster with no rate — they would cost the job nothing. */
+/**
+ * People on the roster who would cost the job nothing — no live rate AND no
+ * quoted one to fall back on. These are the rows that silently under-state a
+ * job's labour, so the panel says so rather than showing a confident R0.
+ */
 export function unratedRoster(people: RosterPerson[]): RosterPerson[] {
-  return people.filter((p) => p.payType === 'hourly' && !(p.costRateR > 0))
+  return people.filter((p) => p.payType === 'hourly' && effectiveRateR(p) === 0)
+}
+
+/** People whose staff rate has moved since the quote priced them. */
+export function repricedRoster(people: RosterPerson[]): RosterPerson[] {
+  return people.filter(
+    (p) => p.quotedCostRateR != null && p.costRateR > 0 && p.costRateR !== p.quotedCostRateR,
+  )
 }
 
 export const SOURCE_LABEL: Record<RosterSource, string> = {

@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { randsToCents, issueBlocker, type InvoiceLineDraft } from '@/lib/invoices/invoice'
 import { loadInvoiceCompany, loadInvoiceWithLines } from '@/lib/invoices/query'
+import { invoiceDocumentData, loadInvoiceSurroundings } from '@/lib/invoices/document'
 import { renderInvoice } from '@/lib/invoices/render-invoice'
 import { sendInvoiceEmail, sendInvoiceReceiptEmail } from '@/lib/email/invoices'
 import { getBaseUrl } from '@/lib/quotes/server'
-import { workTypeFor } from '@/lib/quotes/work-types'
 import type { Invoice, InvoiceLine } from '@/types/database'
 
 export const runtime = 'nodejs'
@@ -120,6 +120,111 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 }
 
+/**
+ * Adjust a DRAFT before it goes out.
+ *
+ * Lines are replaced wholesale rather than diffed: the set is tiny, and a
+ * delete-then-insert inside one request cannot leave the invoice holding half
+ * of two versions. The header total looks after itself — recalc_invoice_total()
+ * rewrites it from whatever lines end up there.
+ *
+ * Only a draft. An issued invoice would be refused by the guard triggers
+ * anyway; refusing here means the caller gets a sentence instead of a
+ * constraint violation.
+ */
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Response('Unauthorized', { status: 401 })
+
+  const { data: profile } = await supabase
+    .from('user_profiles').select('role').eq('id', user.id).single()
+  if (!profile || !['manager', 'admin'].includes(profile.role)) {
+    return new Response('Forbidden — only managers can change an invoice', { status: 403 })
+  }
+
+  const { data: existing } = await supabase
+    .from('invoices').select('id, status').eq('id', id).maybeSingle()
+  if (!existing) return new Response('Invoice not found', { status: 404 })
+  if (existing.status !== 'draft') {
+    return new Response(
+      'That invoice has been issued — void it and raise a new one rather than editing it',
+      { status: 400 },
+    )
+  }
+
+  const body = await req.json().catch(() => ({}))
+
+  const header: Record<string, unknown> = {}
+  if (['deposit', 'progress', 'final'].includes(String(body.kind))) header.kind = body.kind
+  if (typeof body.issueDate === 'string' && body.issueDate) header.issue_date = body.issueDate
+  if ('dueDate' in body) header.due_date = body.dueDate || null
+  if ('notes' in body) header.notes = String(body.notes ?? '').trim() || null
+  if ('terms' in body) header.terms = String(body.terms ?? '').trim() || null
+  if (typeof body.billToName === 'string' && body.billToName.trim()) {
+    header.bill_to_name = body.billToName.trim()
+  }
+  if ('billToEmail' in body) header.bill_to_email = String(body.billToEmail ?? '').trim() || null
+  if ('billToAddress' in body) header.bill_to_address = String(body.billToAddress ?? '').trim() || null
+
+  if (Object.keys(header).length > 0) {
+    const { error } = await supabase.from('invoices').update(header).eq('id', id)
+    if (error) return new Response(error.message, { status: 400 })
+  }
+
+  if (Array.isArray(body.lines)) {
+    const rows = (body.lines as Record<string, unknown>[])
+      .map((l, index) => {
+        const qty = Number(l.qty) || 1
+        const unitPriceCents = randsToCents(l.unitPriceRands as string)
+        // An amount typed directly wins over qty x rate — a percentage claim
+        // has no honest quantity behind it, and recovering one by division
+        // loses cents.
+        const amountCents =
+          l.amountRands != null && l.amountRands !== ''
+            ? randsToCents(l.amountRands as string)
+            : Math.round(qty * unitPriceCents)
+        return {
+          invoice_id: id,
+          description: String(l.description ?? '').trim(),
+          detail: l.detail ? String(l.detail).trim() || null : null,
+          qty,
+          unit: l.unit ? String(l.unit).trim() || null : null,
+          unit_price_cents: unitPriceCents,
+          amount_cents: amountCents,
+          source: LINE_SOURCES.includes(String(l.source)) ? String(l.source) : 'manual',
+          source_ref: l.sourceRef ? String(l.sourceRef) : null,
+          sort_order: index,
+        }
+      })
+      .filter((r) => r.description.length > 0)
+
+    if (rows.length === 0) {
+      return new Response('An invoice needs at least one line with a description', { status: 400 })
+    }
+
+    // Insert first, delete after — the same discipline the schedule editor
+    // uses. If the insert fails nothing has been lost; if the delete fails the
+    // old rows are still visible and a retry clears them.
+    const { data: inserted, error: insertError } = await supabase
+      .from('invoice_lines').insert(rows).select('id')
+    if (insertError) return new Response(insertError.message, { status: 400 })
+
+    const keep = (inserted ?? []).map((r) => r.id as string)
+    const { error: deleteError } = await supabase
+      .from('invoice_lines').delete().eq('invoice_id', id).not('id', 'in', `(${keep.join(',')})`)
+    if (deleteError) return new Response(deleteError.message, { status: 400 })
+  }
+
+  const refreshed = await loadInvoiceWithLines(supabase, id)
+  return NextResponse.json({ ok: true, totalCents: refreshed?.invoice.total_cents ?? 0 })
+}
+
+const LINE_SOURCES = [
+  'quote_section', 'quote_line', 'job_material', 'labour', 'percentage', 'manual', 'credit',
+]
+
 /** A draft is disposable. Anything issued is a record and is voided, not deleted. */
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -176,24 +281,10 @@ async function issue(
     return new Response('This invoice has no email address to send to', { status: 400 })
   }
 
-  const company = await loadInvoiceCompany(supabase)
-
-  // Work label for the document, from the job behind the invoice.
-  let workLabel: string | null = null
-  let jobTitle: string | null = null
-  if (invoice.job_id) {
-    const { data: job } = await supabase
-      .from('jobs').select('title, work_type').eq('id', invoice.job_id).maybeSingle()
-    jobTitle = job?.title ?? null
-    workLabel = job?.work_type ? (workTypeFor(job.work_type)?.label ?? null) : null
-  }
-
-  let quoteNumber: string | null = null
-  if (invoice.quote_request_id) {
-    const { data: quote } = await supabase
-      .from('quote_requests').select('quote_number').eq('id', invoice.quote_request_id).maybeSingle()
-    quoteNumber = quote?.quote_number ?? null
-  }
+  const [company, around] = await Promise.all([
+    loadInvoiceCompany(supabase),
+    loadInvoiceSurroundings(supabase, invoice),
+  ])
 
   // Number LAST of the read steps: everything above can fail without consuming
   // one. From here on a failure leaves a gap, so nothing else is allowed to
@@ -203,32 +294,17 @@ async function issue(
     return new Response(numberError?.message ?? 'Could not allocate an invoice number', { status: 500 })
   }
 
+  // Through the SAME builder the preview used, so what was checked on screen is
+  // what gets frozen — only the number is different, and only because a draft
+  // has not consumed one.
+  // `invoice` is still status 'draft' in memory here — the row has not been
+  // updated yet — so both draft-only fields have to be overridden or the
+  // ISSUED document would print "DRAFT" and tell the customer their reference
+  // is still coming.
   const documentHtml = renderInvoice({
+    ...invoiceDocumentData(invoice, lines, company, around),
     invoiceNumber: number as string,
-    kind: invoice.kind,
-    issueDate: invoice.issue_date,
-    dueDate: invoice.due_date,
-    billToName: invoice.bill_to_name,
-    billToEmail: invoice.bill_to_email,
-    billToPhone: invoice.bill_to_phone,
-    billToAddress: invoice.bill_to_address,
-    siteAddress: invoice.site_address,
-    quoteNumber,
-    workLabel,
-    lines: drafts.map((l) => ({
-      description: l.description,
-      detail: l.detail,
-      qty: l.qty,
-      unit: l.unit,
-      unitPriceCents: l.unitPriceCents,
-      amountCents: l.amountCents,
-    })),
-    totalCents: invoice.total_cents,
-    amountPaidCents: invoice.amount_paid_cents,
-    notes: invoice.notes,
-    terms: invoice.terms ?? company.invoiceTerms,
-    banking: company.banking,
-    company: { name: company.name, phone: company.phone, email: company.email, site: company.site },
+    draft: false,
   })
 
   const { error } = await supabase
@@ -251,7 +327,7 @@ async function issue(
       const result = await sendInvoiceEmail(
         { ...invoice, invoice_number: number as string },
         getBaseUrl(),
-        { banking: company.banking, jobTitle },
+        { banking: company.banking, jobTitle: around.jobTitle },
       )
       emailSent = result.sent
       emailError = result.error ?? null

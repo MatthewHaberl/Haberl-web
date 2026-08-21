@@ -24,7 +24,7 @@ import {
   type WorkingHours,
 } from '@/lib/jobs/schedule'
 import { crewDayEntries, type CrewPerson, type CrewWithPeople } from '@/lib/crews/crews'
-import type { RosterPerson } from '@/lib/jobs/staff'
+import { rosterForPay, type RosterPerson } from '@/lib/jobs/staff'
 import type { JobScheduleSlot } from '@/types/database'
 
 interface StaffOption { id: string; full_name: string }
@@ -216,7 +216,10 @@ export function SchedulePanel({
     }
 
     const dayCrew = slot.crewId ? crews.find((c) => c.id === slot.crewId) ?? null : null
-    const people: CrewPerson[] = dayCrew ? dayCrew.people : roster
+    // rosterForPay substitutes each person's EFFECTIVE rate — their staff rate,
+    // or the one the quote priced them at when they have none. Without it a
+    // person the quote sold at R250/hr books the day at R0.
+    const people: CrewPerson[] = dayCrew ? dayCrew.people : rosterForPay(roster)
     const note = dayCrew ? `${dayCrew.name} on site` : 'On site'
 
     if (people.length === 0) {

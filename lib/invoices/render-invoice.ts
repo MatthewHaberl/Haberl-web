@@ -38,6 +38,12 @@ export interface InvoiceDocumentData {
   /** The quote this invoice bills against — the customer's own reference. */
   quoteNumber?: string | null
   workLabel?: string | null
+  /**
+   * Rendered as a preview of a draft. The number has not been allocated yet, so
+   * anything that would otherwise print one says what will happen instead of
+   * printing a placeholder where a reference belongs.
+   */
+  draft?: boolean
   lines: InvoiceDocumentLine[]
   totalCents: number
   amountPaidCents: number
@@ -281,8 +287,12 @@ function bankingPanel(data: InvoiceDocumentData): string {
         ${row('Account type', b.account_type)}
       </table>
       <div class="reference">
-        Use <strong>${escapeHtml(data.invoiceNumber)}</strong> as your payment reference so we can
-        match it to your account straight away.
+        ${
+          data.draft
+            ? 'The invoice number is allocated when this is issued &mdash; use it as your payment reference so we can match the money to your account straight away.'
+            : `Use <strong>${escapeHtml(data.invoiceNumber)}</strong> as your payment reference so we can
+        match it to your account straight away.`
+        }
       </div>
     </div>`
 }

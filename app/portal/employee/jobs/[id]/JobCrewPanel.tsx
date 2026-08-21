@@ -32,8 +32,12 @@ import {
 } from '@/lib/crews/crews'
 import {
   SOURCE_LABEL,
+  repricedRoster,
   rosterHourlyCostR,
+  rosterQuotedCostR,
   rosterQuotedHours,
+  unratedRoster,
+  usingQuotedRate,
   type RosterPerson,
 } from '@/lib/jobs/staff'
 
@@ -84,6 +88,9 @@ export function JobCrewPanel({
   // Only crew-priced quotes know a real wage cost — see loadQuotedLabour.
   const variance = quoted?.fromCrew ? labourVariance(quoted, actual) : null
   const quotedHours = rosterQuotedHours(roster)
+  const quotedCostR = rosterQuotedCostR(roster)
+  const unrated = unratedRoster(roster)
+  const repriced = repricedRoster(roster)
 
   const onRoster = new Set(roster.map((p) => p.staffId))
   const addable = allStaff.filter((s) => !onRoster.has(s.id))
@@ -292,13 +299,27 @@ export function JobCrewPanel({
                 <Badge variant={p.source === 'quoted' ? 'accent' : 'outline'}>
                   {SOURCE_LABEL[p.source]}
                 </Badge>
-                <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                  {p.payType === 'piece'
-                    ? 'Piece work'
-                    : p.costRateR > 0
-                      ? `${rand(p.costRateR)}/hr`
-                      : 'No rate set'}
+                <span className="ml-auto text-right text-xs tabular-nums text-muted-foreground">
+                  {p.payType === 'piece' ? (
+                    'Piece work'
+                  ) : usingQuotedRate(p) ? (
+                    // No rate on their staff record, but the quote priced them.
+                    // Show whose number this is — it is the only reason the job
+                    // does not cost R0 for this person.
+                    <span className="text-accent">{rand(p.quotedCostRateR ?? 0)}/hr quoted</span>
+                  ) : p.costRateR > 0 ? (
+                    `${rand(p.costRateR)}/hr`
+                  ) : (
+                    'No rate set'
+                  )}
                   {p.quotedHours != null && ` · ${hoursText(p.quotedHours)} quoted`}
+                  {/* The quote priced them at something else — the job's margin
+                      moved after it was sold, and only this row can say so. */}
+                  {p.quotedCostRateR != null && p.costRateR > 0 && p.costRateR !== p.quotedCostRateR && (
+                    <span className="block text-[11px] text-warning">
+                      quoted at {rand(p.quotedCostRateR)}/hr
+                    </span>
+                  )}
                 </span>
                 {canEdit && (
                   <div className="flex items-center gap-1">
@@ -383,11 +404,18 @@ export function JobCrewPanel({
               </>
             ) : quotedHours > 0 ? (
               <>
-                <Figure label="Quoted hours" value={hoursText(quotedHours)} sub="From the roster" />
                 <Figure
-                  label={actual.hours > quotedHours ? 'Over the quote' : 'Left in the quote'}
-                  value={hoursText(Math.abs(quotedHours - actual.hours))}
-                  tone={actual.hours > quotedHours ? 'bad' : 'good'}
+                  label="Quoted wages"
+                  value={rand(quotedCostR)}
+                  sub={`${hoursText(quotedHours)} at the quote's rates`}
+                />
+                <Figure
+                  label={actual.costR > quotedCostR ? 'Over the quote' : 'Under the quote'}
+                  value={rand(Math.abs(quotedCostR - actual.costR))}
+                  tone={actual.costR > quotedCostR ? 'bad' : 'good'}
+                  sub={`${hoursText(Math.abs(quotedHours - actual.hours))} ${
+                    actual.hours > quotedHours ? 'over' : 'left'
+                  }`}
                 />
               </>
             ) : (
@@ -402,6 +430,22 @@ export function JobCrewPanel({
             <p className="mt-2 text-[11px] text-muted-foreground">
               No hours logged yet. Confirm a booked day below and everyone on this list gets a
               timesheet entry at their own rate.
+            </p>
+          )}
+          {unrated.length > 0 && (
+            <p className="mt-2 text-[11px] text-warning">
+              {unrated.map((p) => p.name).join(', ')}{' '}
+              {unrated.length === 1 ? 'has' : 'have'} no rate — on the staff record or the quote — so
+              a booked day costs this job nothing for {unrated.length === 1 ? 'them' : 'them'}. Set a
+              rate under Staff, or the labour on this job reads lower than it is.
+            </p>
+          )}
+          {repriced.length > 0 && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {repriced.map((p) => p.name).join(', ')}{' '}
+              {repriced.length === 1 ? 'earns' : 'earn'} a different rate now than when this job was
+              quoted. Hours are booked at what they earn today — the quoted figure above is what was
+              sold.
             </p>
           )}
         </div>
