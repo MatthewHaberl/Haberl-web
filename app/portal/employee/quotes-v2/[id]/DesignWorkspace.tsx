@@ -228,6 +228,10 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, s
           showPhotos={req.show_equipment_photos !== false}
           detailed={req.quote_version === 'detailed'}
           allowPartial={req.allow_partial_acceptance !== false}
+          pricingDisclosure={
+            req.pricing_disclosure === 'ex_vat' || req.pricing_disclosure === 'open_book'
+              ? req.pricing_disclosure : 'none'
+          }
           expiryDate={req.expiry_date ?? null}
           sentAt={req.sent_at ?? null}
           sentMethod={req.sent_method ?? null}

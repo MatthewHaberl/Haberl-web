@@ -20,10 +20,16 @@ import {
 } from './scope'
 import { bomForPackage, computeScopeDeposit, stripOptionalLines } from './scope-bom'
 import { applyCredits, creditViews, type QuoteCredit } from './credits'
+import {
+  bomSellExVatR, lineSellExVatR, lineSupplierExVat, sectionSellExVatR,
+  type PricingDisclosure,
+} from './quote-cost'
 import type {
   ScopeQuoteData, ScopeQuoteLineView, ScopeQuotePackageView, ScopeQuoteSectionView,
   ScopeOptionalExtraView,
 } from './render-scope-quote'
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 function rand(n: number): string {
   return `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -79,17 +85,29 @@ export function equipmentPhotosFromScope(
  * cost or the markup that produced it, and an unpriced line says "Quote" rather
  * than a zero — the same word the section subtotal uses for it.
  */
-function lineViews(lines: BomLine[]): ScopeQuoteLineView[] {
+function lineViews(lines: BomLine[], disclosure: PricingDisclosure): ScopeQuoteLineView[] {
   return lines
     .filter((l) => !l.optional)
-    .map((l) => ({
-      description: l.description.trim() || l.sku || 'Item',
-      qty: l.qty,
-      // A single item's unit price is its line total — printing both says the
-      // same number twice.
-      unit: l.priced && l.qty !== 1 ? rand(l.unitSellR) : '',
-      amount: l.priced ? rand(l.lineSellR) : 'Quote',
-    }))
+    .map((l) => {
+      // Open book: the supplier's own ex-VAT price for one, and what we add on
+      // top. Only ever built when the quote was set to show it.
+      const supplier = disclosure === 'open_book' ? lineSupplierExVat(l) : null
+      return {
+        description: l.description.trim() || l.sku || 'Item',
+        qty: l.qty,
+        // A single item's unit price is its line total — printing both says the
+        // same number twice.
+        unit: l.priced && l.qty !== 1 ? rand(l.unitSellR) : '',
+        amount: l.priced ? rand(l.lineSellR) : 'Quote',
+        ...(disclosure && l.priced ? { amountExVat: rand(lineSellExVatR(l)) } : {}),
+        ...(supplier
+          ? {
+              supplier: `Supplier ${rand(supplier.unitExVatR)} excl. VAT each`
+                + ` · we add ${supplier.markupPct.toFixed(1)}%`,
+            }
+          : {}),
+      }
+    })
 }
 
 export interface ScopeQuoteArgs {
@@ -126,6 +144,12 @@ export interface ScopeQuoteArgs {
    * sections still add up to the price of the work.
    */
   credits?: QuoteCredit[]
+  /**
+   * How much of the pricing the customer is shown (migration 131). Default
+   * null — prices only, which is every quote sent before this existed and
+   * still the document almost every customer should get.
+   */
+  pricingDisclosure?: PricingDisclosure
 }
 
 export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
@@ -142,18 +166,36 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
   const credits = args.credits ?? []
   const money = applyCredits(totalR, deposit.totalR, credits)
   const balanceR = money.balanceR
+  // Ex-VAT twins of the same three figures (migration 131). Only the deposit
+  // can shed the full 15%, because computeScopeDeposit bills material lines
+  // and nothing else. A credit is money owed back rather than a price, so it
+  // comes off both columns unchanged — which is what makes deposit + balance
+  // still add up to the payable total in the ex-VAT column too.
+  const totalExVatR = bomSellExVatR(bom)
+  const creditsOffDepositR = round2(deposit.totalR - money.depositR)
+  const depositExVatR = round2(deposit.totalExVatR - creditsOffDepositR)
+  const payableExVatR = round2(totalExVatR - money.appliedR)
+
+  // Absent (not zero) unless the quote states ex-VAT figures, so a quote sent
+  // without the setting renders exactly the document it always has — which is
+  // what the golden file pins and what every already-sent quote must keep.
+  const disclosure = args.pricingDisclosure ?? null
 
   const sections: ScopeQuoteSectionView[] = bom.sections
     .filter((s) => s.lines.some((l) => !l.optional))
-    .map((s) => ({
-      name: s.name,
-      detail: sectionDetail(s.lines.filter((l) => !l.optional).map((l) => l.description)),
-      subtotal: rand(s.sellR),
-      subtotalRands: s.sellR,
-      toQuote: s.needsPricing,
-      deposit: depositSections.includes(s.name),
-      ...(args.showLineItems ? { lines: lineViews(s.lines) } : {}),
-    }))
+    .map((s) => {
+      const exVatR2 = disclosure ? sectionSellExVatR(s) : 0
+      return {
+        name: s.name,
+        detail: sectionDetail(s.lines.filter((l) => !l.optional).map((l) => l.description)),
+        subtotal: rand(s.sellR),
+        subtotalRands: s.sellR,
+        toQuote: s.needsPricing,
+        deposit: depositSections.includes(s.name),
+        ...(args.showLineItems ? { lines: lineViews(s.lines, disclosure) } : {}),
+        ...(disclosure ? { subtotalExVat: rand(exVatR2), subtotalExVatRands: exVatR2 } : {}),
+      }
+    })
 
   // Work packages: each one's sections, and its own price bought alone. The
   // BOM already carries the package a section belongs to, so this is a regroup
@@ -188,6 +230,13 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
       sections: byPackage.get(name) ?? [],
       ownTotal: rand(own),
       ownTotalRands: own,
+      // The standalone price with no VAT in it. `own` is priced from the scope
+      // (its own visit, its own certificate), so the VAT is taken out by
+      // subtracting what sits inside ITS materials — never by dividing a total
+      // that is mostly labour.
+      ...(disclosure
+        ? { ownTotalExVat: rand(round2(own - (ownBom.totalSellR - bomSellExVatR(ownBom)))) }
+        : {}),
       depositItems: ownDeposit.items,
       depositTotalRands: ownDeposit.totalR,
       supplierBom: bomToSupplierBom(stripOptionalLines(ownBom)),
@@ -246,6 +295,20 @@ export function buildScopeQuoteData(args: ScopeQuoteArgs): ScopeQuoteData {
     cocIncluded: scope.coc.included,
     quoteTotal: rand(totalR),
     quoteTotalRands: totalR,
+    // Every headline figure restated with no VAT in it. The deposit is
+    // material lines only (see computeScopeDeposit), so it sheds the full 15%;
+    // the balance is what is left of the ex-VAT total after it, which is where
+    // the labour that never carried VAT ends up. Credits are money owed back,
+    // not a price, so they come off both columns unchanged.
+    ...(disclosure
+      ? {
+          pricingDisclosure: disclosure,
+          quoteTotalExVat: rand(totalExVatR),
+          depositTotalExVat: rand(depositExVatR),
+          balanceTotalExVat: rand(round2(payableExVatR - depositExVatR)),
+          ...(credits.length > 0 ? { payableTotalExVat: rand(payableExVatR) } : {}),
+        }
+      : {}),
     // Absent (not empty) with no credits, so the document, the golden file and
     // every quote generated before this existed are byte-identical.
     ...(credits.length > 0

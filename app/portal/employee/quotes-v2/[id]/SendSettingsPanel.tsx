@@ -27,6 +27,31 @@ import { CollapsibleSection } from '@/components/ui/collapsible-section'
 import type { QuoteRequestStatus } from '@/types/database'
 
 type SentMethod = 'email' | 'whatsapp' | 'manual' | null
+type Disclosure = 'none' | 'ex_vat' | 'open_book'
+
+/**
+ * How much of the pricing behind the quote the customer is shown
+ * (migration 131). Three levels rather than a switch, because the middle one
+ * gives away nothing (the same prices, restated with no VAT in them) and the
+ * last one shows the customer our margin on every line.
+ */
+const DISCLOSURE: { key: Disclosure; label: string; hint: string }[] = [
+  {
+    key: 'none',
+    label: 'Prices only',
+    hint: 'What every customer gets. One set of figures and the note that no VAT is added.',
+  },
+  {
+    key: 'ex_vat',
+    label: 'Also show every amount excl. VAT',
+    hint: 'Each line, subtotal and total restated with the 15% supplier VAT taken out of the materials — for a customer who works in trade prices. Shows nothing about what we pay.',
+  },
+  {
+    key: 'open_book',
+    label: 'Open book — show supplier prices and our markup',
+    hint: 'The above, plus what the supplier charges us ex-VAT for each part and the percentage we add. They will see your margin on every line.',
+  },
+]
 
 interface Props {
   requestId: string
@@ -36,6 +61,7 @@ interface Props {
   showPhotos: boolean
   detailed: boolean
   allowPartial: boolean
+  pricingDisclosure: Disclosure
   expiryDate: string | null
   sentAt: string | null
   sentMethod: SentMethod
@@ -70,6 +96,7 @@ export function SendSettingsPanel(props: Props) {
   const [showPhotos, setShowPhotos] = useState(props.showPhotos)
   const [detailed, setDetailed] = useState(props.detailed)
   const [allowPartial, setAllowPartial] = useState(props.allowPartial)
+  const [disclosure, setDisclosure] = useState<Disclosure>(props.pricingDisclosure)
   const [expiry, setExpiry] = useState(expiryDate ?? '')
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
@@ -124,6 +151,21 @@ export function SendSettingsPanel(props: Props) {
       { allow_partial_acceptance: !next },
       () => setAllowPartial(next),
       next ? 'Quote is now all-or-nothing' : 'Customer may take one package',
+    )
+  }
+
+  function setPricingDisclosure(next: Disclosure) {
+    const previous = disclosure
+    setDocumentDirty(true)
+    setDisclosure(next)
+    void save(
+      { pricing_disclosure: next },
+      () => setDisclosure(previous),
+      next === 'none'
+        ? 'Prices only'
+        : next === 'ex_vat'
+          ? 'Excl. VAT figures will show on the document'
+          : 'Open book — supplier prices and markup will show',
     )
   }
 
@@ -185,6 +227,38 @@ export function SendSettingsPanel(props: Props) {
                 !allowPartial, (n) => toggle('allOrNothing', n),
                 'All or nothing',
                 'The customer can only accept the whole quote. Standalone prices and the options table come off, and the accept page refuses a single package.',
+              )}
+
+              {/* Scope quotes only — the solar document is a different template
+                  and has no ex-VAT column yet, so offering the choice there
+                  would be a setting that silently does nothing. */}
+              {!isSolar && (
+                <div className="space-y-2 border-t border-border pt-3">
+                  <div className="text-sm text-foreground">Pricing shown</div>
+                  {DISCLOSURE.map((d) => (
+                    <label key={d.key} className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`pricing-disclosure-${requestId}`}
+                        checked={disclosure === d.key}
+                        onChange={() => setPricingDisclosure(d.key)}
+                        className="mt-0.5 h-4 w-4 border-border accent-primary shrink-0"
+                      />
+                      <span>
+                        <span className={`text-sm ${d.key === 'open_book' && disclosure === 'open_book'
+                          ? 'text-warning' : 'text-foreground'}`}>{d.label}</span>
+                        <span className="block text-xs text-muted-foreground">{d.hint}</span>
+                      </span>
+                    </label>
+                  ))}
+                  {disclosure === 'open_book' && (
+                    <p className="flex items-start gap-1.5 text-xs text-warning">
+                      <TriangleAlert className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      This customer will see what every part costs you and what you add. Preview the
+                      document before sending it.
+                    </p>
+                  )}
+                </div>
               )}
 
               {issued && (

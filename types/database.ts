@@ -580,6 +580,16 @@ export interface QuoteRequest {
    */
   allow_partial_acceptance: boolean
   /**
+   * How much of the pricing BEHIND the quote the customer is shown
+   * (migration 131). 'none' = prices only, the default and what every quote
+   * has always shown. 'ex_vat' = every amount also stated with no VAT in it,
+   * for a customer who works in ex-VAT numbers. 'open_book' = also the
+   * supplier's ex-VAT price and our markup, line by line — that one shows a
+   * customer our margin, which is why it is a level of its own. Applies on the
+   * next generate.
+   */
+  pricing_disclosure: 'none' | 'ex_vat' | 'open_book'
+  /**
    * Money already owed to this customer, taken off what they pay for this job
    * (migration 126): a deposit already paid, a part back under warranty, a
    * reimbursement, a goodwill discount. QuoteCredit[] — see

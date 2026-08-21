@@ -30,6 +30,7 @@ import {
   type QuoteScope, type ScopeLine,
 } from './scope'
 import { lookupSupplierPrice, type SupplierPriceMap } from './supplier-price-match'
+import { lineSellExVatR } from './quote-cost'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -324,17 +325,27 @@ export function scopeToBom(
  * generated Labour/CoC lines into the deposit whenever a material line lands
  * in the default 'Labour'/'Compliance' sections.
  */
-export function computeScopeDeposit(bom: DesignBom): { items: { name: string; amountRands: number }[]; totalR: number } {
+export function computeScopeDeposit(
+  bom: DesignBom,
+): { items: { name: string; amountRands: number }[]; totalR: number; totalExVatR: number } {
   const items: { name: string; amountRands: number }[] = []
+  // The ex-VAT deposit (migration 131) is summed from the same lines rather
+  // than divided out of the total afterwards. Rounding a lump lands a cent
+  // away from the sum of the sections, and on a document that prints both, one
+  // cent is the difference between arithmetic the customer can follow and a
+  // balance that doesn't add up.
+  let exVatR = 0
   for (const s of bom.sections) {
-    const depositR = round2(
-      s.lines
-        .filter((l) => l.kind === 'material' && !l.optional && l.priced)
-        .reduce((t, l) => t + l.lineSellR, 0),
-    )
+    const lines = s.lines.filter((l) => l.kind === 'material' && !l.optional && l.priced)
+    const depositR = round2(lines.reduce((t, l) => t + l.lineSellR, 0))
+    exVatR += lines.reduce((t, l) => t + lineSellExVatR(l), 0)
     if (depositR > 0) items.push({ name: s.name, amountRands: depositR })
   }
-  return { items, totalR: round2(items.reduce((t, i) => t + i.amountRands, 0)) }
+  return {
+    items,
+    totalR: round2(items.reduce((t, i) => t + i.amountRands, 0)),
+    totalExVatR: round2(exVatR),
+  }
 }
 
 /**

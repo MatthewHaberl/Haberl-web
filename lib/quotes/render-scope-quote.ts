@@ -29,6 +29,17 @@ export interface ScopeQuoteLineView {
   unit: string
   /** Formatted line total, or 'Quote' when unpriced. */
   amount: string
+  /**
+   * The same line total with no VAT in it (migration 131, `ex_vat` and above).
+   * Absent on every quote sent without the setting, which is what keeps those
+   * documents byte-identical.
+   */
+  amountExVat?: string
+  /**
+   * Open-book only: what the supplier charges us for one of these ex-VAT, and
+   * what we add. Never present on any other setting.
+   */
+  supplier?: string
 }
 
 export interface ScopeQuoteSectionView {
@@ -46,6 +57,9 @@ export interface ScopeQuoteSectionView {
    * simplified, which is what every quote generated before W100 carries.
    */
   lines?: ScopeQuoteLineView[]
+  /** Subtotal with no VAT in it — line by line, never the subtotal / 1.15. */
+  subtotalExVat?: string
+  subtotalExVatRands?: number
 }
 
 /**
@@ -62,6 +76,8 @@ export interface ScopeQuotePackageView {
   /** What it costs bought on its own: its work, its visit, its CoC. */
   ownTotal: string
   ownTotalRands: number
+  /** The same, with no VAT in it. */
+  ownTotalExVat?: string
   /** Deposit if this package alone is accepted — its material lines. */
   depositItems: DepositItem[]
   depositTotalRands: number
@@ -125,6 +141,18 @@ export interface ScopeQuoteData {
   allowPartial?: boolean
   optionalExtras: ScopeOptionalExtraView[]
   exclusions: string[]
+  /**
+   * Pricing transparency this quote was sent at (migration 131). Absent = the
+   * document every quote has always had. 'ex_vat' adds an "Excl. VAT" figure
+   * beside every amount; 'open_book' adds the supplier's ex-VAT price and our
+   * markup under each priced line as well.
+   */
+  pricingDisclosure?: 'ex_vat' | 'open_book'
+  /** Every headline figure with no VAT in it — present with pricingDisclosure. */
+  quoteTotalExVat?: string
+  payableTotalExVat?: string
+  depositTotalExVat?: string
+  balanceTotalExVat?: string
   cocIncluded: boolean
   /** The price of the WORK — what the sections add up to. Credits never touch it. */
   quoteTotal: string
@@ -327,6 +355,21 @@ const SCOPE_CSS = `
   .bom-table td.right, .bom-table th.right { text-align: right; font-variant-numeric: tabular-nums; }
   .bom-table .subtitle { font-size: 11px; color: var(--muted-fg); margin-top: 3px; line-height: 1.5; }
   .bom-table .star { color: var(--accent-ink); font-weight: 600; }
+  /* Ex-VAT column and sub-lines (migration 131) — present only when the quote
+     was sent with pricing disclosure on. Quieter than the payable figure
+     everywhere it appears: it is a reference, never the amount owed. */
+  .bom-table td.ex-vat, .bom-table th.ex-vat { color: var(--muted-fg); font-weight: 400; }
+  .bom-table .supplier-cost { color: var(--accent-ink); }
+  .ex-vat-note {
+    display: block; margin-top: 2px;
+    font-size: 10.5px; font-weight: 400; color: var(--muted-fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .vat-note { display: block; margin-top: 6px; font-weight: 400; line-height: 1.5; text-transform: none; letter-spacing: 0; }
+  /* The summary block is ink — its sub-lines have to be light, not muted grey,
+     and the big serif total must not drag its ex-VAT twin up to 27px. */
+  .summary-lines .ex-vat-note { color: rgba(255,255,255,0.5); font-family: var(--sans); letter-spacing: 0; }
+  .summary-lines .total-row td .ex-vat-note { font-size: 11px; }
   .bom-table .subtotal-row { background: none; font-weight: 600; }
   .bom-table .subtotal-row td {
     color: var(--ink);
@@ -547,6 +590,14 @@ function sumSubtotals(sections: ScopeQuoteSectionView[]): number {
   return Math.round(sections.reduce((t, s) => t + (s.subtotalRands || 0), 0) * 100) / 100
 }
 
+/** The same sum with no VAT in it, or '' when this quote doesn't state one. */
+function sumSubtotalsExVat(sections: ScopeQuoteSectionView[]): string {
+  if (!sections.some((x) => x.subtotalExVatRands !== undefined)) return ''
+  return rand(
+    Math.round(sections.reduce((t, x) => t + (x.subtotalExVatRands || 0), 0) * 100) / 100,
+  )
+}
+
 // ── Credits (migration 126) ──────────────────────────────────────────────────
 //
 // A quote with no credits must render byte-for-byte the document it always
@@ -568,16 +619,28 @@ function payableTotal(data: ScopeQuoteData): string {
  * is subtracted by name, and the big number becomes what they actually pay —
  * because that is the figure they will act on.
  */
+/**
+ * An amount with its no-VAT twin beneath it (migration 131).
+ *
+ * A sub-line rather than a column: the summary and payment tables are
+ * two-column label/value tables shared with every other quote, and a third
+ * column would restructure a document that is otherwise unchanged.
+ */
+function withExVat(amount: string, exVat?: string): string {
+  return `${escapeHtml(amount)}${
+    exVat ? `<span class="ex-vat-note">${escapeHtml(exVat)} excl. VAT</span>` : ''}`
+}
+
 function summaryLines(data: ScopeQuoteData): string {
   if (!hasCredits(data)) {
     return `
-      <tr class="total-row"><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>`
+      <tr class="total-row"><td>Quote total</td><td>${withExVat(data.quoteTotal, data.quoteTotalExVat)}</td></tr>`
   }
   const rows = (data.credits ?? []).map((c) => `
       <tr class="credit-row"><td>${escapeHtml(c.label)}</td><td>${escapeHtml(c.amount)}</td></tr>`).join('')
   return `
-      <tr><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>${rows}
-      <tr class="total-row divider"><td>Total payable</td><td>${escapeHtml(payableTotal(data))}</td></tr>`
+      <tr><td>Quote total</td><td>${withExVat(data.quoteTotal, data.quoteTotalExVat)}</td></tr>${rows}
+      <tr class="total-row divider"><td>Total payable</td><td>${withExVat(payableTotal(data), data.payableTotalExVat)}</td></tr>`
 }
 
 /**
@@ -587,12 +650,12 @@ function summaryLines(data: ScopeQuoteData): string {
  */
 function creditPaymentRows(data: ScopeQuoteData): string {
   if (!hasCredits(data)) {
-    return `<tr><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>`
+    return `<tr><td>Quote total</td><td>${withExVat(data.quoteTotal, data.quoteTotalExVat)}</td></tr>`
   }
   const rows = (data.credits ?? []).map((c) => `
         <tr><td>${escapeHtml(c.label)}</td><td>${escapeHtml(c.amount)}</td></tr>`).join('')
-  return `<tr><td>Quote total</td><td>${escapeHtml(data.quoteTotal)}</td></tr>${rows}
-        <tr><td>Total payable</td><td><strong>${escapeHtml(payableTotal(data))}</strong></td></tr>`
+  return `<tr><td>Quote total</td><td>${withExVat(data.quoteTotal, data.quoteTotalExVat)}</td></tr>${rows}
+        <tr><td>Total payable</td><td><strong>${withExVat(payableTotal(data), data.payableTotalExVat)}</strong></td></tr>`
 }
 
 function scopeSummarySection(data: ScopeQuoteData): string {
@@ -619,24 +682,42 @@ function isDetailed(sections: ScopeQuoteSectionView[]): boolean {
  * this, and a two-column table that never changes shape is what keeps every
  * amount on the page in one straight line down the right-hand edge.
  */
-function lineRows(lines: ScopeQuoteLineView[]): string {
+function lineRows(lines: ScopeQuoteLineView[], exVat: boolean): string {
   return lines.map((l, i) => {
     const last = i === lines.length - 1 ? ' last-line' : ''
     // A quantity of one adds nothing — "1 × R450.00" beside R450.00 is noise.
     const qty = l.qty !== 1 || l.unit
       ? `<span class="line-qty">${l.qty}${l.unit ? ` &times; ${escapeHtml(l.unit)}` : ''}</span>`
       : ''
+    // Open book: what the part costs us, under the part. A row of its own
+    // rather than a fourth column — the table already carries two prices.
+    const supplier = l.supplier
+      ? `<div class="subtitle supplier-cost">${escapeHtml(l.supplier)}</div>` : ''
     return `
         <tr class="line-row${last}">
-          <td>${escapeHtml(l.description)}${qty ? ` &nbsp;<span class="subtitle">${qty}</span>` : ''}</td>
+          <td>${escapeHtml(l.description)}${qty ? ` &nbsp;<span class="subtitle">${qty}</span>` : ''}${supplier}</td>
+          ${exVat ? `<td class="right amount ex-vat">${escapeHtml(l.amountExVat ?? '')}</td>` : ''}
           <td class="right amount">${escapeHtml(l.amount)}</td>
         </tr>`
   }).join('')
 }
 
+/**
+ * Is this quote stating every amount ex VAT as well (migration 131)?
+ *
+ * Read off the section views rather than passed down: the same tables render
+ * the flat quote, each package card and the shared-costs card, and a section
+ * that carries an ex-VAT subtotal is by construction one built with the
+ * setting on.
+ */
+function hasExVat(sections: ScopeQuoteSectionView[]): boolean {
+  return sections.some((s) => s.subtotalExVat !== undefined)
+}
+
 /** The section rows shared by the flat table and every package card. */
 function sectionRows(sections: ScopeQuoteSectionView[]): string {
   const detailed = isDetailed(sections)
+  const exVat = hasExVat(sections)
   return sections.map((s) => {
     const star = s.deposit ? ' <span class="star">&#9733;</span>' : ''
     const toQuote = s.toQuote > 0
@@ -652,8 +733,9 @@ function sectionRows(sections: ScopeQuoteSectionView[]): string {
             <strong>${escapeHtml(s.name)}</strong>${star}
             ${detail}${toQuote}
           </td>
+          ${exVat ? `<td class="right amount ex-vat">${escapeHtml(s.subtotalExVat ?? '')}</td>` : ''}
           <td class="right amount">${escapeHtml(s.subtotal)}</td>
-        </tr>${detailed ? lineRows(s.lines ?? []) : ''}`
+        </tr>${detailed ? lineRows(s.lines ?? [], exVat) : ''}`
   }).join('')
 }
 
@@ -669,19 +751,24 @@ function sectionTable(
   footLabel: string,
   footAmount: string,
   footNote = '',
+  footAmountExVat = '',
 ): string {
   if (sections.length === 0) return ''
   const detailed = isDetailed(sections)
+  const exVat = hasExVat(sections)
   return `
       <table class="bom-table${detailed ? ' detailed' : ''}">
         <thead>
-          <tr><th>${detailed ? 'Section &amp; items' : 'Section'}</th><th class="right">${detailed ? 'Amount' : 'Subtotal'}</th></tr>
+          <tr><th>${detailed ? 'Section &amp; items' : 'Section'}</th>${
+            exVat ? '<th class="right">Excl. VAT</th>' : ''
+          }<th class="right">${detailed ? 'Amount' : 'Subtotal'}</th></tr>
         </thead>
         <tbody>${sectionRows(sections)}
         </tbody>
         <tfoot>
           <tr>
             <td>${footLabel}${footNote ? `<span class="foot-note">${footNote}</span>` : ''}</td>
+            ${exVat ? `<td class="right amount ex-vat">${escapeHtml(footAmountExVat)}</td>` : ''}
             <td class="right amount">${escapeHtml(footAmount)}</td>
           </tr>
         </tfoot>
@@ -721,11 +808,14 @@ function packagesTable(data: ScopeQuoteData): string {
         `Subtotal &mdash; ${escapeHtml(pkg.name)}`,
         rand(included),
         hasShared ? 'in this quote, before the costs shared across the job' : 'in this quote',
+        sumSubtotalsExVat(pkg.sections),
       )}
       ${allowPartial ? `<div class="own-price">
         <div class="op-row">
           <span class="op-label">If done on its own</span>
-          <span class="op-value">${escapeHtml(pkg.ownTotal)}</span>
+          <span class="op-value">${escapeHtml(pkg.ownTotal)}${
+            pkg.ownTotalExVat ? `<span class="ex-vat-note">${escapeHtml(pkg.ownTotalExVat)} excl. VAT</span>` : ''
+          }</span>
         </div>
         <p class="op-note">${note}</p>
       </div>` : ''}
@@ -742,6 +832,7 @@ function packagesTable(data: ScopeQuoteData): string {
         'Subtotal &mdash; shared across the job',
         rand(sumSubtotals(data.sharedSections)),
         'charged once, not once per item of work',
+        sumSubtotalsExVat(data.sharedSections),
       )}
       <div class="card-note">These follow the job, not any one part of it: one visit, one team on site${
         data.cocIncluded ? ', one certificate' : ''}.</div>
@@ -809,7 +900,7 @@ function sectionsTable(data: ScopeQuoteData): string {
 
   <div class="card no-break">
     <div class="card-body">
-      ${sectionTable(data.sections, 'Quote total', data.quoteTotal)}
+      ${sectionTable(data.sections, 'Quote total', data.quoteTotal, '', data.quoteTotalExVat ?? '')}
     </div>
   </div>`
 }
@@ -1072,16 +1163,21 @@ ${scopeSummarySection(data)}${sectionsTable(data)}${needsPricingNote(data)}${pho
   <div class="summary-block no-break">
     <table class="summary-lines">${summaryLines(data)}
     </table>
-    <div class="vat-badge">Haberl Electrical &amp; Solar does not add VAT &mdash; all prices inclusive</div>
+    <div class="vat-badge">Haberl Electrical &amp; Solar does not add VAT &mdash; all prices inclusive${
+      data.pricingDisclosure
+        ? `<span class="vat-note">&ldquo;Excl. VAT&rdquo; takes the 15% our suppliers charge on materials back out, so these figures
+             compare directly with a trade price list. Labour and the certificate never carried VAT, so they read the
+             same in both. <strong>The amount payable is the inclusive one.</strong></span>`
+        : ''}</div>
   </div>
 
   <div class="card no-break">
     <div class="card-header"><h2>Deposit &amp; Payment</h2></div>
     <div class="card-body">
       <table class="info-table">
-        <tr><td>Deposit ${hasCredits(data) ? 'still due' : 'required'} (&#9733; sections)</td><td><strong>${escapeHtml(data.depositTotal)}</strong></td></tr>
+        <tr><td>Deposit ${hasCredits(data) ? 'still due' : 'required'} (&#9733; sections)</td><td><strong>${withExVat(data.depositTotal, data.depositTotalExVat)}</strong></td></tr>
         ${depositCovers}
-        <tr><td>Balance on completion</td><td>${escapeHtml(data.balanceTotal)}</td></tr>
+        <tr><td>Balance on completion</td><td>${withExVat(data.balanceTotal, data.balanceTotalExVat)}</td></tr>
         ${creditPaymentRows(data)}
       </table>
     </div>

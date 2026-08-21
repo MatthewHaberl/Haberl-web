@@ -47,6 +47,7 @@ import {
   type ContingencyBases, type ContingencyResult,
 } from '@/lib/quotes/contingency'
 import { renderScopeQuote, type ScopeQuoteData } from '@/lib/quotes/render-scope-quote'
+import { parsePricingDisclosure } from '@/lib/quotes/quote-cost'
 import { scrubSupplierMarkup } from '@/lib/catalog/supplier-tags'
 
 /** The quote_requests columns either engine reads. */
@@ -80,6 +81,13 @@ export interface QuoteRequestForDocument {
    * document already offers.
    */
   allow_partial_acceptance?: boolean | null
+  /**
+   * How much of the pricing the customer document shows (migration 131):
+   * 'ex_vat' states every amount with no VAT in it as well, 'open_book' adds
+   * what the supplier charges us per part and the markup. Absent/null/'none'
+   * on every other quote, which renders the document it always has.
+   */
+  pricing_disclosure?: string | null
   /**
    * Money already owed to the customer (migration 126) — a deposit they have
    * paid, a part back under warranty, a reimbursement, a discount. Subtracted
@@ -252,6 +260,7 @@ export function renderQuoteDocument(
       showEquipmentPhotos: quote.show_equipment_photos !== false,
       showLineItems: quote.quote_version === 'detailed',
       allowPartial: quote.allow_partial_acceptance !== false,
+      pricingDisclosure: parsePricingDisclosure(quote.pricing_disclosure),
       credits,
       quoteNumber, expiryDays,
       workType: quote.work_type ?? '',
