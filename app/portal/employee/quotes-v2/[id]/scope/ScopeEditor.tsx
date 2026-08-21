@@ -51,12 +51,14 @@ const UNITS: ScopeLineUnit[] = ['ea', 'm', 'hr', 'job']
 //
 // Container query, not a viewport breakpoint: this editor shares the page with
 // the summary panel, so the panel is ~550px at 1280px wide and ~900px on a big
-// monitor. Below 52rem of ITS OWN width the columns would squeeze the
-// description to nothing, so the fields stack instead.
+// monitor. The columns at their minimums need ~47rem, so the table holds down
+// to 48rem — a 1366x768 laptop stays on the table instead of dropping to the
+// stacked fallback. Below that the row folds into two dense lines (see the row
+// markup), not one field per line.
 // Widths are drag-resizable — a long SKU is unreadable in the 5rem default —
 // and ride on a CSS variable set once on the wrapper rather than an inline
 // style per row, so the container query above can still switch the grid off.
-const ROW_COLS = '@[52rem]:grid-cols-[var(--scope-cols)]'
+const ROW_COLS = '@[48rem]:grid-cols-[var(--scope-cols)]'
 
 type ScopeCol = {
   key: string
@@ -627,7 +629,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
               )}
 
               {lines.length > 0 && (
-                <div className={`hidden gap-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground @[52rem]:grid ${ROW_COLS}`}>
+                <div className={`hidden gap-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground @[48rem]:grid ${ROW_COLS}`}>
                   {COLUMNS.map((col) => (
                     <span
                       key={col.key}
@@ -662,109 +664,128 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                       data-invalid={rowIssues.length > 0 ? 'true' : undefined}
                       className={rowIssues.length > 0 ? 'rounded bg-destructive/5 py-1' : undefined}
                     >
+                    {/* Below the table breakpoint the ten cells fold into two dense
+                        lines - identity on top, money and actions underneath - rather
+                        than one field per line. `contents` dissolves both wrappers at
+                        @[48rem] so the resizable grid still sees ten direct children. */}
                     <div
-                      className={`grid grid-cols-2 items-start gap-2 rounded border border-border/60 p-1 @[52rem]:border-0 @[52rem]:p-0 ${ROW_COLS}`}
+                      className={`grid gap-1.5 rounded border border-border/60 p-1 @[48rem]:items-start @[48rem]:gap-2 @[48rem]:rounded-none @[48rem]:border-0 @[48rem]:p-0 ${ROW_COLS}`}
                     >
-                      <Input
-                        value={line.sku}
-                        onChange={(e) => updateLine(line.id, { sku: e.target.value })}
-                        placeholder="SKU" className="h-8 text-xs"
-                      />
-                      <div className="min-w-0">
+                      <div className="flex items-start gap-1.5 @[48rem]:contents">
                         <Input
-                          value={line.description}
-                          onChange={(e) => updateLine(line.id, { description: e.target.value })}
-                          placeholder={line.kind === 'fee' ? 'Fee description (e.g. Inspection fee)' : 'Item description'}
-                          className={`h-8 text-xs ${badField(line.id, 'description') ? INVALID : ''}`}
+                          value={line.sku}
+                          onChange={(e) => updateLine(line.id, { sku: e.target.value })}
+                          placeholder="SKU" title="Supplier code"
+                          className="h-8 w-[6.5rem] shrink-0 text-xs @[48rem]:w-full"
                         />
-                        {(line.kind === 'fee' || line.note) && (
-                          <div className="ml-1 truncate border-l border-border pl-1.5 text-[10px] leading-[1.15] text-muted-foreground">
-                            {[line.kind === 'fee' ? 'fee' : null, line.note].filter(Boolean).join(' · ')}
-                          </div>
-                        )}
+                        <div className="min-w-0 flex-1">
+                          <Input
+                            value={line.description}
+                            onChange={(e) => updateLine(line.id, { description: e.target.value })}
+                            placeholder={line.kind === 'fee' ? 'Fee description (e.g. Inspection fee)' : 'Item description'}
+                            className={`h-8 text-xs ${badField(line.id, 'description') ? INVALID : ''}`}
+                          />
+                          {(line.kind === 'fee' || line.note) && (
+                            <div className="ml-1 truncate border-l border-border pl-1.5 text-[10px] leading-[1.15] text-muted-foreground">
+                              {[line.kind === 'fee' ? 'fee' : null, line.note].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <Input
-                        type="number" min={0} step="any"
-                        value={line.qty === 0 ? '' : String(line.qty)}
-                        onChange={(e) => updateLine(line.id, { qty: Math.max(0, Number(e.target.value) || 0) })}
-                        className={`h-8 text-xs ${badField(line.id, 'qty') ? INVALID : ''}`}
-                        placeholder="Qty"
-                      />
-                      {/* Catalog lines are re-costed from the catalog at generate, so their
-                          landed cost is shown, not typed. Free-text and supplier-quoted
-                          lines carry their own cost. */}
-                      {quotedPrice(line) ? (
-                        <span
-                          className="flex h-8 items-center gap-1 truncate px-1 text-xs font-medium"
-                          title={`Priced off ${[quotedPrice(line)!.supplier, quotedPrice(line)!.reference].filter(Boolean).join(' ') || 'an uploaded supplier quote'} — this quote only`}
+                      <div className="flex flex-wrap items-center gap-1 @[48rem]:contents">
+                        <div className="w-14 @[48rem]:w-auto">
+                          <Input
+                            type="number" min={0} step="any"
+                            value={line.qty === 0 ? '' : String(line.qty)}
+                            onChange={(e) => updateLine(line.id, { qty: Math.max(0, Number(e.target.value) || 0) })}
+                            className={`h-8 text-xs ${badField(line.id, 'qty') ? INVALID : ''}`}
+                            placeholder="Qty" title="Quantity"
+                          />
+                        </div>
+                        {/* Catalog lines are re-costed from the catalog at generate, so their
+                            landed cost is shown, not typed. Free-text and supplier-quoted
+                            lines carry their own cost. */}
+                        <div className="w-[5.5rem] @[48rem]:w-auto">
+                          {quotedPrice(line) ? (
+                            <span
+                              className="flex h-8 items-center gap-1 truncate px-1 text-xs font-medium"
+                              title={`Priced off ${[quotedPrice(line)!.supplier, quotedPrice(line)!.reference].filter(Boolean).join(' ') || 'an uploaded supplier quote'} — this quote only`}
+                            >
+                              <FileText className="h-3 w-3 shrink-0 text-primary" />
+                              {rand(line.unitCostR)}
+                            </span>
+                          ) : line.catalogId ? (
+                            <span
+                              className="flex h-8 items-center truncate px-1 text-xs text-muted-foreground"
+                              title="Landed cost from the catalog — re-read when the quote is generated"
+                            >
+                              {line.unitCostR > 0 ? rand(line.unitCostR) : '—'}
+                            </span>
+                          ) : (
+                            <Input
+                              type="number" min={0} step="any"
+                              leadingText="R"
+                              value={line.unitCostR === 0 ? '' : String(line.unitCostR)}
+                              onChange={(e) => setCost(line, Math.max(0, Number(e.target.value) || 0))}
+                              className="h-8 text-xs" placeholder="Cost"
+                              title="Landed cost per unit — supplier ex-VAT x 1.15"
+                            />
+                          )}
+                        </div>
+                        <div className="w-[5.5rem] @[48rem]:w-auto">
+                          <Input
+                            type="number" min={0} step="any"
+                            leadingText="R"
+                            value={line.unitSellR === 0 ? '' : String(line.unitSellR)}
+                            onChange={(e) => updateLine(line.id, {
+                              unitSellR: Math.max(0, Number(e.target.value) || 0),
+                              sellOverridden: true,
+                            })}
+                            onBlur={() => {
+                              // A line left with no price reverts to auto (cost x markup) -
+                              // a stored 0 would show as "Quote" here while generate
+                              // re-priced it anyway.
+                              if (line.unitCostR > 0 && line.unitSellR <= 0) resetSell(line)
+                            }}
+                            className="h-8 text-xs" placeholder="Sell"
+                            title="Sell price per unit"
+                          />
+                        </div>
+                        <div className="w-20 @[48rem]:w-auto">
+                          <MarkupCell
+                            line={line}
+                            houseMarkup={pricing.markup}
+                            onMarkupPct={(pct) => setMarkupPct(line, pct)}
+                            onReset={() => resetSell(line)}
+                          />
+                        </div>
+                        <div className="ml-auto flex h-8 min-w-[4rem] items-center justify-end text-right @[48rem]:ml-0 @[48rem]:min-w-0">
+                          {line.unitSellR <= 0
+                            ? <Badge variant="warning">Quote</Badge>
+                            : <span className="text-xs font-medium">{rand(round2(line.unitSellR * line.qty))}</span>}
+                        </div>
+                        <label
+                          className="flex h-8 cursor-pointer items-center justify-center"
+                          title="Optional extra — listed on the quote but excluded from the total"
                         >
-                          <FileText className="h-3 w-3 shrink-0 text-primary" />
-                          {rand(line.unitCostR)}
-                        </span>
-                      ) : line.catalogId ? (
-                        <span
-                          className="flex h-8 items-center truncate px-1 text-xs text-muted-foreground"
-                          title="Landed cost from the catalog — re-read when the quote is generated"
-                        >
-                          {line.unitCostR > 0 ? rand(line.unitCostR) : '—'}
-                        </span>
-                      ) : (
-                        <Input
-                          type="number" min={0} step="any"
-                          leadingText="R"
-                          value={line.unitCostR === 0 ? '' : String(line.unitCostR)}
-                          onChange={(e) => setCost(line, Math.max(0, Number(e.target.value) || 0))}
-                          className="h-8 text-xs" placeholder="Cost"
-                        />
-                      )}
-                      <Input
-                        type="number" min={0} step="any"
-                        leadingText="R"
-                        value={line.unitSellR === 0 ? '' : String(line.unitSellR)}
-                        onChange={(e) => updateLine(line.id, {
-                          unitSellR: Math.max(0, Number(e.target.value) || 0),
-                          sellOverridden: true,
-                        })}
-                        onBlur={() => {
-                          // A line left with no price reverts to auto (cost x markup) —
-                          // a stored 0 would show as "Quote" here while generate
-                          // re-priced it anyway.
-                          if (line.unitCostR > 0 && line.unitSellR <= 0) resetSell(line)
-                        }}
-                        className="h-8 text-xs" placeholder="Sell"
-                      />
-                      <MarkupCell
-                        line={line}
-                        houseMarkup={pricing.markup}
-                        onMarkupPct={(pct) => setMarkupPct(line, pct)}
-                        onReset={() => resetSell(line)}
-                      />
-                      <div className="flex h-8 items-center justify-end text-right">
-                        {line.unitSellR <= 0
-                          ? <Badge variant="warning">Quote</Badge>
-                          : <span className="text-xs font-medium">{rand(round2(line.unitSellR * line.qty))}</span>}
+                          <input
+                            type="checkbox"
+                            checked={line.optional}
+                            onChange={(e) => updateLine(line.id, { optional: e.target.checked })}
+                          />
+                          <span className="ml-1 text-[11px] text-muted-foreground @[48rem]:hidden">Opt</span>
+                        </label>
+                        <div className="justify-self-end">
+                          <LineMovePicker
+                            targets={moveTargetsFor(line)}
+                            onMove={(t) => moveLine(line.id, t)}
+                          />
+                        </div>
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-7 justify-self-end"
+                          onClick={() => removeLine(line.id)} title="Remove line">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
-                      <label
-                        className="flex h-8 cursor-pointer items-center justify-center"
-                        title="Optional extra — listed on the quote but excluded from the total"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={line.optional}
-                          onChange={(e) => updateLine(line.id, { optional: e.target.checked })}
-                        />
-                        <span className="ml-1 text-[11px] text-muted-foreground @[52rem]:hidden">Optional extra</span>
-                      </label>
-                      <div className="justify-self-end">
-                        <LineMovePicker
-                          targets={moveTargetsFor(line)}
-                          onMove={(t) => moveLine(line.id, t)}
-                        />
-                      </div>
-                      <Button type="button" variant="ghost" size="icon" className="h-8 w-7 justify-self-end"
-                        onClick={() => removeLine(line.id)} title="Remove line">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
                     </div>
                     {rowIssues.map((i) => (
                       <p key={i.id} className="px-1 pt-0.5 text-[11px] font-medium text-destructive">
