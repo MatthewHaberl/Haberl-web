@@ -34,6 +34,7 @@ export async function POST(req: Request) {
     jobId: result.jobId,
     created: result.created,
     materialsSeeded: result.materialsSeeded,
+    staffSeeded: result.staffSeeded,
     warnings: result.warnings,
   })
 }

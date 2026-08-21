@@ -23,7 +23,8 @@ import {
   type SlotDraft,
   type WorkingHours,
 } from '@/lib/jobs/schedule'
-import { crewDayEntries, type CrewWithPeople } from '@/lib/crews/crews'
+import { crewDayEntries, type CrewPerson, type CrewWithPeople } from '@/lib/crews/crews'
+import type { RosterPerson } from '@/lib/jobs/staff'
 import type { JobScheduleSlot } from '@/types/database'
 
 interface StaffOption { id: string; full_name: string }
@@ -41,6 +42,7 @@ export function SchedulePanel({
   defaultAssignee,
   crews,
   jobCrewId,
+  roster,
   loggedSlotIds,
   paidSlotIds,
   canEdit,
@@ -54,6 +56,12 @@ export function SchedulePanel({
   crews: CrewWithPeople[]
   /** The job's crew — every day inherits it unless the day says otherwise. */
   jobCrewId: string | null
+  /**
+   * Everyone on this job (migration 132). This is who a booked day pays,
+   * not the crew: the crew filled the list, but the list is what is true —
+   * including the person added for one day and the person the quote priced.
+   */
+  roster: RosterPerson[]
   /** Days that already have crew hours logged against them. */
   loggedSlotIds: string[]
   /** Logged days a pay run has already claimed — never rewritten. */
@@ -182,8 +190,14 @@ export function SchedulePanel({
   }
 
   /**
-   * Turn one booked day into timesheet entries — one per person on the crew,
-   * at that person's own rate.
+   * Turn one booked day into timesheet entries — one per person working it, at
+   * that person's own rate.
+   *
+   * Who that is: the crew named on THIS DAY when one is (a hand-over mid-
+   * install), otherwise everyone on the job's roster. The roster is the
+   * default because it is the list a manager actually curates — the crew plus
+   * whoever else is on this job — and paying the crew when the roster says
+   * otherwise is exactly the silent wrong answer migration 132 exists to stop.
    *
    * Upsert on (slot_id, staff_id): re-confirming a day after the hours moved
    * corrects the same rows instead of paying the day twice. A day a pay run
@@ -200,21 +214,25 @@ export function SchedulePanel({
       setError('That day has already been paid — correct it on the timesheet instead.')
       return
     }
-    const crew = crews.find((c) => c.id === (slot.crewId ?? jobCrewId))
-    if (!crew) {
-      setError('Put a crew on this job (or on this day) before logging hours.')
-      return
-    }
-    if (crew.people.length === 0) {
-      setError(`${crew.name} has nobody on it yet.`)
+
+    const dayCrew = slot.crewId ? crews.find((c) => c.id === slot.crewId) ?? null : null
+    const people: CrewPerson[] = dayCrew ? dayCrew.people : roster
+    const note = dayCrew ? `${dayCrew.name} on site` : 'On site'
+
+    if (people.length === 0) {
+      setError(
+        dayCrew
+          ? `${dayCrew.name} has nobody on it yet.`
+          : 'Nobody is on this job yet — add the crew or the people up top before logging hours.',
+      )
       return
     }
 
     setLogging(slot.id)
     const rows = crewDayEntries(
-      crew.people,
+      people,
       { slotId: slot.id, jobId, date: slot.date, start: slot.start, end: slot.end },
-      { note: `${crew.name} on site` },
+      { note },
     )
     const { data: auth } = await supabase.auth.getUser()
     const { error: dbError } = await supabase

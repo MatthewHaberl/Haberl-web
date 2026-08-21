@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { checklistRowsFor } from './checklist'
+import { quotedPeopleFromScope, quotedRosterRows } from './staff'
 import { workTypeFor } from '@/lib/quotes/work-types'
 import { packageIdFromTier } from '@/lib/quotes/public'
 
@@ -111,6 +112,8 @@ export interface CreateJobFromQuoteResult {
   jobId: string
   created: boolean
   materialsSeeded: number
+  /** Named people carried across from the quote onto the job's roster. */
+  staffSeeded: number
   warnings: string[]
 }
 
@@ -166,6 +169,7 @@ export async function createJobFromQuote(
       jobId: existing.id,
       created: false,
       materialsSeeded: 0,
+      staffSeeded: 0,
       warnings: linkedSiteId
         ? []
         : ['No customer linked to this quote — link a customer so the job appears in their portal.'],
@@ -243,11 +247,27 @@ export async function createJobFromQuote(
     }
   }
 
+  // The people the quote priced land on the job's roster (migration 132).
+  // This is the half of the quote that used to evaporate at acceptance: the
+  // BOM carried across and the crew did not, so whoever booked the days had to
+  // remember who the job was sold with. Best effort — a roster that failed to
+  // seed is a button on the job page, not a reason to lose the job.
+  let staffSeeded = 0
+  const quotedPeople = quotedPeopleFromScope(quote.scope)
+  if (quotedPeople.length > 0) {
+    const { error: staffError } = await supabase
+      .from('job_staff')
+      .insert(quotedRosterRows(job.id, quotedPeople).map((r) => ({ ...r, added_by: actorId })))
+    if (staffError) console.error('[create-from-quote] roster not seeded', staffError)
+    else staffSeeded = quotedPeople.length
+  }
+
   return {
     ok: true,
     jobId: job.id,
     created: true,
     materialsSeeded: bom.length,
+    staffSeeded,
     warnings: [
       ...(bom.length === 0 ? ['No supplier BOM found in saved quote — recalculate and save, then re-link.'] : []),
       ...(siteId ? [] : ['No customer linked to this quote — link a customer so the job appears in their portal.']),

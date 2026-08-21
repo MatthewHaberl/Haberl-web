@@ -1151,3 +1151,83 @@ export interface Payslip {
   created_at: string
   updated_at: string
 }
+
+// ── Invoices (migration 133) ────────────────────────────────────────────────
+// A customer invoice raised against a job. The arithmetic — what a job has
+// been billed and what is left — lives in lib/invoices/invoice.ts.
+
+export type InvoiceKind = 'deposit' | 'progress' | 'final'
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'void'
+
+export interface Invoice {
+  id: string
+  /** Null until the invoice is issued — a draft has not consumed a number. */
+  invoice_number: string | null
+  job_id: string | null
+  quote_request_id: string | null
+  customer_id: string | null
+  /** Snapshot: a customer who moves must not rewrite an invoice already sent. */
+  bill_to_name: string
+  bill_to_email: string | null
+  bill_to_phone: string | null
+  bill_to_address: string | null
+  site_address: string | null
+  kind: InvoiceKind
+  status: InvoiceStatus
+  issue_date: string
+  due_date: string | null
+  notes: string | null
+  terms: string | null
+  /** Written from invoice_lines by trigger. Never set directly. */
+  total_cents: number
+  amount_paid_cents: number
+  sent_at: string | null
+  sent_method: 'email' | 'whatsapp' | 'manual' | null
+  sent_by: string | null
+  paid_at: string | null
+  voided_at: string | null
+  voided_by: string | null
+  void_reason: string | null
+  /** Frozen at issue — what the customer was actually sent. */
+  document_html: string | null
+  share_token: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InvoiceLine {
+  id: string
+  invoice_id: string
+  description: string
+  detail: string | null
+  qty: number
+  unit: string | null
+  unit_price_cents: number
+  /** Held, not computed: a percentage claim has no honest qty x price behind it. */
+  amount_cents: number
+  source: 'quote_section' | 'quote_line' | 'job_material' | 'labour' | 'percentage' | 'manual' | 'credit'
+  source_ref: string | null
+  sort_order: number
+}
+
+// ── Job staff roster (migration 132) ────────────────────────────────────────
+
+/**
+ * One named person on a job. `source` decides what a crew change may
+ * overwrite: only 'crew' rows are replaced when jobs.crew_id moves.
+ */
+export interface JobStaff {
+  job_id: string
+  staff_id: string
+  role: 'leader' | 'member'
+  source: 'quoted' | 'crew' | 'manual'
+  from_crew_id: string | null
+  /** What the quote promised for this person — a snapshot, never read live. */
+  quoted_hours: number | null
+  quoted_cost_rate_r: number | null
+  sort_order: number
+  notes: string | null
+  added_by: string | null
+  created_at: string
+}

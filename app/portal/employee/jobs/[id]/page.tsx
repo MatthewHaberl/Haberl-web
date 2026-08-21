@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MapPin, ChevronLeft, FileText, Briefcase } from 'lucide-react'
 import { pipelineKindFor, stageMetaFor } from '@/lib/jobs/stages'
-import { fetchWorkTypes } from '@/lib/quotes/work-types'
+import { fetchWorkTypes, workTypeFor } from '@/lib/quotes/work-types'
 import type { Job, JobTask, JobMaterial, JobStatusHistory, JobScheduleSlot } from '@/types/database'
 import type { Supplier } from '@/types/database'
 import { JobActions } from './JobActions'
@@ -20,7 +20,10 @@ import { getBaseUrl } from '@/lib/quotes/server'
 import { JobLayout3DPanel } from './JobLayout3DPanel'
 import { SchedulePanel } from './SchedulePanel'
 import { JobCrewPanel } from './JobCrewPanel'
+import { InvoicesPanel } from './InvoicesPanel'
 import { loadCrews, loadQuotedLabour } from '@/lib/crews/query'
+import { loadJobRoster, quotedPeopleFromScope } from '@/lib/jobs/staff'
+import { loadJobInvoices, loadJobInvoiceContext } from '@/lib/invoices/query'
 import type { JobTimeEntry } from '@/lib/crews/crews'
 import type { CableRouteRow } from '@/lib/solar/job-layout-3d'
 import { PageShell, PageHeader } from '@/components/layout/page'
@@ -71,12 +74,38 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   // The crew is picked once on the job; every booked day inherits it. Hours
   // confirmed off those days are the ACTUAL labour, which is only interesting
   // next to what the quote promised.
-  const crews = await loadCrews(supabase, { includeInactive: true })
+  const [crews, roster] = await Promise.all([
+    loadCrews(supabase, { includeInactive: true }),
+    loadJobRoster(supabase, id),
+  ])
   const timeEntries = (timeData ?? []) as unknown as JobTimeEntry[]
 
   const quotedLabour = job.quote_request_id
     ? await loadQuotedLabour(supabase, job.quote_request_id)
     : null
+
+  // Anyone in the staff directory can be put on a job by hand — including
+  // people with no portal login, which is most of the people who swing tools.
+  const { data: staffDirectory } = await supabase
+    .from('staff')
+    .select('id, full_name, job_title')
+    .eq('active', true)
+    .order('full_name')
+  const allStaff = ((staffDirectory ?? []) as { id: string; full_name: string; job_title: string | null }[])
+    .map((s) => ({ id: s.id, name: s.full_name, jobTitle: s.job_title }))
+
+  // Does the quote name people this job has not picked up yet? Only then is
+  // the "bring across who was quoted" button worth showing.
+  let hasQuotedPeople = false
+  if (job.quote_request_id) {
+    const { data: scopeRow } = await supabase
+      .from('quote_requests')
+      .select('scope')
+      .eq('id', job.quote_request_id)
+      .maybeSingle()
+    const onRoster = new Set(roster.map((p) => p.staffId))
+    hasQuotedPeople = quotedPeopleFromScope(scopeRow?.scope).some((p) => !onRoster.has(p.staffId))
+  }
 
   // Which pipeline this job runs — lite (non-solar) skips procurement,
   // commissioning and handover, and relabels installation (W97). Resolved via
@@ -183,6 +212,19 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
+  // ── Invoicing (migration 133) ─────────────────────────────────────────────
+  // Money, so manager/admin only — the same line Finance already draws. The
+  // BOM doubles as the pick list for "invoice the parts that are on site", so
+  // it is read here rather than by the panel.
+  let invoices: Awaited<ReturnType<typeof loadJobInvoices>> = []
+  let invoiceContext: Awaited<ReturnType<typeof loadJobInvoiceContext>> = null
+  if (isManager) {
+    ;[invoices, invoiceContext] = await Promise.all([
+      loadJobInvoices(supabase, id),
+      loadJobInvoiceContext(supabase, id),
+    ])
+  }
+
   // Testimonial (S7). RLS already limits the table to manager/admin, but the
   // fetch is gated too so a field worker's page does no pointless work.
   let testimonial: TestimonialSummary | null = null
@@ -259,10 +301,34 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         />
       )}
 
+      {isManager && invoiceContext && (
+        <InvoicesPanel
+          jobId={job.id}
+          invoices={invoices}
+          contractCents={invoiceContext.contractCents}
+          quoteDepositCents={invoiceContext.quoteDepositCents}
+          depositConfirmed={invoiceContext.depositConfirmed}
+          quoteNumber={invoiceContext.quoteNumber}
+          workLabel={workTypeFor(job.work_type ?? 'solar', workTypes)?.label ?? 'the work'}
+          billToName={invoiceContext.billToName}
+          billToEmail={invoiceContext.billToEmail}
+          materials={materials.map((m) => ({
+            id: m.id,
+            section: m.section,
+            description: m.description,
+            qtyPlanned: Number(m.qty_planned) || 0,
+            unitSellCents: Number(m.unit_sell_cents) || 0,
+          }))}
+        />
+      )}
+
       <JobCrewPanel
         jobId={job.id}
         crewId={job.crew_id ?? null}
         crews={crews}
+        roster={roster}
+        allStaff={allStaff}
+        hasQuotedPeople={hasQuotedPeople}
         entries={timeEntries}
         quoted={quotedLabour}
         canEdit={isManager}
@@ -275,6 +341,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         defaultAssignee={job.assigned_to}
         crews={crews}
         jobCrewId={job.crew_id ?? null}
+        roster={roster}
         loggedSlotIds={[...new Set(timeEntries.map((e) => e.slot_id).filter((id): id is string => !!id))]}
         paidSlotIds={[...new Set(
           timeEntries.filter((e) => e.slot_id && e.payslip_id).map((e) => e.slot_id as string),
