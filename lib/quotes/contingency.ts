@@ -38,6 +38,7 @@
 // Pure module — no Supabase, no React; safe on server and client.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isMaterialLine } from '@/lib/solar/design-bom'
 import type { BomLine, BomSection, DesignBom } from '@/lib/solar/design-bom'
 
 /** What the percentage is taken of. 'fixed' and 'none' ignore the percentage. */
@@ -168,20 +169,6 @@ export function parseContingency(raw: unknown): QuoteContingency {
     show: r.show !== false,
     note: typeof r.note === 'string' && r.note.trim() ? r.note.trim() : null,
   }
-}
-
-/**
- * A line the customer is buying a PART on, as opposed to time or a certificate.
- *
- * Both engines mark their own labour, and they mark it differently: the scope
- * builder stamps kind:'labour'|'fee' on typed lines, while both engines give
- * their generated labour/CoC lines a synthetic `labour:` id and no kind at all.
- * Reading only one of those would silently count the solar Labour section as
- * materials and quote a contingency on it.
- */
-function isMaterialLine(line: BomLine): boolean {
-  if (line.kind === 'labour' || line.kind === 'fee') return false
-  return !line.catalogId.startsWith('labour:')
 }
 
 function sumLines(bom: DesignBom, predicate: (l: BomLine) => boolean): number {

@@ -10,6 +10,7 @@
 // discipline as lib/solar/design-quote.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { costFrom } from './quote-cost'
 import { parseSupplierPrices, type SupplierPriceMap } from './supplier-price-match'
 
 export type ScopeLineKind = 'material' | 'labour' | 'fee'
@@ -749,6 +750,18 @@ export interface ScopeTotals {
   /** Lines still waiting on a price (optional lines included). */
   needsPricing: number
   lineCount: number
+  /**
+   * What the quote costs to buy and run — materials landed (supplier VAT
+   * included, because it is never claimed back) plus wages and certificates.
+   * The number margin is measured against: money that actually leaves.
+   */
+  costR: number
+  /**
+   * The same cost with the supplier VAT taken back out of the materials, for
+   * comparing against a supplier's (ex-VAT) quote. Wages carried no VAT, so
+   * they are identical in both figures. See lib/quotes/quote-cost.ts.
+   */
+  costExVatR: number
 }
 
 /**
@@ -899,10 +912,15 @@ function totalsFor(
   let feesR = 0
   let optionalR = 0
   let needsPricing = 0
+  // Cost is split the same way scopeToBom splits it: only the material lines
+  // carry supplier VAT, so only they can have it taken back out.
+  let materialsCostR = 0
+  let otherCostR = 0
 
   for (const line of lines) {
     if (line.qty <= 0) continue
     const amount = round2(line.unitSellR * line.qty)
+    const cost = round2(Math.max(0, line.unitCostR) * line.qty)
     if (line.optional) {
       // Unpriced optional extras don't count as needing pricing — they are
       // not in the total, so nothing is blocked on them (matches scopeToBom).
@@ -913,14 +931,23 @@ function totalsFor(
       needsPricing += 1
       continue
     }
-    if (line.kind === 'material') materialsR += amount
-    else if (line.kind === 'labour') labourR += amount
-    else feesR += amount
+    if (line.kind === 'material') { materialsR += amount; materialsCostR += cost }
+    else if (line.kind === 'labour') { labourR += amount; otherCostR += cost }
+    else { feesR += amount; otherCostR += cost }
   }
 
-  if (labour) labourR += labourAmountR(labour)
-  if (coc?.included && coc.feeR > 0) feesR += round2(coc.feeR)
+  if (labour) {
+    labourR += labourAmountR(labour)
+    otherCostR += labourCostR(labour)
+  }
+  // The CoC is quoted cost = sell (scope-bom does the same) — the fee is what
+  // issuing it costs, and no VAT rides on it.
+  if (coc?.included && coc.feeR > 0) {
+    feesR += round2(coc.feeR)
+    otherCostR += round2(coc.feeR)
+  }
 
+  const cost = costFrom(materialsCostR, otherCostR)
   return {
     sellR: round2(materialsR + labourR + feesR),
     materialsR: round2(materialsR),
@@ -929,6 +956,8 @@ function totalsFor(
     optionalR: round2(optionalR),
     needsPricing,
     lineCount: lines.length,
+    costR: cost.landedR,
+    costExVatR: cost.exVatR,
   }
 }
 

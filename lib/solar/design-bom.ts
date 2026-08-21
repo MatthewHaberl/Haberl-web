@@ -81,6 +81,21 @@ export interface DesignBom {
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
+/**
+ * A line the customer is buying a PART on, as opposed to time or a certificate.
+ *
+ * Both engines mark their own labour, and they mark it differently: the scope
+ * builder stamps kind:'labour'|'fee' on typed lines, while both engines give
+ * their generated labour/CoC lines a synthetic `labour:` id and no kind at all.
+ * Reading only one of those would silently count the solar Labour section as
+ * materials — which quotes a contingency on wages, and refunds VAT that was
+ * never paid on them (see lib/quotes/quote-cost.ts).
+ */
+export function isMaterialLine(line: BomLine): boolean {
+  if (line.kind === 'labour' || line.kind === 'fee') return false
+  return !line.catalogId.startsWith('labour:')
+}
+
 export function designToBom(
   design: SystemDesign,
   catalog: Map<string, EquipmentCatalogItem>,

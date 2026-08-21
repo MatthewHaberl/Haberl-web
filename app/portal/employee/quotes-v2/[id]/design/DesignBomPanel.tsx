@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { DEFAULT_PRICING, mapSettingsToPricing, type EquipmentCatalogItem } from '@/lib/solar/quote-calculator'
 import { consolidateBom, designToBom } from '@/lib/solar/design-bom'
 import { designComplianceChecks } from '@/lib/solar/design-quote'
+import { bomCost } from '@/lib/quotes/quote-cost'
 import { assessDesignContainment } from '@/lib/solar/containment-fill'
 import { SansRefLink } from '@/components/sans/SansRefLink'
 import { ProductThumb } from '@/components/catalog/ProductImages'
@@ -50,6 +51,10 @@ export function DesignBomPanel() {
   const itemised = useMemo(() => designToBom(design, catalog, markup, { gridSupply, pricing }), [design, catalog, markup, gridSupply, pricing])
   const consolidated = useMemo(() => consolidateBom(itemised), [itemised])
   const bom = view === 'consolidated' ? consolidated : itemised
+  // Landed cost (what leaves the account) and the same cost with the supplier
+  // VAT taken back out of the parts — the figure to hold against a supplier's
+  // quote. Labour and the CoC never carried VAT, so they sit in both.
+  const cost = useMemo(() => bomCost(bom), [bom])
 
   // SANS compliance verdicts on the LIVE priced BOM (same engine the generated
   // quote embeds) — a collapsed chip that expands to the clause list, so a BOM
@@ -312,8 +317,8 @@ export function DesignBomPanel() {
                 <span className="text-base font-bold text-primary">{rands(bom.totalSellR)}</span>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Priced cost {rands(bom.totalCostR)} · equipment sell = cost × {markup.toFixed(2)} (labour &amp; CoC are flat rates, no markup) · ~ = estimated (cabling = conductor-metres × rate card; add a measured route on a cable to firm it up).
-                Total excludes items marked <span className="font-semibold text-amber-700 dark:text-amber-400">Quote</span>. <span className="font-medium">No VAT is added</span> — Haberl is not VAT-registered; costs already carry supplier VAT.
+                Priced cost {rands(bom.totalCostR)} landed · <span title="Parts at the supplier's ex-VAT price; labour and CoC carry no VAT either way">{rands(cost.exVatR)} ex VAT</span> · equipment sell = cost × {markup.toFixed(2)} (labour &amp; CoC are flat rates, no markup) · ~ = estimated (cabling = conductor-metres × rate card; add a measured route on a cable to firm it up).
+                Total excludes items marked <span className="font-semibold text-amber-700 dark:text-amber-400">Quote</span>. <span className="font-medium">No VAT is added</span> — Haberl is not VAT-registered; costs already carry supplier VAT, and the ex-VAT cost is what the parts cost before it.
               </p>
             </div>
           )}
