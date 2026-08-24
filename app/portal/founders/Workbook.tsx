@@ -10,8 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { t, type FounderGroup, type FounderQuestion, type Locale } from '@/lib/founders/questions'
-import { strings, LOCALE_LABEL, type WorkbookStrings } from '@/lib/founders/i18n'
+import { t, type FounderGroup, type FounderQuestion } from '@/lib/founders/questions'
+import { strings, type WorkbookStrings } from '@/lib/founders/i18n'
 import type { FounderParticipant } from '@/lib/founders/access'
 
 type Filter = 'all' | 'first' | 'todo'
@@ -36,7 +36,10 @@ export function Workbook({
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
 
-  const [locale, setLocale] = useState<Locale>(me.language)
+  // The EN/AF switch lives in the page header and writes to the participant
+  // row, so the language arrives as a prop after its refresh. Client state here
+  // survives that refresh — changing language mid-question loses nothing.
+  const locale = me.language
   const [answers, setAnswers] = useState<Record<string, string>>(
     () => ({ ...(answersByPerson[me.email] ?? {}) }),
   )
@@ -88,18 +91,6 @@ export function Workbook({
       )
   }
 
-  /** Language lives on the participant row so the choice follows the person. */
-  async function changeLocale(next: Locale) {
-    setLocale(next)
-    await supabase
-      .from('founders_participants')
-      .update({ language: next })
-      .eq('email', me.email)
-    // The page header and tabs are rendered by the server layout from the same
-    // stored preference, so they need the re-render too.
-    router.refresh()
-  }
-
   async function setSubmitted(next: boolean) {
     setBusy(true)
     setError(null)
@@ -135,8 +126,6 @@ export function Workbook({
         answered={answeredCount}
         total={questions.length}
         s={s}
-        locale={locale}
-        onLocale={changeLocale}
         onSubmit={() => setSubmitted(true)}
         onReopen={() => setSubmitted(false)}
       />
@@ -321,8 +310,7 @@ function SaveState({ state }: { state?: 'saving' | 'saved' | 'error' }) {
  * submitted — that rule lives in RLS, this card only explains it.
  */
 function Roster({
-  me, participants, revealed, locked, busy, answered, total, s, locale,
-  onLocale, onSubmit, onReopen,
+  me, participants, revealed, locked, busy, answered, total, s, onSubmit, onReopen,
 }: {
   me: FounderParticipant
   participants: FounderParticipant[]
@@ -332,8 +320,6 @@ function Roster({
   answered: number
   total: number
   s: WorkbookStrings
-  locale: Locale
-  onLocale: (next: Locale) => void
   onSubmit: () => void
   onReopen: () => void
 }) {
@@ -383,7 +369,6 @@ function Roster({
           </div>
 
           <div className="flex flex-col items-end gap-2">
-            <LanguageSwitch value={locale} onChange={onLocale} label={s.languageLabel} />
             <p className="font-mono text-xs tabular-nums text-muted-foreground">
               {s.answeredOf(answered, total)}
             </p>
@@ -452,32 +437,5 @@ function Roster({
         )}
       </CardContent>
     </Card>
-  )
-}
-
-function LanguageSwitch({
-  value, onChange, label,
-}: { value: Locale; onChange: (next: Locale) => void; label: string }) {
-  return (
-    <div className="flex items-center gap-1 rounded-md border border-border p-0.5" aria-label={label}>
-      {(['en', 'af'] as Locale[]).map((code) => (
-        <button
-          key={code}
-          type="button"
-          onClick={() => onChange(code)}
-          aria-pressed={value === code}
-          title={LOCALE_LABEL[code]}
-          className={cn(
-            'rounded px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-            value === code
-              ? 'bg-accent text-accent-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {code}
-        </button>
-      ))}
-    </div>
   )
 }
