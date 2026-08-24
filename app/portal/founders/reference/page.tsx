@@ -16,10 +16,16 @@ const TIER_VARIANT: Record<RegistrationTier, 'success' | 'warning' | 'accent'> =
 }
 
 export default async function FoundersReferencePage() {
-  await requireFounder()
+  const ctx = await requireFounder()
 
   return (
     <div className="flex flex-col gap-10">
+      {ctx.me.language !== 'en' && (
+        <p className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          Hierdie afdeling is voorlopig net in Engels — die vorm- en
+          registrasiename is in elk geval die amptelike Engelse benamings.
+        </p>
+      )}
       <section className="flex flex-col gap-3">
         <div>
           <h2 className="text-lg font-bold text-primary">Registrations you cannot trade without</h2>

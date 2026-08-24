@@ -1,12 +1,15 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient, getUser } from '@/lib/supabase/server'
+import type { Locale } from './questions'
 
 export interface FounderParticipant {
   email: string
   display_name: string
   is_owner: boolean
   submitted_at: string | null
+  /** The language this person reads the workbook in. */
+  language: Locale
 }
 
 export interface FounderContext {
@@ -39,7 +42,7 @@ export const getFounderContext = cache(async (): Promise<FounderContext | null> 
   const supabase = await createClient()
   const { data } = await supabase
     .from('founders_participants')
-    .select('email, display_name, is_owner, submitted_at')
+    .select('email, display_name, is_owner, submitted_at, language')
     .order('is_owner', { ascending: false })
     .order('created_at', { ascending: true })
 
