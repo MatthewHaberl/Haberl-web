@@ -7,7 +7,7 @@ import {
   BarChart2, Users, Zap, User, Menu, X, Settings, Activity,
   ClipboardList, PackageX, Search, Sunrise, PhoneIncoming, Sparkles,
   PanelLeftClose, PanelLeftOpen, Receipt, Ticket, UserCog, CalendarDays,
-  BookOpenCheck, HardHat, Eye, Check,
+  BookOpenCheck, HardHat, Eye, Check, Handshake,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -49,6 +49,10 @@ const employeeLinks = [
   { label: 'Users',     href: '/portal/employee/users',            icon: UserCog,   section: 'users' },
   { label: 'Settings',  href: '/portal/employee/settings/company', icon: Settings,  section: 'settings' },
 ]
+
+// Not part of either list: the founders' workbook is private to the people in
+// `founders_participants`, so the layout passes `isFounder` and it is appended.
+const foundersLink = { label: 'Founders', href: '/portal/founders', icon: Handshake }
 
 type NavIcon = React.ComponentType<{ className?: string }>
 
@@ -272,11 +276,16 @@ interface Props {
   name: string
   /** Section keys the user may access (from the permissions matrix). */
   allowedSections?: string[]
+  /**
+   * The founders' workbook is gated by membership of `founders_participants`,
+   * not by role or section, so it gets its own flag rather than a section key.
+   */
+  isFounder?: boolean
 }
 
 const COLLAPSE_KEY = 'haberl.portal.sidebarCollapsed'
 
-export function PortalSidebar({ role, realRole, viewingAs, name, allowedSections = [] }: Props) {
+export function PortalSidebar({ role, realRole, viewingAs, name, allowedSections = [], isFounder = false }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -300,7 +309,7 @@ export function PortalSidebar({ role, realRole, viewingAs, name, allowedSections
   }
 
   const isCustomer = role === 'customer'
-  const links = isCustomer
+  const baseLinks = isCustomer
     ? customerLinks
     : employeeLinks.filter((l) => {
         const link = l as { section?: string; roles?: string[] }
@@ -308,6 +317,9 @@ export function PortalSidebar({ role, realRole, viewingAs, name, allowedSections
         if (link.roles) return link.roles.includes(role)
         return true // sectionless, role-less links (e.g. Profile) show for all employees
       })
+
+  // Shown to the two named participants whatever their role, and to nobody else.
+  const links = isFounder ? [...baseLinks, foundersLink] : baseLinks
 
   async function setViewAs(next: Role | null) {
     setBusy(true)
