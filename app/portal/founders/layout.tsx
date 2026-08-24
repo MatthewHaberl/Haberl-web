@@ -2,6 +2,7 @@ import { Handshake } from 'lucide-react'
 import { requireFounder } from '@/lib/founders/access'
 import { strings } from '@/lib/founders/i18n'
 import { FoundersTabs } from './FoundersTabs'
+import { LanguageSwitch } from './LanguageSwitch'
 
 /**
  * Guard for the whole workbook. Access is membership of
@@ -25,7 +26,10 @@ export default async function FoundersLayout({ children }: { children: React.Rea
             {s.title}
           </h1>
         </div>
-        <FoundersTabs questionsLabel={s.tabQuestions} referenceLabel={s.tabReference} />
+        <div className="flex flex-wrap items-center gap-2">
+          <FoundersTabs questionsLabel={s.tabQuestions} referenceLabel={s.tabReference} />
+          <LanguageSwitch email={ctx.me.email} value={ctx.me.language} label={s.languageLabel} />
+        </div>
       </div>
       {children}
       <p className="border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
