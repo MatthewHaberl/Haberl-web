@@ -158,6 +158,8 @@ export function presetToScopeLines(
     sellOverridden: l.sellOverridden,
     optional: l.optional,
     note: l.note,
+    // A preset is a saved shape, not a supplier document — nothing to trace back to.
+    supplierLineId: null,
   }))
 }
 

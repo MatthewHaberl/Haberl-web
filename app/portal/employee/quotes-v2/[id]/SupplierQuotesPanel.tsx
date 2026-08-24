@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ChevronDown, ChevronRight, ExternalLink, Plus, RefreshCw, Tags, Trash2, Upload,
+  Check, ChevronDown, ChevronRight, ExternalLink, ListPlus, Plus, RefreshCw, Tags, Trash2, Upload,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -30,6 +30,9 @@ import {
   SUPPLIER_PRICES_STATE, requestClearSupplierPrices, requestSupplierPriceState,
   type StateDetail,
 } from './supplier-prices-bus'
+import {
+  requestAddSupplierLines, useSupplierLineTargets, type AddableSupplierLine,
+} from './supplier-lines-bus'
 
 const rand = (n: number) =>
   `R${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -61,7 +64,37 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
   // How many prices each document currently has on the quote — published by
   // whichever builder is on the page, since it owns the quote's live state.
   const [appliedBy, setAppliedBy] = useState<Record<string, number>>({})
+  // Where a document line can be added, and which are on the quote already —
+  // published by whichever builder is on the page (see supplier-lines-bus).
+  const { targets, addedLineIds } = useSupplierLineTargets()
+  const [targetId, setTargetId] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const onQuote = useMemo(() => new Set(addedLineIds), [addedLineIds])
+  // Follow the builder's first section until someone picks another, and don't
+  // strand the picker on a section that has since been renamed away.
+  const activeTarget = targets.find((t) => t.id === targetId) ?? targets[0] ?? null
+
+  const toAddable = (l: SupplierQuoteLineRow, supplierLabel: string): AddableSupplierLine => ({
+    lineId: l.id,
+    supplierQuoteId: l.supplier_quote_id,
+    supplierLabel,
+    sku: l.sku,
+    description: l.description,
+    qty: l.qty,
+    unit: l.unit,
+    unitPriceExVatR: l.unit_price_r,
+  })
+
+  function addLinesToQuote(lines: SupplierQuoteLineRow[], supplierLabel: string) {
+    if (!activeTarget) return
+    const fresh = lines.filter((l) => !onQuote.has(l.id))
+    if (!fresh.length) return
+    requestAddSupplierLines({
+      targetId: activeTarget.id,
+      lines: fresh.map((l) => toAddable(l, supplierLabel)),
+    })
+  }
 
   const load = useCallback(async () => {
     const { data: qs } = await supabase
@@ -240,9 +273,11 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
             Upload a supplier&rsquo;s quote PDF and its lines are read straight off the document.
             {' '}<strong className="font-medium text-foreground">Apply prices</strong>{' '}reprices every
             item on this quote that the document covers, in one go — and tells you which items it
-            doesn&rsquo;t, so you can price those yourself. Or pull single lines into sections as you
-            build. Prices are ex&nbsp;VAT; landed cost = ×&nbsp;1.15. A photo or a scanned quote has
-            to be typed in below.
+            doesn&rsquo;t, so you can price those yourself.{' '}
+            <strong className="font-medium text-foreground">Add all</strong>{' '}puts every line on
+            the document onto the quote as its own item; <strong className="font-medium text-foreground">Add</strong>{' '}
+            does one. Both skip anything already there. Prices are ex&nbsp;VAT; landed cost =
+            ×&nbsp;1.15. A photo or a scanned quote has to be typed in below.
           </p>
         </div>
 
@@ -266,6 +301,24 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
         </div>
         {error && <p className="text-xs text-destructive">{error}</p>}
 
+        {/* Where "Add" puts a line. One section on the quote (and the solar
+            canvas, which has a single home for them) needs no choosing, so the
+            row only appears when there is genuinely a decision to make. */}
+        {targets.length > 1 && activeTarget && (
+          <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            Add lines to
+            <select
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+              value={activeTarget.id}
+              onChange={(e) => setTargetId(e.target.value)}
+            >
+              {targets.map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
         {quotes.length === 0 && (
           <p className="rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground">
             No supplier quotes yet. Upload one, or type a supplier name and upload nothing to add lines by hand.
@@ -280,6 +333,7 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
           const applied = appliedBy[sq.id] ?? 0
           const badge = STATUS_BADGE[sq.status]
           const title = [sq.supplier, sq.reference].filter(Boolean).join(' · ') || sq.source_filename || 'Supplier quote'
+          const notOnQuote = lines.filter((l) => !onQuote.has(l.id))
           return (
             <div key={sq.id} className="rounded-md border border-border">
               <div className="flex flex-wrap items-center gap-2 px-3 py-2">
@@ -317,6 +371,21 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
                   <Badge variant="success">{applied} price{applied === 1 ? '' : 's'} applied</Badge>
                 )}
                 <div className="ml-auto flex items-center gap-1">
+                  {lines.length > 0 && activeTarget && (
+                    <Button
+                      type="button" variant="outline" size="sm"
+                      disabled={notOnQuote.length === 0}
+                      onClick={() => addLinesToQuote(lines, title)}
+                      title={notOnQuote.length === 0
+                        ? 'Every line on this document is already on the quote'
+                        : `Add all ${notOnQuote.length} to ${activeTarget.label} at the quoted price`}
+                    >
+                      <ListPlus className="h-3.5 w-3.5" />
+                      {notOnQuote.length === 0
+                        ? 'All on quote'
+                        : `Add all ${notOnQuote.length} to quote`}
+                    </Button>
+                  )}
                   {lines.length > 0 && (
                     <Button
                       type="button" variant={applied > 0 ? 'outline' : 'default'} size="sm"
@@ -379,16 +448,16 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
               {!isCollapsed && (
                 <div className="border-t border-border px-3 py-2">
                   {lines.length > 0 && (
-                    <div className="hidden gap-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[7rem_minmax(0,1fr)_4.5rem_4.5rem_7rem_7rem_1.75rem]">
+                    <div className="hidden gap-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[7rem_minmax(0,1fr)_4.5rem_4.5rem_7rem_7rem_5.5rem_1.75rem]">
                       <span>SKU</span><span>Description</span><span>Qty</span><span>Unit</span>
-                      <span>Ex-VAT</span><span>Landed</span><span />
+                      <span>Ex-VAT</span><span>Landed</span><span>On quote</span><span />
                     </div>
                   )}
                   <div className="space-y-1">
                     {lines.map((line) => (
                       <div
                         key={line.id}
-                        className="grid grid-cols-2 items-center gap-2 rounded border border-border/60 p-1 sm:grid-cols-[7rem_minmax(0,1fr)_4.5rem_4.5rem_7rem_7rem_1.75rem] sm:border-0 sm:p-0"
+                        className="grid grid-cols-2 items-center gap-2 rounded border border-border/60 p-1 sm:grid-cols-[7rem_minmax(0,1fr)_4.5rem_4.5rem_7rem_7rem_5.5rem_1.75rem] sm:border-0 sm:p-0"
                       >
                         <Input
                           value={line.sku}
@@ -431,6 +500,24 @@ export function SupplierQuotesPanel({ requestId }: { requestId: string }) {
                         <span className="px-1 text-xs font-medium">
                           {line.unit_price_r > 0 ? rand(landedCostR(line.unit_price_r)) : '—'}
                         </span>
+                        {/* Straight from the document onto the quote, at the
+                            quoted price — no hunting for the same part in the
+                            section footer's picker. */}
+                        {activeTarget ? (
+                          onQuote.has(line.id) ? (
+                            <span className="flex items-center gap-1 px-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                              <Check className="h-3.5 w-3.5" /> Added
+                            </span>
+                          ) : (
+                            <Button
+                              type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]"
+                              title={`Add to ${activeTarget.label} at the quoted price`}
+                              onClick={() => addLinesToQuote([line], title)}
+                            >
+                              <Plus className="h-3 w-3" /> Add
+                            </Button>
+                          )
+                        ) : <span />}
                         <Button
                           type="button" variant="ghost" size="icon" className="h-7 w-7 justify-self-end"
                           title="Remove line" onClick={() => removeLine(line)}

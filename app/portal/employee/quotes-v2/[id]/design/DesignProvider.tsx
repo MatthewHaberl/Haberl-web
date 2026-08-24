@@ -1,10 +1,12 @@
 'use client'
 
 import {
-  createContext, useContext, useReducer, useEffect, useRef, useState, useCallback,
+  createContext, useContext, useReducer, useEffect, useRef, useState, useCallback, useMemo,
 } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { foldSupplierPriceRequest, useSupplierPriceBridge, type BridgeRequest } from '../supplier-prices-bus'
+import { useSupplierLineBridge, type AddLinesDetail } from '../supplier-lines-bus'
+import { landedCostR } from '@/lib/quotes/supplier-quotes'
 import type { SupplierPriceMap } from '@/lib/quotes/supplier-price-match'
 import {
   emptyDesign,
@@ -86,6 +88,8 @@ export type DesignAction =
   | { type: 'removeExtra'; id: string }
   // Supplier-quoted line items (W98)
   | { type: 'addQuotedItem'; item: QuotedItem }
+  // Several at once — "add the whole document" from the panel below.
+  | { type: 'addQuotedItems'; items: QuotedItem[] }
   | { type: 'updateQuotedItem'; id: string; patch: Partial<QuotedItem> }
   | { type: 'removeQuotedItem'; id: string }
   // Prices applied off an uploaded supplier quote (W100) — an updater so the
@@ -457,6 +461,15 @@ function reducer(d: SystemDesign, action: DesignAction): SystemDesign {
     case 'addQuotedItem':
       return { ...d, quotedItems: [...(d.quotedItems ?? []), action.item] }
 
+    case 'addQuotedItems': {
+      // Dedupe against what is already here, so pressing "add the whole
+      // document" twice adds the lines that are missing and nothing else.
+      const have = new Set((d.quotedItems ?? []).map((q) => q.lineId).filter(Boolean))
+      const fresh = action.items.filter((q) => !q.lineId || !have.has(q.lineId))
+      if (!fresh.length) return d
+      return { ...d, quotedItems: [...(d.quotedItems ?? []), ...fresh] }
+    }
+
     case 'updateQuotedItem':
       return { ...d, quotedItems: (d.quotedItems ?? []).map((q) => q.id === action.id ? { ...q, ...action.patch } : q) }
 
@@ -712,6 +725,30 @@ export function DesignProvider({
     [],
   )
   useSupplierPriceBridge(design.supplierPrices, handleSupplierPrices)
+
+  // Pulling document lines onto the design (W105). The canvas has one home for
+  // them — the Quoted line items block — so it publishes a single target and
+  // the panel's destination picker collapses to nothing.
+  const quotedTargets = useMemo(() => [{ id: 'quoted', label: 'Quoted line items' }], [])
+  const addedQuotedLineIds = useMemo(
+    () => (design.quotedItems ?? []).map((q) => q.lineId).filter((id): id is string => !!id),
+    [design.quotedItems],
+  )
+  const handleAddSupplierLines = useCallback((detail: AddLinesDetail) => {
+    dispatch({
+      type: 'addQuotedItems',
+      items: detail.lines.map((l) => ({
+        id: mkId('sqitem'),
+        lineId: l.lineId,
+        supplier: l.supplierLabel,
+        sku: l.sku,
+        description: l.description || l.sku,
+        qty: l.qty > 0 ? l.qty : 1,
+        unitCostR: landedCostR(l.unitPriceExVatR),
+      })),
+    })
+  }, [])
+  useSupplierLineBridge(quotedTargets, addedQuotedLineIds, handleAddSupplierLines)
 
   return (
     <DesignContext.Provider

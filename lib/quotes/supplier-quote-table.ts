@@ -63,7 +63,10 @@ const HEADER_PATTERNS: Array<{ key: ColumnKey; re: RegExp }> = [
   { key: 'net', re: /\bnett?\b/i },
   { key: 'total', re: /line\s*total|\btotal\b|\bamount\b|extended|\bext\b|\bvalue\b/i },
   { key: 'price', re: /price|\brate\b|\beach\b|\bcost\b/i },
-  { key: 'qty', re: /\bqty\b|quantit|\bunits?\s*ordered\b|\bordered\b/i },
+  // "Ord" (ordered) is Key Electric's quantity heading, and it is the column the
+  // line total is struck from. Missing it defaulted every line to qty 1, which
+  // then made resolveUnitPrice read the LINE TOTAL as the unit price.
+  { key: 'qty', re: /\bqty\b|quantit|\bunits?\s*ordered\b|\bordered\b|^ord\.?$|^q'?ty\.?$/i },
   { key: 'unit', re: /\bunit\b|\buom\b|\bpack\b|\bmeasure\b/i },
   { key: 'code', re: /\bcode\b|\bsku\b|\bpart\s*(no|number)?\b|\bstock\s*(no|code)\b|\bitem\s*(no|code)\b/i },
   { key: 'description', re: /descript|\bproduct\b|\bitem\b|\bgoods\b/i },
@@ -76,6 +79,10 @@ const NOISE_ROW = [
   /\breserved\b/i,
   /\bavailable\b/i,
   /\binbound\b/i,
+  // A batch/lot stamp printed under a cut-length line — traceability for the
+  // reel that was cut, not part of what the product is.
+  /^serial\s*\/?\s*lot\b/i,
+  /^batch\s*(no|number)?\b/i,
   /^printed\b/i,
   /^page \d+ of \d+/i,
   /^ver[\s.]/i,
@@ -160,8 +167,22 @@ export function readHeaderRow(row: TableRow, pageWidth: number): Column[] | null
   return cols
 }
 
-/** The column a cell sits in — the one it overlaps most, ties to the nearer left edge. */
+/**
+ * The column a cell sits in.
+ *
+ * Numbers are right-aligned INSIDE their column, so the widest overlap is the
+ * right answer for them. Wording is left-aligned and free to run past its
+ * column's right edge — a 200pt description under a 145pt "Product" column
+ * overlaps the NEXT column more, which is how full descriptions were being
+ * filed under "Unit" and thrown away (the SKU-only lines on Key's invoices).
+ * Text is therefore placed by where it STARTS; only unplaceable text (a cell
+ * beginning left of the table) falls back to overlap.
+ */
 function columnFor(cell: TableCell, cols: Column[]): Column | null {
+  if (parseAmount(cell.text) == null) {
+    const startsIn = cols.find((c) => cell.x0 >= c.x0 && cell.x0 < c.x1)
+    if (startsIn) return startsIn
+  }
   let best: Column | null = null
   let bestOverlap = 0
   for (const col of cols) {
@@ -206,12 +227,26 @@ export function parseAmount(text: string | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/** A code-looking token: no spaces, has a digit or a dash, not a bare number. */
+/**
+ * A stock-code token, for documents with no separate code column: the code sits
+ * on the line-item row and the wording arrives on the rows beneath it.
+ *
+ * Deliberately permissive about SHAPE — a supplier's codes are whatever their
+ * system prints. Requiring a letter AND a digit lost every pure-numeric code
+ * (570332, 2149010, 622902) and every pure-alpha one (EARTHCLAMP,
+ * EARTHCOUPLING); those lines came through with a blank SKU and so matched
+ * nothing in the catalog. What it must NOT swallow is ordinary wording, so a
+ * lone token still has to look like a code rather than a word: a digit,
+ * all-caps, or code punctuation.
+ */
 function looksLikeSku(text: string): boolean {
-  if (!text || /\s/.test(text) || text.length > 32) return false
-  if (!/[A-Za-z]/.test(text)) return false
-  if (!/[\d\-_/.]/.test(text)) return false
-  return /^[A-Za-z0-9\-_/.+#]+$/.test(text)
+  if (!text || /\s/.test(text) || text.length < 2 || text.length > 32) return false
+  if (!/^[A-Za-z0-9][A-Za-z0-9\-_/.+#*()&]*$/.test(text)) return false
+  // A quantity or a price that landed here is not a code.
+  if (/^\d{1,3}$/.test(text)) return false
+  if (/^\d[\d ,]*[.,]\d{1,2}$/.test(text)) return false
+  const allCaps = /[A-Z]/.test(text) && text === text.toUpperCase()
+  return /\d/.test(text) || allCaps || /[-_/.#*]/.test(text)
 }
 
 function isNoise(text: string): boolean {
@@ -230,16 +265,44 @@ interface DraftLine extends ParsedSupplierQuoteLine {
  * Preference: the line total ÷ qty (what will be invoiced) when it agrees with
  * the net column, else net, else list price less discount.
  */
-function resolveUnitPrice(
-  vals: { price: number | null; net: number | null; discount: number | null; total: number | null },
-  qty: number,
-): number | null {
-  const { price, net, discount, total } = vals
+interface LineValues {
+  price: number | null
+  net: number | null
+  discount: number | null
+  total: number | null
+}
+
+/** The per-unit figure the document itself prints, before any total check. */
+function unitBasis({ price, net, discount }: LineValues): number | null {
   const afterDiscount =
     price != null && discount != null && discount > 0 && discount < 100
       ? price * (1 - discount / 100)
       : null
-  const unit = net ?? afterDiscount ?? price
+  return net ?? afterDiscount ?? price
+}
+
+/**
+ * Quantity from the line's own arithmetic, for documents whose quantity column
+ * we couldn't label. total ÷ unit is only trusted when the whole number it
+ * lands on reproduces the printed total — allowing for the unit price having
+ * been rounded to the cent, which at qty 100 is 50c of drift.
+ *
+ * This is the belt to the "Ord" header's braces: a supplier heading we have
+ * never seen should still not silently price a 25-off line as one item.
+ */
+export function inferQty(vals: LineValues): number | null {
+  const unit = unitBasis(vals)
+  const { total } = vals
+  if (unit == null || unit <= 0 || total == null || total <= 0) return null
+  const qty = Math.round(total / unit)
+  if (qty < 1 || qty > 100_000) return null
+  const slack = Math.max(0.02, qty * 0.005 + total * 0.001)
+  return Math.abs(qty * unit - total) <= slack ? qty : null
+}
+
+function resolveUnitPrice(vals: LineValues, qty: number): number | null {
+  const { total } = vals
+  const unit = unitBasis(vals)
   const fromTotal = total != null && qty > 0 ? total / qty : null
 
   if (unit != null && fromTotal != null) {
@@ -294,7 +357,7 @@ function extractLines(pages: PdfTextPage[]): ParsedSupplierQuoteLine[] {
       const isLineStart = subject.length > 0 && moneyCount > 0 && (qtyVal != null || moneyCount > 1)
 
       if (isLineStart) {
-        const qty = qtyVal && qtyVal > 0 ? qtyVal : 1
+        const qty = qtyVal && qtyVal > 0 ? qtyVal : (inferQty(vals) ?? 1)
         const unitPrice = resolveUnitPrice(vals, qty)
         if (unitPrice == null) continue
         const code = byCol.get('code')?.trim() ?? ''

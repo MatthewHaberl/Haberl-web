@@ -477,6 +477,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
           unitCostR: landedCostR(l.unitPriceExVatR),
           unitSellR: quotedSellR(l.unitPriceExVatR, pricing.markup),
           note: l.supplierLabel ? `From ${l.supplierLabel}` : null,
+          supplierLineId: l.id,
         },
       ],
     }))

@@ -15,7 +15,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import {
   parseScope, emptyScope, scopeTotals, applyCrewShift, importScopeAsPackage,
-  CREW_HOURS_PER_DAY, type QuoteScope,
+  newScopeLine, scopeSectionNames,
+  CREW_HOURS_PER_DAY, type QuoteScope, type ScopeLineUnit,
 } from '@/lib/quotes/scope'
 import type { WorkType } from '@/lib/quotes/work-types'
 import { validateScope } from '@/lib/quotes/scope-validate'
@@ -31,8 +32,22 @@ import { PackagePlus } from 'lucide-react'
 import {
   foldSupplierPriceRequest, useSupplierPriceBridge, type BridgeRequest,
 } from '../supplier-prices-bus'
+import { useSupplierLineBridge, type AddLinesDetail } from '../supplier-lines-bus'
+import { landedCostR, quotedSellR } from '@/lib/quotes/supplier-quotes'
 import { catalogKey, lookupSupplierPrice, skuKey } from '@/lib/quotes/supplier-price-match'
 import { useCatalog } from '../design/useCatalog'
+
+/**
+ * A supplier's unit of sale in the four units a scope line has. Cut cable comes
+ * back as "MTR" or "P/MTR"; everything else is an each.
+ */
+function scopeUnitFor(unit: string): ScopeLineUnit {
+  const u = (unit ?? '').trim().toLowerCase()
+  if (u === 'm' || u === 'mtr' || u === 'p/mtr' || u === 'metre' || u === 'meter') return 'm'
+  if (u === 'hr' || u === 'hour') return 'hr'
+  if (u === 'job') return 'job'
+  return 'ea'
+}
 
 /** Pricing context for the builder — markup + labour defaults from Settings. */
 export interface ScopePricing {
@@ -147,6 +162,59 @@ export function ScopeWorkspace({
     })
   }, [catalogItems, pricing.markup])
   useSupplierPriceBridge(scope.supplierPrices, handleSupplierPrices)
+
+  // ── Pulling document lines onto the quote (W105) ───────────────────────────
+  // Every (package, section) on this quote is somewhere a supplier line can
+  // land, and the panel needs the list to offer a destination. Targets are
+  // keyed "<packageId>:<section>" — the same identity the editor's own move
+  // menu uses, because section names repeat across packages on purpose.
+  const targetBuckets = scope.packages.length > 0
+    ? scope.packages.map((p) => ({ packageId: p.id as string | null, prefix: `${p.label || 'Package'} · ` }))
+    : [{ packageId: null as string | null, prefix: '' }]
+  const lineTargets = targetBuckets.flatMap((b) =>
+    scopeSectionNames(scope, b.packageId).map((name) => ({
+      id: `${b.packageId ?? ''}:${name}`,
+      label: `${b.prefix}${name}`,
+    })))
+  const addedSupplierLineIds = scope.lines
+    .map((l) => l.supplierLineId)
+    .filter((id): id is string => !!id)
+
+  const handleAddSupplierLines = useCallback((detail: AddLinesDetail) => {
+    const sep = detail.targetId.indexOf(':')
+    if (sep < 0) return
+    const packageId = detail.targetId.slice(0, sep) || null
+    const section = detail.targetId.slice(sep + 1)
+    setScope((s) => {
+      // Never add the same document line twice, however the request arrived —
+      // the panel greys these out, but a stale panel must not be able to
+      // duplicate a 34-line invoice onto the quote.
+      const already = new Set(s.lines.map((l) => l.supplierLineId).filter(Boolean))
+      const fresh = detail.lines.filter((l) => !already.has(l.lineId))
+      if (!fresh.length) return s
+      return {
+        ...s,
+        lines: [
+          ...s.lines,
+          ...fresh.map((l) => ({
+            ...newScopeLine(section, 'material', packageId),
+            catalogId: null,
+            sku: l.sku,
+            description: l.description || l.sku,
+            qty: l.qty > 0 ? l.qty : 1,
+            unit: scopeUnitFor(l.unit),
+            // The QUOTED price is authoritative for this quote: cost = landed
+            // (ex VAT × 1.15), sell = landed × markup.
+            unitCostR: landedCostR(l.unitPriceExVatR),
+            unitSellR: quotedSellR(l.unitPriceExVatR, pricing.markup),
+            note: l.supplierLabel ? `From ${l.supplierLabel}` : null,
+            supplierLineId: l.lineId,
+          })),
+        ],
+      }
+    })
+  }, [pricing.markup])
+  useSupplierLineBridge(lineTargets, addedSupplierLineIds, handleAddSupplierLines)
 
   /**
    * Pull the chosen quotes in as packages.

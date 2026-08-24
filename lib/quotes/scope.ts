@@ -36,6 +36,15 @@ export interface ScopeLine {
   optional: boolean
   note: string | null
   /**
+   * supplier_quote_lines.id this line was pulled from, or null.
+   *
+   * Provenance, not pricing — the quoted price is already baked into
+   * unitCostR. What it buys is the ability to say "this document line is
+   * already on the quote", which is what stops "add the whole document" from
+   * duplicating an invoice the second time it is pressed.
+   */
+  supplierLineId: string | null
+  /**
    * Work package this line belongs to (see ScopePackage), or null on a
    * single-package quote — which is every quote written before packages
    * existed, and every quote that only ever covers one job.
@@ -361,6 +370,7 @@ export function newScopeLine(
     sellOverridden: false,
     optional: false,
     note: null,
+    supplierLineId: null,
   }
 }
 
@@ -387,6 +397,7 @@ function parseLine(raw: unknown): ScopeLine | null {
     sellOverridden: r.sellOverridden === true,
     optional: r.optional === true,
     note: typeof r.note === 'string' && r.note ? r.note : null,
+    supplierLineId: typeof r.supplierLineId === 'string' && r.supplierLineId ? r.supplierLineId : null,
     packageId: typeof r.packageId === 'string' && r.packageId ? r.packageId : null,
   }
 }
