@@ -4,22 +4,23 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
-const TABS = [
-  { href: '/portal/founders', label: 'Questions' },
-  { href: '/portal/founders/reference', label: 'Registrations & documents' },
-]
-
-export function FoundersTabs() {
+export function FoundersTabs({
+  questionsLabel, referenceLabel,
+}: { questionsLabel: string; referenceLabel: string }) {
   const pathname = usePathname()
+  const tabs = [
+    { href: '/portal/founders', label: questionsLabel },
+    { href: '/portal/founders/reference', label: referenceLabel },
+  ]
 
   return (
     <nav className="flex gap-1 rounded-lg border border-border p-1">
-      {TABS.map((t) => {
-        const active = pathname === t.href
+      {tabs.map((tab) => {
+        const active = pathname === tab.href
         return (
           <Link
-            key={t.href}
-            href={t.href}
+            key={tab.href}
+            href={tab.href}
             className={cn(
               'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
               active
@@ -27,7 +28,7 @@ export function FoundersTabs() {
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground',
             )}
           >
-            {t.label}
+            {tab.label}
           </Link>
         )
       })}
