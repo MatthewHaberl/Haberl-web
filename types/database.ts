@@ -1152,6 +1152,47 @@ export interface Payslip {
   updated_at: string
 }
 
+// ── Staff documents (migration 136) ─────────────────────────────────────────
+
+/** The kinds of paperwork kept on a person. Labels live in lib/staff/documents.ts. */
+export type StaffDocumentType =
+  | 'id_document'
+  | 'drivers_licence'
+  | 'wireman_licence'
+  | 'qualification'
+  | 'contract'
+  | 'banking'
+  | 'tax'
+  | 'medical'
+  | 'safety'
+  | 'disciplinary'
+  | 'other'
+
+/**
+ * One file held against a staff member. `file_url` is an object path inside the
+ * PRIVATE `staff-docs` bucket, never a public URL — it is only ever handed out
+ * as a short-lived signed link by /api/staff/documents/[docId].
+ */
+export interface StaffDocument {
+  id: string
+  staff_id: string
+  doc_type: StaffDocumentType
+  title: string
+  /** The number printed on the document — ID, licence, SARS number. */
+  doc_number: string | null
+  issued_on: string | null
+  /** Set on anything that lapses; the staff page warns inside 60 days. */
+  expires_on: string | null
+  notes: string | null
+  file_url: string
+  file_name: string
+  mime_type: string | null
+  file_size: number | null
+  uploaded_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 // ── Invoices (migration 133) ────────────────────────────────────────────────
 // A customer invoice raised against a job. The arithmetic — what a job has
 // been billed and what is left — lives in lib/invoices/invoice.ts.
