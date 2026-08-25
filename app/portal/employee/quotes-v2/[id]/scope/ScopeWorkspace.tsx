@@ -49,6 +49,13 @@ function scopeUnitFor(unit: string): ScopeLineUnit {
   return 'ea'
 }
 
+/**
+ * Where a supplier's line lands on a scope that has no sections yet. Materials
+ * because that is what a supplier document is, and it is already house
+ * vocabulary (sectionSuggestions) rather than a new word invented here.
+ */
+const FALLBACK_LINE_SECTION = 'Materials'
+
 /** Pricing context for the builder — markup + labour defaults from Settings. */
 export interface ScopePricing {
   markup: number
@@ -171,11 +178,22 @@ export function ScopeWorkspace({
   const targetBuckets = scope.packages.length > 0
     ? scope.packages.map((p) => ({ packageId: p.id as string | null, prefix: `${p.label || 'Package'} · ` }))
     : [{ packageId: null as string | null, prefix: '' }]
-  const lineTargets = targetBuckets.flatMap((b) =>
-    scopeSectionNames(scope, b.packageId).map((name) => ({
+  //
+  // A bucket with NO sections still gets one target. Publishing an empty list
+  // is the one answer the panel can't show: it hides every Add button, with
+  // nothing on screen to say why — and a quote reaches that state easily (a
+  // 'custom' work type seeds no sections, and any quote can have its last
+  // section deleted). Landing in a section that isn't declared yet is a shape
+  // this model already carries: the line holds the name and scopeSectionNames
+  // picks it up as a straggler, the same way the editor's own move menu and a
+  // rename treat one.
+  const lineTargets = targetBuckets.flatMap((b) => {
+    const names = scopeSectionNames(scope, b.packageId)
+    return (names.length ? names : [FALLBACK_LINE_SECTION]).map((name) => ({
       id: `${b.packageId ?? ''}:${name}`,
       label: `${b.prefix}${name}`,
-    })))
+    }))
+  })
   const addedSupplierLineIds = scope.lines
     .map((l) => l.supplierLineId)
     .filter((id): id is string => !!id)

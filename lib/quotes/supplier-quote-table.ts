@@ -20,6 +20,12 @@
 // The net (after-discount) column wins over the list column when both exist,
 // because the net is what the supplier will actually invoice.
 //
+// Whether a figure carries VAT is a property of its COLUMN, not of the
+// document: Solarway's invoice prints "Incl. Price" and "Excl. Total" on the
+// same header row, so the page is neither one thing nor the other. Each column
+// is read against its own heading and divided back to ex VAT where it says
+// "Incl.".
+//
 // Pure module — no I/O, no pdf.js — so it unit-tests on synthetic pages.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -52,9 +58,20 @@ interface Column {
   key: ColumnKey | null
   x0: number
   x1: number
-  /** Header text carried through so we can spot "incl VAT" pricing. */
+  /** The heading as printed, kept so a mis-read column can be recognised. */
   label: string
+  /** That heading says its figures carry VAT, so they need dividing back out. */
+  vatInclusive: boolean
 }
+
+/** Columns that hold money, where two competing figures must not be glued together. */
+const MONEY_KEYS: ReadonlySet<ColumnKey> = new Set<ColumnKey>(['price', 'net', 'total'])
+
+/** South African VAT — the only rate these documents are printed at. */
+const VAT_MULTIPLIER = 1.15
+
+const exVat = (amount: number, vatInclusive: boolean) =>
+  vatInclusive ? amount / VAT_MULTIPLIER : amount
 
 // Most specific first — "Unit Net" must not be read as the "Unit" column, and
 // "Line Total" must not be read as a price.
@@ -98,7 +115,15 @@ const TOTALS_ROW =
 const DOC_TYPE_WORDS =
   /^(quote|quotation|pro[-\s]?forma|proforma|tax invoice|invoice|statement|order|purchase order|credit note|delivery note|page \d)/i
 
-const round2 = (n: number) => Math.round(n * 100) / 100
+/**
+ * Round to the cent, half up.
+ *
+ * The toFixed step is not decoration: dividing an ex-VAT total by a quantity
+ * lands on halves a lot (R33.91 over 2 is 16.955), and in binary that is
+ * 16.954999999999998, which Math.round takes DOWN to 16.95 — a cent light on
+ * every such line, against a supplier who rounded up.
+ */
+const round2 = (n: number) => Math.round(Number((n * 100).toFixed(4))) / 100
 
 // ── Row / cell assembly ──────────────────────────────────────────────────────
 
@@ -138,6 +163,19 @@ function classifyHeader(text: string): ColumnKey | null {
 }
 
 /**
+ * Does this heading say its figures include VAT?
+ *
+ * "Excl." has to be ruled out explicitly, because including and excluding are
+ * the same word bar two letters at the front — and the old test (both "incl"
+ * AND "vat"/"tax" somewhere in the header row) missed Solarway's "Incl. Price"
+ * entirely, so a R19.50 VAT-inclusive price was stored as if it were the
+ * ex-VAT cost.
+ */
+function isInclusiveHeading(label: string): boolean {
+  return /incl/i.test(label) && !/excl/i.test(label)
+}
+
+/**
  * Turn a candidate header row into columns spanning to the next header's edge.
  * Returns null when the row doesn't look like a table header (needs a
  * description-ish column plus a price/total, which no address block has).
@@ -148,6 +186,7 @@ export function readHeaderRow(row: TableRow, pageWidth: number): Column[] | null
     x0: c.x0,
     x1: c.x1,
     label: c.text,
+    vatInclusive: isInclusiveHeading(c.text),
   }))
   const keys = new Set(cols.map((c) => c.key).filter(Boolean))
   const hasSubject = keys.has('description') || keys.has('code')
@@ -195,13 +234,45 @@ function columnFor(cell: TableCell, cols: Column[]): Column | null {
   return bestOverlap > 0 ? best : null
 }
 
-function cellsByColumn(row: TableRow, cols: Column[]): Map<ColumnKey, string> {
-  const out = new Map<ColumnKey, string>()
+/** What one column contributed to a row, carrying its heading's VAT basis. */
+interface ColumnCell {
+  text: string
+  vatInclusive: boolean
+}
+
+/**
+ * A row's cells filed under the column they sit in.
+ *
+ * Several cells can land in one column and are joined — a description that runs
+ * on, or a currency symbol printed hard against its column's left edge with the
+ * digits right-aligned away from it ("R" … "33.91"), which only parses once
+ * it's back in one piece.
+ *
+ * Money is the exception. Solarway prints "Excl. Total" and "Incl. Total" side
+ * by side and both are, by their wording, the line total; joining them gave
+ * "R 33.91 R 39.00", which parses as nothing at all and lost the line total
+ * completely. When two genuine figures claim the same money role the ex-VAT one
+ * wins, because ex VAT is what we store.
+ */
+function cellsByColumn(row: TableRow, cols: Column[]): Map<ColumnKey, ColumnCell> {
+  const out = new Map<ColumnKey, ColumnCell>()
   for (const cell of row.cells) {
     const col = columnFor(cell, cols)
     if (!col?.key) continue
     const prev = out.get(col.key)
-    out.set(col.key, prev ? `${prev} ${cell.text}` : cell.text)
+    if (!prev) {
+      out.set(col.key, { text: cell.text, vatInclusive: col.vatInclusive })
+      continue
+    }
+    const competing =
+      MONEY_KEYS.has(col.key) && parseAmount(prev.text) != null && parseAmount(cell.text) != null
+    if (competing) {
+      if (prev.vatInclusive && !col.vatInclusive) {
+        out.set(col.key, { text: cell.text, vatInclusive: false })
+      }
+      continue
+    }
+    out.set(col.key, { text: `${prev.text} ${cell.text}`, vatInclusive: prev.vatInclusive })
   }
   return out
 }
@@ -249,6 +320,28 @@ function looksLikeSku(text: string): boolean {
   return /\d/.test(text) || allCaps || /[-_/.#*]/.test(text)
 }
 
+/**
+ * The stock code written into the front of the wording:
+ * "AS-AMC-01B - ADJUSTABLE MID CLAMP/INCL SPRING". Solarway has no code column
+ * at all, so without this every line arrives with a blank SKU and matches
+ * nothing in the catalog.
+ *
+ * Only the FIRST word counts, and only when the document itself set it apart
+ * with a spaced dash. It then has to look like a part number rather than the
+ * first word of a sentence: four characters or more, carrying a digit or code
+ * punctuation. Key Electric's "CBI 80A 2P MCB 6KA - MINI RAIL BLACK 2 MOD" is
+ * the reason for the guard — "CBI" is a brand, it is all-caps like a code, and
+ * tearing it off would leave a description that no longer says whose breaker
+ * this is.
+ */
+function splitInlineSku(description: string): { sku: string; description: string } | null {
+  const match = description.match(/^(\S+)\s+-\s+(\S.*)$/)
+  if (!match) return null
+  const [, token, rest] = match
+  if (token.length < 4 || !/[-\d_/.]/.test(token) || !looksLikeSku(token)) return null
+  return { sku: token, description: rest.trim() }
+}
+
 function isNoise(text: string): boolean {
   return NOISE_ROW.some((re) => re.test(text))
 }
@@ -270,15 +363,39 @@ interface LineValues {
   net: number | null
   discount: number | null
   total: number | null
+  /**
+   * Which of those figures were printed under an "Incl." heading. Optional, so
+   * the arithmetic below can also be handed plain ex-VAT numbers.
+   */
+  inclusive?: { price?: boolean; net?: boolean; total?: boolean }
+}
+
+/** The per-unit figure the document prints, ex VAT, and where it came from. */
+interface UnitBasis {
+  value: number
+  /** VAT had to be divided out of it — a weaker number than an ex-VAT total. */
+  wasInclusive: boolean
 }
 
 /** The per-unit figure the document itself prints, before any total check. */
-function unitBasis({ price, net, discount }: LineValues): number | null {
-  const afterDiscount =
-    price != null && discount != null && discount > 0 && discount < 100
-      ? price * (1 - discount / 100)
-      : null
-  return net ?? afterDiscount ?? price
+function unitBasis(vals: LineValues): UnitBasis | null {
+  const { price, net, discount } = vals
+  if (net != null) {
+    const wasInclusive = vals.inclusive?.net ?? false
+    return { value: exVat(net, wasInclusive), wasInclusive }
+  }
+  if (price != null) {
+    const wasInclusive = vals.inclusive?.price ?? false
+    const afterDiscount =
+      discount != null && discount > 0 && discount < 100 ? price * (1 - discount / 100) : price
+    return { value: exVat(afterDiscount, wasInclusive), wasInclusive }
+  }
+  return null
+}
+
+/** The line total, ex VAT, whichever basis its column was printed on. */
+function totalExVat(vals: LineValues): number | null {
+  return vals.total == null ? null : exVat(vals.total, vals.inclusive?.total ?? false)
 }
 
 /**
@@ -291,8 +408,10 @@ function unitBasis({ price, net, discount }: LineValues): number | null {
  * never seen should still not silently price a 25-off line as one item.
  */
 export function inferQty(vals: LineValues): number | null {
-  const unit = unitBasis(vals)
-  const { total } = vals
+  // Both sides on the same VAT basis, or an inclusive price over an exclusive
+  // total would put the count out by 15%.
+  const unit = unitBasis(vals)?.value ?? null
+  const total = totalExVat(vals)
   if (unit == null || unit <= 0 || total == null || total <= 0) return null
   const qty = Math.round(total / unit)
   if (qty < 1 || qty > 100_000) return null
@@ -301,24 +420,29 @@ export function inferQty(vals: LineValues): number | null {
 }
 
 function resolveUnitPrice(vals: LineValues, qty: number): number | null {
-  const { total } = vals
   const unit = unitBasis(vals)
+  const total = totalExVat(vals)
   const fromTotal = total != null && qty > 0 ? total / qty : null
 
   if (unit != null && fromTotal != null) {
+    // A VAT-inclusive per-unit price is the weaker of the two whenever an
+    // exclusive line total is on the page: the printed figure was rounded to the
+    // cent BEFORE we divided the VAT back out, and a zero-rated line on an
+    // otherwise 15% invoice (Solarway's trading fee, VAT % 0,00) never carried
+    // VAT at all — dividing it by 1.15 would invent a discount that isn't there.
+    if (unit.wasInclusive && !(vals.inclusive?.total ?? false)) return round2(fromTotal)
     // Cent-level rounding differs between the two; a real disagreement (a
     // per-line surcharge, a free item) means the total is the truth.
-    const tolerance = Math.max(0.02, Math.abs(unit) * 0.02)
-    return round2(Math.abs(fromTotal - unit) <= tolerance ? unit : fromTotal)
+    const tolerance = Math.max(0.02, Math.abs(unit.value) * 0.02)
+    return round2(Math.abs(fromTotal - unit.value) <= tolerance ? unit.value : fromTotal)
   }
-  const chosen = unit ?? fromTotal
+  const chosen = unit?.value ?? fromTotal
   return chosen == null ? null : round2(chosen)
 }
 
 function extractLines(pages: PdfTextPage[]): ParsedSupplierQuoteLine[] {
   const lines: DraftLine[] = []
   let cols: Column[] | null = null
-  let vatInclusive = false
 
   for (const page of pages) {
     const rows = buildRows(page)
@@ -329,7 +453,6 @@ function extractLines(pages: PdfTextPage[]): ParsedSupplierQuoteLine[] {
       const candidate = readHeaderRow(rows[i], page.width)
       if (candidate) {
         cols = candidate
-        vatInclusive = candidate.some((c) => /incl/i.test(c.label) && /vat|tax/i.test(c.label))
         startIndex = i + 1
         break
       }
@@ -339,19 +462,25 @@ function extractLines(pages: PdfTextPage[]): ParsedSupplierQuoteLine[] {
     let current: DraftLine | null = null
     for (const row of rows.slice(startIndex)) {
       const byCol = cellsByColumn(row, cols)
-      const subject = [byCol.get('code'), byCol.get('description')].filter(Boolean).join(' ').trim()
+      const cellText = (key: ColumnKey) => byCol.get(key)?.text
+      const subject = [cellText('code'), cellText('description')].filter(Boolean).join(' ').trim()
       // Totals block — the table's done. The label can sit in any column (Key
       // prints SUBTOTAL/VAT/TOTAL over the price columns, terms on the left).
       if (row.cells.some((c) => TOTALS_ROW.test(c.text.trim()))) break
       if (subject && isNoise(subject)) continue
       if (!subject && row.cells.every((c) => isNoise(c.text))) continue
 
-      const qtyVal = parseAmount(byCol.get('qty'))
-      const vals = {
-        price: parseAmount(byCol.get('price')),
-        net: parseAmount(byCol.get('net')),
-        discount: parseAmount(byCol.get('discount')),
-        total: parseAmount(byCol.get('total')),
+      const qtyVal = parseAmount(cellText('qty'))
+      const vals: LineValues = {
+        price: parseAmount(cellText('price')),
+        net: parseAmount(cellText('net')),
+        discount: parseAmount(cellText('discount')),
+        total: parseAmount(cellText('total')),
+        inclusive: {
+          price: byCol.get('price')?.vatInclusive ?? false,
+          net: byCol.get('net')?.vatInclusive ?? false,
+          total: byCol.get('total')?.vatInclusive ?? false,
+        },
       }
       const moneyCount = [vals.price, vals.net, vals.total].filter((v) => v != null).length
       const isLineStart = subject.length > 0 && moneyCount > 0 && (qtyVal != null || moneyCount > 1)
@@ -360,20 +489,26 @@ function extractLines(pages: PdfTextPage[]): ParsedSupplierQuoteLine[] {
         const qty = qtyVal && qtyVal > 0 ? qtyVal : (inferQty(vals) ?? 1)
         const unitPrice = resolveUnitPrice(vals, qty)
         if (unitPrice == null) continue
-        const code = byCol.get('code')?.trim() ?? ''
-        const descCell = byCol.get('description')?.trim() ?? ''
+        const code = cellText('code')?.trim() ?? ''
+        const descCell = cellText('description')?.trim() ?? ''
         // No dedicated code column: a code-shaped description cell is the SKU
         // and the wording arrives on the rows below it.
-        const sku = code || (looksLikeSku(descCell) ? descCell : '')
-        const description = code ? descCell : sku === descCell ? '' : descCell
+        let sku = code || (looksLikeSku(descCell) ? descCell : '')
+        let description = code ? descCell : sku === descCell ? '' : descCell
+        // Still no code? It may be written into the front of the wording.
+        const inline = sku ? null : splitInlineSku(description)
+        if (inline) {
+          sku = inline.sku
+          description = inline.description
+        }
         current = {
           page: page.page,
           y: row.y,
           sku,
           description,
           qty,
-          unit: (byCol.get('unit') ?? '').trim().toLowerCase().slice(0, 12) || 'ea',
-          unit_price_ex_vat: vatInclusive ? round2(unitPrice / 1.15) : unitPrice,
+          unit: (cellText('unit') ?? '').trim().toLowerCase().slice(0, 12) || 'ea',
+          unit_price_ex_vat: unitPrice,
         }
         lines.push(current)
         continue
@@ -384,7 +519,7 @@ function extractLines(pages: PdfTextPage[]): ParsedSupplierQuoteLine[] {
         current &&
         current.page === page.page &&
         subject &&
-        !byCol.get('qty') &&
+        !cellText('qty') &&
         moneyCount === 0 &&
         current.y - row.y <= MAX_CONTINUATION_GAP &&
         current.description.length < 300
@@ -417,6 +552,29 @@ const DATE_LABELS = [
   /^date\s*:?$/i,
 ]
 const DATE_LABEL_EXCLUDE = /required|due|expir|valid|deliver|print/i
+
+/** How South African companies sign their own name. */
+const COMPANY_SUFFIX = /\(\s*(pty|rf)\s*\)|\b(pty|ltd|limited|inc|incorporated|cc)\b/i
+
+/** A heading that only says which block of the page follows — nobody's name. */
+const BLOCK_HEADING = /^(from|to|bill(ed)?\s*to|ship\s*to|sold\s*to|attention|attn|supplier|customer)$/i
+
+/**
+ * Could this cell be somebody's name? Excludes the document type ("TAX
+ * INVOICE"), field labels — anything ending in a colon, like Solarway's
+ * "NUMBER:" — and the bare FROM / TO headings that sit above the two address
+ * blocks, all of which are wording without being a name.
+ */
+function isNameLike(text: string): boolean {
+  return (
+    text.length >= 4 &&
+    /[A-Za-z]{3}/.test(text) &&
+    !text.endsWith(':') &&
+    !DOC_TYPE_WORDS.test(text) &&
+    !BLOCK_HEADING.test(text) &&
+    !/^[\d\W]+$/.test(text)
+  )
+}
 
 /** ISO-ise 2026/08/13, 13/08/2026, 13-08-26, 13 Aug 2026. Day-first when ambiguous (SA). */
 export function parseDocumentDate(text: string | undefined): string | null {
@@ -467,16 +625,28 @@ function readHeaderDetails(pages: PdfTextPage[]): Omit<ParsedSupplierQuote, 'lin
   const rows = buildRows(first)
   const top = rows.slice(0, 30)
 
-  // Supplier: the top-most line of real prose on the page — quoting systems put
-  // their own name in the letterhead, above everything else.
+  // Supplier: a registered company name is the strongest signal on the page, so
+  // look for one before falling back to position. Solarway is why — its
+  // letterhead sits in the top RIGHT as a block of labelled fields, and
+  // "top-most prose" read the label "NUMBER:" as the supplier while the real
+  // name, "Y & R SOLAR (PTY) LTD", sat lower down under a FROM heading.
   let supplier: string | null = null
   for (const row of top) {
-    const candidate = row.cells
-      .map((c) => c.text.trim())
-      .find((t) => t.length >= 4 && /[A-Za-z]{3}/.test(t) && !DOC_TYPE_WORDS.test(t) && !/^[\d\W]+$/.test(t))
-    if (candidate) {
-      supplier = candidate.slice(0, 120)
+    const named = row.cells.map((c) => c.text.trim()).find((t) => isNameLike(t) && COMPANY_SUFFIX.test(t))
+    if (named) {
+      supplier = named.slice(0, 120)
       break
+    }
+  }
+  // Nobody spelled out a company suffix: the top-most line of real prose, which
+  // is where quoting systems put their own name.
+  if (!supplier) {
+    for (const row of top) {
+      const candidate = row.cells.map((c) => c.text.trim()).find((t) => isNameLike(t))
+      if (candidate) {
+        supplier = candidate.slice(0, 120)
+        break
+      }
     }
   }
 
@@ -507,19 +677,36 @@ function readHeaderDetails(pages: PdfTextPage[]): Omit<ParsedSupplierQuote, 'lin
 
 const SUBTOTAL_LABEL = /^(sub[-\s]?total|total\s*(excl|ex\b|before)|nett?\s*total|goods\s*total)/i
 
+/** A label that says in words that its figure excludes VAT. */
+const EXCLUSIVE_SUBTOTAL_LABEL = /^total\s*(excl|ex\b|before)/i
+
 /**
  * The document's own ex-VAT subtotal, when it prints one. Used to prove the
  * extraction added up to the same number the supplier did.
+ *
+ * Solarway prints two candidates: "Total Exclusive: R 33.91" and, below it,
+ * "Sub Total: R 39.00" — which on that layout is VAT-INCLUSIVE. Simply keeping
+ * the last match took the inclusive one and then accused a perfectly good
+ * extraction of not adding up, so the labels are ranked: wording that says
+ * "excluding" beats a bare "Sub Total". Within a rank the last match still
+ * wins, which is how a multi-page document reaches its final total.
  */
 export function findSubtotal(pages: PdfTextPage[]): number | null {
   let found: number | null = null
+  let bestRank = 0
   for (const page of pages) {
     for (const row of buildRows(page)) {
-      if (!row.cells.some((c) => SUBTOTAL_LABEL.test(c.text.trim()))) continue
+      const label = row.cells.map((c) => c.text.trim()).find((t) => SUBTOTAL_LABEL.test(t))
+      if (!label) continue
+      const rank = EXCLUSIVE_SUBTOTAL_LABEL.test(label) ? 2 : 1
+      if (rank < bestRank) continue
       const amounts = row.cells
         .map((c) => parseAmount(c.text))
         .filter((n): n is number => n != null && n > 0)
-      if (amounts.length) found = Math.max(...amounts)
+      if (amounts.length) {
+        found = Math.max(...amounts)
+        bestRank = rank
+      }
     }
   }
   return found
