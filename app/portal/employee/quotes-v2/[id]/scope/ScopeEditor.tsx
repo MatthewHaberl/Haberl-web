@@ -13,13 +13,15 @@
 
 import {
   useEffect, useState,
-  type CSSProperties, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction,
+  type CSSProperties, type Dispatch, type PointerEvent as ReactPointerEvent, type ReactNode,
+  type SetStateAction,
 } from 'react'
 import { ArrowDown, ArrowUp, CircuitBoard, FileText, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { StackedFieldLabel } from '@/components/ui/label'
 import {
   newScopeLine, renameScopeSection, scopeSectionNames,
   type QuoteScope, type ScopeLine, type ScopeLineUnit,
@@ -180,6 +182,16 @@ function ColResizer({ col, width, onResize }: {
     </span>
   )
 }
+
+/**
+ * StackedFieldLabel's container-query twin — same job, same look, but this row
+ * folds on the width of the card rather than the width of the window (the
+ * builder shares the page with the summary panel), so it hides at @[48rem]
+ * where the header strip comes back rather than at `sm`.
+ */
+const CellLabel = ({ children }: { children: ReactNode }) => (
+  <StackedFieldLabel className="sm:block @[48rem]:hidden">{children}</StackedFieldLabel>
+)
 
 /** Effective markup on a line (sell ÷ landed cost), or null with no cost. */
 const markupOf = (line: ScopeLine) =>
@@ -586,12 +598,15 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
           : null
         return (
           <Card key={name} data-issue-anchor={sectionAnchor(name)}>
-            <CardContent className="@container space-y-3 pt-6">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
+            <CardContent className="@container space-y-3 pt-6 max-sm:p-3">
+              <div className="flex items-start justify-between gap-2">
+                {/* The totals sat next to the name and refused to shrink, so on a
+                    phone they ran straight under the move/save buttons. They drop
+                    to their own line below the section name until there is room. */}
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 @[30rem]:flex-row @[30rem]:items-center @[30rem]:gap-2">
                   <SectionName name={name} onRename={(to) => renameSection(name, to)} />
                   {lines.length > 0 && (
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span className="min-w-0 px-1 text-xs text-muted-foreground @[30rem]:shrink-0 @[30rem]:px-0">
                       {lines.length} line{lines.length === 1 ? '' : 's'} · {rand(round2(subtotal))}
                       {costTotal > 0 && (
                         <> · cost {rand(round2(costTotal))}
@@ -665,51 +680,60 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                       data-invalid={rowIssues.length > 0 ? 'true' : undefined}
                       className={rowIssues.length > 0 ? 'rounded bg-destructive/5 py-1' : undefined}
                     >
-                    {/* Below the table breakpoint the ten cells fold into two dense
-                        lines - identity on top, money and actions underneath - rather
-                        than one field per line. `contents` dissolves both wrappers at
-                        @[48rem] so the resizable grid still sees ten direct children. */}
+                    {/* Below the table breakpoint the ten cells fold into a small
+                        card: what the item IS on top, the four money fields under it
+                        two-up and labelled, then the line total and the row actions
+                        on a footer of their own. `contents` dissolves all three
+                        wrappers at @[48rem] so the resizable grid still sees ten
+                        direct children in column order.
+
+                        min-w-0 on each wrapper is what keeps the row inside the
+                        card: a grid item is sized by its own content by default, so
+                        an untyped <input>'s intrinsic ~20-character width was
+                        dragging the whole row off the right of the screen. */}
                     <div
-                      className={`grid gap-1.5 rounded border border-border/60 p-1 @[48rem]:items-start @[48rem]:gap-2 @[48rem]:rounded-none @[48rem]:border-0 @[48rem]:p-0 ${ROW_COLS}`}
+                      className={`grid gap-2 rounded-lg border border-border/60 p-2 @[48rem]:items-start @[48rem]:gap-2 @[48rem]:rounded-none @[48rem]:border-0 @[48rem]:p-0 ${ROW_COLS}`}
                     >
-                      <div className="flex items-start gap-1.5 @[48rem]:contents">
+                      <div className="flex min-w-0 items-start gap-1.5 @[48rem]:contents">
                         <Input
                           value={line.sku}
                           onChange={(e) => updateLine(line.id, { sku: e.target.value })}
                           placeholder="SKU" title="Supplier code"
-                          className="h-8 w-[6.5rem] shrink-0 text-xs @[48rem]:w-full"
+                          className="h-9 w-[4.75rem] shrink-0 text-xs @[48rem]:h-8 @[48rem]:w-full"
                         />
                         <div className="min-w-0 flex-1">
                           <Input
                             value={line.description}
                             onChange={(e) => updateLine(line.id, { description: e.target.value })}
                             placeholder={line.kind === 'fee' ? 'Fee description (e.g. Inspection fee)' : 'Item description'}
-                            className={`h-8 text-xs ${badField(line.id, 'description') ? INVALID : ''}`}
+                            className={`h-9 text-xs @[48rem]:h-8 ${badField(line.id, 'description') ? INVALID : ''}`}
                           />
                           {(line.kind === 'fee' || line.note) && (
-                            <div className="ml-1 truncate border-l border-border pl-1.5 text-[10px] leading-[1.15] text-muted-foreground">
+                            <div className="ml-1 line-clamp-2 border-l border-border pl-1.5 text-[10px] leading-[1.15] text-muted-foreground @[48rem]:truncate">
                               {[line.kind === 'fee' ? 'fee' : null, line.note].filter(Boolean).join(' · ')}
                             </div>
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-1 @[48rem]:contents">
-                        <div className="w-14 @[48rem]:w-auto">
+                      <div className="grid min-w-0 grid-cols-2 gap-2 @[48rem]:contents">
+                        <div className="min-w-0 @[48rem]:w-auto">
+                          <CellLabel>Qty</CellLabel>
                           <Input
                             type="number" min={0} step="any"
                             value={line.qty === 0 ? '' : String(line.qty)}
                             onChange={(e) => updateLine(line.id, { qty: Math.max(0, Number(e.target.value) || 0) })}
-                            className={`h-8 text-xs ${badField(line.id, 'qty') ? INVALID : ''}`}
+                            className={`h-9 text-xs @[48rem]:h-8 ${badField(line.id, 'qty') ? INVALID : ''}`}
                             placeholder="Qty" title="Quantity"
                           />
                         </div>
                         {/* Catalog lines are re-costed from the catalog at generate, so their
                             landed cost is shown, not typed. Free-text and supplier-quoted
                             lines carry their own cost. */}
-                        <div className="w-[5.5rem] @[48rem]:w-auto">
+                        <div className="min-w-0 @[48rem]:w-auto">
+                          <CellLabel>Cost</CellLabel>
                           {quotedPrice(line) ? (
                             <span
-                              className="flex h-8 items-center gap-1 truncate px-1 text-xs font-medium"
+                              className="flex h-9 items-center gap-1 truncate px-1 text-xs font-medium @[48rem]:h-8"
                               title={`Priced off ${[quotedPrice(line)!.supplier, quotedPrice(line)!.reference].filter(Boolean).join(' ') || 'an uploaded supplier quote'} — this quote only`}
                             >
                               <FileText className="h-3 w-3 shrink-0 text-primary" />
@@ -717,7 +741,7 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                             </span>
                           ) : line.catalogId ? (
                             <span
-                              className="flex h-8 items-center truncate px-1 text-xs text-muted-foreground"
+                              className="flex h-9 items-center truncate px-1 text-xs text-muted-foreground @[48rem]:h-8"
                               title="Landed cost from the catalog — re-read when the quote is generated"
                             >
                               {line.unitCostR > 0 ? rand(line.unitCostR) : '—'}
@@ -728,12 +752,13 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                               leadingText="R"
                               value={line.unitCostR === 0 ? '' : String(line.unitCostR)}
                               onChange={(e) => setCost(line, Math.max(0, Number(e.target.value) || 0))}
-                              className="h-8 text-xs" placeholder="Cost"
+                              className="h-9 text-xs @[48rem]:h-8" placeholder="Cost"
                               title="Landed cost per unit — supplier ex-VAT x 1.15"
                             />
                           )}
                         </div>
-                        <div className="w-[5.5rem] @[48rem]:w-auto">
+                        <div className="min-w-0 @[48rem]:w-auto">
+                          <CellLabel>Sell</CellLabel>
                           <Input
                             type="number" min={0} step="any"
                             leadingText="R"
@@ -748,11 +773,12 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                               // re-priced it anyway.
                               if (line.unitCostR > 0 && line.unitSellR <= 0) resetSell(line)
                             }}
-                            className="h-8 text-xs" placeholder="Sell"
+                            className="h-9 text-xs @[48rem]:h-8" placeholder="Sell"
                             title="Sell price per unit"
                           />
                         </div>
-                        <div className="w-20 @[48rem]:w-auto">
+                        <div className="min-w-0 @[48rem]:w-auto">
+                          <CellLabel>Markup</CellLabel>
                           <MarkupCell
                             line={line}
                             houseMarkup={pricing.markup}
@@ -760,13 +786,15 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                             onReset={() => resetSell(line)}
                           />
                         </div>
-                        <div className="ml-auto flex h-8 min-w-[4rem] items-center justify-end text-right @[48rem]:ml-0 @[48rem]:min-w-0">
+                      </div>
+                      <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 pt-1.5 @[48rem]:contents">
+                        <div className="flex h-8 min-w-0 items-center justify-end text-right @[48rem]:min-w-0">
                           {line.unitSellR <= 0
                             ? <Badge variant="warning">Quote</Badge>
-                            : <span className="text-xs font-medium">{rand(round2(line.unitSellR * line.qty))}</span>}
+                            : <span className="text-sm font-semibold @[48rem]:text-xs @[48rem]:font-medium">{rand(round2(line.unitSellR * line.qty))}</span>}
                         </div>
                         <label
-                          className="flex h-8 cursor-pointer items-center justify-center"
+                          className="flex h-8 cursor-pointer items-center justify-center gap-1"
                           title="Optional extra — listed on the quote but excluded from the total"
                         >
                           <input
@@ -774,15 +802,15 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                             checked={line.optional}
                             onChange={(e) => updateLine(line.id, { optional: e.target.checked })}
                           />
-                          <span className="ml-1 text-[11px] text-muted-foreground @[48rem]:hidden">Opt</span>
+                          <span className="text-[11px] text-muted-foreground @[48rem]:hidden">Opt</span>
                         </label>
-                        <div className="justify-self-end">
+                        <div className="@[48rem]:justify-self-end">
                           <LineMovePicker
                             targets={moveTargetsFor(line)}
                             onMove={(t) => moveLine(line.id, t)}
                           />
                         </div>
-                        <Button type="button" variant="ghost" size="icon" className="h-8 w-7 justify-self-end"
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-7 @[48rem]:justify-self-end"
                           onClick={() => removeLine(line.id)} title="Remove line">
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -836,13 +864,13 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
       )}
 
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Input
             value={newSection}
             onChange={(e) => setNewSection(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSection() } }}
             placeholder="New section name (e.g. Distribution board)"
-            className="h-9 max-w-xs"
+            className="h-9 w-full sm:max-w-xs"
           />
           <Button type="button" variant="outline" size="sm" onClick={addSection} disabled={!newSection.trim()}>
             <Plus className="h-3.5 w-3.5" /> Add section

@@ -121,14 +121,16 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, s
 
   return (
     <div className={`flex flex-col gap-4 ${isAdmin && engine !== 'scope' && layout === 'studio' ? 'pb-4' : 'pb-20'}`}>
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      {/* Header. Stacks on a phone: side by side, the customer's name was being
+          squeezed into a two-line column while the action buttons stacked into a
+          narrow ladder beside it. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2">
             <Link href="/portal/employee/quotes-v2"><ArrowLeft className="h-4 w-4" /> Quotes</Link>
           </Button>
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-primary">{req.customer_name}</h1>
+            <h1 className="text-xl font-bold text-primary sm:text-2xl">{req.customer_name}</h1>
             <Badge variant="default" className="gap-1"><MapPin className="h-3 w-3" />{siteLabel}</Badge>
             <span className="text-sm font-medium">{optionLabel}</span>
             {workType.code !== 'solar' && <Badge variant="outline">{workType.label}</Badge>}
@@ -136,7 +138,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, s
           </div>
         </div>
         {isAdmin ? (
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
             {/* Classic/studio is a canvas-only choice — the scope builder has one layout. */}
             {engine !== 'scope' && (
               <Button
@@ -165,7 +167,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, s
             </div>
           </div>
         ) : (
-          <Badge variant="default" className="mt-1 shrink-0">{req.status}</Badge>
+          <Badge variant="default" className="mt-1 shrink-0 self-start">{req.status}</Badge>
         )}
       </div>
 

@@ -43,7 +43,8 @@ export function PageShell({
 /**
  * Standard page header — one consistent title/description/actions block.
  * `icon` renders in the accent colour to the left of the title; `actions`
- * sits on the right and wraps below on narrow screens.
+ * sit on the right from `sm` up and take a full-width line of their own below
+ * the title on a phone.
  */
 export function PageHeader({
   title,
@@ -60,8 +61,8 @@ export function PageHeader({
 }) {
   return (
     <div className={cn('flex flex-wrap items-start justify-between gap-3', className)}>
-      <div className="min-w-0">
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-primary">
+      <div className="min-w-0 flex-1">
+        <h1 className="flex items-center gap-2 text-xl font-bold text-primary sm:text-2xl">
           {Icon && <Icon className="h-6 w-6 shrink-0 text-accent" />}
           <span className="min-w-0">{title}</span>
         </h1>
@@ -69,7 +70,16 @@ export function PageHeader({
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         )}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {/* The actions used to be shrink-0, so a page with four buttons was as
+          wide as those four buttons in a line no matter the screen — which is
+          what pushed every list page in the portal off the right of a phone.
+          They take their own full-width line below the title instead, and only
+          sit beside it once there is room. */}
+      {actions && (
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          {actions}
+        </div>
+      )}
     </div>
   )
 }

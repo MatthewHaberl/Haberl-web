@@ -187,8 +187,11 @@ export function CreditsPanel({
                 const spec = creditKindSpec(row.kind)
                 return (
                   <div key={row.id} className="rounded-lg border border-border p-3 space-y-2">
+                    {/* One field per line on a phone — the fixed widths left the
+                        amount box a third of the screen with the bin floating in
+                        the gap beside it. Unchanged from `sm` up. */}
                     <div className="flex flex-wrap gap-2 items-start">
-                      <div className="w-56">
+                      <div className="w-full sm:w-56">
                         <Select
                           value={row.kind}
                           onChange={(e) => update(row.id, { kind: e.target.value as QuoteCreditKind })}
@@ -199,7 +202,7 @@ export function CreditsPanel({
                           ))}
                         </Select>
                       </div>
-                      <div className="flex-1 min-w-[16rem]">
+                      <div className="w-full flex-1 sm:min-w-[16rem]">
                         <Input
                           value={row.label}
                           placeholder={`${spec.defaultLabel} — reason the customer will read`}
@@ -207,29 +210,31 @@ export function CreditsPanel({
                           aria-label="Reason shown on the quote"
                         />
                       </div>
-                      <div className="w-40">
-                        <Input
-                          value={row.amount}
-                          onChange={(e) => update(row.id, { amount: e.target.value })}
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          inputMode="decimal"
-                          leadingText="R"
-                          placeholder="0.00"
-                          aria-label="Amount"
-                        />
+                      <div className="flex w-full items-center gap-2 sm:w-auto">
+                        <div className="min-w-0 flex-1 sm:w-40 sm:flex-none">
+                          <Input
+                            value={row.amount}
+                            onChange={(e) => update(row.id, { amount: e.target.value })}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            leadingText="R"
+                            placeholder="0.00"
+                            aria-label="Amount"
+                          />
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          onClick={() => setRows((prev) => prev.filter((r) => r.id !== row.id))}
+                          className="shrink-0 text-destructive"
+                          title="Remove this credit"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        onClick={() => setRows((prev) => prev.filter((r) => r.id !== row.id))}
-                        className="text-destructive"
-                        title="Remove this credit"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
                     </div>
                     <Input
                       value={row.note}

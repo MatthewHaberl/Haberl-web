@@ -381,25 +381,27 @@ export function QuotesV2List({
             return (
               <Card key={group.key}>
                 <CardContent className="pt-4 pb-4 flex flex-col gap-3">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     {/* The whole name is the hit target — minimising a customer you're
-                        done with is the most common thing to do on this row. */}
+                        done with is the most common thing to do on this row. It takes
+                        the full line on a phone rather than being truncated to three
+                        letters by the counters beside it. */}
                     <button
                       type="button"
                       onClick={() => toggleCustomer(group.key)}
                       aria-expanded={!isCollapsed}
                       title={isCollapsed ? 'Expand customer' : 'Minimise customer'}
-                      className="flex items-center gap-1.5 min-w-0 text-left text-muted-foreground hover:text-foreground transition-colors"
+                      className="flex w-full min-w-0 items-center gap-1.5 text-left text-muted-foreground transition-colors hover:text-foreground sm:w-auto"
                     >
                       <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
                       <span className="font-semibold text-sm text-foreground truncate">{group.name}</span>
                     </button>
-                    <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                       {/* Open work first — it's the number you act on. */}
-                      <Badge variant={group.openCount > 0 ? 'warning' : 'outline'}>
+                      <Badge variant={group.openCount > 0 ? 'warning' : 'outline'} className="whitespace-nowrap">
                         {group.openCount} open
                       </Badge>
-                      <Badge variant="default">
+                      <Badge variant="default" className="whitespace-nowrap">
                         {group.optionCount} {group.optionCount === 1 ? 'option' : 'options'} ·{' '}
                         {group.sites.length} {group.sites.length === 1 ? 'site' : 'sites'}
                       </Badge>
@@ -418,8 +420,11 @@ export function QuotesV2List({
 
                   {!isCollapsed && group.sites.map((site) => (
                     <div key={site.key} className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                        <MapPin className="h-3 w-3 shrink-0" />
+                      {/* Not flex-wrap: a wrapping row puts a long address on a line
+                          of its own and leaves the pin stranded above it. Everything
+                          stays on the row and the address wraps inside its own cell. */}
+                      <div className="flex items-start gap-1.5 text-xs font-medium text-muted-foreground">
+                        <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
                         {editingSite === site.key ? (
                           <span className="flex items-center gap-1.5 flex-1">
                             <Input
@@ -438,18 +443,18 @@ export function QuotesV2List({
                           </span>
                         ) : (
                           <>
-                            <span className="uppercase tracking-wider">{site.label}</span>
+                            <span className="min-w-0 flex-1 uppercase tracking-wider">{site.label}</span>
                             <button
                               type="button"
                               onClick={() => { setEditingSite(site.key); setEditingOption(null); setDraft(site.options.find((o) => o.site_label)?.site_label ?? '') }}
-                              className="text-muted-foreground/60 hover:text-foreground"
+                              className="mt-0.5 shrink-0 text-muted-foreground/60 hover:text-foreground"
                               title="Rename site"
                             >
                               <Pencil className="h-3 w-3" />
                             </button>
                             <Link
                               href={`/portal/employee/quotes-v2/new?from=${site.options[0].id}`}
-                              className="ml-auto flex items-center gap-1 text-muted-foreground/70 hover:text-foreground"
+                              className="flex shrink-0 items-center gap-1 whitespace-nowrap text-muted-foreground/70 hover:text-foreground sm:ml-auto"
                               title="Add another option to this site"
                             >
                               <Plus className="h-3 w-3" /> Add option
@@ -461,12 +466,16 @@ export function QuotesV2List({
                       <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
                         {site.options.map((option, i) => (
                           <div key={option.id} className="flex flex-col">
-                           <div className="flex items-center">
+                           {/* On a phone the summary takes the whole line and the row's
+                               icon buttons wrap underneath it. Side by side, the buttons
+                               (all shrink-0) took the entire width and squeezed the
+                               summary to nothing, so its text printed on top of them. */}
+                           <div className="flex flex-wrap items-center">
                             <div
-                              className="flex-1 flex items-center justify-between gap-3 px-4 py-3 min-w-0 cursor-pointer hover:bg-muted/40 transition-colors"
+                              className="flex w-full min-w-0 cursor-pointer flex-col items-start gap-2 px-4 py-3 transition-colors hover:bg-muted/40 sm:w-auto sm:flex-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                               onClick={() => { if (editingOption !== option.id) router.push(`/portal/employee/quotes-v2/${option.id}`) }}
                             >
-                              <div className="min-w-0">
+                              <div className="min-w-0 max-w-full">
                                 {editingOption === option.id ? (
                                   <span className="flex items-center gap-1.5">
                                     <Input
@@ -537,7 +546,7 @@ export function QuotesV2List({
                                 )}
                               </div>
                               {editingOption !== option.id && (
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">
                                   {option.archived_at && <Badge variant="outline">archived</Badge>}
                                   {/* One option, several jobs inside it (W99 combined quotes).
                                       The customer accepts the lot or one part, so the list has
@@ -551,7 +560,9 @@ export function QuotesV2List({
                                   {/* Work type (W97) — only 'solar' is the unmarked default; every other
                                       offering (incl. backup_inverter) gets its badge. */}
                                   {option.work_type && option.work_type !== 'solar' && (
-                                    <Badge variant="outline">{workTypeFor(option.work_type)?.label ?? option.work_type}</Badge>
+                                    <Badge variant="outline" className="max-w-[11rem] truncate sm:max-w-none" title={workTypeFor(option.work_type)?.label ?? option.work_type}>
+                                      {workTypeFor(option.work_type)?.label ?? option.work_type}
+                                    </Badge>
                                   )}
                                   <Badge variant={statusVariant[option.status]}>{option.status}</Badge>
                                   <Link href={`/portal/employee/quotes-v2/${option.id}`} title="Open">

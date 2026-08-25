@@ -63,9 +63,12 @@ export default async function JobsPage() {
       <Link href={`/portal/employee/jobs/${job.id}`}>
         <Card className="hover:border-accent transition-colors cursor-pointer">
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <p className="font-semibold text-sm leading-snug min-w-0 truncate">{job.title}</p>
-              <div className="flex items-center gap-1.5 shrink-0">
+            {/* The badges never shrink, so side by side on a phone they left the
+                job title no room at all. Title takes the line and the badges
+                wrap under it until there is space for both. */}
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+              <p className="w-full min-w-0 truncate text-sm font-semibold leading-snug sm:w-auto sm:flex-1">{job.title}</p>
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:shrink-0 sm:flex-nowrap">
                 {job.deposit_proof_url && !job.deposit_confirmed_at && (
                   <Badge variant="accent" className="gap-1">
                     <Landmark className="h-3 w-3" />
