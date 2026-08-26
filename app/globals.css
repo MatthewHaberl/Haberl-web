@@ -88,6 +88,39 @@ body {
   color: var(--foreground);
 }
 
+/* ── Phones ──────────────────────────────────────────────────────────────────
+   Two rules that hold on every page, so a screen nobody has opened on a phone
+   yet still behaves.
+
+   1. Long unbroken strings — a supplier reference, an email address, a pasted
+      URL — wrap instead of forcing their container wide. This is the one that
+      quietly widened list rows past the screen.
+
+   2. A 16px floor on anything you type into. Below 16px iOS Safari zooms the
+      whole page in the moment the field takes focus, which is what made every
+      dense form on the site lurch sideways on the first tap — and left it
+      zoomed afterwards. Deliberately unlayered so it also lifts the `text-xs`
+      fields in the pricing grids; from 640px up those keep their own size and
+      the desktop tables are untouched.
+
+   What is NOT here is a page-level `overflow-x: hidden/clip`. It is the
+   tempting fix and the wrong one: it hides whatever overflowed instead of
+   letting you reach it. The portal's <main> carries `min-w-0 overflow-auto`
+   (app/portal/layout.tsx), which stops one over-wide row widening the whole
+   document while still letting that row scroll inside itself.
+   ────────────────────────────────────────────────────────────────────────── */
+body {
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: max(1rem, 1em);
+  }
+}
+
 /* ── Native date / time pickers ──────────────────────────────────────────────
    color-scheme tells the browser which palette to draw its own widgets in, so
    the calendar popup, the segment placeholders and the indicator icon follow
