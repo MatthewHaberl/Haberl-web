@@ -38,20 +38,27 @@ export function NewJobForm({
   customers,
   currentUserId,
   workTypes,
+  initialCustomerId = '',
+  initialSiteId = '',
 }: {
   assignees: Assignee[]
   customers: CustomerOption[]
   currentUserId: string
   /** Live work_types rows — a type added in Settings shows up here too. */
   workTypes?: WorkType[]
+  /** Preselected customer/site when the job was started from their record. */
+  initialCustomerId?: string
+  initialSiteId?: string
 }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [workType, setWorkType] = useState('solar')
   const [description, setDescription] = useState('')
   const [assignedTo, setAssignedTo] = useState(assignees.some((a) => a.id === currentUserId) ? currentUserId : assignees[0]?.id ?? '')
-  const [customerId, setCustomerId] = useState('')
-  const [siteId, setSiteId] = useState('')
+  const [customerId, setCustomerId] = useState(
+    customers.some((c) => c.id === initialCustomerId) ? initialCustomerId : '',
+  )
+  const [siteId, setSiteId] = useState(initialSiteId)
   const [scheduledDate, setScheduledDate] = useState('')
   const [priority, setPriority] = useState<JobPriority>('medium')
   const [stage, setStage] = useState<JobStage>('scheduled')

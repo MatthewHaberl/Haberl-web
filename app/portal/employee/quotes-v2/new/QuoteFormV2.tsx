@@ -111,6 +111,11 @@ interface Props {
   workTypes: WorkType[]
   prefill?: PrefillV2 | null
   leadId?: string | null
+  /**
+   * Already-known customer — set when the quote was started from a customer's
+   * page (?customer=), so it links to that record instead of searching for it.
+   */
+  linkedCustomer?: { id: string; name: string } | null
 }
 
 /** A customer row the existing-customer search returns (all we need to prefill). */
@@ -124,7 +129,7 @@ interface CustomerHit {
   contact_name: string | null
 }
 
-export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
+export function QuoteFormV2({ brands, workTypes, prefill, leadId, linkedCustomer: preLinked }: Props) {
   const router = useRouter()
 
   // Work type — picks the engine ('solar' canvas vs 'scope' line-item builder)
@@ -159,7 +164,7 @@ export function QuoteFormV2({ brands, workTypes, prefill, leadId }: Props) {
   // Existing-customer picker — search the CRM and link the quote to a customer
   // directly instead of re-typing them. Fields stay editable after a pick (they
   // only shape this quote's snapshot); Unlink reverts to new-customer mode.
-  const [linkedCustomer, setLinkedCustomer] = useState<{ id: string; name: string } | null>(null)
+  const [linkedCustomer, setLinkedCustomer] = useState<{ id: string; name: string } | null>(preLinked ?? null)
   const [custQuery, setCustQuery]     = useState('')
   const [custResults, setCustResults] = useState<CustomerHit[]>([])
   const [custOpen, setCustOpen]       = useState(false)

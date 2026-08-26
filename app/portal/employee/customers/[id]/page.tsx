@@ -1,11 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
-import { requireSection } from '@/lib/auth/permissions'
+import { canAccess, getUserAccess, requireSection } from '@/lib/auth/permissions'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, MapPin, FileText, Wrench, Clock, ChevronRight, Users, Trash2 } from 'lucide-react'
+import { ArrowLeft, MapPin, FileText, Wrench, Clock, ChevronRight, Users, Trash2, Plus } from 'lucide-react'
 import { PageShell, PageHeader } from '@/components/layout/page'
 import { CollapsibleSection } from '@/components/ui/collapsible-section'
 import { formatDate } from '@/lib/utils'
@@ -16,6 +16,7 @@ import { CustomerPanel } from './CustomerPanel'
 import { AddSiteProvider, AddSiteTrigger, AddSitePanel } from './AddSiteDialog'
 import { SiteCard } from './SiteCard'
 import { ArchiveCustomerButton } from './ArchiveCustomerButton'
+import { CustomerActions } from './CustomerActions'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -40,6 +41,13 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const supabase = await createClient()
   const isAdmin = role === 'admin'
   const isManager = role === 'manager' || role === 'admin'
+
+  // What this person may start from here. Quotes/calendar follow the section
+  // matrix; a manual job is manager+ (the /jobs/new page guards on that too).
+  const access = await getUserAccess()
+  const canQuote = canAccess(access, 'quotes')
+  const canJob = isManager && canAccess(access, 'jobs')
+  const canSchedule = canAccess(access, 'calendar')
 
   const { data: customerRow } = await supabase
     .from('customers').select('*').eq('id', id).maybeSingle()
@@ -113,6 +121,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
   return (
     <PageShell width="content">
+      <AddSiteProvider>
       <Link href="/portal/employee/customers" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground w-fit">
         <ArrowLeft className="h-4 w-4" /> All customers
       </Link>
@@ -134,6 +143,14 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         }
         actions={
           <div className="flex items-center gap-2">
+            {!customer.archived_at && (
+              <CustomerActions
+                customerId={customer.id}
+                canQuote={canQuote}
+                canJob={canJob}
+                canSchedule={canSchedule}
+              />
+            )}
             <Button asChild variant="outline" size="sm">
               <Link href={`/portal/employee/customers/${customer.id}/statement`}>
                 <FileText className="h-3.5 w-3.5" />
@@ -180,7 +197,6 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       />
 
       {/* Sites */}
-      <AddSiteProvider>
       <CollapsibleSection
         storageKey="customer:sites"
         icon={<MapPin />}
@@ -202,10 +218,21 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           </div>
         )}
       </CollapsibleSection>
-      </AddSiteProvider>
 
       {/* Quotes */}
-      <CollapsibleSection storageKey="customer:quotes" icon={<FileText />} title="Quotes" count={quotes?.length ?? 0}>
+      <CollapsibleSection
+        storageKey="customer:quotes"
+        icon={<FileText />}
+        title="Quotes"
+        count={quotes?.length ?? 0}
+        actions={canQuote && !customer.archived_at ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/portal/employee/quotes-v2/new?customer=${customer.id}`}>
+              <Plus className="h-3.5 w-3.5" /> New quote
+            </Link>
+          </Button>
+        ) : undefined}
+      >
         {!quotes?.length ? (
           <p className="text-sm text-muted-foreground">No quotes yet.</p>
         ) : (
@@ -234,7 +261,19 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       </CollapsibleSection>
 
       {/* Jobs */}
-      <CollapsibleSection storageKey="customer:jobs" icon={<Wrench />} title="Jobs" count={jobs?.length ?? 0}>
+      <CollapsibleSection
+        storageKey="customer:jobs"
+        icon={<Wrench />}
+        title="Jobs"
+        count={jobs?.length ?? 0}
+        actions={canJob && !customer.archived_at ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/portal/employee/jobs/new?customer=${customer.id}`}>
+              <Plus className="h-3.5 w-3.5" /> New job
+            </Link>
+          </Button>
+        ) : undefined}
+      >
         {!jobs?.length ? (
           <p className="text-sm text-muted-foreground">No installation jobs yet.</p>
         ) : (
@@ -274,6 +313,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           </CardContent>
         </Card>
       </CollapsibleSection>
+      </AddSiteProvider>
     </PageShell>
   )
 }

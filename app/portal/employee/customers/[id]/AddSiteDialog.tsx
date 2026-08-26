@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -25,7 +25,8 @@ import { MapPinPlus, Loader2, X } from 'lucide-react'
 
 const OpenContext = createContext<{ open: boolean; setOpen: (v: boolean) => void } | null>(null)
 
-function useAddSite() {
+/** Open the site form from anywhere inside the provider (e.g. the page's New menu). */
+export function useAddSite() {
   const ctx = useContext(OpenContext)
   if (!ctx) throw new Error('AddSite components must be inside <AddSiteProvider>')
   return ctx
@@ -54,6 +55,7 @@ export function AddSitePanel({
 }) {
   const router = useRouter()
   const { open, setOpen } = useAddSite()
+  const cardRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -100,9 +102,16 @@ export function AddSitePanel({
     return data
   }
 
+  // Opened from the page header ("New ▾ → Site") the form can be off-screen —
+  // bring it into view so the click visibly did something.
+  useEffect(() => {
+    if (open) cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [open])
+
   if (!open) return null
 
   return (
+    <div ref={cardRef}>
     <Card className="border-accent/40 w-full mb-3">
       <CardContent className="pt-4 pb-4">
         <div className="flex items-center justify-between mb-3">
@@ -142,5 +151,6 @@ export function AddSitePanel({
         </form>
       </CardContent>
     </Card>
+    </div>
   )
 }

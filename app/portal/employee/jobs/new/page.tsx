@@ -19,9 +19,16 @@ type CustomerOption = {
   sites: { id: string; name: string; address: string }[]
 }
 
-export default async function NewJobPage() {
+export default async function NewJobPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ customer?: string; site?: string }>
+}) {
   const user = await getUser()
   if (!user) redirect('/auth/login')
+
+  // Started from a customer's page ("New ▾ → Job") — preselect them.
+  const { customer: customerId, site: siteId } = await searchParams
 
   const supabase = await createClient()
   const { data: profile } = await supabase
@@ -62,6 +69,8 @@ export default async function NewJobPage() {
         customers={(customers ?? []) as CustomerOption[]}
         currentUserId={user.id}
         workTypes={workTypes}
+        initialCustomerId={customerId ?? ''}
+        initialSiteId={siteId ?? ''}
       />
     </PageShell>
   )

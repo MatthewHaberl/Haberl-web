@@ -7,15 +7,15 @@ import type { EquipmentBrand } from '@/types/database'
 export default async function NewQuoteV2Page({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; lead?: string; newSite?: string }>
+  searchParams: Promise<{ from?: string; lead?: string; newSite?: string; customer?: string }>
 }) {
   const user = await getUser()
   if (!user) redirect('/auth/login')
 
   const supabase = await createClient()
-  const { from, lead, newSite } = await searchParams
+  const { from, lead, newSite, customer } = await searchParams
 
-  const [{ data: brands }, prefillResult, leadResult, workTypes] = await Promise.all([
+  const [{ data: brands }, prefillResult, leadResult, customerResult, workTypes] = await Promise.all([
     supabase.from('equipment_brands').select('*').eq('active', true).order('category').order('brand'),
     from
       ? supabase
@@ -27,15 +27,37 @@ export default async function NewQuoteV2Page({
           .single()
       : Promise.resolve({ data: null }),
     lead ? supabase.from('leads').select('id, name, phone, suburb').eq('id', lead).single() : Promise.resolve({ data: null }),
+    // Started from a customer's page ("New ▾ → Quote") — prefill their details
+    // and link the quote to that record instead of making a duplicate.
+    customer
+      ? supabase
+          .from('customers')
+          .select('id, full_name, email, phone, address, is_business, contact_name')
+          .eq('id', customer)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
     fetchWorkTypes(supabase),
   ])
+
+  const c = customerResult.data
+  const customerPrefill: PrefillV2 | null = c
+    ? {
+        customer_name: c.full_name,
+        customer_email: c.email,
+        customer_phone: c.phone,
+        customer_address: c.address,
+        is_business: c.is_business,
+        contact_name: c.contact_name,
+        address: c.address,
+      }
+    : null
 
   const leadPrefill: PrefillV2 | null = leadResult.data
     ? { customer_name: leadResult.data.name, customer_phone: leadResult.data.phone, address: leadResult.data.suburb ?? null }
     : null
 
   // "Add site" → keep the customer, start a fresh location (blank site label + address, next site number)
-  const base = (prefillResult.data ?? leadPrefill) as PrefillV2 | null
+  const base = (prefillResult.data ?? leadPrefill ?? customerPrefill) as PrefillV2 | null
   const prefill: PrefillV2 | null =
     newSite && prefillResult.data
       ? { ...prefillResult.data, site_label: null, address: null, site_number: (prefillResult.data.site_number ?? 1) + 1 }
@@ -47,6 +69,7 @@ export default async function NewQuoteV2Page({
       workTypes={workTypes}
       prefill={prefill}
       leadId={leadResult.data?.id ?? null}
+      linkedCustomer={c ? { id: c.id, name: c.full_name } : null}
     />
   )
 }
