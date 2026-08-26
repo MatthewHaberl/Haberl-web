@@ -293,9 +293,12 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
     </Button>
   )
 
+  // Right-aligned beside the heading on a desktop; a plain left-to-right wrap
+  // under it on a phone, where "align to the right edge" turned the actions into
+  // a ragged column that was hard to read and harder to hit.
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-3 flex-wrap py-2 justify-end">
+    <div className="flex flex-col items-stretch gap-1 sm:items-end">
+      <div className="flex flex-wrap items-center gap-2 py-2 sm:gap-3 sm:justify-end">
         <Badge variant={STATUS_VARIANT[status]} className="shrink-0">
           {STATUS_LABELS[status]}
         </Badge>
@@ -435,8 +438,8 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
           ever comes back to fill it in afterwards — and it is what makes the
           Sent history an audit trail rather than a list of dates. */}
       {reissuing && (
-        <div className="flex flex-col items-end gap-1.5 rounded-lg border border-border bg-card p-3">
-          <p className="text-xs text-muted-foreground max-w-sm text-right">
+        <div className="flex flex-col items-stretch gap-1.5 rounded-lg border border-border bg-card p-3 sm:items-end">
+          <p className="text-xs text-muted-foreground sm:max-w-sm sm:text-right">
             Rebuilds the document from the current design and re-prices it at today&rsquo;s catalog
             costs. The version the customer already has is kept in Sent history &mdash; they only see
             the new one once you send it.
@@ -447,9 +450,9 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
             onChange={(e) => setReason(e.target.value)}
             placeholder="What changed? e.g. added the second battery"
             maxLength={200}
-            className="h-9 w-72 rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-72"
           />
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 sm:justify-end">
             <Button
               variant="ghost"
               size="sm"
@@ -473,7 +476,7 @@ export function QuoteStatusBar({ requestId, initialStatus, initialJobId, shareTo
 
       {message && <p className="text-xs text-success">{message}</p>}
       {error && (
-        <p className="text-xs text-destructive max-w-xs text-right break-all">{error}</p>
+        <p className="text-xs text-destructive break-all sm:max-w-xs sm:text-right">{error}</p>
       )}
     </div>
   )

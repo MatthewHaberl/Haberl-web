@@ -150,7 +150,7 @@ export function LeadCard({
     <Card className="border-accent/40">
       <CardContent className="pt-4 pb-4 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="font-semibold text-sm">{lead.name}</p>
               <Badge variant={lead.status === 'new' ? 'warning' : 'default'}>
@@ -209,7 +209,10 @@ export function LeadCard({
             {lead.note && <p className="text-xs text-muted-foreground mt-1 max-w-xl">&ldquo;{lead.note}&rdquo;</p>}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Full-text buttons that refuse to shrink: beside the lead's details
+              they took the whole width of a phone. They wrap onto their own
+              line under the details instead. */}
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:flex-nowrap">
             {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
             {!busy && lead.status === 'new' && (
               <Button variant="outline" size="sm" onClick={() => setStatus('contacted')}>

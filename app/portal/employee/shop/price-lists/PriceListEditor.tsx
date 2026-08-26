@@ -124,8 +124,8 @@ export function PriceListEditor({ priceLists: initial, customers }: Props) {
         return (
           <Card key={list.id} className={list.active ? '' : 'opacity-60'}>
             <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <CardTitle className="text-base">{list.name}</CardTitle>
                     <Badge variant={list.active ? 'success' : 'outline'}>{list.active ? 'Active' : 'Inactive'}</Badge>
@@ -141,7 +141,7 @@ export function PriceListEditor({ priceLists: initial, customers }: Props) {
                     <span className="text-success">{list.customer_price_lists.length} customer{list.customer_price_lists.length !== 1 ? 's' : ''} assigned</span>
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">
                   <button
                     onClick={() => setExpanded(isOpen ? null : list.id)}
                     className="p-1.5 rounded hover:bg-muted transition-colors"

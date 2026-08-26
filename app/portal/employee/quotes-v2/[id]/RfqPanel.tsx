@@ -24,6 +24,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { StackedFieldLabel } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   groupRfqLines, type RfqStatus, type SupplierRfqLineRow, type SupplierRfqRow,
@@ -373,51 +374,73 @@ export function RfqPanel({ requestId }: { requestId: string }) {
                           </div>
                           <div className="space-y-1">
                             {group.lines.map((line) => (
-                              <div key={line.id} className="flex flex-wrap items-center gap-1.5">
-                                <Input
-                                  className="w-32 font-mono text-xs"
-                                  placeholder="code?"
-                                  value={line.sku}
-                                  onChange={(e) => patchLocal(line, { sku: e.target.value })}
-                                  onBlur={() => persistLine(line)}
-                                />
-                                <Input
-                                  className="min-w-[12rem] flex-1 text-xs"
-                                  placeholder="What to quote"
-                                  value={line.description}
-                                  onChange={(e) => patchLocal(line, { description: e.target.value })}
-                                  onBlur={() => persistLine(line)}
-                                />
-                                <Input
-                                  className="w-20 text-xs"
-                                  type="number"
-                                  min={0}
-                                  step="any"
-                                  value={line.qty}
-                                  onChange={(e) => patchLocal(line, { qty: Number(e.target.value) })}
-                                  onBlur={() => persistLine(line)}
-                                />
-                                <Input
-                                  className="w-16 text-xs"
-                                  value={line.unit}
-                                  onChange={(e) => patchLocal(line, { unit: e.target.value })}
-                                  onBlur={() => persistLine(line)}
-                                />
-                                <Input
-                                  className="w-44 text-xs"
-                                  placeholder="note to supplier"
-                                  value={line.note ?? ''}
-                                  onChange={(e) => patchLocal(line, { note: e.target.value })}
-                                  onBlur={() => persistLine(line)}
-                                />
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => removeLine(line)}
-                                  aria-label={`Remove ${line.description || 'line'}`}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
+                              /* Five fixed-width boxes in a row wrap into an
+                                 unlabelled jumble on a phone — you cannot tell
+                                 the qty from the unit from the note. Below `sm`
+                                 they fold into a small card with the headings
+                                 repeated; `sm:contents` dissolves the wrappers
+                                 again from `sm` up, where the row is unchanged. */
+                              <div key={line.id} className="grid gap-2 rounded-lg border border-border/60 p-2 sm:flex sm:flex-wrap sm:items-center sm:gap-1.5 sm:rounded-none sm:border-0 sm:p-0">
+                                <div className="flex min-w-0 items-start gap-1.5 sm:contents">
+                                  <Input
+                                    className="w-24 shrink-0 font-mono text-xs sm:w-32"
+                                    placeholder="code?"
+                                    value={line.sku}
+                                    onChange={(e) => patchLocal(line, { sku: e.target.value })}
+                                    onBlur={() => persistLine(line)}
+                                  />
+                                  <Input
+                                    className="min-w-0 flex-1 text-xs sm:min-w-[12rem]"
+                                    placeholder="What to quote"
+                                    value={line.description}
+                                    onChange={(e) => patchLocal(line, { description: e.target.value })}
+                                    onBlur={() => persistLine(line)}
+                                  />
+                                </div>
+                                <div className="grid min-w-0 grid-cols-2 gap-2 sm:contents">
+                                  <div className="min-w-0">
+                                    <StackedFieldLabel>Qty</StackedFieldLabel>
+                                    <Input
+                                      className="w-full text-xs sm:w-20"
+                                      type="number"
+                                      min={0}
+                                      step="any"
+                                      value={line.qty}
+                                      onChange={(e) => patchLocal(line, { qty: Number(e.target.value) })}
+                                      onBlur={() => persistLine(line)}
+                                    />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <StackedFieldLabel>Unit</StackedFieldLabel>
+                                    <Input
+                                      className="w-full text-xs sm:w-16"
+                                      value={line.unit}
+                                      onChange={(e) => patchLocal(line, { unit: e.target.value })}
+                                      onBlur={() => persistLine(line)}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex min-w-0 items-end gap-1.5 sm:contents">
+                                  <div className="min-w-0 flex-1">
+                                    <StackedFieldLabel>Note to supplier</StackedFieldLabel>
+                                    <Input
+                                      className="w-full text-xs sm:w-44"
+                                      placeholder="note to supplier"
+                                      value={line.note ?? ''}
+                                      onChange={(e) => patchLocal(line, { note: e.target.value })}
+                                      onBlur={() => persistLine(line)}
+                                    />
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="shrink-0"
+                                    onClick={() => removeLine(line)}
+                                    aria-label={`Remove ${line.description || 'line'}`}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </div>
                             ))}
                           </div>
