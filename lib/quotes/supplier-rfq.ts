@@ -221,6 +221,8 @@ export interface RfqRenderContext {
   contactPerson?: string | null
   /** Our reference for the job — customer name and/or site, never a price. */
   jobRef?: string | null
+  /** Just the customer, for the WhatsApp form that names the job in one line. */
+  customerName?: string | null
   /** The free-text note typed above the table. */
   message?: string | null
   /** Who to reply to. */
@@ -321,4 +323,56 @@ export function whatsappLink(text: string, phone?: string | null): string {
   const digits = (phone ?? '').replace(/\D/g, '')
   const base = digits ? `https://wa.me/${digits}` : 'https://wa.me/'
   return `${base}?text=${encodeURIComponent(text)}`
+}
+
+/** "Haberl Electrical & Solar" signs a WhatsApp as "Haberl". */
+function shortSignOff(fromName?: string | null): string {
+  const first = (fromName ?? '').trim().split(/\s+/)[0]
+  return first || 'Haberl'
+}
+
+/** 80 metres of cable reads "80m"; 80 ferrules read "80". */
+function waQty(qty: number, unit: string): string {
+  const n = Number.isInteger(qty) ? String(qty) : String(Math.round(qty * 100) / 100)
+  return unit && unit !== 'ea' ? `${n}${unit}` : n
+}
+
+function waLine(line: SupplierRfqLineRow): string {
+  const code = line.sku.trim() ? `${line.sku.trim()} — ` : ''
+  const note = line.note?.trim() ? ` (${line.note.trim()})` : ''
+  return `  ${waQty(line.qty, line.unit)} x ${code}${line.description}${note}`
+}
+
+/**
+ * WhatsApp body — the short form we actually type by hand.
+ *
+ * Same list as the email, none of the letterhead: no RFQ number, no greeting,
+ * no section headings. A supplier reading this on a phone gets the job name,
+ * a flat list of "qty x code — description", and a sign-off. Items we have no
+ * part number for still can't be ordered blind, so they sit at the bottom
+ * under one plain line asking for the code.
+ */
+export function renderRfqWhatsApp(ctx: RfqRenderContext, lines: SupplierRfqLineRow[]): string {
+  const out: string[] = ['New quote']
+
+  const ref = (ctx.customerName ?? ctx.jobRef ?? '').trim()
+  if (ref) out.push(ref)
+  if (ctx.message?.trim()) { out.push(''); out.push(ctx.message.trim()) }
+  out.push('')
+
+  const groups = groupRfqLines(lines)
+  const coded = groups.filter((g) => !g.needsCode).flatMap((g) => g.lines)
+  const noCode = groups.find((g) => g.needsCode)?.lines ?? []
+
+  for (const line of coded) out.push(waLine(line))
+  if (noCode.length) {
+    if (coded.length) out.push('')
+    out.push('Please advise codes for:')
+    for (const line of noCode) out.push(waLine(line))
+  }
+
+  out.push('')
+  out.push('Thanks,')
+  out.push(shortSignOff(ctx.fromName))
+  return out.join('\n')
 }

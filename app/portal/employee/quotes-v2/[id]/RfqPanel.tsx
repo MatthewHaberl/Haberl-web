@@ -47,6 +47,7 @@ interface Preview {
   to: string | null
   supplierPhone: string | null
   text: string
+  whatsappText: string
   whatsappUrl: string
   lineCount: number
 }
@@ -62,6 +63,8 @@ export function RfqPanel({ requestId }: { requestId: string }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // Which body the preview shows — and therefore what Copy puts on the clipboard.
+  const [previewAs, setPreviewAs] = useState<'email' | 'whatsapp'>('email')
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/quotes/${requestId}/rfqs`)
@@ -230,7 +233,7 @@ export function RfqPanel({ requestId }: { requestId: string }) {
   async function copyText(rfq: SupplierRfqRow) {
     if (!preview) return
     try {
-      await navigator.clipboard.writeText(preview.text)
+      await navigator.clipboard.writeText(previewAs === 'whatsapp' ? preview.whatsappText : preview.text)
     } catch {
       setError('Could not reach the clipboard — select the text below and copy it by hand.')
       return
@@ -453,11 +456,29 @@ export function RfqPanel({ requestId }: { requestId: string }) {
 
                     {/* Exactly what goes out */}
                     <div>
-                      <div className="mb-1 text-[11px] font-medium text-muted-foreground">
-                        What the supplier will get
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          What the supplier will get
+                        </span>
+                        <div className="flex rounded-md border border-border p-0.5">
+                          {(['email', 'whatsapp'] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setPreviewAs(mode)}
+                              className={`rounded px-2 py-0.5 text-[10px] font-medium ${
+                                previewAs === mode
+                                  ? 'bg-muted text-foreground'
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              {mode === 'email' ? 'Email' : 'WhatsApp'}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       <pre className="max-h-64 overflow-auto rounded-md border border-border bg-muted/40 p-3 text-[11px] leading-relaxed whitespace-pre-wrap">
-                        {preview?.text ?? 'Loading…'}
+                        {(previewAs === 'whatsapp' ? preview?.whatsappText : preview?.text) ?? 'Loading…'}
                       </pre>
                     </div>
 

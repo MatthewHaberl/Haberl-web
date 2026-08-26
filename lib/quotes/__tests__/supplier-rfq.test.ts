@@ -7,6 +7,7 @@ import {
   bomToRfqCandidates,
   groupRfqLines,
   renderRfqText,
+  renderRfqWhatsApp,
   whatsappLink,
   type SupplierRfqLineRow,
 } from '../supplier-rfq'
@@ -179,4 +180,23 @@ test('the WhatsApp link opens the supplier chat with the text prefilled', () => 
   assert.match(url, /^https:\/\/wa\.me\/27645163699\?text=/)
   assert.match(url, /%26/, 'the text is URL-encoded')
   assert.match(whatsappLink('hi', null), /^https:\/\/wa\.me\/\?text=/)
+})
+
+test('the WhatsApp body is the short hand-typed form — no RFQ number, no headings', () => {
+  const text = renderRfqWhatsApp(
+    { rfqNumber: 'RFQ-2026-001', supplierName: 'Key Electric', customerName: 'Bright Focus', jobRef: 'Bright Focus — Midrand', fromName: 'Haberl Electrical & Solar' },
+    [
+      row({ id: 'a', line_no: 0, sku: 'E6012GR', description: 'Insulated bootlace ferrule 6.0mm green', qty: 80 }),
+      row({ id: 'b', line_no: 1, section: 'Cabling', sku: 'H07-NEO', description: 'H07 neoprene trailing cable', qty: 80, unit: 'm' }),
+      row({ id: 'c', line_no: 2, sku: '', description: 'M8 nuts and bolts', qty: 20, needs_code: true }),
+    ],
+  )
+  assert.equal(text.split('\n')[0], 'New quote')
+  assert.equal(text.split('\n')[1], 'Bright Focus')
+  assert.match(text, /^ {2}80 x E6012GR — Insulated bootlace ferrule 6\.0mm green$/m)
+  assert.match(text, /^ {2}80m x H07-NEO — H07 neoprene trailing cable$/m)
+  assert.match(text, /Please advise codes for:\n {2}20 x M8 nuts and bolts/)
+  assert.doesNotMatch(text, /RFQ-2026-001/)
+  assert.doesNotMatch(text, /EARTHING|CABLING/)
+  assert.equal(text.split('\n').slice(-2).join('|'), 'Thanks,|Haberl')
 })

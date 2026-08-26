@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { emailLayout, sendEmail } from '@/lib/email/send'
 import {
-  renderRfqHtml, renderRfqText, whatsappLink,
+  renderRfqHtml, renderRfqText, renderRfqWhatsApp, whatsappLink,
   type RfqChannel, type RfqRenderContext, type SupplierRfqLineRow,
 } from '@/lib/quotes/supplier-rfq'
 
@@ -49,6 +49,7 @@ async function load(quoteId: string, rfqId: string) {
     supplierName: rfq.supplier_name || supplier?.name || '',
     contactPerson: supplier?.contact_person ?? null,
     jobRef,
+    customerName: quote?.customer_name ?? null,
     message: rfq.message,
     fromName: settings?.company_name ?? 'Haberl Electrical & Solar',
     fromEmail: settings?.contact_email ?? null,
@@ -82,13 +83,16 @@ export async function GET(
   const { rfq, supplier, lines, ctx } = loaded
 
   const text = renderRfqText(ctx, lines)
+  // WhatsApp gets the short hand-typed form, not the letterhead version.
+  const whatsappText = renderRfqWhatsApp(ctx, lines)
   return NextResponse.json({
     subject: `RFQ ${rfq.rfq_number} — ${ctx.jobRef ?? 'Haberl Electrical & Solar'}`,
     to: supplier?.email ?? null,
     supplierPhone: supplier?.phone ?? null,
     text,
     html: renderRfqHtml(ctx, lines),
-    whatsappUrl: whatsappLink(text, supplier?.phone),
+    whatsappText,
+    whatsappUrl: whatsappLink(whatsappText, supplier?.phone),
     lineCount: lines.length,
   })
 }
