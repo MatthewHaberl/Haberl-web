@@ -694,12 +694,16 @@ export function ScopeEditor({ scope, onChange, pricing, requestId, issues, showI
                     <div
                       className={`grid gap-2 rounded-lg border border-border/60 p-2 @[48rem]:items-start @[48rem]:gap-2 @[48rem]:rounded-none @[48rem]:border-0 @[48rem]:p-0 ${ROW_COLS}`}
                     >
-                      <div className="flex min-w-0 items-start gap-1.5 @[48rem]:contents">
+                      {/* Stacked, not side by side: sharing one line, a 47-character
+                          part name got about 20 characters of it and the code got
+                          six — both unreadable. The description takes the full width
+                          of the card and the code sits above it. */}
+                      <div className="flex min-w-0 flex-col gap-1.5 @[48rem]:contents">
                         <Input
                           value={line.sku}
                           onChange={(e) => updateLine(line.id, { sku: e.target.value })}
                           placeholder="SKU" title="Supplier code"
-                          className="h-9 w-[4.75rem] shrink-0 text-xs @[48rem]:h-8 @[48rem]:w-full"
+                          className="h-9 w-[10rem] shrink-0 text-xs @[48rem]:h-8 @[48rem]:w-full"
                         />
                         <div className="min-w-0 flex-1">
                           <Input
