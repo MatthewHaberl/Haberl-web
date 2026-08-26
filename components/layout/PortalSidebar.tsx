@@ -50,9 +50,13 @@ const employeeLinks = [
   { label: 'Settings',  href: '/portal/employee/settings/company', icon: Settings,  section: 'settings' },
 ]
 
-// Not part of either list: the founders' workbook is private to the people in
-// `founders_participants`, so the layout passes `isFounder` and it is appended.
-const foundersLink = { label: 'Founders', href: '/portal/founders', icon: Handshake }
+// Not part of either list: the founders' workbook and the Amperage Electrical
+// board are private to the people in `founders_participants`, so the layout
+// passes `isFounder` and these are appended.
+const founderLinks = [
+  { label: 'Amperage', href: '/portal/amperage', icon: Zap },
+  { label: 'Founders', href: '/portal/founders', icon: Handshake },
+]
 
 type NavIcon = React.ComponentType<{ className?: string }>
 
@@ -319,7 +323,7 @@ export function PortalSidebar({ role, realRole, viewingAs, name, allowedSections
       })
 
   // Shown to the two named participants whatever their role, and to nobody else.
-  const links = isFounder ? [...baseLinks, foundersLink] : baseLinks
+  const links = isFounder ? [...baseLinks, ...founderLinks] : baseLinks
 
   async function setViewAs(next: Role | null) {
     setBusy(true)
