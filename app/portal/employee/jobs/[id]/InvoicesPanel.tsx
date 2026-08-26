@@ -55,6 +55,7 @@ interface ExtraLineDraft {
 }
 
 const BASIS_LABEL: Record<InvoiceBasis, string> = {
+  quote: 'The quote, converted line for line',
   deposit: 'The deposit',
   percentage: 'A percentage of the contract',
   amount: 'An amount I type',
@@ -73,6 +74,8 @@ export function InvoicesPanel({
   billToName,
   billToEmail,
   materials,
+  quoteLines,
+  quoteNote,
 }: {
   jobId: string
   invoices: Invoice[]
@@ -85,6 +88,10 @@ export function InvoicesPanel({
   billToName: string
   billToEmail: string | null
   materials: BillableMaterial[]
+  /** The accepted quote, already converted (lib/invoices/from-quote). */
+  quoteLines: InvoiceLineDraft[]
+  /** What the conversion wants the operator to know, or null when it is clean. */
+  quoteNote: string | null
 }) {
   const router = useRouter()
   const confirm = useConfirm()
@@ -98,12 +105,18 @@ export function InvoicesPanel({
   const [voidReason, setVoidReason] = useState('')
 
   // ── The draft being composed ───────────────────────────────────────────────
-  // A job that owes a deposit almost always wants that first — open on it.
-  const [basis, setBasis] = useState<InvoiceBasis>(
+  // A job that owes a deposit almost always wants that first. After that the
+  // quote itself is the honest default: it is the document the customer read
+  // and agreed to, so an invoice that repeats it needs no explaining. Typing
+  // an amount is the fallback for a job with no quote behind it.
+  const firstBasis = (): InvoiceBasis =>
     quoteDepositCents && !invoices.some((i) => i.kind === 'deposit' && i.status !== 'void')
       ? 'deposit'
-      : 'amount',
-  )
+      : quoteLines.length > 0
+        ? 'quote'
+        : 'amount'
+
+  const [basis, setBasis] = useState<InvoiceBasis>(firstBasis)
   const [percent, setPercent] = useState('')
   const [amountRands, setAmountRands] = useState('')
   const [description, setDescription] = useState('')
@@ -174,7 +187,7 @@ export function InvoicesPanel({
     () => [
       ...linesForBasis(
         basis,
-        { billing, quoteNumber, quoteDepositCents, workLabel },
+        { billing, quoteNumber, quoteDepositCents, workLabel, quoteLines },
         {
           percent: Number(percent) || 0,
           amountCents: randsToCents(amountRands),
@@ -184,7 +197,7 @@ export function InvoicesPanel({
       ),
       ...extraDrafts,
     ],
-    [basis, billing, quoteNumber, quoteDepositCents, workLabel, percent, amountRands, description, materialPicks, extraDrafts],
+    [basis, billing, quoteNumber, quoteDepositCents, workLabel, quoteLines, percent, amountRands, description, materialPicks, extraDrafts],
   )
 
   const previewTotal = linesTotalCents(previewLines)
@@ -192,11 +205,7 @@ export function InvoicesPanel({
   const canRaise = previewTotal > 0 && !!billToName.trim()
 
   function reset() {
-    setBasis(
-      quoteDepositCents && !invoices.some((i) => i.kind === 'deposit' && i.status !== 'void')
-        ? 'deposit'
-        : 'amount',
-    )
+    setBasis(firstBasis())
     setPercent('')
     setAmountRands('')
     setDescription('')
@@ -626,11 +635,34 @@ export function InvoicesPanel({
                   .filter((b) => b !== 'deposit' || (!!quoteDepositCents && !depositAlreadyInvoiced))
                   .filter((b) => (b === 'percentage' || b === 'final' ? contractCents != null : true))
                   .filter((b) => (b === 'materials' ? materials.length > 0 : true))
+                  // Nothing to convert without a saved quote document.
+                  .filter((b) => (b === 'quote' ? quoteLines.length > 0 : true))
                   .map((b) => (
                     <option key={b} value={b}>{BASIS_LABEL[b]}</option>
                   ))}
               </Select>
             </label>
+
+            {basis === 'quote' && (
+              <div className="flex flex-col gap-2 rounded-md border border-border p-2.5 text-xs text-muted-foreground">
+                <p>
+                  Every section of {quoteNumber ?? 'the quote'} comes across as its own line —{' '}
+                  {quoteLines.length} in all — so the customer reads the same document they agreed
+                  to.
+                  {billing.invoicedCents > 0 &&
+                    ` What has already been invoiced (${formatCents(billing.invoicedCents)}) comes off at the bottom.`}
+                  {billing.depositCollectedCents > 0 &&
+                    ` The ${formatCents(billing.depositCollectedCents)} deposit already received comes off too.`}
+                </p>
+                <p>Everything is editable on the draft before you issue it.</p>
+                {quoteNote && (
+                  <p className="flex items-start gap-1.5 text-warning">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {quoteNote}
+                  </p>
+                )}
+              </div>
+            )}
 
             {basis === 'percentage' && (
               <div className="grid gap-3 sm:grid-cols-2 sm:max-w-md">

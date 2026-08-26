@@ -51,7 +51,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     ? String(body.kind)
     : basis === 'deposit'
       ? 'deposit'
-      : basis === 'final'
+      // Converting the whole quote bills the whole job, less what has already
+      // been claimed — which is a final invoice however early it is raised.
+      : basis === 'final' || basis === 'quote'
         ? 'final'
         : 'progress') as InvoiceKind
 
@@ -102,6 +104,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       quoteNumber: ctx.quoteNumber,
       quoteDepositCents: ctx.quoteDepositCents,
       workLabel,
+      // Read from the saved document on the server, never from what the
+      // browser posted — the same rule the material prices follow. A line the
+      // customer is going to be billed for is not the client's to compose.
+      quoteLines: ctx.quoteLines,
     },
     {
       percent: Number(body.percent) || 0,
@@ -134,6 +140,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     .filter((l: InvoiceLineDraft) => l.description.length > 0)
 
   const lines = [...generated, ...extra]
+  if (basis === 'quote' && ctx.quoteLines.length === 0) {
+    return new Response(
+      'There is no saved quote document behind this job to convert — bill it by amount instead',
+      { status: 400 },
+    )
+  }
   if (lines.length === 0) return new Response('An invoice needs at least one line', { status: 400 })
   if (!ctx.billToName.trim()) {
     return new Response(
@@ -145,6 +157,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const issueDate = typeof body.issueDate === 'string' && body.issueDate
     ? body.issueDate
     : new Date().toISOString().slice(0, 10)
+
+  // Converting a quote carries its scope-of-works across too, unless whoever
+  // raised it wrote their own note. It is the paragraph the customer agreed to
+  // and the one thing a list of section names cannot say on its own.
+  const typedNote = typeof body.notes === 'string' ? body.notes.trim() : ''
+  const notes = typedNote || (basis === 'quote' ? ctx.quoteSummary : null) || null
 
   const { data: invoice, error } = await supabase
     .from('invoices')
@@ -161,7 +179,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       status: 'draft',
       issue_date: issueDate,
       due_date: dueDateFrom(issueDate, company.invoiceDueDays),
-      notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+      notes,
       terms: company.invoiceTerms,
       created_by: user.id,
     })

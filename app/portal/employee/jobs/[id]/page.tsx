@@ -312,6 +312,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           workLabel={workTypeFor(job.work_type ?? 'solar', workTypes)?.label ?? 'the work'}
           billToName={invoiceContext.billToName}
           billToEmail={invoiceContext.billToEmail}
+          quoteLines={invoiceContext.quoteLines}
+          quoteNote={invoiceContext.quoteNote}
           materials={materials.map((m) => ({
             id: m.id,
             section: m.section,

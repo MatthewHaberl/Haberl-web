@@ -10,7 +10,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Invoice, InvoiceLine } from '@/types/database'
-import type { InvoiceSummaryRow } from './invoice'
+import type { InvoiceLineDraft, InvoiceSummaryRow } from './invoice'
+import { quoteConversion } from './from-quote'
 
 export const INVOICE_SUMMARY_SELECT =
   'id, invoice_number, kind, status, issue_date, due_date, total_cents, amount_paid_cents'
@@ -95,6 +96,16 @@ export interface JobInvoiceContext {
   quoteDepositCents: number | null
   /** A deposit proof a manager has already accepted on this job. */
   depositConfirmed: boolean
+  /**
+   * The accepted quote document, line for line — what the 'quote' basis bills.
+   * Empty when the job has no quote behind it, or the saved document is in a
+   * shape from-quote cannot read.
+   */
+  quoteLines: InvoiceLineDraft[]
+  /** The quote's scope-of-works paragraph, for the note above the terms. */
+  quoteSummary: string | null
+  /** What the operator should know about the conversion, or null when clean. */
+  quoteNote: string | null
 }
 
 /** The quote columns an invoice bills against. */
@@ -108,6 +119,10 @@ interface QuoteBillingRow {
   address: string | null
   total_amount: number | null
   deposit_amount: number | null
+  /** The document the customer was sent — the source of the invoice lines. */
+  generated_quote: string | null
+  /** Which option or work package was accepted, when there was a choice. */
+  accepted_tier: string | null
 }
 
 /** The CRM fallback when a job has no quote behind it. */
@@ -135,7 +150,7 @@ export async function loadJobInvoiceContext(
   if (job.quote_request_id) {
     const { data } = await supabase
       .from('quote_requests')
-      .select('id, quote_number, customer_id, customer_name, customer_email, customer_phone, address, total_amount, deposit_amount')
+      .select('id, quote_number, customer_id, customer_name, customer_email, customer_phone, address, total_amount, deposit_amount, generated_quote, accepted_tier')
       .eq('id', job.quote_request_id)
       .maybeSingle()
     quote = (data as QuoteBillingRow | null) ?? null
@@ -156,6 +171,15 @@ export async function loadJobInvoiceContext(
     customer = (data as CustomerBillingRow | null) ?? null
   }
 
+  // The quote as invoice lines, read once here so the preview in the browser
+  // and the insert on the server are looking at the same conversion.
+  const conversion = quote
+    ? quoteConversion(quote.generated_quote, {
+        acceptedTier: quote.accepted_tier,
+        quoteNumber: quote.quote_number,
+      })
+    : null
+
   return {
     jobId: job.id as string,
     jobTitle: (job.title as string) ?? '',
@@ -171,6 +195,9 @@ export async function loadJobInvoiceContext(
     contractCents: quote?.total_amount ?? null,
     quoteDepositCents: quote?.deposit_amount ?? null,
     depositConfirmed: !!job.deposit_confirmed_at,
+    quoteLines: conversion?.lines ?? [],
+    quoteSummary: conversion?.summary ?? null,
+    quoteNote: conversion?.note ?? null,
   }
 }
 

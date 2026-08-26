@@ -162,7 +162,7 @@ export function jobBilling({
 // ── Building the lines ───────────────────────────────────────────────────────
 
 /** How the person raising the invoice is choosing the amount. */
-export type InvoiceBasis = 'deposit' | 'percentage' | 'amount' | 'materials' | 'final'
+export type InvoiceBasis = 'quote' | 'deposit' | 'percentage' | 'amount' | 'materials' | 'final'
 
 export interface BasisContext {
   billing: JobBilling
@@ -171,6 +171,12 @@ export interface BasisContext {
   quoteDepositCents: number | null
   /** Work type label for the wording — "Solar PV", "Electrical work". */
   workLabel: string
+  /**
+   * The accepted quote, line for line (see ./from-quote). Empty when the job
+   * has no readable quote document behind it, which is what takes the 'quote'
+   * basis off the menu.
+   */
+  quoteLines?: InvoiceLineDraft[]
 }
 
 /** One pickable material line off the job's BOM. */
@@ -207,6 +213,41 @@ export function linesForBasis(
   const ref = ctx.quoteNumber ? ` — ${ctx.quoteNumber}` : ''
 
   switch (basis) {
+    case 'quote': {
+      // The quote, converted. Every section the customer read comes across as
+      // its own line, and what has already been claimed comes off at the
+      // bottom — so the document shows the whole job AND asks for the right
+      // money. Netting silently would leave a customer holding an invoice
+      // whose lines do not add up to its total.
+      const quoted = ctx.quoteLines ?? []
+      if (quoted.length === 0) return []
+
+      const deductions: InvoiceLineDraft[] = []
+      if (ctx.billing.invoicedCents > 0) {
+        deductions.push(
+          line({
+            description: 'Less invoices already raised on this job',
+            detail: 'Deposit and progress invoices, added up.',
+            amountCents: -ctx.billing.invoicedCents,
+            source: 'credit',
+            sourceRef: ctx.quoteNumber,
+          }),
+        )
+      }
+      if (ctx.billing.depositCollectedCents > 0) {
+        deductions.push(
+          line({
+            description: 'Less deposit already received',
+            detail: 'Paid against the quote and confirmed on this job.',
+            amountCents: -ctx.billing.depositCollectedCents,
+            source: 'credit',
+            sourceRef: ctx.quoteNumber,
+          }),
+        )
+      }
+      return [...quoted, ...deductions]
+    }
+
     case 'deposit': {
       const amount = Math.max(0, ctx.quoteDepositCents ?? 0)
       return [
