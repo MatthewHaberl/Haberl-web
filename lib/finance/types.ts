@@ -42,6 +42,24 @@ export function parseCombinedPages(notes: string | null | undefined): number | n
   return null
 }
 
+/**
+ * Whose money actually left the till. Set when a technician captures a receipt
+ * on site (migration 139) — it is the one fact the office cannot read off the
+ * photo, and the one that decides whether somebody is owed money back.
+ */
+export type FinPaidBy = 'company_card' | 'company_cash' | 'own_money' | 'unknown'
+
+export const FIN_PAID_BY: { value: FinPaidBy; label: string; short: string }[] = [
+  { value: 'company_card',  label: 'Company card',      short: 'Company card' },
+  { value: 'company_cash',  label: 'Company cash / petty cash', short: 'Company cash' },
+  { value: 'own_money',     label: 'My own money — pay me back', short: 'Own money' },
+  { value: 'unknown',       label: 'Not sure',          short: 'Unknown' },
+]
+
+export const FIN_PAID_BY_LABEL = Object.fromEntries(
+  FIN_PAID_BY.map((p) => [p.value, p.short]),
+) as Record<FinPaidBy, string>
+
 export type FinAllocation = 'unallocated' | 'customer' | 'company' | 'split'
 
 export type FinOcrStatus = 'none' | 'pending' | 'done' | 'failed' | 'manual'
@@ -67,6 +85,7 @@ export interface FinDocument {
   on_books: boolean
   belongs_to: string | null
   ocr_status: FinOcrStatus
+  paid_by: FinPaidBy
   uploaded_by: string | null
   created_at: string
   updated_at: string

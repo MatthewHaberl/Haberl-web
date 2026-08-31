@@ -7,7 +7,7 @@ import {
   BarChart2, Users, Zap, User, Menu, X, Settings, Activity,
   ClipboardList, PackageX, Search, Sunrise, PhoneIncoming, Sparkles,
   PanelLeftClose, PanelLeftOpen, Receipt, Ticket, UserCog, CalendarDays,
-  BookOpenCheck, HardHat, Eye, Check, Handshake,
+  BookOpenCheck, HardHat, Eye, Check, Handshake, ReceiptText,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -40,6 +40,7 @@ const employeeLinks = [
   { label: 'Metrics',   href: '/portal/employee/metrics',          icon: BarChart2, section: 'metrics' },
   { label: 'Lead Finder', href: '/portal/employee/lead-finder',     icon: Search,    section: 'lead_finder' },
   { label: 'Wastage',   href: '/portal/employee/reports/wastage',  icon: PackageX,  section: 'wastage' },
+  { label: 'Receipts',  href: '/portal/employee/receipts',         icon: ReceiptText, section: 'receipts' },
   { label: 'Finance',   href: '/portal/employee/finance',          icon: Receipt,   section: 'finance' },
   { label: 'Staff',     href: '/portal/employee/staff',            icon: HardHat,   section: 'staff' },
   { label: 'SANS 10142-1', href: '/portal/employee/sans',          icon: BookOpenCheck, section: 'sans' },
