@@ -34,7 +34,13 @@ import type { WorkType } from '@/lib/quotes/work-types'
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   req: Record<string, any>
-  isAdmin: boolean
+  /**
+   * Who gets the builder rather than the read-only document. Managers and admins
+   * both, matching every quote API route (generate, send, credits, RFQs) — this
+   * gate used to be admin-only, which left a manager staring at "Quote is being
+   * prepared." on a quote they had raised themselves.
+   */
+  canEdit: boolean
   photoUrls: string[]
   nextQuoteNum: string
   linkedJobId: string | null
@@ -44,7 +50,7 @@ interface Props {
   sentByName?: string
 }
 
-export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, sentByName = '' }: Props) {
+export function DesignWorkspace({ req, canEdit, linkedJobId, engine, workType, sentByName = '' }: Props) {
   // Generate lives up here in the status bar while the scope it validates lives
   // below in ScopeWorkspace. The builder registers its check on this ref rather
   // than lifting the whole scope, which would re-render the bar on every
@@ -120,7 +126,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, s
   }, [engine, req.scope, req.allow_partial_acceptance])
 
   return (
-    <div className={`flex flex-col gap-4 ${isAdmin && engine !== 'scope' && layout === 'studio' ? 'pb-4' : 'pb-20'}`}>
+    <div className={`flex flex-col gap-4 ${canEdit && engine !== 'scope' && layout === 'studio' ? 'pb-4' : 'pb-20'}`}>
       {/* Header. Stacks on a phone: side by side, the customer's name was being
           squeezed into a two-line column while the action buttons stacked into a
           narrow ladder beside it. */}
@@ -137,7 +143,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, s
             {req.is_amendment && <Badge variant="warning">Amendment</Badge>}
           </div>
         </div>
-        {isAdmin ? (
+        {canEdit ? (
           <div className="flex flex-col items-stretch gap-2 sm:items-end">
             {/* Classic/studio is a canvas-only choice — the scope builder has one layout. */}
             {engine !== 'scope' && (
@@ -171,7 +177,7 @@ export function DesignWorkspace({ req, isAdmin, linkedJobId, engine, workType, s
         )}
       </div>
 
-      {isAdmin ? (
+      {canEdit ? (
         <>
         {/* Engine branch (W97): 'scope' work types get the line-item scope builder;
             everything else keeps the solar design canvas. Header + status bar above

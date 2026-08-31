@@ -83,7 +83,7 @@ export default async function QuoteV2DetailPage({ params }: { params: Promise<{ 
       <DesignWorkspace
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         req={req as Record<string, any>}
-        isAdmin={isAdmin}
+        canEdit={isManager}
         photoUrls={photoUrls}
         nextQuoteNum={nextQuoteNum}
         linkedJobId={linkedJob?.id ?? null}
