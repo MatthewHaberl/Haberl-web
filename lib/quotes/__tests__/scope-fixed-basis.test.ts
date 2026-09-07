@@ -8,7 +8,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  emptyScope, fixedLabourR, labourAmountR, labourCostR, parseScope, scopeTotals,
+  emptyScope, fixedLabourR, fixedLineAmountR, fixedLinesOf, labourAmountR, labourCostR, newFixedLine,
+  parseScope, scopeTotals,
   type ScopeLabour,
 } from '../scope'
 
@@ -97,4 +98,78 @@ test('the basis survives a save/reload round trip; an unknown one falls back to 
   assert.ok(junk)
   assert.equal(junk.labour.fixedBasis, 'amount')
   assert.equal(labourAmountR(junk.labour), 500)
+})
+
+// ── More than one rate on one fixed price ────────────────────────────────────
+// A solar job is priced at one R/W across the PV and a different R/W across the
+// AC. Both are real rates and both have to survive on the quote; the customer
+// still sees one labour line.
+
+test('two per-watt rates on one job add up', () => {
+  const l = fixed({
+    fixedLines: [
+      newFixedLine({ id: 'pv', label: 'PV array', basis: 'watt', rateR: 2, qty: 8000 }),
+      newFixedLine({ id: 'ac', label: 'AC side', basis: 'watt', rateR: 1.2, qty: 5000 }),
+    ],
+  })
+  assert.equal(fixedLabourR(l), 22000)
+  assert.equal(labourAmountR(l), 22000)
+})
+
+test('components can mix bases — R/W, R/m and a lump on the same price', () => {
+  const l = fixed({
+    fixedLines: [
+      newFixedLine({ basis: 'watt', rateR: 2.5, qty: 8000 }),
+      newFixedLine({ basis: 'metre', rateR: 95, qty: 40 }),
+      newFixedLine({ basis: 'amount', amountR: 1500 }),
+    ],
+  })
+  assert.equal(fixedLabourR(l), 20000 + 3800 + 1500)
+})
+
+test('components leave the single-line fields unread', () => {
+  // The pre-component fields are only a fallback. Once components exist they
+  // are the price, or an old rate left in those fields would bill twice.
+  const l = fixed({
+    fixedBasis: 'watt', fixedRateR: 9, fixedQty: 9000, fixedR: 99999,
+    fixedLines: [newFixedLine({ basis: 'watt', rateR: 2, qty: 8000 })],
+  })
+  assert.equal(fixedLabourR(l), 16000)
+})
+
+test('a quote with no components reads as the one component it always was', () => {
+  const lines = fixedLinesOf(fixed({ fixedBasis: 'watt', fixedRateR: 2.5, fixedQty: 8000 }))
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].basis, 'watt')
+  assert.equal(fixedLineAmountR(lines[0]), 20000)
+})
+
+test('a stray minus inside one component cannot credit the customer', () => {
+  const l = fixed({
+    fixedLines: [
+      newFixedLine({ basis: 'watt', rateR: 2, qty: 8000 }),
+      newFixedLine({ basis: 'amount', amountR: -5000 }),
+    ],
+  })
+  assert.equal(fixedLabourR(l), 16000)
+})
+
+test('components round-trip through parseScope, junk basis and all', () => {
+  const parsed = parseScope({
+    version: 1,
+    lines: [], sections: [],
+    labour: {
+      mode: 'fixed',
+      fixedLines: [
+        { id: 'pv', label: 'PV array', basis: 'watt', rateR: 2, qty: 8000 },
+        { id: 'ac', label: 'AC side', basis: 'per_moon', amountR: 3000 },
+        'not a component',
+      ],
+    },
+  })
+  assert.ok(parsed)
+  assert.equal(parsed.labour.fixedLines.length, 2)
+  // The unknown basis degrades to the lump it can still price.
+  assert.equal(parsed.labour.fixedLines[1].basis, 'amount')
+  assert.equal(labourAmountR(parsed.labour), 19000)
 })

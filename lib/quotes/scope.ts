@@ -165,6 +165,82 @@ export function fixedBasisSpec(basis: ScopeFixedBasis): ScopeFixedBasisSpec {
   return FIXED_BASES.find((b) => b.key === basis) ?? FIXED_BASES[0]
 }
 
+/**
+ * ONE priced component of a fixed price.
+ *
+ * A real job is often not priced off a single rate: the PV side goes at one
+ * R/W and the AC side at another, and a trench at R/metre on top of both. One
+ * basis and one rate could only hold the first of those, so the rest was
+ * flattened into a lump and the working was lost — the exact thing the bases
+ * were added to stop.
+ *
+ * Each component carries its own basis, rate and quantity, and the fixed price
+ * is their sum. The `label` is internal: the customer still sees ONE labour
+ * line with one number on it, whether it was reached from one rate or four.
+ */
+export interface ScopeFixedLine {
+  id: string
+  /** What this component is — "PV array", "AC side", "Trenching". Internal. */
+  label: string
+  basis: ScopeFixedBasis
+  /** Lump sum. Read on the 'amount' basis only. */
+  amountR: number
+  /** Rate per watt / kWp / panel / point / metre / unit. */
+  rateR: number
+  qty: number
+  /** What a 'unit' is on this component — "way", "circuit", "downlight". */
+  unitLabel: string
+}
+
+export function newFixedLine(over: Partial<ScopeFixedLine> = {}): ScopeFixedLine {
+  return {
+    id: newScopeLineId(),
+    label: '',
+    basis: 'amount',
+    amountR: 0,
+    rateR: 0,
+    qty: 0,
+    unitLabel: '',
+    ...over,
+  }
+}
+
+/**
+ * What one component comes to — the typed lump on 'amount', otherwise rate x qty.
+ *
+ * Negatives floor at zero rather than being rejected: a stray minus mid-typing
+ * must never hand the customer a credit.
+ */
+export function fixedLineAmountR(line: ScopeFixedLine): number {
+  const derived = line.basis !== 'amount' && FIXED_BASES.some((b) => b.key === line.basis)
+  if (!derived) return round2(Math.max(0, line.amountR))
+  return round2(Math.max(0, line.rateR) * Math.max(0, line.qty))
+}
+
+/** Id carried by the component synthesised from a pre-multi-line labour block. */
+export const LEGACY_FIXED_LINE_ID = 'fixed-legacy'
+
+/**
+ * The fixed price as a list of components, whatever shape it was saved in.
+ *
+ * Every quote written before components existed priced off the single
+ * basis/rate/qty triple on the labour block, so it reads back as exactly one
+ * component holding those numbers — same rand, same working, nothing to
+ * migrate. It is upgraded to a real list the first time it is edited.
+ */
+export function fixedLinesOf(labour: ScopeLabour): ScopeFixedLine[] {
+  if (labour.fixedLines.length > 0) return labour.fixedLines
+  return [{
+    id: LEGACY_FIXED_LINE_ID,
+    label: '',
+    basis: FIXED_BASES.some((b) => b.key === labour.fixedBasis) ? labour.fixedBasis : 'amount',
+    amountR: labour.fixedR,
+    rateR: labour.fixedRateR,
+    qty: labour.fixedQty,
+    unitLabel: labour.fixedUnitLabel,
+  }]
+}
+
 export interface ScopeLabour {
   /**
    * 'crew' prices labour from the `crew` list (per person); the other three
@@ -196,6 +272,13 @@ export interface ScopeLabour {
   fixedQty: number
   /** What a 'unit' is on this quote — "way", "circuit", "downlight". Internal. */
   fixedUnitLabel: string
+  /**
+   * The fixed price broken into its priced components — one R/W for the PV
+   * side, another for the AC side, a per-metre trench beside them. Empty on
+   * every quote saved before components existed, which reads as the single
+   * component the fields above already describe (see fixedLinesOf).
+   */
+  fixedLines: ScopeFixedLine[]
   /** Priced crew (crew mode only) — internal; never rendered to a customer. */
   crew: ScopeCrewLine[]
   /**
@@ -338,6 +421,7 @@ export function emptyScope(opts: EmptyScopeOpts = {}): QuoteScope {
       fixedRateR: 0,
       fixedQty: 0,
       fixedUnitLabel: '',
+      fixedLines: [],
       crew: [],
       crewDays: num(opts.crewDays, 1),
       crewHoursPerDay: num(opts.crewHoursPerDay, CREW_HOURS_PER_DAY),
@@ -476,6 +560,13 @@ function parseLabour(raw: unknown, base: ScopeLabour): ScopeLabour {
     fixedRateR: num(labourRaw.fixedRateR, 0),
     fixedQty: num(labourRaw.fixedQty, 0),
     fixedUnitLabel: str(labourRaw.fixedUnitLabel),
+    // Absent on every quote saved before the price could be split into
+    // components. Left EMPTY rather than back-filled: fixedLinesOf reads the
+    // single-basis fields above as one component, so an old quote prices to
+    // the same rand without its stored JSON being rewritten underneath it.
+    fixedLines: Array.isArray(labourRaw.fixedLines)
+      ? labourRaw.fixedLines.map(parseFixedLine).filter((l): l is ScopeFixedLine => l !== null)
+      : [],
     crew: Array.isArray(labourRaw.crew)
       ? labourRaw.crew.map(parseCrewLine).filter((c): c is ScopeCrewLine => c !== null)
       : [],
@@ -515,6 +606,24 @@ function parsePackage(raw: unknown): ScopePackage | null {
 }
 
 const CREW_UNITS: ScopeCrewLine['unit'][] = ['hr', 'day', 'job']
+
+/**
+ * One fixed-price component, sanitised. An unknown basis degrades to the lump
+ * it can still price rather than dropping the component and its money.
+ */
+function parseFixedLine(raw: unknown): ScopeFixedLine | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  return {
+    id: str(r.id) || newScopeLineId(),
+    label: str(r.label),
+    basis: FIXED_BASES.some((b) => b.key === r.basis) ? (r.basis as ScopeFixedBasis) : 'amount',
+    amountR: num(r.amountR, 0),
+    rateR: num(r.rateR, 0),
+    qty: num(r.qty, 0),
+    unitLabel: str(r.unitLabel),
+  }
+}
 
 function parseCrewLine(raw: unknown): ScopeCrewLine | null {
   if (!raw || typeof raw !== 'object') return null
@@ -689,20 +798,20 @@ export function managementFeeR(labour: ScopeLabour): number {
 }
 
 /**
- * The fixed-mode price: the typed lump on the 'amount' basis, otherwise
- * rate × quantity.
+ * The fixed-mode price: every priced component added up.
  *
- * Negative inputs are floored at zero rather than rejected — a stray minus in a
- * rate field must not hand the customer a credit halfway through typing.
+ * A component is the typed lump on the 'amount' basis, otherwise rate ×
+ * quantity — so a job priced at one R/W across the PV and another across the AC
+ * is two components and one number. Negative inputs are floored at zero rather
+ * than rejected: a stray minus in a rate field must not hand the customer a
+ * credit halfway through typing.
  */
 export function fixedLabourR(labour: ScopeLabour): number {
-  // Unknown or absent basis reads as the lump — the same fallback parseLabour
-  // applies, so a labour block built by hand (a fixture, an old import) still
-  // prices at the amount it carries rather than silently at zero.
-  const derived = labour.fixedBasis !== 'amount'
-    && FIXED_BASES.some((b) => b.key === labour.fixedBasis)
-  if (!derived) return round2(Math.max(0, labour.fixedR))
-  return round2(Math.max(0, labour.fixedRateR) * Math.max(0, labour.fixedQty))
+  // Components sum. A labour block with none — every quote saved before they
+  // existed, and any built by hand (a fixture, an old import) — reads as the
+  // one component its basis/rate/qty fields describe, so it prices at the
+  // amount it carries rather than silently at zero.
+  return round2(fixedLinesOf(labour).reduce((t, l) => t + fixedLineAmountR(l), 0))
 }
 
 /**

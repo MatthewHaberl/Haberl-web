@@ -17,7 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  packageDisplayLabels, packageTotals, parseScope, scopeTotals, type QuoteScope,
+  fixedLabourR, packageDisplayLabels, packageTotals, parseScope, scopeTotals, type QuoteScope,
 } from './scope'
 
 /**
@@ -32,7 +32,7 @@ import {
 function scopeHasWork(scope: QuoteScope): boolean {
   const l = scope.labour
   return scope.lines.length > 0 ||
-    l.hours > 0 || l.days > 0 || l.fixedR > 0 || l.crew.length > 0 ||
+    l.hours > 0 || l.days > 0 || fixedLabourR(l) > 0 || l.crew.length > 0 ||
     l.managementIncluded || scope.coc.included
 }
 

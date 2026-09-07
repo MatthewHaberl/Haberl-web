@@ -10,11 +10,14 @@
 // margin (see CrewPanel).
 
 import type { Dispatch, SetStateAction } from 'react'
+import { Plus, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import {
-  CREW_DEFAULT_MARKUP, FIXED_BASES, fixedBasisSpec, fixedLabourR, labourAmountR, managementFeeR,
-  type QuoteScope, type ScopeFixedBasis,
+  CREW_DEFAULT_MARKUP, FIXED_BASES, fixedBasisSpec, fixedLabourR, fixedLineAmountR, fixedLinesOf,
+  labourAmountR, managementFeeR, newFixedLine,
+  type QuoteScope, type ScopeFixedBasis, type ScopeFixedLine,
 } from '@/lib/quotes/scope'
 import type { ScopeIssue } from '@/lib/quotes/scope-validate'
 import { CrewPanel } from './CrewPanel'
@@ -111,87 +114,150 @@ export function LabourPanel({ scope, onChange, pricing, issues }: {
         )}
 
         {labour.mode === 'fixed' && (() => {
-          // A fixed price is still worked out from something. Pick what it is
-          // worked out from and the quote keeps the rate as well as the answer —
-          // so "why R20 000?" has an answer, and the next job of the same shape
-          // is priced the same way. The customer still sees one labour line.
-          const spec = fixedBasisSpec(labour.fixedBasis)
-          const unitName = labour.fixedUnitLabel.trim()
-          const rateSuffix = labour.fixedBasis === 'unit' && unitName ? `/${unitName}` : spec.rateSuffix
-          const qtyLabel = labour.fixedBasis === 'unit' && unitName
-            ? `${unitName.charAt(0).toUpperCase()}${unitName.slice(1)}s`
-            : spec.qtyLabel
-          const qty = labour.fixedQty
-          const rate = labour.fixedRateR
+          // A fixed price is still worked out from something — and often from
+          // more than one thing: one R/W across the PV, another across the AC, a
+          // per-metre trench beside them. Each rate is its own component, the
+          // price is their sum, and the quote keeps the working — so "why
+          // R22 000?" has an answer and the next job of the same shape is priced
+          // the same way. The customer still sees ONE labour line.
+          const lines = fixedLinesOf(labour)
+          const setLines = (next: ScopeFixedLine[]) => setLabour({ fixedLines: next })
+          const patchLine = (id: string, patch: Partial<ScopeFixedLine>) =>
+            setLines(lines.map((l) => (l.id === id ? { ...l, ...patch } : l)))
+          // Seeded from the basis already in use: a second rate on a solar job
+          // is nearly always another R/W, not another lump.
+          const addLine = () =>
+            setLines([...lines, newFixedLine({ basis: lines[lines.length - 1]?.basis ?? 'watt' })])
+          // Never leave zero components — an empty list falls back to the
+          // pre-component fields and would resurrect an old number.
+          const removeLine = (id: string) => {
+            const kept = lines.filter((l) => l.id !== id)
+            setLines(kept.length > 0 ? kept : [newFixedLine()])
+          }
+          const priced = lines.filter((l) => fixedLineAmountR(l) > 0)
+          const single = lines.length === 1
+          const solo = lines[0]
+          const soloSpec = fixedBasisSpec(solo.basis)
+          const soloSuffix = solo.basis === 'unit' && solo.unitLabel.trim()
+            ? `/${solo.unitLabel.trim()}`
+            : soloSpec.rateSuffix
 
           return (
             <div className="space-y-2">
-              <div className="flex flex-wrap gap-1.5">
-                {FIXED_BASES.map((b) => (
-                  <button
-                    key={b.key}
-                    type="button"
-                    title={b.hint}
-                    onClick={() => setLabour({ fixedBasis: b.key as ScopeFixedBasis })}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                      labour.fixedBasis === b.key
-                        ? 'border-primary bg-primary/5 text-primary'
-                        : 'border-border text-muted-foreground hover:border-primary/40'
-                    }`}
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </div>
+              {lines.map((line) => {
+                const spec = fixedBasisSpec(line.basis)
+                const unitName = line.unitLabel.trim()
+                const rateSuffix = line.basis === 'unit' && unitName ? `/${unitName}` : spec.rateSuffix
+                const qtyLabel = line.basis === 'unit' && unitName
+                  ? `${unitName.charAt(0).toUpperCase()}${unitName.slice(1)}s`
+                  : spec.qtyLabel
 
-              {labour.fixedBasis === 'amount' ? (
-                <label className="block max-w-xs space-y-1 text-[11px] text-muted-foreground">
-                  Fixed labour amount
-                  <Input leadingText="R" type="number" min={0} step="any" className="h-9"
-                    value={labour.fixedR === 0 ? '' : String(labour.fixedR)}
-                    onChange={(e) => setLabour({ fixedR: num(e.target.value) })} />
-                </label>
-              ) : (
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:items-end">
-                  <label className="space-y-1 text-[11px] text-muted-foreground">
-                    Rate
-                    <Input leadingText="R" trailingText={rateSuffix}
-                      type="number" min={0} step={spec.rateStep} className="h-9"
-                      value={rate === 0 ? '' : String(rate)}
-                      onChange={(e) => setLabour({ fixedRateR: num(e.target.value) })} />
-                  </label>
-                  <label className="space-y-1 text-[11px] text-muted-foreground">
-                    {qtyLabel}
-                    <Input type="number" min={0} step={spec.qtyStep} className="h-9"
-                      value={qty === 0 ? '' : String(qty)}
-                      onChange={(e) => setLabour({ fixedQty: num(e.target.value) })} />
-                  </label>
-                  {labour.fixedBasis === 'unit' && (
-                    <label className="space-y-1 text-[11px] text-muted-foreground">
-                      Unit is called
-                      <Input className="h-9" placeholder="way, circuit, downlight"
-                        value={labour.fixedUnitLabel}
-                        onChange={(e) => setLabour({ fixedUnitLabel: e.target.value })} />
+                return (
+                  <div
+                    key={line.id}
+                    className="flex flex-wrap items-end gap-2 rounded-md border border-border/60 bg-muted/20 p-2"
+                  >
+                    <label className="w-full space-y-1 text-[11px] text-muted-foreground sm:w-[150px]">
+                      What for
+                      <Input className="h-9" placeholder="PV array, AC side"
+                        value={line.label}
+                        onChange={(e) => patchLine(line.id, { label: e.target.value })} />
                     </label>
-                  )}
-                  <div className="space-y-1 text-[11px] text-muted-foreground">
-                    Works out to
-                    <div className="flex h-9 items-center text-sm font-medium tabular-nums text-foreground">
-                      {rand(fixedLabourR(labour))}
+                    <label className="w-[47%] space-y-1 text-[11px] text-muted-foreground sm:w-[140px]">
+                      Worked out
+                      <Select className="h-9" value={line.basis} title={spec.hint}
+                        onChange={(e) => patchLine(line.id, { basis: e.target.value as ScopeFixedBasis })}>
+                        {FIXED_BASES.map((b) => (
+                          <option key={b.key} value={b.key}>{b.label}</option>
+                        ))}
+                      </Select>
+                    </label>
+
+                    {line.basis === 'amount' ? (
+                      <label className="w-[47%] space-y-1 text-[11px] text-muted-foreground sm:w-[150px]">
+                        Amount
+                        <Input leadingText="R" type="number" min={0} step="any" className="h-9"
+                          value={line.amountR === 0 ? '' : String(line.amountR)}
+                          onChange={(e) => patchLine(line.id, { amountR: num(e.target.value) })} />
+                      </label>
+                    ) : (
+                      <>
+                        <label className="w-[47%] space-y-1 text-[11px] text-muted-foreground sm:w-[130px]">
+                          Rate
+                          <Input leadingText="R" trailingText={rateSuffix}
+                            type="number" min={0} step={spec.rateStep} className="h-9"
+                            value={line.rateR === 0 ? '' : String(line.rateR)}
+                            onChange={(e) => patchLine(line.id, { rateR: num(e.target.value) })} />
+                        </label>
+                        <label className="w-[47%] space-y-1 text-[11px] text-muted-foreground sm:w-[130px]">
+                          {qtyLabel}
+                          <Input type="number" min={0} step={spec.qtyStep} className="h-9"
+                            value={line.qty === 0 ? '' : String(line.qty)}
+                            onChange={(e) => patchLine(line.id, { qty: num(e.target.value) })} />
+                        </label>
+                        {line.basis === 'unit' && (
+                          <label className="w-[47%] space-y-1 text-[11px] text-muted-foreground sm:w-[130px]">
+                            Unit is called
+                            <Input className="h-9" placeholder="way, circuit, downlight"
+                              value={line.unitLabel}
+                              onChange={(e) => patchLine(line.id, { unitLabel: e.target.value })} />
+                          </label>
+                        )}
+                      </>
+                    )}
+
+                    <div className="ml-auto flex items-end gap-2">
+                      <div className="space-y-1 text-right text-[11px] text-muted-foreground">
+                        Comes to
+                        <div className="flex h-9 items-center justify-end text-sm font-medium tabular-nums text-foreground">
+                          {rand(fixedLineAmountR(line))}
+                        </div>
+                      </div>
+                      {lines.length > 1 && (
+                        <button type="button" onClick={() => removeLine(line.id)}
+                          aria-label="Remove this rate"
+                          className="mb-1 rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
-                </div>
-              )}
+                )
+              })}
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button type="button" onClick={addLine}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
+                  <Plus className="h-3.5 w-3.5" /> Add another rate
+                </button>
+                {lines.length > 1 && (
+                  <div className="text-[11px] text-muted-foreground">
+                    Fixed price{' '}
+                    <span className="text-sm font-semibold tabular-nums text-foreground">
+                      {rand(fixedLabourR(labour))}
+                    </span>
+                  </div>
+                )}
+              </div>
 
               <p className="text-[11px] text-muted-foreground">
-                {labour.fixedBasis !== 'amount' && qty > 0 && rate > 0 && (
+                {single && solo.basis !== 'amount' && solo.qty > 0 && solo.rateR > 0 && (
                   <span className="font-medium text-foreground">
-                    {qty.toLocaleString('en-ZA')}{rateSuffix.replace('/', ' ')} x {rand(rate)}
-                    {rateSuffix} = {rand(fixedLabourR(labour))}.{' '}
+                    {solo.qty.toLocaleString('en-ZA')}{soloSuffix.replace('/', ' ')} x {rand(solo.rateR)}
+                    {soloSuffix} = {rand(fixedLabourR(labour))}.{' '}
                   </span>
                 )}
-                {spec.hint} The customer sees one labour line either way — the rate is
-                yours, not theirs.
+                {!single && priced.length > 1 && (
+                  <span className="font-medium text-foreground">
+                    {priced
+                      .map((l) => `${l.label.trim() || fixedBasisSpec(l.basis).label} ${rand(fixedLineAmountR(l))}`)
+                      .join(' + ')} = {rand(fixedLabourR(labour))}.{' '}
+                  </span>
+                )}
+                {single
+                  ? soloSpec.hint
+                  : 'Every rate is priced on its own and the quote bills the sum — the PV side at one R/W, the AC side at another.'}
+                {' '}The customer sees one labour line either way — the rates are yours, not theirs.
               </p>
             </div>
           )
