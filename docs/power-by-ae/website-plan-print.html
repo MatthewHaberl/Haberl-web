@@ -1,0 +1,121 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Power by AE — Website Plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@87.5,600;87.5,700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #f4f5f7; --paper: #ffffff; --ink: #1b2430; --ink-2: #4a5563; --ink-3: #6b7683;
+    --rule: #d9dde3; --rule-2: #eceff2; --copper: #b0592a; --copper-soft: #f6e8df;
+    --keep: #2f7a4d; --keep-soft: #e3f1e8;
+  }
+  @page { size: A4; margin: 15mm 18mm 18mm 18mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { color: var(--ink); font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; font-size: 10.5pt; line-height: 1.45; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h1, h2 { font-family: "Archivo", "Arial Narrow", Arial, sans-serif; font-stretch: 87.5%; margin: 0; line-height: 1.15; break-after: avoid; }
+  h1 { font-size: 26pt; font-weight: 700; }
+  h2 { font-size: 14.5pt; font-weight: 700; margin-top: 16pt; padding-top: 7pt; border-top: 2px solid var(--ink); }
+  .eyebrow { font-family: "IBM Plex Mono", "Courier New", monospace; font-size: 8.5pt; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8pt; }
+  .lede { font-size: 12.5pt; color: var(--ink-2); margin: 10pt 0 0; max-width: 62ch; }
+  p { margin: 8pt 0 0; max-width: 70ch; }
+  ul { margin: 6pt 0 0; padding-left: 16pt; max-width: 70ch; }
+  li { margin-top: 4pt; break-inside: avoid; }
+  li::marker { color: var(--ink-3); }
+  strong { font-weight: 600; }
+  .tbl-wrap { margin-top: 10pt; border: 1px solid var(--rule); }
+  table { border-collapse: collapse; width: 100%; font-size: 10pt; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  th, td { text-align: left; vertical-align: top; padding: 5pt 8pt; border-bottom: 1px solid var(--rule-2); }
+  th { font-family: "IBM Plex Mono", "Courier New", monospace; font-size: 8pt; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; background: var(--ground); }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td:first-child { width: 28%; }
+  .cost td:first-child { width: 24%; } .cost td.num { width: 22%; }
+  .steps { counter-reset: s; list-style: none; padding-left: 0; margin-top: 10pt; max-width: 74ch; }
+  .steps li { counter-increment: s; display: grid; grid-template-columns: 26pt 1fr; gap: 8pt; padding: 5.5pt 0; border-bottom: 1px solid var(--rule-2); margin: 0; break-inside: avoid; }
+  .steps li::before { content: counter(s, decimal-leading-zero); font-family: "IBM Plex Mono", "Courier New", monospace; font-size: 9.5pt; color: var(--copper); padding-top: 2pt; }
+  .steps li:last-child { border-bottom: none; }
+  .who { display: inline-block; font-family: "IBM Plex Mono", "Courier New", monospace; font-size: 7.5pt; letter-spacing: 0.05em; text-transform: uppercase; padding: 1pt 6pt; border-radius: 2pt; background: var(--copper-soft); color: var(--copper); margin-left: 4pt; vertical-align: 1pt; white-space: nowrap; }
+  .who.z { background: var(--keep-soft); color: var(--keep); }
+  .box { margin-top: 14pt; padding: 10pt 14pt; border: 1px solid var(--rule); background: var(--ground); max-width: 70ch; break-inside: avoid; }
+  .box .eyebrow { margin-bottom: 4pt; }
+  .foot { margin-top: 24pt; font-family: "IBM Plex Mono", "Courier New", monospace; font-size: 8.5pt; color: var(--ink-3); }
+  .brand { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--rule); padding-bottom: 6pt; margin-bottom: 14pt; }
+  .brand .mark { font-family: "Archivo", "Arial Narrow", Arial, sans-serif; font-stretch: 87.5%; font-weight: 700; font-size: 12pt; letter-spacing: 0.02em; }
+  .brand .mark span { color: var(--copper); }
+  .brand .co { font-family: "IBM Plex Mono", "Courier New", monospace; font-size: 8pt; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; }
+</style></head><body>
+
+<div class="brand"><div class="mark">POWER <span>BY AE</span></div><div class="co">Amperage Electrical Solutions (Pty) Ltd · 2024/469778/07</div></div>
+
+<div class="eyebrow">For Zacques · from Matthew · 7 September 2026</div>
+<h1>The website plan, in plain terms</h1>
+<p class="lede">What we are building, what it costs, and the steps in order. Nothing here needs you to be technical. The two things I need from you are marked.</p>
+
+<h2>What we are building</h2>
+<p>One website that does four jobs and grows with us without being rebuilt:</p>
+<ul>
+  <li><strong>Public site</strong> at powerbyae.co.za. Services, pages the admin person can build herself, and a quote request form.</li>
+  <li><strong>Customer portal.</strong> Customers see their quotes, accept them online, see their documents and their solar system's performance.</li>
+  <li><strong>Our office.</strong> Quoting, jobs, invoicing, staff hours, monitoring and finance. You and I both log in here, each with our own login.</li>
+  <li><strong>Online store</strong>, later. Retail first, wholesale accounts when we open them.</li>
+</ul>
+
+<h2>The decisions we have made</h2>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>Question</th><th>Answer</th></tr></thead>
+  <tbody>
+    <tr><td>Rebuild on something new?</td><td>No. Same system the Haberl platform runs on. It already works and any future IT person can be hired for it.</td></tr>
+    <tr><td>Where does it run?</td><td>The site in Europe next to the database, because no database provider has servers in South Africa. South African visitors are served from a cache in Cape Town.</td></tr>
+    <tr><td>Who owns it?</td><td>The company. All accounts in the company's name with both of us able to recover them.</td></tr>
+    <tr><td>The company</td><td>Amperage Electrical Solutions (Pty) Ltd, 2024/469778/07, already registered with a tax number. "Power by AE" is the brand on top of it; the registered name and number go on every quote and invoice.</td></tr>
+    <tr><td>Domain</td><td>powerbyae.co.za. Checked and free on 7 September. Buy this week, registered to the company.</td></tr>
+    <tr><td>Payments</td><td>PayFast. The name customers trust at checkout.</td></tr>
+    <tr><td>Who edits pages?</td><td>The admin person, through a page builder inside the site. Not you, not me.</td></tr>
+    <tr><td>Your login</td><td>You quote and do admin in the office portal from day one. You never need a developer account.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>What it costs</h2>
+<p>Everything is pay-as-you-use. Nothing is paid up front and nothing is locked in.</p>
+<div class="tbl-wrap">
+<table class="cost">
+  <thead><tr><th>Stage</th><th class="num">Per month</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>While building</td><td class="num">R0</td><td>Free tiers until we have real customers in it. Domains about R400 a year.</td></tr>
+    <tr><td>Go-live</td><td class="num">≈ R800 – R1 800</td><td>Hosting R360, database R450, the rest is usage. PayFast takes a percentage per sale only.</td></tr>
+    <tr><td>Busy, with the store</td><td class="num">≈ R1 500 – R3 000</td><td>Grows only with traffic and sales.</td></tr>
+    <tr><td>Ten times our size</td><td class="num">≈ R8 000 – R18 000</td><td>Multiple branches, wholesale accounts, thousands of monitored sites.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>For comparison, a Shopify store alone would be about R6 500 a month plus a cut of every sale.</p>
+
+<h2>Steps, in order</h2>
+<ol class="steps">
+  <li><div><strong>Buy the domain.</strong> powerbyae.co.za and poweredbyae.co.za, plus powerbyae.com. Registered to the company, both of us as contacts. <span class="who">Matthew</span></div></li>
+  <li><div><strong>Bring Amperage Electrical Solutions (Pty) Ltd up to date.</strong> The company already exists (registered 31 July 2024, you as sole director). Three things: file the outstanding annual returns with beneficial ownership at CIPC, appoint Matthew as a director, and decide whether "Power by AE" is a trading name on this company or a formal name change. A trademark search on "AE" is still needed before anything is printed. <span class="who z">Zacques</span></div></li>
+  <li><div><strong>Set up the accounts.</strong> Hosting, database and email accounts in the company's name. Logins go into our shared password list. <span class="who">Matthew</span></div></li>
+  <li><div><strong>Build the foundation and logins.</strong> Roles and permissions first, so you can log in and test every section as it is built. <span class="who">Matthew</span></div></li>
+  <li><div><strong>Public site and quote request.</strong> The designer gives us a set of page sections; the admin person builds pages from them. <span class="who">Matthew</span></div></li>
+  <li><div><strong>Quoting.</strong> Customers, sites, leads and both quote types. You test it on real quotes. <span class="who">Matthew</span> <span class="who z">Zacques tests</span></div></li>
+  <li><div><strong>Go live.</strong> Backups switched on, domain and email pointed at the new site, Haberl customers moved across. <span class="who">Matthew</span></div></li>
+  <li><div><strong>After launch.</strong> Jobs, invoicing, finance, staff hours, calendar, monitoring. In that order, by what brings money in soonest.</div></li>
+  <li><div><strong>Store.</strong> Retail checkout with PayFast first. The wholesale system is added the day we open our first trade account.</div></li>
+</ol>
+
+<div class="box">
+  <div class="eyebrow">What I need from you</div>
+  <ul style="margin-top:0">
+    <li>CIPC annual returns filed, Matthew appointed as director, and the trading-name decision (step 2).</li>
+    <li>A check with SARS that the company's income tax returns are up to date. Financial year end is February, so the first return was due by February 2026.</li>
+    <li>Your email address for your portal login, and a second phone number for account recovery.</li>
+    <li>Half an hour to test the quoting screens once they are up (step 6).</li>
+  </ul>
+</div>
+
+<div class="foot">Full technical report with sources is with Matthew.</div>
+
+</body></html>
